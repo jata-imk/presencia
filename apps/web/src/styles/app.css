@@ -1,0 +1,28 @@
+/* Google Fonts en dev; auto-hostear antes de prod (ver design-tokens.md) */
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600&display=swap");
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* El toggle de tema pone data-theme="dark" en <html> */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.5;
+    color: var(--fg-primary);
+    background: var(--bg-app);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+    color: var(--fg-primary);
+  }
+}
