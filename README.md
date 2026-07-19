@@ -22,9 +22,14 @@ pnpm typecheck
 
 ## Documentación
 
-- Empieza por [`CLAUDE.md`](./CLAUDE.md) — índice del proyecto para humanos y agentes.
+- Empieza por [`AGENTS.md`](./AGENTS.md) — índice del proyecto para humanos y agentes.
 - Producto: [`docs/explanation/product/`](./docs/explanation/product/)
 - Decisiones de arquitectura (ADRs): [`docs/explanation/decisions/`](./docs/explanation/decisions/)
 - Modelo de datos: [`docs/reference/modelo-de-datos.md`](./docs/reference/modelo-de-datos.md)
 
-La gestión de proyecto (roadmap F0–F13, tareas) vive en Notion; la verdad técnica vive aquí.
+## Gestión de proyecto
+
+El roadmap (F0–F13), el backlog y las notas de producto viven en Notion:
+**[Presencia en Notion](https://www.notion.so/Presencia-34961db7db7f80939148c1474cfe5b18)**
+
+La verdad técnica (ADRs, contratos, modelo de datos) vive en este repo.

@@ -15,11 +15,11 @@ Este repo está optimizado para desarrollo asistido por agentes (Claude Code). E
 
 ## MCPs del proyecto
 
-| MCP        | Estado                                               | Uso                                                                                           |
-| ---------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Notion     | Conectado                                            | Roadmap F0–F13, notas de producto                                                             |
-| GitHub     | Vía `gh` CLI (instalar: `winget install GitHub.cli`) | PRs, issues, CI                                                                               |
-| Playwright | Pendiente (agregar en F1 cuando exista UI)           | Tests e2e y verificación visual. `claude mcp add playwright -- npx -y @playwright/mcp@latest` |
+| MCP        | Estado                                           | Uso                                                                                              |
+| ---------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Notion     | Conectado                                        | Roadmap F0–F13, backlog (Smart List: Someday), notas de producto                                 |
+| GitHub     | `gh` CLI instalado (falta `gh auth login --web`) | PRs, issues, CI. El MCP oficial de GitHub está en el backlog para el flujo conversacional de PRs |
+| Playwright | Pendiente (agregar en F1 cuando exista UI)       | Tests e2e y verificación visual. `claude mcp add playwright -- npx -y @playwright/mcp@latest`    |
 
 ## Suite de regresión cultural (desde F3)
 
