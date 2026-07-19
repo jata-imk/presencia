@@ -53,6 +53,20 @@ Notas del modo B:
 - La Opción 1 solo necesita el CLI (`docker` + plugin compose), no el engine — en Windows se puede instalar standalone sin Docker Desktop.
 - El VPS de staging cumple este rol naturalmente (dev/prod parity: mismo `docker-compose.yml`, distinto `.env`).
 
+## Base de datos y variables (desde F1)
+
+1. Copia `.env.example` a `.env` y llena las variables (las de F1: `APP_DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `WEB_URL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `ZEPTOMAIL_TOKEN`, `MAIL_FROM`).
+2. Aplica migraciones (rol owner): `pnpm --filter @presencia/api db:migrate`.
+3. **Una sola vez por entorno**, asigna password al rol de runtime (la migración 0001 crea los roles sin password a propósito — un password en SQL versionado sería un secreto commiteado):
+
+   ```sql
+   ALTER ROLE presencia_app WITH PASSWORD 'el-password-de-tu-.env';
+   ```
+
+   `APP_DATABASE_URL` debe conectar con `presencia_app` (sujeto a RLS); `DATABASE_URL` (owner) queda solo para migraciones.
+
+4. `pnpm dev` levanta api (puerto 3000) y web (5173, con proxy `/api` → 3000). La API lee `.env` de la raíz vía `tsx --env-file`.
+
 ## VS Code
 
 Al abrir el repo, VS Code sugiere las extensiones de `.vscode/extensions.json` (ESLint, Prettier, Tailwind, Docker, GitLens, Error Lens, EditorConfig, Mermaid). Acepta instalarlas: format-on-save y fix-on-save ya están configurados en `.vscode/settings.json`.

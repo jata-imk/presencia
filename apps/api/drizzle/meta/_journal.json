@@ -15,6 +15,13 @@
       "when": 1784440296756,
       "tag": "0001_rls_roles_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784443513255,
+      "tag": "0002_auth_tables",
+      "breakpoints": true
     }
   ]
 }

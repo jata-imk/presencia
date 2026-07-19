@@ -10,7 +10,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}
       POSTGRES_DB: ${POSTGRES_DB:-presencia}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Solo loopback: nunca expuesto a internet. El acceso remoto es
+      # siempre vía túnel SSH (docs/how-to/levantar-entorno.md, modo B).
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
