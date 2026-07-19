@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1784440283327,
+      "tag": "0000_init_core_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784440296756,
+      "tag": "0001_rls_roles_policies",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,3 +1,10 @@
 # apps/web
 
-Placeholder. El frontend React (Vite + TypeScript + Tailwind) se scaffoldea en F0 y se llena con el import de Claude Design (tokens → App Shell → Auth → módulos).
+Frontend React (Vite + TS). En F0 es un esqueleto mínimo que prueba el link con `@presencia/shared`.
+
+```bash
+pnpm dev     # vite dev server
+pnpm build   # build de producción
+```
+
+Próximos pasos: design tokens del handoff de Claude Design (CSS variables/theme Tailwind), luego App Shell + Auth post-F1. Regla dura: tokens, nunca hex en componentes.

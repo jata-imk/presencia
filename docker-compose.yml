@@ -1,0 +1,23 @@
+# Dev: solo Postgres. Los servicios app/worker/caddy se agregan en F1
+# cuando exista el Dockerfile (staging/prod corren ESTE mismo archivo,
+# solo cambia el .env — regla de dev/prod parity).
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-presencia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: ${POSTGRES_DB:-presencia}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-presencia} -d ${POSTGRES_DB:-presencia}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
