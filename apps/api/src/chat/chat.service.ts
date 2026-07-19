@@ -74,7 +74,7 @@ export class ChatService {
     });
 
     const result = streamText({
-      model: google("gemini-2.5-flash"),
+      model: google("gemini-3.5-flash"),
       system: SYSTEM_PROMPT,
       messages: await convertToModelMessages(history),
       abortSignal: abortController.signal,
