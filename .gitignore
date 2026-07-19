@@ -1,0 +1,30 @@
+# Dependencias
+node_modules/
+.pnpm-store/
+
+# Builds
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# Entorno
+.env
+.env.*
+!.env.example
+
+# Logs y temporales
+*.log
+.DS_Store
+Thumbs.db
+
+# Cobertura y tests
+coverage/
+playwright-report/
+test-results/
+
+# Editor (se versiona solo .vscode/settings.json y extensions.json)
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/

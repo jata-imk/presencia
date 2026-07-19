@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+    "ms-azuretools.vscode-docker",
+    "eamodio.gitlens",
+    "usernamehw.errorlens",
+    "editorconfig.editorconfig",
+    "mikestead.dotenv",
+    "bierner.markdown-mermaid",
+    "yzhang.markdown-all-in-one"
+  ]
+}
