@@ -18,5 +18,6 @@ Formato: **Decisión** → **Razón** → **Descartado**.
 | [010](./adr-010-canales-telegram-adapter.md)     | Canales de mensajería: Telegram primero, adapter de canal |
 | [011](./adr-011-assets-object-storage.md)        | Assets: Object Storage externo desde día 1                |
 | [012](./adr-012-creditos-ledger.md)              | Créditos: ledger contable transaccional                   |
+| [013](./adr-013-orm-drizzle.md)                  | ORM y migraciones: Drizzle + drizzle-kit                  |
 
-Decisiones pendientes de cerrar: proveedor(es) de generación de imágenes; modelo default por acción (según suite de regresión cultural); ORM/migraciones (se cierra en el diseño del modelo de datos).
+Decisiones pendientes de cerrar: proveedor(es) de generación de imágenes; modelo default por acción (según suite de regresión cultural).

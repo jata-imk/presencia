@@ -1,6 +1,6 @@
 # Modelo de datos núcleo + RLS
 
-> **Estado: BORRADOR para sesión de diseño (F2 en papel).** Nada de esto está migrado aún. Las preguntas abiertas están marcadas con ⚠️ al final.
+> **Estado: APROBADO en sesión de diseño del 2026-07-18** (las 5 preguntas abiertas se cerraron; ver "Decisiones de la sesión" al final). Pendiente de implementar como migración Drizzle en F0/F2.
 
 ## Principios
 
@@ -12,7 +12,10 @@
 
 ### Identidad y configuración
 
-**`users`** — Better Auth es dueño de sus tablas (`user`, `session`, `account`, `verification`); nuestras tablas de dominio referencian `user.id`. Extendemos con campos de perfil vía la config de Better Auth (nombre público, timezone — necesaria para "mejores horarios" de Ritmo).
+**`users`** — Better Auth es dueño de sus tablas (`user`, `session`, `account`, `verification`); nuestras tablas de dominio referencian `user.id`. Extendemos con campos de perfil vía `additionalFields` de Better Auth:
+
+- `display_name` — nombre público.
+- `timezone` — zona IANA (ej. `America/Merida`), **desde F2**. Capturada del navegador en onboarding (`Intl.DateTimeFormat().resolvedOptions().timeZone`), editable en Mi perfil, default `America/Mexico_City`. La consume toda interpretación de hora humana: programación de posts (F6), "prográmalo mañana" en chat (F3), mejores horarios de Ritmo (F9) y el cierre de ciclo de créditos.
 
 **`brand_voices`** — el moat cultural hecho tabla.
 
@@ -34,8 +37,9 @@
 
 **`folders`** — carpetas tipo Projects.
 
-- `id`, `user_id`, `name`, `icon` (emoji), `brand_voice_id` (FK nullable → si es NULL usa la default del usuario), `position`, timestamps.
+- `id`, `user_id`, `name`, `icon` (emoji), `brand_voice_id` (FK **nullable** → si es NULL usa la voz default del usuario), `position`, timestamps.
 - Así el CM freelance tiene una voz por cliente sin sub-cuentas (decisión de producto V1).
+- Resolución de voz de un chat: `COALESCE(carpeta.brand_voice_id, voz default del usuario)`. Los chats sin carpeta usan siempre la default — por eso el fallback existe de todos modos y la voz por carpeta es opcional, no obligatoria. Mitigación UX: badge "usando tu voz default" en carpetas sin voz propia.
 
 ### Conversación
 
@@ -57,6 +61,7 @@
 | `created_at` | timestamptz |                                                                                            |
 
 - Sin `updated_at`: los mensajes son inmutables (append-only). Editar = nuevo mensaje.
+- `parts` persiste el **shape `UIMessage` del AI SDK tal cual** (decisión 2026-07-18): productor (stream del SDK) y consumidor (`useChat`) son el mismo SDK, un formato neutro traduciría ida y vuelta sin ganancia. Telegram solo extrae las parts de texto. Mitigaciones: versión de `ai` pineada (upgrades deliberados, con script de migración del JSONB si un major cambia el shape) y acceso a `messages` encapsulado en el repository del módulo chat.
 
 ### Contenido
 
@@ -77,6 +82,7 @@
 | `error_detail`                  | jsonb nullable | por qué falló la publicación                                             |
 
 - El toggle multi-red del drawer de programación opera sobre `group_id`: programar el grupo o dejar redes individuales en borrador.
+- El grupo NO es tabla propia (decisión 2026-07-18): es puro parentesco, sin atributos ni ciclo de vida propios — cada card conserva fecha, estado y contenido individuales. Su estado agregado ("2 programadas, 1 en borrador") se **deriva** de las cards, nunca se guarda. Criterio: una relación merece tabla solo con atributos propios; si V2 trae "campañas" con nombre/notas, la migración a `card_groups` es aditiva (`INSERT ... SELECT DISTINCT group_id`).
 
 **`assets`** — Biblioteca (ADR-011).
 
@@ -99,18 +105,19 @@
 
 **`credit_ledger`** — asientos contables (ADR-012). Append-only.
 
-| Columna                           | Tipo               | Nota                                                                                                                             |
-| --------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                              | bigint identity PK |                                                                                                                                  |
-| `user_id`                         | uuid FK            | RLS                                                                                                                              |
-| `delta`                           | integer            | + acreditación, − consumo. Nunca 0                                                                                               |
-| `reason`                          | enum               | `monthly_grant`, `chat_message`, `idea_generation`, `multi_adapt`, `image_generation`, `weekly_calendar`, `refund`, `adjustment` |
-| `reference_type` / `reference_id` | text / uuid        | qué mensaje/card/asset lo causó                                                                                                  |
-| `created_at`                      | timestamptz        |                                                                                                                                  |
+| Columna                           | Tipo               | Nota                                                                                                                                                 |
+| --------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                              | bigint identity PK |                                                                                                                                                      |
+| `user_id`                         | uuid FK            | RLS                                                                                                                                                  |
+| `delta`                           | integer            | + acreditación, − consumo. Nunca 0                                                                                                                   |
+| `reason`                          | enum               | `monthly_grant`, `cycle_expiration`, `chat_message`, `idea_generation`, `multi_adapt`, `image_generation`, `weekly_calendar`, `refund`, `adjustment` |
+| `reference_type` / `reference_id` | text / uuid        | qué mensaje/card/asset lo causó                                                                                                                      |
+| `created_at`                      | timestamptz        |                                                                                                                                                      |
 
 - **Saldo = `SUM(delta)`** con índice `(user_id, created_at)`. Si a escala duele, se agrega tabla de snapshot mensual — no antes (YAGNI).
 - Consumo dentro de la MISMA transacción que crea el efecto (mensaje/card/asset): o se cobra y se produce, o ninguna de las dos.
 - El grant mensual es un job de pg-boss que inserta `monthly_grant` (nunca un UPDATE de contador).
+- **Los créditos del mes expiran** (decisión 2026-07-18): al cierre del ciclo, el job inserta `cycle_expiration` con delta = −(saldo restante) y acto seguido el `monthly_grant` nuevo. Razones: pasivo acotado (cada crédito tiene costo real de cómputo), estándar en SaaS de IA, incentiva el hábito de publicar, y el copy "te quedan X este mes" ya lo asume. Evolución futura posible a rollover-con-tope cambiando solo la lógica del job (el ledger no cambia). Top-ups no-expirables quedan fuera de V1: exigirían contabilidad por bolsas.
 
 ### Jobs
 
@@ -162,7 +169,7 @@ erDiagram
     publication_cards }o--|| social_accounts : "publica via"
 ```
 
-## ORM y migraciones — recomendación
+## ORM y migraciones — decisión (ADR-013)
 
 **Drizzle ORM + drizzle-kit.**
 
@@ -173,10 +180,12 @@ erDiagram
 
 Descartados: **Prisma** (RLS incómodo — el motor gestiona el pool y esconde la transacción donde iría el `SET LOCAL`; DSL propio) y **Kysely** (query builder excelente pero sin capa de schema/migraciones: más piezas a mano).
 
-## ⚠️ Preguntas abiertas para la sesión de diseño
+## Decisiones de la sesión de diseño (2026-07-18)
 
-1. **Voz por carpeta:** ¿confirmamos `folders.brand_voice_id` nullable con fallback a la default? Alternativa: la carpeta SIEMPRE exige voz (más fricción, más explícito para el CM).
-2. **`messages.parts` con el formato del AI SDK:** nos casa con su shape de mensaje (versionado por `ai@x`). ¿Aceptamos el acople a cambio de `useChat` gratis, o definimos shape propio + mapper?
-3. **Grupo multi-red:** ¿basta `group_id` plano o el grupo merece tabla propia (`card_groups`) con estado agregado? Propuesta: columna plana, YAGNI.
-4. **Ciclo de créditos:** ¿los créditos del mes expiran (asiento negativo de expiración al cierre) o se acumulan? Afecta el copy de "Te quedan X este mes".
-5. **Timezone del usuario:** ¿columna en perfil desde F2 (lo pide Ritmo/mejores horarios) o se agrega en F9?
+Resueltas con Jose, integradas arriba en cada sección:
+
+1. **Voz por carpeta:** opcional con fallback a la default (`brand_voice_id` nullable + `COALESCE`). Los chats sin carpeta necesitan el fallback de todos modos.
+2. **`messages.parts`:** formato `UIMessage` del AI SDK persistido tal cual; versión pineada + repository.
+3. **Grupo multi-red:** `group_id` plano, estado derivado; tabla propia solo si el grupo gana atributos (V2 campañas).
+4. **Créditos:** expiran al cierre del ciclo (`cycle_expiration` + grant nuevo, job pg-boss).
+5. **Timezone:** en el perfil desde F2 (IANA, capturada del navegador, default `America/Mexico_City`).
