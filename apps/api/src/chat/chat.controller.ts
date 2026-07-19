@@ -1,4 +1,13 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Res } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Param,
+  Post,
+  Res,
+} from "@nestjs/common";
 import { safeValidateUIMessages, type UIMessage } from "ai";
 import { chatIdParamSchema, createChatBodySchema, type ChatSummary } from "@presencia/shared";
 import type { Response } from "express";
@@ -8,7 +17,7 @@ import { ChatService } from "./chat.service.js";
 
 @Controller("chats")
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(@Inject(ChatService) private readonly chatService: ChatService) {}
 
   @Post()
   create(@CurrentUser() user: SessionUser, @Body() body: unknown): Promise<ChatSummary> {

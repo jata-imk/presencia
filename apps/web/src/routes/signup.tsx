@@ -23,7 +23,9 @@ export function SignupPage() {
       email,
       password,
       // A dónde aterriza el link de verificación una vez confirmado.
-      callbackURL: "/chats",
+      // Absoluto: el link del correo vive en el origen de la API, así
+      // que un path relativo redirigiría al 3000 (404) y no a la web.
+      callbackURL: `${window.location.origin}/chats`,
     });
     setSubmitting(false);
     if (error) {

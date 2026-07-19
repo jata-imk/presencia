@@ -1,5 +1,5 @@
 import { google } from "@ai-sdk/google";
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import type { ChatSummary } from "@presencia/shared";
 import type { ServerResponse } from "node:http";
@@ -15,8 +15,8 @@ const SYSTEM_PROMPT =
 @Injectable()
 export class ChatService {
   constructor(
-    private readonly dbService: DbService,
-    private readonly repo: ChatRepository,
+    @Inject(DbService) private readonly dbService: DbService,
+    @Inject(ChatRepository) private readonly repo: ChatRepository,
   ) {}
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {

@@ -40,5 +40,6 @@ La gestión de proyecto (roadmap F0–F13) vive en Notion (página "Presencia").
 ## Convenciones
 
 - Conventional Commits (commitlint lo exige). Código y nombres en inglés; docs de producto en español.
+- **NestJS: inyección con `@Inject(X)` explícito** en todo constructor. El runner dev (tsx/esbuild) no emite `emitDecoratorMetadata`, así que Nest no puede inferir tipos: sin el decorator, la dependencia llega `undefined` en dev (y explota en el primer request).
 - `pnpm lint && pnpm typecheck` deben pasar antes de commit (husky lo fuerza vía lint-staged).
 - Node 22 (`.nvmrc`), pnpm como único package manager.

@@ -1,6 +1,7 @@
 import {
   type CanActivate,
   type ExecutionContext,
+  Inject,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -15,7 +16,9 @@ import { IS_PUBLIC_KEY } from "./public.decorator.js";
 // así que aquí no se re-chequea email_verified.
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  // @Inject explícito: el runner dev (tsx/esbuild) no emite decorator
+  // metadata, así que Nest no puede inferir los tipos del constructor.
+  constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
