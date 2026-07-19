@@ -33,3 +33,7 @@ El roadmap (F0–F13), el backlog y las notas de producto viven en Notion:
 **[Presencia en Notion](https://www.notion.so/Presencia-34961db7db7f80939148c1474cfe5b18)**
 
 La verdad técnica (ADRs, contratos, modelo de datos) vive en este repo.
+
+## Licencia
+
+Software propietario, publicado solo con fines de visibilidad y portafolio. Ver [`LICENSE`](./LICENSE) — todos los derechos reservados.
