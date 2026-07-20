@@ -22,6 +22,13 @@
       "when": 1784443513255,
       "tag": "0002_auth_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784506754911,
+      "tag": "0003_display_name_and_channel_check",
+      "breakpoints": true
     }
   ]
 }

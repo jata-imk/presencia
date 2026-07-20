@@ -26,6 +26,11 @@ export const auth = betterAuth({
   advanced: { database: { generateId: "uuid" } },
   user: {
     additionalFields: {
+      displayName: {
+        type: "string",
+        required: false,
+        input: true,
+      },
       timezone: {
         type: "string",
         required: false,
