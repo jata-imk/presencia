@@ -7,17 +7,9 @@ import { createModelResolver, type ModelResolver } from "./provider-registry.js"
 // modelos aquí y nunca importa un proveedor concreto.
 @Injectable()
 export class AiService {
-  private readonly resolver: ModelResolver = createModelResolver({
-    googleApiKey: env.GOOGLE_GENERATIVE_AI_API_KEY,
-    openaiApiKey: env.OPENAI_API_KEY,
-    anthropicApiKey: env.ANTHROPIC_API_KEY,
-    deepseekApiKey: env.DEEPSEEK_API_KEY,
-    minimaxApiKey: env.MINIMAX_API_KEY,
-    minimaxBaseUrl: env.MINIMAX_BASE_URL,
-    kimiApiKey: env.KIMI_API_KEY,
-    kimiBaseUrl: env.KIMI_BASE_URL,
-    defaultModelId: env.AI_MODEL,
-  });
+  // process.env ya pasó la validación de env.ts al boot; el registry lee las
+  // keys por nombre desde la tabla PROVIDERS (fuente única, ADR-004).
+  private readonly resolver: ModelResolver = createModelResolver(process.env, env.AI_MODEL);
 
   resolveModel(modelId?: string): LanguageModel {
     return this.resolver(modelId);

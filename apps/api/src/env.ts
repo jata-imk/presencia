@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_MODEL_ID, parseModelId, PROVIDERS } from "./ai/provider-registry.js";
 
 // Validación fail-fast del entorno (se invoca en main.ts antes de crear la app).
 // DATABASE_URL (rol owner) es solo para migraciones vía drizzle-kit; el runtime
@@ -9,43 +10,42 @@ const envSchema = z
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_URL: z.url(),
     WEB_URL: z.url(),
-    GOOGLE_GENERATIVE_AI_API_KEY: z.string().min(1),
+    // API keys por proveedor de IA (ADR-004): todas opcionales; solo la del
+    // proveedor de AI_MODEL es obligatoria (lo valida el superRefine abajo).
+    GOOGLE_GENERATIVE_AI_API_KEY: z.string().min(1).optional(),
     OPENAI_API_KEY: z.string().min(1).optional(),
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
     DEEPSEEK_API_KEY: z.string().min(1).optional(),
     MINIMAX_API_KEY: z.string().min(1).optional(),
-    MINIMAX_BASE_URL: z.url().default("https://api.minimax.io/v1"),
+    MINIMAX_BASE_URL: z.url().optional(),
     KIMI_API_KEY: z.string().min(1).optional(),
-    KIMI_BASE_URL: z.url().default("https://api.moonshot.ai/v1"),
+    KIMI_BASE_URL: z.url().optional(),
     // Modelo default con formato "proveedor:modelo" (ADR-004). Cambiar de
-    // proveedor es cambiar esta variable y reiniciar el proceso.
-    AI_MODEL: z
-      .string()
-      .regex(/^(google|openai|anthropic|deepseek|minimax|kimi):.+$/, {
-        message:
-          "AI_MODEL debe tener formato proveedor:modelo (google|openai|anthropic|deepseek|minimax|kimi)",
-      })
-      .default("google:gemini-3.5-flash"),
+    // proveedor es cambiar esta variable y reiniciar el proceso. El formato
+    // y el inventario de proveedores los valida parseModelId (fuente única).
+    AI_MODEL: z.string().default(DEFAULT_MODEL_ID),
     ZEPTOMAIL_TOKEN: z.string().min(1),
     MAIL_FROM: z.email(),
     PORT: z.coerce.number().int().positive().default(3000),
   })
   .superRefine((value, ctx) => {
-    // Fail-fast: el proveedor del modelo default debe tener su API key al boot.
-    const keyByProvider = {
-      google: value.GOOGLE_GENERATIVE_AI_API_KEY,
-      openai: value.OPENAI_API_KEY,
-      anthropic: value.ANTHROPIC_API_KEY,
-      deepseek: value.DEEPSEEK_API_KEY,
-      minimax: value.MINIMAX_API_KEY,
-      kimi: value.KIMI_API_KEY,
-    } as const;
-    const provider = value.AI_MODEL.split(":")[0] as keyof typeof keyByProvider;
-    if (!keyByProvider[provider]) {
+    // Fail-fast: AI_MODEL debe tener formato válido y su proveedor debe tener
+    // API key al boot. Formato e inventario vienen de la tabla PROVIDERS.
+    try {
+      const { provider } = parseModelId(value.AI_MODEL);
+      const envKey = PROVIDERS[provider].envKey;
+      if (!(value as Record<string, unknown>)[envKey]) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["AI_MODEL"],
+          message: `AI_MODEL usa el proveedor "${provider}" pero falta ${envKey} en el entorno`,
+        });
+      }
+    } catch (error) {
       ctx.addIssue({
         code: "custom",
         path: ["AI_MODEL"],
-        message: `AI_MODEL usa el proveedor "${provider}" pero falta su API key en el entorno`,
+        message: error instanceof Error ? error.message : String(error),
       });
     }
   });

@@ -15,7 +15,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { cardContentSchema, socialNetworkSchema } from "@presencia/shared";
-import { createModelResolver } from "../../src/ai/provider-registry.js";
+import { createModelResolver, DEFAULT_MODEL_ID } from "../../src/ai/provider-registry.js";
 import { SYSTEM_PROMPT } from "../../src/chat/system-prompt.js";
 import { culturalPrompts } from "./prompts.js";
 
@@ -28,17 +28,9 @@ const DEFAULT_MODELS = [
   "kimi:kimi-latest",
 ];
 
-const resolveModel = createModelResolver({
-  googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "",
-  openaiApiKey: process.env.OPENAI_API_KEY,
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-  deepseekApiKey: process.env.DEEPSEEK_API_KEY,
-  minimaxApiKey: process.env.MINIMAX_API_KEY,
-  minimaxBaseUrl: process.env.MINIMAX_BASE_URL ?? "https://api.minimax.io/v1",
-  kimiApiKey: process.env.KIMI_API_KEY,
-  kimiBaseUrl: process.env.KIMI_BASE_URL ?? "https://api.moonshot.ai/v1",
-  defaultModelId: process.env.AI_MODEL ?? "google:gemini-3.5-flash",
-});
+// Mismo cableado que producción: el registry lee keys y base URLs desde la
+// tabla PROVIDERS, sin mapping duplicado aquí.
+const resolveModel = createModelResolver(process.env, process.env.AI_MODEL ?? DEFAULT_MODEL_ID);
 
 // Mock de la tool de ADR-005: mismo contrato de entrada que tendrá la real,
 // pero sin tocar la DB. Mide si el modelo la llama y si su input pasa Zod.
@@ -132,7 +124,13 @@ async function main(): Promise<void> {
   const prompts = promptFilter
     ? culturalPrompts.filter((p) => promptFilter.includes(p.id))
     : culturalPrompts;
-  const delayMs = Number(process.env.AI_SUITE_DELAY_MS ?? 10_000);
+  const delayRaw = Number(process.env.AI_SUITE_DELAY_MS ?? 10_000);
+  const delayMs = Number.isFinite(delayRaw) && delayRaw >= 0 ? delayRaw : 10_000;
+  if (delayMs !== delayRaw) {
+    console.warn(
+      `⚠ AI_SUITE_DELAY_MS inválido ("${process.env.AI_SUITE_DELAY_MS}"); usando 10000ms`,
+    );
+  }
   const date = new Date().toISOString().slice(0, 10);
   const lines: string[] = [
     `# Suite de regresión cultural — ${date}`,
