@@ -4,6 +4,7 @@ import { createModelResolver, type AiProviderConfig } from "./provider-registry.
 const baseConfig: AiProviderConfig = {
   googleApiKey: "test-google-key",
   minimaxBaseUrl: "https://api.minimax.io/v1",
+  kimiBaseUrl: "https://api.moonshot.ai/v1",
   defaultModelId: "google:gemini-3.5-flash",
 };
 
@@ -19,6 +20,18 @@ describe("createModelResolver", () => {
       openaiApiKey: "test-openai-key",
     });
     expect(resolve("openai:gpt-5-mini")).toMatchObject({ modelId: "gpt-5-mini" });
+  });
+
+  it("registra anthropic, deepseek y kimi solo si hay API key", () => {
+    const resolve = createModelResolver({
+      ...baseConfig,
+      anthropicApiKey: "test-anthropic-key",
+      deepseekApiKey: "test-deepseek-key",
+      kimiApiKey: "test-kimi-key",
+    });
+    expect(resolve("anthropic:claude-sonnet-5")).toMatchObject({ modelId: "claude-sonnet-5" });
+    expect(resolve("deepseek:deepseek-chat")).toMatchObject({ modelId: "deepseek-chat" });
+    expect(resolve("kimi:kimi-latest")).toMatchObject({ modelId: "kimi-latest" });
   });
 
   it("registra minimax solo si hay API key", () => {

@@ -19,13 +19,24 @@ import { createModelResolver } from "../../src/ai/provider-registry.js";
 import { SYSTEM_PROMPT } from "../../src/chat/system-prompt.js";
 import { culturalPrompts } from "./prompts.js";
 
-const DEFAULT_MODELS = ["google:gemini-3.5-flash", "openai:gpt-5-mini", "minimax:MiniMax-M2"];
+const DEFAULT_MODELS = [
+  "google:gemini-3.5-flash",
+  "openai:gpt-5-mini",
+  "anthropic:claude-haiku-4-5",
+  "deepseek:deepseek-v4-flash",
+  "minimax:MiniMax-M2",
+  "kimi:kimi-latest",
+];
 
 const resolveModel = createModelResolver({
   googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY,
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+  deepseekApiKey: process.env.DEEPSEEK_API_KEY,
   minimaxApiKey: process.env.MINIMAX_API_KEY,
   minimaxBaseUrl: process.env.MINIMAX_BASE_URL ?? "https://api.minimax.io/v1",
+  kimiApiKey: process.env.KIMI_API_KEY,
+  kimiBaseUrl: process.env.KIMI_BASE_URL ?? "https://api.moonshot.ai/v1",
   defaultModelId: process.env.AI_MODEL ?? "google:gemini-3.5-flash",
 });
 
@@ -38,31 +49,25 @@ const mockCardInputSchema = z.object({
 
 interface RunResult {
   text: string;
+  finishReason: string;
   toolCalls: number;
   toolInputsValid: boolean;
   error?: string;
 }
 
 async function runPrompt(modelId: string, promptText: string): Promise<RunResult> {
-  let toolCalls = 0;
-  let toolInputsValid = true;
-
   const crearBorrador = tool({
     description:
       "Crea un borrador de publicación para una red social. Úsala cuando el " +
       "usuario pida explícitamente un post, borrador o guion para una red.",
     inputSchema: mockCardInputSchema,
-    execute: (input) => {
-      toolCalls += 1;
-      const parsed = mockCardInputSchema.safeParse(input);
-      if (!parsed.success) toolInputsValid = false;
-      return Promise.resolve({
-        cardId: `mock-${toolCalls}`,
+    execute: (input) =>
+      Promise.resolve({
+        cardId: "mock-card",
         archetype: input.content.archetype,
         network: input.network,
         status: "draft",
-      });
-    },
+      }),
   });
 
   try {
@@ -73,12 +78,21 @@ async function runPrompt(modelId: string, promptText: string): Promise<RunResult
       tools: { crear_borrador_publicacion: crearBorrador },
       stopWhen: stepCountIs(3),
     });
-    return { text: result.text, toolCalls, toolInputsValid };
+    // Los intentos con input inválido no ejecutan la tool pero sí cuentan:
+    // miden la disciplina de tool calling del proveedor (ADR-004).
+    const attempts = result.steps.flatMap((step) => step.toolCalls);
+    return {
+      text: result.text,
+      finishReason: result.finishReason,
+      toolCalls: attempts.length,
+      toolInputsValid: attempts.every((call) => call.invalid !== true),
+    };
   } catch (error) {
     return {
       text: "",
-      toolCalls,
-      toolInputsValid,
+      finishReason: "error",
+      toolCalls: 0,
+      toolInputsValid: true,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -95,9 +109,23 @@ function findRepoRoot(start: string): string {
 }
 
 async function main(): Promise<void> {
-  const models = (
+  const requested = (
     process.env.AI_SUITE_MODELS?.split(",").map((m) => m.trim()) ?? DEFAULT_MODELS
   ).filter(Boolean);
+  // Proveedores sin API key se saltan (con aviso) en vez de llenar el
+  // reporte de filas de error.
+  const models = requested.filter((id) => {
+    try {
+      resolveModel(id);
+      return true;
+    } catch {
+      console.warn(`⚠ ${id}: proveedor sin configurar (falta API key) — saltado`);
+      return false;
+    }
+  });
+  if (models.length === 0) {
+    throw new Error("Ningún modelo configurado; revisa las API keys del .env");
+  }
   const promptFilter = process.env.AI_SUITE_PROMPTS?.split(",")
     .map((p) => p.trim())
     .filter(Boolean);
@@ -130,7 +158,10 @@ async function main(): Promise<void> {
       if (result.error) {
         lines.push(`**Error:** \`${result.error}\``, "");
       } else {
-        lines.push(result.text.trim() || "*(sin texto — solo tool call)*", "");
+        lines.push(
+          result.text.trim() || `*(sin texto — finishReason: ${result.finishReason})*`,
+          "",
+        );
       }
       if (prompt.expectsTool || result.toolCalls > 0) {
         lines.push(

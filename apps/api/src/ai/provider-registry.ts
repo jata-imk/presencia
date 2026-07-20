@@ -1,3 +1,5 @@
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -12,8 +14,12 @@ import { createProviderRegistry, type LanguageModel } from "ai";
 export interface AiProviderConfig {
   googleApiKey: string;
   openaiApiKey?: string;
+  anthropicApiKey?: string;
+  deepseekApiKey?: string;
   minimaxApiKey?: string;
   minimaxBaseUrl: string;
+  kimiApiKey?: string;
+  kimiBaseUrl: string;
   defaultModelId: string;
 }
 
@@ -27,11 +33,24 @@ export function createModelResolver(config: AiProviderConfig): ModelResolver {
   if (config.openaiApiKey) {
     providers.openai = createOpenAI({ apiKey: config.openaiApiKey });
   }
+  if (config.anthropicApiKey) {
+    providers.anthropic = createAnthropic({ apiKey: config.anthropicApiKey });
+  }
+  if (config.deepseekApiKey) {
+    providers.deepseek = createDeepSeek({ apiKey: config.deepseekApiKey });
+  }
   if (config.minimaxApiKey) {
     providers.minimax = createOpenAICompatible({
       name: "minimax",
       baseURL: config.minimaxBaseUrl,
       apiKey: config.minimaxApiKey,
+    });
+  }
+  if (config.kimiApiKey) {
+    providers.kimi = createOpenAICompatible({
+      name: "kimi",
+      baseURL: config.kimiBaseUrl,
+      apiKey: config.kimiApiKey,
     });
   }
 

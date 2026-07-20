@@ -11,14 +11,19 @@ const envSchema = z
     WEB_URL: z.url(),
     GOOGLE_GENERATIVE_AI_API_KEY: z.string().min(1),
     OPENAI_API_KEY: z.string().min(1).optional(),
+    ANTHROPIC_API_KEY: z.string().min(1).optional(),
+    DEEPSEEK_API_KEY: z.string().min(1).optional(),
     MINIMAX_API_KEY: z.string().min(1).optional(),
     MINIMAX_BASE_URL: z.url().default("https://api.minimax.io/v1"),
+    KIMI_API_KEY: z.string().min(1).optional(),
+    KIMI_BASE_URL: z.url().default("https://api.moonshot.ai/v1"),
     // Modelo default con formato "proveedor:modelo" (ADR-004). Cambiar de
     // proveedor es cambiar esta variable y reiniciar el proceso.
     AI_MODEL: z
       .string()
-      .regex(/^(google|openai|minimax):.+$/, {
-        message: "AI_MODEL debe tener formato proveedor:modelo (google|openai|minimax)",
+      .regex(/^(google|openai|anthropic|deepseek|minimax|kimi):.+$/, {
+        message:
+          "AI_MODEL debe tener formato proveedor:modelo (google|openai|anthropic|deepseek|minimax|kimi)",
       })
       .default("google:gemini-3.5-flash"),
     ZEPTOMAIL_TOKEN: z.string().min(1),
@@ -30,7 +35,10 @@ const envSchema = z
     const keyByProvider = {
       google: value.GOOGLE_GENERATIVE_AI_API_KEY,
       openai: value.OPENAI_API_KEY,
+      anthropic: value.ANTHROPIC_API_KEY,
+      deepseek: value.DEEPSEEK_API_KEY,
       minimax: value.MINIMAX_API_KEY,
+      kimi: value.KIMI_API_KEY,
     } as const;
     const provider = value.AI_MODEL.split(":")[0] as keyof typeof keyByProvider;
     if (!keyByProvider[provider]) {

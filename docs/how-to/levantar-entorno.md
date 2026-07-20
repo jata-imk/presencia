@@ -72,8 +72,8 @@ Notas del modo B:
 
 ## IA multi-proveedor (desde F3, ADR-004)
 
-- El modelo activo se elige con `AI_MODEL` (formato `proveedor:modelo`, ej. `google:gemini-3.5-flash`, `openai:gpt-5-mini`, `minimax:MiniMax-M2`). Cambiar de proveedor = editar la variable y reiniciar el proceso (`pnpm dev` en local, reciclar contenedor en prod).
-- Solo la API key del proveedor de `AI_MODEL` es obligatoria; `OPENAI_API_KEY` y `MINIMAX_API_KEY` son opcionales (sin key, ese proveedor no se registra y `resolveModel` truena con mensaje claro).
+- El modelo activo se elige con `AI_MODEL` (formato `proveedor:modelo`). Proveedores soportados: `google`, `openai`, `anthropic`, `deepseek`, `minimax`, `kimi` (ej. `google:gemini-3.5-flash`, `anthropic:claude-haiku-4-5`, `deepseek:deepseek-v4-flash`). Cambiar de proveedor = editar la variable y reiniciar el proceso (`pnpm dev` en local, reciclar contenedor en prod).
+- Solo la API key del proveedor de `AI_MODEL` es obligatoria; las demás (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `MINIMAX_API_KEY`, `KIMI_API_KEY`) son opcionales — sin key, ese proveedor no se registra y la suite lo salta con aviso.
 - Suite de regresión cultural: `pnpm --filter @presencia/api suite:cultural` corre los prompts de `apps/api/scripts/cultural-suite/` contra los modelos de `AI_SUITE_MODELS` (o el trío default) y deja el reporte en `docs/reference/suite-cultural/`.
 
 ## VS Code

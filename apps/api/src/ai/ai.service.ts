@@ -10,8 +10,12 @@ export class AiService {
   private readonly resolver: ModelResolver = createModelResolver({
     googleApiKey: env.GOOGLE_GENERATIVE_AI_API_KEY,
     openaiApiKey: env.OPENAI_API_KEY,
+    anthropicApiKey: env.ANTHROPIC_API_KEY,
+    deepseekApiKey: env.DEEPSEEK_API_KEY,
     minimaxApiKey: env.MINIMAX_API_KEY,
     minimaxBaseUrl: env.MINIMAX_BASE_URL,
+    kimiApiKey: env.KIMI_API_KEY,
+    kimiBaseUrl: env.KIMI_BASE_URL,
     defaultModelId: env.AI_MODEL,
   });
 
