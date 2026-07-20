@@ -8,4 +8,10 @@
 
 **Descartado:** LangChain/LangGraph — abstracción con impuestos innecesarios para un agentic loop + tools.
 
-**Pendiente:** modelo default por acción (chat vs generación vs adaptación) según la suite de regresión cultural.
+**Implementación (F3, 2026-07-19):** registry interno (`apps/api/src/ai/provider-registry.ts`) con ids `proveedor:modelo` (`google:…`, `openai:…`, `minimax:…`; MiniMax vía `@ai-sdk/openai-compatible`). `resolveModel(modelId?)` cae al default de la env var `AI_MODEL` — cambiar de proveedor es editar la variable y reiniciar el proceso, palanca del **operador**, no del usuario. Solo la key del proveedor default es obligatoria (fail-fast al boot en `env.ts`); proveedores sin key no se registran. El resto de la app pide modelos vía `AiService` y nunca importa un proveedor concreto.
+
+**Puerta abierta (decidido 2026-07-19, NO construido):** el usuario final no elige modelo en V1. Si algún día se quiere selector por chat, el cambio es acotado: columna `chats.model_id` nullable + pasar ese id a `resolveModel` — esta capa no cambia. No se construye UI, columna ni catálogo hasta tener evidencia de necesidad (YAGNI).
+
+**Suite cultural:** `pnpm --filter @presencia/api suite:cultural` (script en `apps/api/scripts/cultural-suite/`) corre los ~10 prompts contra cada modelo con el system prompt de producción y una tool mock, y genera reporte lado a lado en `docs/reference/suite-cultural/` para juicio humano (sin LLM juez — el criterio cultural es del founder).
+
+**Pendiente:** modelo default por acción (chat vs generación vs adaptación) según los resultados versionados de la suite en `docs/reference/suite-cultural/`.
