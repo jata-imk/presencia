@@ -9,4 +9,4 @@
 - VPS por cliente — caro (~$30/cliente/mes), infierno operativo, nada del producto requiere cómputo aislado.
 - Schema/DB por tenant — para B2B enterprise, no aplica.
 
-**Ver también:** [`docs/reference/modelo-de-datos.md`](../../reference/modelo-de-datos.md) — dónde muerde el RLS tabla por tabla.
+**Ver también:** [`docs/reference/modelo-de-datos.md`](../../reference/modelo-de-datos.md) — dónde muerde el RLS tabla por tabla. El aislamiento se verifica con `apps/api/src/db/rls.spec.ts` (corre como `presencia_app` contra la base real).

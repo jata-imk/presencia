@@ -14,6 +14,7 @@ pnpm install        # instala workspaces + hooks de husky
 pnpm lint           # ESLint en todos los packages
 pnpm typecheck      # tsc --noEmit en todos los packages
 pnpm format         # Prettier sobre todo el repo
+pnpm --filter @presencia/api test   # tests de la API (requiere DB, ver abajo)
 ```
 
 ## Docker: dos modos
@@ -43,8 +44,9 @@ ssh usuario@ip-del-vps "cd presencia && docker compose up -d"
 Para que la app local (o un cliente SQL) alcance el Postgres remoto, túnel SSH:
 
 ```bash
-ssh -N -L 5432:localhost:5432 usuario@ip-del-vps
-# ahora localhost:5432 apunta al Postgres del VPS
+# El puerto local debe coincidir con POSTGRES_PORT del .env (hoy 5434)
+ssh -N -L 5434:localhost:5434 usuario@ip-del-vps
+# ahora localhost:5434 apunta al Postgres del VPS
 ```
 
 Notas del modo B:
@@ -66,6 +68,7 @@ Notas del modo B:
    `APP_DATABASE_URL` debe conectar con `presencia_app` (sujeto a RLS); `DATABASE_URL` (owner) queda solo para migraciones.
 
 4. `pnpm dev` levanta api (puerto 3000) y web (5173, con proxy `/api` → 3000). La API lee `.env` de la raíz vía `tsx --env-file`.
+5. `pnpm --filter @presencia/api test` corre los tests de la API (vitest). El test de RLS (`src/db/rls.spec.ts`, DoD de F2) conecta contra la base real como `presencia_app` usando el mismo `.env` — necesita la DB alcanzable (túnel o compose local).
 
 ## VS Code
 
