@@ -69,12 +69,16 @@ const culturalSuiteTools = {
   }),
 };
 
+interface ToolCallAttempt {
+  toolName: string;
+  valid: boolean;
+  input: unknown;
+}
+
 interface RunResult {
   text: string;
   finishReason: string;
-  toolCalls: number;
-  toolInputsValid: boolean;
-  toolNames: string[];
+  toolAttempts: ToolCallAttempt[];
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
@@ -91,14 +95,18 @@ async function runPrompt(modelId: string, promptText: string): Promise<RunResult
       stopWhen: stepCountIs(3),
     });
     // Los intentos con input inválido no ejecutan la tool pero sí cuentan:
-    // miden la disciplina de tool calling del proveedor (ADR-004).
+    // miden la disciplina de tool calling del proveedor (ADR-004). Se guarda
+    // el input completo (la card generada) para que el veredicto humano
+    // pueda juzgar el copy, no solo si la tool se llamó bien.
     const attempts = result.steps.flatMap((step) => step.toolCalls);
     return {
       text: result.text,
       finishReason: result.finishReason,
-      toolCalls: attempts.length,
-      toolInputsValid: attempts.every((call) => call.invalid !== true),
-      toolNames: attempts.map((call) => call.toolName),
+      toolAttempts: attempts.map((call) => ({
+        toolName: call.toolName,
+        valid: call.invalid !== true,
+        input: call.input,
+      })),
       inputTokens: result.usage.inputTokens ?? 0,
       outputTokens: result.usage.outputTokens ?? 0,
       totalTokens: result.usage.totalTokens ?? 0,
@@ -107,9 +115,7 @@ async function runPrompt(modelId: string, promptText: string): Promise<RunResult
     return {
       text: "",
       finishReason: "error",
-      toolCalls: 0,
-      toolInputsValid: true,
-      toolNames: [],
+      toolAttempts: [],
       inputTokens: 0,
       outputTokens: 0,
       totalTokens: 0,
@@ -204,10 +210,27 @@ async function main(): Promise<void> {
           "",
         );
       }
-      if (prompt.expectsTool || result.toolCalls > 0) {
+      const toolCalls = result.toolAttempts.length;
+      if (prompt.expectsTool || toolCalls > 0) {
+        const toolNames = result.toolAttempts.map((a) => a.toolName).join(", ");
+        const allValid = result.toolAttempts.every((a) => a.valid);
         lines.push(
-          `- ¿Llamó la tool?: ${result.toolCalls > 0 ? `sí (${result.toolCalls}: ${result.toolNames.join(", ")})` : "no"}`,
-          `- ¿Input Zod-válido?: ${result.toolCalls > 0 ? (result.toolInputsValid ? "sí" : "NO") : "n/a"}`,
+          `- ¿Llamó la tool?: ${toolCalls > 0 ? `sí (${toolCalls}: ${toolNames})` : "no"}`,
+          `- ¿Input Zod-válido?: ${toolCalls > 0 ? (allValid ? "sí" : "NO") : "n/a"}`,
+          "",
+        );
+      }
+      // Card generada por cada tool call (aunque el input haya sido
+      // inválido — así se ve qué mandó el modelo, no solo si pasó Zod).
+      for (const attempt of result.toolAttempts) {
+        lines.push(
+          `<details><summary>Card generada — <code>${attempt.toolName}</code>${attempt.valid ? "" : " ⚠️ input inválido"}</summary>`,
+          "",
+          "```json",
+          JSON.stringify(attempt.input, null, 2),
+          "```",
+          "",
+          "</details>",
           "",
         );
       }

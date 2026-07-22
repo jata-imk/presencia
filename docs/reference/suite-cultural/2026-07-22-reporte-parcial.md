@@ -12,57 +12,134 @@ registro cercano sin caer en caricatura. Lo que suene a "español de aeropuerto"
 
 ### google:gemini-3.5-flash
 
-¡Listo! Ya creé el borrador para tu publicación de Instagram. Quedó con ese tono relajado y de barrio que me pediste, perfecto para antojar a todos este viernes.
+¡Listo! Ya creé tu borrador para Instagram con todo el sabor de barrio de "El Trompo Feliz".
 
-Ya lo tienes guardado en tu panel de Presencia para que le eches un ojo y lo publiques cuando quieras. ¡Mucho éxito con esa venta de tacos! 🌮✨
+La publicación ya incluye el tono relajado que buscabas, los detalles de la promo de este viernes (2x1 de 6 a 11 pm solo en sucursal) y una propuesta de imagen súper antojable para captar la atención de tus clientes en el feed.
+
+¿Te gustaría hacerle algún ajuste al texto o pasamos a planear otra red?
 
 - ¿Llamó la tool?: sí (1: crear_borrador_visual)
 - ¿Input Zod-válido?: sí
 
-- Tokens: input 2004 / output 762 / total 2766
+<details><summary>Card generada — <code>crear_borrador_visual</code></summary>
+
+```json
+{
+  "caption": "¡Este viernes se armó la buena en El Trompo Feliz! 🌮🔥\n\nPara que arranques el fin de semana como se debe, te traemos una promo de esas que no se pueden rechazar: ¡2x1 en todos tus tacos al pastor! 🤤\n\nCáele a la sucursal este viernes de 6:00 pm a 11:00 pm y déjate consentir por el mero mero sabor del barrio. Trae al compa, a la novia o a la familia, ¡aquí hay espacio para todos!\n\n⚠️ Ojo con las reglas del juego:\n- Solo aplica en sucursal (para echar el chal a gusto).\n- Válido únicamente este viernes de 6:00 pm a 11:00 pm.\n\n¿Con quién vas a venir a armar la taquiza? Etiquétalo en los comentarios 👇",
+  "hashtags": [
+    "TacosAlPastor",
+    "ElTrompoFeliz",
+    "ViernesDeTacos",
+    "PromoDeTacos",
+    "AntojoMexicano",
+    "TacosDeBarrio"
+  ],
+  "imagePrompt": "A close-up, appetizing photo of two plates of authentic Mexican tacos al pastor, topped with fresh chopped cilantro, onions, pineapple, and a splash of lime. The tacos are served on traditional colorful plastic plates with a rustic wooden table background. In the background, a warm, inviting Mexican taquería atmosphere with a glowing neon sign that says 'El Trompo Feliz'. Professional food photography, vibrant colors, warm lighting.",
+  "network": "instagram"
+}
+```
+
+</details>
+
+- Tokens: input 2403 / output 1187 / total 3590
 
 ### anthropic:claude-haiku-4-5
 
-¡Listo! 🎉 Te armé un borrador para Instagram con onda de barrio. El copy es directo, desenfadado y llama a la acción sin ser intenso.
+¡Listo! Te armé un borrador con ese tono relajado y de barrio que pediste.
 
-El prompt para la imagen pide los tacos en toda su gloria (jugosos, con piña) y el ambiente de taquería clásica para que la gente sienta que está en tu lugar. El texto grande de "2x1" en la imagen va a ser lo primero que vean al scrollear.
+El post incluye:
 
-Los hashtags están balanceados entre lo local y lo buscable, así llegas a gente que sigue marcas de comida mexicana.
+- **Gancho directo** con "¿Ey, qué onda?" para que suene natural
+- **Info clara** de la promo (2x1, viernes 6-11pm, solo sucursal)
+- **Lenguaje barrial** pero sin exagerar: "ándale", "hermano", "vente con los cuates"
+- **Hashtags estratégicos** mezclando producto, promo, nombre del negocio y keywords populares
+- **Prompt para la imagen**: tacos jugosos y apetitosos con ese vibe de taquería de barrio
 
-¿Quieres que ajuste algo? Tipo cambiar el tono, resaltar más que es solo en sucursal, o agregar detalles diferentes.
+El borrador está guardado. Si quieres cambiar algo del caption, los hashtags o la descripción de la imagen, me das el grito y lo ajustamos.
 
 - ¿Llamó la tool?: sí (1: crear_borrador_visual)
 - ¿Input Zod-válido?: sí
 
-- Tokens: input 3246 / output 574 / total 3820
+<details><summary>Card generada — <code>crear_borrador_visual</code></summary>
+
+```json
+{
+  "caption": "¡Ey, qué onda! 🌮 Este viernes de 6 a 11pm en El Trompo Feliz tenemos la promo que andabas esperando: TACOS AL PASTOR 2X1\n\nÁndale, aprovecha que nada más es en sucursal y solo este viernes. Que no se te pase, hermano. Vente con los cuates, la familia, quien quieras — a comerse unos tacos de verdad.\n\n#TacosAlPastor #Promo2x1 #ElTrompoFeliz #Taquería #ViernesDePromo #ViernesTornado #TacosDeBarrio #ComidaMexicana",
+  "hashtags": [
+    "TacosAlPastor",
+    "Promo2x1",
+    "ElTrompoFeliz",
+    "Taquería",
+    "ViernesDePromo",
+    "ViernesTornado",
+    "TacosDeBarrio",
+    "ComidaMexicana"
+  ],
+  "imagePrompt": "Fotografía de tacos al pastor recién preparados, humeantes, con carne dorada y jugosa, cebolla morada y piña fresca. Fondo con ambiente de taquería de barrio cálido y acogedor. Incluir texto grande que diga \"2X1\" en rojo vibrante. Estilo informal y apetitoso.",
+  "network": "instagram"
+}
+```
+
+</details>
+
+- Tokens: input 3299 / output 654 / total 3953
 
 ### deepseek:deepseek-v4-flash
 
-¡Listo, mi buen! El borrador ya está armado para Instagram. Aquí te va el resumen de lo que generé:
+¡Listo, ya quedó el borrador para Instagram! 🎉 Aquí te va el resumen de lo que armé:
 
 ---
 
-📸 **Borrador para Instagram — "El Trompo Feliz"**
+**📱 Red:** Instagram (Post / Imagen única)
 
-**Caption:** Con tono bien relajado y de barrio, lo puse como si el taquero te estuviera hablando directo — sin tanto rollo, directo al chile:
+**🎨 Descripción de la imagen sugerida:**
+Un primer plano bien jugoso de tacos al pastor en plato de barro, con su piña asada, cilantro y cebolla. Al fondo, el trompo con la carne dorándose y un letrero de neón rojo y verde de _"El Trompo Feliz"_. Estilo de puesto callejero pero con buena luz — pa' que se antoje hasta el que ya cenó.
 
-- Anuncio del **2x1 en tacos al pastor**
-- Viernes, **solo en sucursal, de 6 a 11 pm**
-- Invitación casual a ir con alguien más
-- Toques de humor ("no te hagas wey", "agarra a tu compa")
+**📝 Caption:**
 
-**🖼️ Prompt para la imagen:** Le pedí al generador una foto bien vibrante con el trompo girando, tacos servidos con piña y salsita, colores cálidos y el letrero con los detalles de la promo.
+> 📍 Este viernes, pura carnita asada y piña asada pa' bautizar el finde 🌮🔥
+>
+> Ven al local de El Trompo Feliz y llévate un 2x1 EN TODOS LOS TACOS AL PASTOR. Sí leíste bien… ¡DOS POR UNO! 🤯
+>
+> ✅ Válido exclusivamente en sucursal
+> ⏰ De 6:00 PM a 11:00 PM
+> 🗓️ Este viernes nomás
+>
+> Tráete el hambre y a tu compa de confianza porque esto se va a poner bueno. Corre la voz, porque los trompos vuelan. 🐷🔄🔥
 
-**Hashtags:** Incluí #ElTrompoFeliz, #TacosAlPastor, #2x1, #ViernesDeTacos, #Barrio, etc.
+**#️⃣ Hashtags:**
+#TacosAlPastor #ElTrompoFeliz #2x1 #TacosMX #Barrio #ViernesDeTacos #PromoExclusiva #CDMX
 
 ---
 
-Si quieres cambiarle algo al tono, ajustar el horario o agregar alguna salsa especial que tengas, dímelo y lo ajustamos al toque. ¿Le entras así o le movemos? 🌮🔥
+Si quieres ajustar algo —más corta la letra, cambiar el horario, agregar dirección, o si el diseño lo piensas hacer con foto real del local— sólo dímelo y lo rifamos. 🔥
 
 - ¿Llamó la tool?: sí (1: crear_borrador_visual)
 - ¿Input Zod-válido?: sí
 
-- Tokens: input 2663 / output 921 / total 3584
+<details><summary>Card generada — <code>crear_borrador_visual</code></summary>
+
+```json
+{
+  "caption": "📍 Este viernes, pura carnita asada y piña asada pa' bautizar el finde 🌮🔥\n\nVen al local de El Trompo Feliz y llévate un 2x1 EN TODOS LOS TACOS AL PASTOR. Sí leíste bien… ¡DOS POR UNO! 🤯\n\n✅ Válido exclusivamente en sucursal\n⏰ De 6:00 PM a 11:00 PM\n🗓️ Este viernes nomás\n\nTráete el hambre y a tu compa de confianza porque esto se va a poner bueno. Corre la voz, porque los trompos vuelan. 🐷🔄🔥\n\n#TacosAlPastor #ElTrompoFeliz #2x1 #TacosMX #Barrio #ViernesDeTacos #PromoExclusiva #CDMX",
+  "hashtags": [
+    "#TacosAlPastor",
+    "#ElTrompoFeliz",
+    "#2x1",
+    "#TacosMX",
+    "#Barrio",
+    "#ViernesDeTacos",
+    "#PromoExclusiva",
+    "#CDMX"
+  ],
+  "imagePrompt": "Un primer plano jugoso de tacos al pastor en un plato de barro, con piña asada, cilantro y cebolla, al fondo se ve el trompo vertical con la carne dorándose y un letrero de neón rojo y verde que dice \"El Trompo Feliz\". Estilo vibrante, como de puesto callejero pero con buena luz, que se le antoje a cualquiera.",
+  "network": "instagram"
+}
+```
+
+</details>
+
+- Tokens: input 2639 / output 1021 / total 3660
 
 ## tool-guion-cafe (espera tool call)
 
@@ -70,49 +147,100 @@ Si quieres cambiarle algo al tono, ajustar el horario o agregar alguna salsa esp
 
 ### google:gemini-3.5-flash
 
-¡Listo! Ya creé el borrador de tu guion de TikTok con el estilo ASMR que me pediste para tu cafetería, **La Canela**.
+¡Listo! Ya tienes creado el borrador de tu guion de TikTok en la plataforma.
 
-Me enfoqué totalmente en resaltar los sonidos tan característicos de la preparación del café de olla (el agua en el barro, el piloncillo, el crujido de la canela) para lograr ese efecto satisfactorio que atrapa a la gente en los primeros segundos. También te dejé notas de grabación clave para que el audio quede impecable.
+Me enfoqué totalmente en el formato ASMR para que los sonidos del barro, el piloncillo y el café colándose sean los verdaderos protagonistas y enganchen a tu audiencia desde el primer segundo.
 
-¿Qué te parece? Si quieres que le hagamos algún ajuste, dime y lo modificamos de volada.
+Puedes revisar los detalles de la grabación, el copy y los hashtags en tu sección de borradores. ¡Mucho éxito con la grabación en La Canela! Si necesitas algún cambio, solo dime.
 
 - ¿Llamó la tool?: sí (1: crear_borrador_video)
 - ¿Input Zod-válido?: sí
 
-- Tokens: input 2620 / output 1456 / total 4076
+<details><summary>Card generada — <code>crear_borrador_video</code></summary>
+
+```json
+{
+  "hook": "El sonido que tu mañana necesita... Escucha cómo preparamos el café de olla perfecto en La Canela. ☕️✨",
+  "script": "[0:00 - 0:05]\n(Visual: Toma cerrada de la olla de barro con agua hirviendo. Se ve una raja de canela flotando y el piloncillo disolviéndose lentamente)\n(SFX: Sonido claro de burbujeo de agua y el sutil crujido de la canela)\n\n[0:05 - 0:10]\n(Visual: Una mano vierte con delicadeza el café molido directamente en la olla)\n(SFX: El suave \"shhh\" del café al tocar el agua caliente)\n\n[0:10 - 0:15]\n(Visual: Mezclando suavemente el café con una cuchara de madera en círculos lentos)\n(SFX: El roce de la madera contra el barro de la olla)\n\n[0:15 - 0:22]\n(Visual: Vertiendo el café de olla caliente a través de un colador de tela directamente a un jarrito de barro humeante)\n(SFX: El chorro del café cayendo en el jarrito, \"glug, glug, glug\")\n\n[0:22 - 0:30]\n(Visual: El jarrito de café en la barra de La Canela con un sutil humo subiendo. Al fondo se ve el logo de la cafetería de forma estética)\n(Texto en pantalla: Te esperamos en La Canela ☕️)\n(SFX: El sonido de fondo de la cafetería, muy tenue)",
+  "caption": "Sube el volumen y déjate consentir por el sonido y el aroma de nuestro café de olla tradicional. ☕️🍂 Hecho con piloncillo, canela y mucho amor en La Canela. ¿Con quién se te antoja echar el chal hoy? 👇🏽",
+  "hashtags": ["cafedeolla", "asmr", "cafeteria", "lacanela", "coffeetime", "antojo"],
+  "recordingNotes": "Graba en un espacio con el menor ruido de fondo posible para que destaquen los sonidos reales (puedes usar un micrófono de solapa cerca de la olla). Usa planos muy cerrados (macro) y estéticos de los ingredientes. No pongas música de fondo, o si lo haces, que sea una melodía instrumental sumamente baja.",
+  "network": "tiktok"
+}
+```
+
+</details>
+
+- Tokens: input 2650 / output 1458 / total 4108
 
 ### anthropic:claude-haiku-4-5
 
-Voy a crear un guion ASMR para TikTok de tu cafetería. Antes de hacerlo, me gustaría confirmar algunos detalles para que sea exacto:
+Perfecto, voy a crear un guion ASMR para TikTok de tu café de olla en La Canela. Antes de armarlo, te pregunto dos cosas rápido:
 
-1. **Tono/Vibe**: ¿Quieres que sea muy relajante y minimalista (solo sonidos), o prefieres que haya una voz en off explicando brevemente?
-2. **Enfoque visual**: ¿Qué momentos quieres destacar? (molienda del grano, el agua hirviendo, la olla tradicional, el aroma, el vertido final)
-3. **Hook/Enganche**: ¿Algo como "El café que tus abuelos tomaban" o "30 segundos de pura magia en olla"? ¿O algo más cercano a tu marca?
-4. **Call-to-action**: ¿Quieres invitar a que visiten La Canela, que prueben el café, o solo que disfruten el video?
+1. **¿Qué tono quieres?** ¿Algo más relajante y meditativo, o con un poquito de energía/curiosidad que invite a probar?
+2. **¿Hay algo específico en tu proceso que quieras destacar?** Por ejemplo: el moler del café, el sonido del agua caliente, la canela que se mete, el vertido final... ¿algo que te gustaría que sea el protagonista del video?
 
-Con estos datos armo un guion que sea cortito, visual y muy ASMR. 🎬☕
+Con eso armamos un guion que suene auténtico y enganche a la primera.
 
 - ¿Llamó la tool?: no
 - ¿Input Zod-válido?: n/a
 
-- Tokens: input 1406 / output 279 / total 1685
+- Tokens: input 1406 / output 190 / total 1596
 
 ### deepseek:deepseek-v4-flash
 
-¡Suena perfecto! Un ASMR de café de olla en **La Canela** va a quedar muy bien en TikTok. 🔥
+¡Listo! 🎬 El guion para TikTok ya quedó armado. Aquí te va el resumen de lo que incluye:
 
-Antes de soltar el guion, ¿me ayudas con un par de detalles?
+**📝 Hook:** Arranca con sonido ambiente de cafetería y el golpe de la cuchara contra la olla — eso engancha al que se queda viendo.
 
-1. **Llamado a la acción**: ¿Quieres que invite a visitar la cafetería, a pedir para llevar, o solo mostrar el proceso sin CTA por ahora?
-2. **Pilar o promoción**: ¿Hay algún mensaje especial que quieras transmitir (ej. "café 100% artesanal", "receta de la abuela", "esta semana 2x1 en café de olla") o que lo deje genérico?
-3. **Sonido/edición**: ¿Tienes pensado algún sonido de fondo además de los ASMR (puedo sugerir uno) o lo dejamos 100% silencios y ambiente?
+**🎥 Guion (20-30 segundos):**
 
-Con eso te armo el guion exacto de 20-30 segundos. ☕✨
+- **0:00** → Agua hirviendo en olla de barro (puro burbujeo)
+- **0:05** → Piloncillo cayendo y derritiéndose
+- **0:10** → Canela de Ceylán rompiéndose contra la olla (¡ese sonido es adictivo!)
+- **0:15** → Café molido cayendo + cuchara de palo revolviendo
+- **0:20** → Servir en jarrito de barro + primer sorbo
+- **0:27** → Cierre con logo
 
-- ¿Llamó la tool?: no
-- ¿Input Zod-válido?: n/a
+**📌 Tips de grabación:**
 
-- Tokens: input 1001 / output 712 / total 1713
+- Usa luz cálida o natural (tono ámbar para ese vibe tradicional)
+- Micrófono **pegado a la acción** — el sonido del barro, la cuchara y el burbujeo son los protagonistas
+- Sin música de fondo, solo el ambiente de tu cafetería
+- Subtítulos animados con el texto que menciona el guion
+
+El borrador ya está guardado en tu cuenta de Presencia. Si quieres ajustar algo (cambiar el texto, agregar más pasos, o incluso adaptarlo a Reels de Instagram), solo dímelo. ¿Qué tal lo ves? 🤎☕
+
+- ¿Llamó la tool?: sí (1: crear_borrador_video)
+- ¿Input Zod-válido?: sí
+
+<details><summary>Card generada — <code>crear_borrador_video</code></summary>
+
+```json
+{
+  "hook": "(Sonido ambiente de cafetería, el golpe suave de la cuchara contra la olla) 🎵 El ritual del café de olla que nadie te enseña. ☕🤎",
+  "script": "[0:00-0:05] Toma cerrada: agua hirviendo en la olla de barro. Se escucha el burbujeo suave. Texto en pantalla: \"El secreto mejor guardado de La Canela\".\n\n[0:05-0:10] Mano agregando piloncillo. Sonido del trozo al caer. Primer plano del piloncillo derritiéndose.\n\n[0:10-0:15] Rama de canela y clavo entran en escena. El golpe seco de la rama al romperse contra el borde de la olla. Texto: \"Canela de Ceylán, nada más\".\n\n[0:15-0:20] Café molido de grano se vierte en cuchara de palo. El sonido granular del café cayendo. Revolver lentamente con la cuchara de palo contra el barro. 🎵\n\n[0:20-0:27] Toma final: servir el café en jarrito de barro, el chorro humeante. Primer sorbo (sonido de sorber). Texto: \"Todos los días en La Canela. ¿Te animas?\" \n\n[0:27-0:30] Cierre con logo de La Canela. Sonido ambiente se desvanece.",
+  "caption": "Así empieza el mejor día en La Canela. Café de olla hecho como debe ser, en olla de barro, con canela de verdad y el cariño de siempre. ¿Ya lo probaste? 🤎☕ #CaféDeOlla #CafeteríaMexicana #ASMR #Café #LaCanela #CulturaCafetera #México",
+  "hashtags": [
+    "CaféDeOlla",
+    "CafeteríaMexicana",
+    "ASMR",
+    "Café",
+    "LaCanela",
+    "CulturaCafetera",
+    "México",
+    "TikTokCafé",
+    "CoffeeLover",
+    "BaristaMX"
+  ],
+  "recordingNotes": "🎥 Graba con luz natural o cálida (tono ámbar). Usa micrófono externo o pegado para capturar bien los sonidos: el burbujeo, el golpe de la cuchara, el crujido de la canela al romperse, el sorbo final. Sin música de fondo, solo ambiente del local. Si quieres, agrega subtítulos animados para el texto que se muestra en pantalla. Duración ideal: 22-27 segundos.",
+  "network": "tiktok"
+}
+```
+
+</details>
+
+- Tokens: input 2947 / output 1313 / total 4260
 
 ## tool-post-linkedin (espera tool call)
 
@@ -120,84 +248,129 @@ Con eso te armo el guion exacto de 20-30 segundos. ☕✨
 
 ### google:gemini-3.5-flash
 
-¡Listo! Ya creé el borrador de tu publicación para LinkedIn. Tiene ese balance profesional pero accesible que buscas para conectar con los restauranteros de Mérida.
+¡Listo! Ya creé el borrador de tu publicación para LinkedIn en el sistema. Quedó con un tono profesional, claro y muy enfocado en el valor que 'Lente y Sazón' aportará a los restaurantes de Mérida, cerrando con la invitación directa a que te escriban por mensaje privado.
 
-¿Te gustaría que hagamos algún ajuste en el enfoque o en el llamado a la acción?
+Puedes revisarlo y realizar cualquier ajuste que necesites antes de publicarlo. ¡Mucho éxito con este nuevo lanzamiento!
 
 - ¿Llamó la tool?: sí (1: crear_borrador_texto)
 - ¿Input Zod-válido?: sí
 
-- Tokens: input 2015 / output 772 / total 2787
+<details><summary>Card generada — <code>crear_borrador_texto</code></summary>
+
+```json
+{
+  "body": "La primera impresión de un platillo no se saborea: entra por los ojos.\n\nEn la competitiva industria gastronómica de Mérida, destacar requiere más que un excelente menú; se necesita proyectar esa calidad desde el primer vistazo. Por eso, me emociona presentar 'Lente y Sazón', un nuevo servicio de fotografía profesional especializado en restaurantes.\n\nNuestra meta es clara: capturar las texturas, la frescura y la esencia de tu propuesta culinaria para traducirla en más reservaciones, pedidos y clientes cautivados. Ya sea para tu menú digital, plataformas de delivery o redes sociales, nos encargamos de que tu comida luzca tan espectacular como sabe.\n\nQueremos ser el aliado visual que impulse el crecimiento de tu negocio. Si estás listo para llevar la imagen de tu restaurante al siguiente nivel, hablemos. \n\n¡Escríbeme un DM y diseñemos la sesión ideal para tu menú!",
+  "hashtags": [
+    "FotografiaGastronomica",
+    "RestaurantesMerida",
+    "LenteYSazon",
+    "MarketingGastronomico",
+    "EmprendedoresMerida"
+  ],
+  "network": "linkedin"
+}
+```
+
+</details>
+
+- Tokens: input 2179 / output 972 / total 3151
 
 ### anthropic:claude-haiku-4-5
 
-¡Listo! 🎯
+✅ **Post creado en LinkedIn**
 
-Creé tu borrador para LinkedIn con:
+Armé un borrador que combina:
 
-- **Tono corporativo pero cercano**: profesional sin perder la calidez local
-- **Presentación clara** de qué es Lente y Sazón y por qué importa
-- **Beneficios concretos** (sesiones a medida, edición, contenido listo)
-- **CTA directo**: invitación a escribirte por DM
-- **Hashtags relevantes**: mezclan fotografía, restaurantes, Mérida y emprendimiento
+✅ **Tono corporativo + cercano**: Profesional pero sin sonar frío; con emojis estratégicos y lenguaje que tu público entiende.
 
-El post está guardado como borrador. Puedes ajustar el tono, los emojis o el mensaje antes de publicar. ¿Quieres que haga cambios o crees que necesitas contenido para otras redes también?
+✅ **Posicionamiento claro**: Explica qué es Lente y Sazón y por qué lo necesita un restaurante.
+
+✅ **Propuesta de valor**: Detallo el servicio sin ser genérico.
+
+✅ **CTA directo**: "Escríbeme por DM" justo donde la gente espera.
+
+✅ **Conexión local**: Enfatizo Mérida y la gastronomía yucateca.
+
+El post está listo para publicar. Si quieres ajustar algo del tono, agregar más detalles del servicio o cambiar el enfoque, solo me dices.
 
 - ¿Llamó la tool?: sí (1: crear_borrador_texto)
 - ¿Input Zod-válido?: sí
 
-- Tokens: input 3261 / output 602 / total 3863
+<details><summary>Card generada — <code>crear_borrador_texto</code></summary>
+
+```json
+{
+  "body": "🍽️ Presentamos **Lente y Sazón**: Fotografía Profesional que sabe de gastronomía\n\nTu comida merece ser vista como se prepara: con pasión, cuidado y atención al detalle.\n\nEn Mérida sabemos que la gastronomía es identidad. Por eso lanzamos Lente y Sazón: un servicio de fotografía profesional diseñado específicamente para restaurantes que quieren que sus platos hablen por sí solos.\n\n**Lo que hacemos:**\n• Fotografía de alta calidad para tus platos estelares\n• Contenido visual consistente para redes y menú\n• Storytelling gastronómico que conecta con tu público\n• Equipamiento profesional + experiencia en el sector\n\nSabemos el reto: capturar esa textura, ese color, ese instante perfecto que hace que tus comensales abran el apetito antes de probar el primer bocado.\n\nSi tu restaurante necesita levantar su presencia visual o estás pensando en renovarla, **escríbeme por DM**. Hablemos de cómo podemos hacer que tu cocina brille en cada formato.\n\nSomos Mérida. Somos gastronomía. Somos Lente y Sazón.\n\n#FotografíaProfesional #Gastronomía #Restaurantes #Mérida #FotografíaGastronómica #ContentCreator #PyME",
+  "hashtags": [
+    "FotografíaProfesional",
+    "Gastronomía",
+    "Restaurantes",
+    "Mérida",
+    "FotografíaGastronómica",
+    "ContentCreator",
+    "PyME"
+  ],
+  "network": "linkedin"
+}
+```
+
+</details>
+
+- Tokens: input 3369 / output 731 / total 4100
 
 ### deepseek:deepseek-v4-flash
 
-Listo, el borrador quedó creado en LinkedIn. Aquí te va el detalle de lo que se armó:
+Aquí está tu borrador listo para LinkedIn 👇
 
 ---
 
-**📝 Body del post:**
+**📝 Cuerpo del post:**
 
-Hay una idea que me ronda desde hace meses y hoy por fin la hago oficial.
+Hay algo que todo dueño de restaurante en Mérida sabe: la primera impresión no se da en el paladar, sino en la vista.
 
-🧑‍🍳 En Mérida, la comida no solo se cocina, se hereda, se comparte y se vive. Pero hay un detalle que muchas veces pasa desapercibido: cómo se ve lo que ofreces.
-
-Tu menú puede ser espectacular, tus sabores inolvidables y tu concepto único… pero si la foto no transmite eso, el comensal nunca va a dar el primer clic.
+Una foto bien hecha no solo muestra un platillo, cuenta una historia, transmite una textura, provoca antojo. Y en una industria donde competimos por captar la atención en redes sociales, eso puede marcar la diferencia entre un scroll rápido y una reservación confirmada.
 
 Por eso nace **Lente y Sazón**.
 
-Un servicio de fotografía profesional para restaurantes en Mérida. No solo tomamos fotos, capturamos la esencia de cada platillo, el ambiente de tu local y la historia que hay detrás de tu cocina.
+Un servicio de fotografía profesional pensado exclusivamente para restaurantes en Mérida. No hacemos fotos de comida genérica. Entendemos el concepto de tu negocio, la ambientación, los colores, la luz y, sobre todo, la esencia de cada platillo.
 
-Trabajo con restaurantes, cocinas ocultas, bares de autor y negocios gastronómicos que quieren dejar de usar fotos de celular y empezar a proyectar la calidad real de lo que sirven.
+Trabajamos con sesiones personalizadas en tu restaurante, sin interrumpir tu operación, y te entregamos material listo para redes sociales, menú digital y sitio web.
 
-✨ **¿Qué incluye?**
+Si eres restaurantero y quieres que tu comida se vea tan bien como sabe, **escríbeme por DM** y con gusto te cuento más. 📩
 
-- Sesión de fotos de platillos y bebidas.
-- Imágenes del espacio y el equipo.
-- Edición profesional lista para menú, redes sociales y plataformas de delivery.
-- Entrega en máximo 72 horas.
-
-Si tienes un restaurante en Mérida y sientes que tu comida merece verse tan bien como sabe, mándame un DM. Sin compromiso, platicamos y te cuento cómo trabajar juntos.
-
-📩 Escríbeme por aquí y te comparto mi portafolio.
+Porque en Yucatán, la sazón también se ve.
 
 ---
 
-**🏷️ Hashtags:**
-#FotografíaGastronómica #RestaurantesMérida #LenteYSazón #MarcaRestaurantera #FoodPhotography #Mérida #EmprendimientoGastronómico
+**🏷️ Hashtags sugeridos:**
+#LenteYSazón #FotografíaDeRestaurantes #Mérida #RestaurantesMérida #MarketingGastronómico #FotografíaProfesional #Yucatán
 
----
-
-**💡 Tips extra para subirlo:**
-
-- Acompaña el post con **3 fotos de muestra** de tu portafolio (platillos bien iluminados, un local, y un detrás de cámaras).
-- Publica **entre martes y jueves a las 10–11 am** para mejor alcance en LinkedIn.
-- Responde los primeros comentarios tú mismo para darle tracción al algoritmo.
-
-¿Quieres que ajuste algo del tono, la extensión o el enfoque?
+**💡 Tip extra:** Acompaña el post con una imagen de portada poderosa —por ejemplo, un platillo bien iluminado con la estética yucateca— para que el "scroll stop" sea inmediato en LinkedIn. ¿Quieres que ajuste algo o lo afine más?
 
 - ¿Llamó la tool?: sí (1: crear_borrador_texto)
 - ¿Input Zod-válido?: sí
 
-- Tokens: input 2727 / output 1263 / total 3990
+<details><summary>Card generada — <code>crear_borrador_texto</code></summary>
+
+```json
+{
+  "body": "Hay algo que todo dueño de restaurante en Mérida sabe: la primera impresión no se da en el paladar, sino en la vista.\n\nUna foto bien hecha no solo muestra un platillo, cuenta una historia, transmite una textura, provoca antojo. Y en una industria donde competimos por captar la atención en redes sociales, eso puede marcar la diferencia entre un scroll rápido y una reservación confirmada.\n\nPor eso nace Lente y Sazón.\n\nUn servicio de fotografía profesional pensado exclusivamente para restaurantes en Mérida. No hacemos fotos de comida genérica. Entendemos el concepto de tu negocio, la ambientación, los colores, la luz y, sobre todo, la esencia de cada platillo.\n\nTrabajamos con sesiones personalizadas en tu restaurante, sin interrumpir tu operación, y te entregamos material listo para redes sociales, menú digital y sitio web.\n\nSi eres restaurantero y quieres que tu comida se vea tan bien como sabe, escríbeme por DM y con gusto te cuento más. 📩\n\nPorque en Yucatán, la sazón también se ve.",
+  "hashtags": [
+    "LenteYSazón",
+    "FotografíaDeRestaurantes",
+    "Mérida",
+    "RestaurantesMérida",
+    "MarketingGastronómico",
+    "FotografíaProfesional",
+    "Yucatán"
+  ],
+  "network": "linkedin"
+}
+```
+
+</details>
+
+- Tokens: input 2558 / output 949 / total 3507
 
 ---
 
@@ -205,9 +378,9 @@ Si tienes un restaurante en Mérida y sientes que tu comida merece verse tan bie
 
 | Modelo                       | Input | Output | Total |
 | ---------------------------- | ----- | ------ | ----- |
-| `google:gemini-3.5-flash`    | 6639  | 2990   | 9629  |
-| `anthropic:claude-haiku-4-5` | 7913  | 1455   | 9368  |
-| `deepseek:deepseek-v4-flash` | 6391  | 2896   | 9287  |
+| `google:gemini-3.5-flash`    | 7232  | 3617   | 10849 |
+| `anthropic:claude-haiku-4-5` | 8074  | 1575   | 9649  |
+| `deepseek:deepseek-v4-flash` | 8144  | 3283   | 11427 |
 
 ## Veredicto (juicio humano)
 
