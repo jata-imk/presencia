@@ -47,18 +47,21 @@ export const culturalPrompts: CulturalPrompt[] = [
     expectsTool: false,
   },
   {
+    // Con todos los datos que el system prompt exige (negocio, promo,
+    // condición) — el modelo no tiene por qué preguntar antes de llamar
+    // la tool, así medimos disciplina de tool calling sin ese ruido.
     id: "tool-promo-tacos",
-    text: "Hazme un borrador para Instagram de una promo 2x1 en tacos al pastor para este viernes en mi taquería.",
+    text: "Hazme un borrador para Instagram de una promo 2x1 en tacos al pastor para este viernes en mi taquería 'El Trompo Feliz', solo en sucursal, de 6 a 11pm. Tono relajado, de barrio.",
     expectsTool: true,
   },
   {
     id: "tool-guion-cafe",
-    text: "Quiero un guion para TikTok mostrando cómo preparo el café de olla en mi cafetería, algo cortito que enganche.",
+    text: "Quiero un guion para TikTok mostrando cómo preparo el café de olla en mi cafetería 'La Canela', algo cortito y estilo ASMR que enganche, 20-30 segundos.",
     expectsTool: true,
   },
   {
     id: "tool-post-linkedin",
-    text: "Arma un post para LinkedIn presentando mi nuevo servicio de fotografía profesional para restaurantes.",
+    text: "Arma un post para LinkedIn presentando mi nuevo servicio de fotografía profesional para restaurantes en Mérida, se llama 'Lente y Sazón', tono corporativo pero cercano, con llamada a que me escriban por DM.",
     expectsTool: true,
   },
 ];

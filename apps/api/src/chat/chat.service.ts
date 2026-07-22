@@ -1,8 +1,10 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from "ai";
 import type { ChatSummary } from "@presencia/shared";
 import type { ServerResponse } from "node:http";
 import { AiService } from "../ai/ai.service.js";
+import { CardsRepository } from "../cards/cards.repository.js";
+import { buildPublicationCardTools } from "../cards/publication-card.tools.js";
 import { DbService } from "../db/db.service.js";
 import { ChatRepository, type MessageRow } from "./chat.repository.js";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
@@ -13,6 +15,7 @@ export class ChatService {
     @Inject(DbService) private readonly dbService: DbService,
     @Inject(ChatRepository) private readonly repo: ChatRepository,
     @Inject(AiService) private readonly aiService: AiService,
+    @Inject(CardsRepository) private readonly cardsRepo: CardsRepository,
   ) {}
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
@@ -69,10 +72,23 @@ export class ChatService {
       if (!res.writableFinished) abortController.abort();
     });
 
+    // Ids de las cards creadas durante este turno (closure compartido con la
+    // tool): onEnd las vincula al mensaje assistant una vez que existe.
+    const createdCardIds: string[] = [];
+    const tools = buildPublicationCardTools({
+      userId,
+      chatId,
+      dbService: this.dbService,
+      cardsRepository: this.cardsRepo,
+      createdCardIds,
+    });
+
     const result = streamText({
       model: this.aiService.resolveModel(),
       system: SYSTEM_PROMPT,
       messages: await convertToModelMessages(history),
+      tools,
+      stopWhen: stepCountIs(5),
       abortSignal: abortController.signal,
     });
 
@@ -85,13 +101,16 @@ export class ChatService {
       onEnd: async ({ responseMessage, isAborted }) => {
         if (isAborted) return;
         await this.dbService.runWithTenant(userId, async (tx) => {
-          await this.repo.insertMessage(tx, {
+          const saved = await this.repo.insertMessage(tx, {
             chatId,
             userId,
             role: "assistant",
             parts: responseMessage.parts,
           });
           await this.repo.touchChat(tx, chatId);
+          if (createdCardIds.length > 0) {
+            await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
+          }
         });
       },
     });

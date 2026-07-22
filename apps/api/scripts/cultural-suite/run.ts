@@ -1,7 +1,8 @@
 // Runner de la suite de regresión cultural (ADR-004).
 // Corre cada prompt contra cada modelo con el MISMO system prompt de
-// producción y una versión mock (sin DB) de crear_borrador_publicacion,
-// y genera un reporte markdown lado a lado para juicio humano del founder.
+// producción y versiones mock (sin DB) de las 3 tools de crear borrador
+// (ADR-005), y genera un reporte markdown lado a lado para juicio humano
+// del founder.
 //
 // Uso: pnpm --filter @presencia/api suite:cultural
 // Modelos: env AI_SUITE_MODELS="google:x,openai:y" o el default de abajo.
@@ -13,8 +14,11 @@ import { generateText, stepCountIs, tool } from "ai";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { z } from "zod";
-import { cardContentSchema, socialNetworkSchema } from "@presencia/shared";
+import {
+  textFirstToolInputSchema,
+  videoScriptToolInputSchema,
+  visualFirstToolInputSchema,
+} from "@presencia/shared";
 import { createModelResolver, DEFAULT_MODEL_ID } from "../../src/ai/provider-registry.js";
 import { SYSTEM_PROMPT } from "../../src/chat/system-prompt.js";
 import { culturalPrompts } from "./prompts.js";
@@ -32,42 +36,58 @@ const DEFAULT_MODELS = [
 // tabla PROVIDERS, sin mapping duplicado aquí.
 const resolveModel = createModelResolver(process.env, process.env.AI_MODEL ?? DEFAULT_MODEL_ID);
 
-// Mock de la tool de ADR-005: mismo contrato de entrada que tendrá la real,
-// pero sin tocar la DB. Mide si el modelo la llama y si su input pasa Zod.
-const mockCardInputSchema = z.object({
-  network: socialNetworkSchema,
-  content: cardContentSchema,
-});
+// Mock de las 3 tools reales de ADR-005 (mismos schemas de @presencia/shared,
+// sin tocar DB). Mide el diseño real: 3 tools por arquetipo, el modelo elige
+// cuál llamar en vez de llenar un objeto con reglas condicionales.
+const culturalSuiteTools = {
+  crear_borrador_visual: tool({
+    description:
+      "Crea un borrador de publicación visual (imagen o carrusel) para " +
+      "Instagram o Facebook. Úsala solo cuando el usuario pida explícitamente " +
+      "un post listo para esas redes — no para lluvia de ideas.",
+    inputSchema: visualFirstToolInputSchema,
+    execute: (input) =>
+      Promise.resolve({ cardId: "mock-card", network: input.network, status: "draft" }),
+  }),
+  crear_borrador_video: tool({
+    description:
+      "Crea un borrador de guion de video para TikTok o YouTube. Úsala " +
+      "solo cuando el usuario pida explícitamente un guion listo para esas " +
+      "redes — no para lluvia de ideas.",
+    inputSchema: videoScriptToolInputSchema,
+    execute: (input) =>
+      Promise.resolve({ cardId: "mock-card", network: input.network, status: "draft" }),
+  }),
+  crear_borrador_texto: tool({
+    description:
+      "Crea un borrador de publicación de texto para LinkedIn, Threads o X. " +
+      "Úsala solo cuando el usuario pida explícitamente un post listo para " +
+      "esas redes — no para lluvia de ideas.",
+    inputSchema: textFirstToolInputSchema,
+    execute: (input) =>
+      Promise.resolve({ cardId: "mock-card", network: input.network, status: "draft" }),
+  }),
+};
 
 interface RunResult {
   text: string;
   finishReason: string;
   toolCalls: number;
   toolInputsValid: boolean;
+  toolNames: string[];
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
   error?: string;
 }
 
 async function runPrompt(modelId: string, promptText: string): Promise<RunResult> {
-  const crearBorrador = tool({
-    description:
-      "Crea un borrador de publicación para una red social. Úsala cuando el " +
-      "usuario pida explícitamente un post, borrador o guion para una red.",
-    inputSchema: mockCardInputSchema,
-    execute: (input) =>
-      Promise.resolve({
-        cardId: "mock-card",
-        archetype: input.content.archetype,
-        network: input.network,
-        status: "draft",
-      }),
-  });
-
   try {
     const result = await generateText({
       model: resolveModel(modelId),
       system: SYSTEM_PROMPT,
       prompt: promptText,
-      tools: { crear_borrador_publicacion: crearBorrador },
+      tools: culturalSuiteTools,
       stopWhen: stepCountIs(3),
     });
     // Los intentos con input inválido no ejecutan la tool pero sí cuentan:
@@ -78,6 +98,10 @@ async function runPrompt(modelId: string, promptText: string): Promise<RunResult
       finishReason: result.finishReason,
       toolCalls: attempts.length,
       toolInputsValid: attempts.every((call) => call.invalid !== true),
+      toolNames: attempts.map((call) => call.toolName),
+      inputTokens: result.usage.inputTokens ?? 0,
+      outputTokens: result.usage.outputTokens ?? 0,
+      totalTokens: result.usage.totalTokens ?? 0,
     };
   } catch (error) {
     return {
@@ -85,6 +109,10 @@ async function runPrompt(modelId: string, promptText: string): Promise<RunResult
       finishReason: "error",
       toolCalls: 0,
       toolInputsValid: true,
+      toolNames: [],
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -143,6 +171,13 @@ async function main(): Promise<void> {
     "",
   ];
 
+  // Acumulado de tokens por modelo a lo largo de las 10 corridas — mide si
+  // el diseño de tool (3 tools por arquetipo vs. discriminatedUnion/aplanado)
+  // realmente cuesta menos por evitar reintentos de input inválido.
+  const tokensByModel = new Map(
+    models.map((m) => [m, { inputTokens: 0, outputTokens: 0, totalTokens: 0 }]),
+  );
+
   for (const prompt of prompts) {
     console.log(`\n▶ ${prompt.id}`);
     lines.push(`## ${prompt.id}${prompt.expectsTool ? " (espera tool call)" : ""}`, "");
@@ -152,6 +187,14 @@ async function main(): Promise<void> {
       console.log(`  · ${modelId}...`);
       const result = await runPrompt(modelId, prompt.text);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+      const totals = tokensByModel.get(modelId);
+      if (totals) {
+        totals.inputTokens += result.inputTokens;
+        totals.outputTokens += result.outputTokens;
+        totals.totalTokens += result.totalTokens;
+      }
+
       lines.push(`### ${modelId}`, "");
       if (result.error) {
         lines.push(`**Error:** \`${result.error}\``, "");
@@ -163,8 +206,14 @@ async function main(): Promise<void> {
       }
       if (prompt.expectsTool || result.toolCalls > 0) {
         lines.push(
-          `- ¿Llamó la tool?: ${result.toolCalls > 0 ? `sí (${result.toolCalls})` : "no"}`,
+          `- ¿Llamó la tool?: ${result.toolCalls > 0 ? `sí (${result.toolCalls}: ${result.toolNames.join(", ")})` : "no"}`,
           `- ¿Input Zod-válido?: ${result.toolCalls > 0 ? (result.toolInputsValid ? "sí" : "NO") : "n/a"}`,
+          "",
+        );
+      }
+      if (!result.error) {
+        lines.push(
+          `- Tokens: input ${result.inputTokens} / output ${result.outputTokens} / total ${result.totalTokens}`,
           "",
         );
       }
@@ -173,6 +222,15 @@ async function main(): Promise<void> {
 
   lines.push(
     "---",
+    "",
+    "## Consumo de tokens por proveedor (10 prompts)",
+    "",
+    "| Modelo | Input | Output | Total |",
+    "| ------ | ----- | ------ | ----- |",
+    ...models.map((m) => {
+      const t = tokensByModel.get(m)!;
+      return `| \`${m}\` | ${t.inputTokens} | ${t.outputTokens} | ${t.totalTokens} |`;
+    }),
     "",
     "## Veredicto (juicio humano)",
     "",

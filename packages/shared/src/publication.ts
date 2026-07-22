@@ -54,3 +54,51 @@ export const cardContentSchema = z.discriminatedUnion("archetype", [
   textFirstContentSchema,
 ]);
 export type CardContent = z.infer<typeof cardContentSchema>;
+
+// Input de tool call por arquetipo (ADR-005, F3). NO usamos cardContentSchema
+// (discriminatedUnion) como inputSchema de tool: medido contra Gemini 3.5
+// Flash, Claude Haiku 4.5 y DeepSeek V4 Flash con keys reales, los 3
+// proveedores generan tool calls con input inválido en la mayoría de los
+// intentos (docs/reference/suite-cultural/2026-07-22-reporte.md). En vez de
+// una tool con schema aplanado + reconciliación posterior, usamos 3 tools
+// separadas — una por arquetipo — reusando el schema de contenido tal cual.
+// El modelo no llena un objeto con reglas condicionales: elige cuál tool
+// llamar, y esa elección es la inferencia del arquetipo. Cada schema solo
+// acepta las redes de su arquetipo (más estricto que las 7 redes + decidir
+// después) y omite `archetype`/`assetIds`, que el servidor asigna siempre.
+
+export const visualFirstToolInputSchema = visualFirstContentSchema
+  .omit({ archetype: true, assetIds: true })
+  .extend({ network: z.enum(["instagram", "facebook"]) });
+export type VisualFirstToolInput = z.infer<typeof visualFirstToolInputSchema>;
+
+export const videoScriptToolInputSchema = videoScriptContentSchema
+  .omit({ archetype: true })
+  .extend({ network: z.enum(["tiktok", "youtube"]) });
+export type VideoScriptToolInput = z.infer<typeof videoScriptToolInputSchema>;
+
+export const textFirstToolInputSchema = textFirstContentSchema
+  .omit({ archetype: true, assetIds: true })
+  .extend({ network: z.enum(["linkedin", "threads", "x"]) });
+export type TextFirstToolInput = z.infer<typeof textFirstToolInputSchema>;
+
+// parse() aquí es una red de seguridad barata (el shape ya lo garantiza TS),
+// no una reconciliación entre esquemas distintos — solo puede fallar si al
+// modelo le faltó un campo requerido.
+export function buildVisualFirstContent(
+  input: VisualFirstToolInput,
+): z.infer<typeof visualFirstContentSchema> {
+  return visualFirstContentSchema.parse({ ...input, archetype: "visual_first", assetIds: [] });
+}
+
+export function buildVideoScriptContent(
+  input: VideoScriptToolInput,
+): z.infer<typeof videoScriptContentSchema> {
+  return videoScriptContentSchema.parse({ ...input, archetype: "video_script" });
+}
+
+export function buildTextFirstContent(
+  input: TextFirstToolInput,
+): z.infer<typeof textFirstContentSchema> {
+  return textFirstContentSchema.parse({ ...input, archetype: "text_first", assetIds: [] });
+}
