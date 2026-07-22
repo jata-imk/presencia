@@ -1,22 +1,18 @@
-import { google } from "@ai-sdk/google";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import type { ChatSummary } from "@presencia/shared";
 import type { ServerResponse } from "node:http";
+import { AiService } from "../ai/ai.service.js";
 import { DbService } from "../db/db.service.js";
 import { ChatRepository, type MessageRow } from "./chat.repository.js";
-
-// Prompt mínimo F1; la voz de marca real llega en F3+ (brand_voices).
-const SYSTEM_PROMPT =
-  "Eres el asistente de contenido de Presencia, un SaaS para creators mexicanos. " +
-  "Respondes en español mexicano neutro-profesional. Tuteas siempre; nunca usas " +
-  "'vos' ni conjugaciones como 'querés'.";
+import { SYSTEM_PROMPT } from "./system-prompt.js";
 
 @Injectable()
 export class ChatService {
   constructor(
     @Inject(DbService) private readonly dbService: DbService,
     @Inject(ChatRepository) private readonly repo: ChatRepository,
+    @Inject(AiService) private readonly aiService: AiService,
   ) {}
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
@@ -74,7 +70,7 @@ export class ChatService {
     });
 
     const result = streamText({
-      model: google("gemini-3.5-flash"),
+      model: this.aiService.resolveModel(),
       system: SYSTEM_PROMPT,
       messages: await convertToModelMessages(history),
       abortSignal: abortController.signal,

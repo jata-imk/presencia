@@ -8,12 +8,17 @@
     "lint": "eslint src drizzle.config.ts",
     "dev": "tsx watch --env-file=../../.env src/main.ts",
     "test": "vitest run",
+    "suite:cultural": "tsx --env-file=../../.env scripts/cultural-suite/run.ts",
     "start": "node dist/main.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.16",
+    "@ai-sdk/deepseek": "^3.0.12",
     "@ai-sdk/google": "^4.0.18",
+    "@ai-sdk/openai": "^3.0.86",
+    "@ai-sdk/openai-compatible": "^2.0.62",
     "@nestjs/common": "^11.1.0",
     "@nestjs/core": "^11.1.0",
     "@nestjs/platform-express": "^11.1.0",

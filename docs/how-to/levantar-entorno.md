@@ -57,7 +57,7 @@ Notas del modo B:
 
 ## Base de datos y variables (desde F1)
 
-1. Copia `.env.example` a `.env` y llena las variables (las de F1: `APP_DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `WEB_URL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `ZEPTOMAIL_TOKEN`, `MAIL_FROM`).
+1. Copia `.env.example` a `.env` y llena las variables (las de F1: `APP_DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `WEB_URL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `ZEPTOMAIL_TOKEN`, `MAIL_FROM`; desde F3 además las de IA multi-proveedor, ver abajo).
 2. Aplica migraciones (rol owner): `pnpm --filter @presencia/api db:migrate`.
 3. **Una sola vez por entorno**, asigna password al rol de runtime (la migración 0001 crea los roles sin password a propósito — un password en SQL versionado sería un secreto commiteado):
 
@@ -69,6 +69,12 @@ Notas del modo B:
 
 4. `pnpm dev` levanta api (puerto 3000) y web (5173, con proxy `/api` → 3000). La API lee `.env` de la raíz vía `tsx --env-file`.
 5. `pnpm --filter @presencia/api test` corre los tests de la API (vitest). El test de RLS (`src/db/rls.spec.ts`, DoD de F2) conecta contra la base real como `presencia_app` usando el mismo `.env` — necesita la DB alcanzable (túnel o compose local).
+
+## IA multi-proveedor (desde F3, ADR-004)
+
+- El modelo activo se elige con `AI_MODEL` (formato `proveedor:modelo`). Proveedores soportados: `google`, `openai`, `anthropic`, `deepseek`, `minimax`, `kimi` (ej. `google:gemini-3.5-flash`, `anthropic:claude-haiku-4-5`, `deepseek:deepseek-v4-flash`). Cambiar de proveedor = editar la variable y reiniciar el proceso (`pnpm dev` en local, reciclar contenedor en prod).
+- Solo la API key del proveedor de `AI_MODEL` es obligatoria; las demás (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `MINIMAX_API_KEY`, `KIMI_API_KEY`) son opcionales — sin key, ese proveedor no se registra y la suite lo salta con aviso.
+- Suite de regresión cultural: `pnpm --filter @presencia/api suite:cultural` corre los prompts de `apps/api/scripts/cultural-suite/` contra los modelos de `AI_SUITE_MODELS` (o el trío default) y deja el reporte en `docs/reference/suite-cultural/`.
 
 ## VS Code
 
