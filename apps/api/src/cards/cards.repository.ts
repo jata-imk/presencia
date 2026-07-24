@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { inArray } from "drizzle-orm";
-import type { CardContent, PublicationArchetype, SocialNetwork } from "@presencia/shared";
+import type { CardContent, SocialNetwork } from "@presencia/shared";
 import { publicationCards } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
@@ -16,12 +16,16 @@ export class CardsRepository {
     input: {
       userId: string;
       chatId: string;
-      archetype: PublicationArchetype;
       network: SocialNetwork;
       content: CardContent;
     },
   ): Promise<CardRow> {
-    const [card] = await tx.insert(publicationCards).values(input).returning();
+    // archetype se deriva de content.archetype (nunca un parámetro aparte):
+    // hace imposible insertar una fila con archetype y content desalineados.
+    const [card] = await tx
+      .insert(publicationCards)
+      .values({ ...input, archetype: input.content.archetype })
+      .returning();
     if (!card) throw new Error("No se pudo crear la card de publicación");
     return card;
   }

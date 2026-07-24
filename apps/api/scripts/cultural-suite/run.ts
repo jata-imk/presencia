@@ -10,15 +10,11 @@
 // AI_SUITE_DELAY_MS pausa entre llamadas (default 10000 — el free tier de
 // Gemini limita requests por minuto y cada prompt puede usar varios steps).
 
-import { generateText, stepCountIs, tool } from "ai";
+import { generateText, stepCountIs, tool, type ToolSet } from "ai";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  textFirstToolInputSchema,
-  videoScriptToolInputSchema,
-  visualFirstToolInputSchema,
-} from "@presencia/shared";
+import { CARD_ARCHETYPE_TOOLS } from "@presencia/shared";
 import { createModelResolver, DEFAULT_MODEL_ID } from "../../src/ai/provider-registry.js";
 import { SYSTEM_PROMPT } from "../../src/chat/system-prompt.js";
 import { culturalPrompts } from "./prompts.js";
@@ -36,38 +32,20 @@ const DEFAULT_MODELS = [
 // tabla PROVIDERS, sin mapping duplicado aquí.
 const resolveModel = createModelResolver(process.env, process.env.AI_MODEL ?? DEFAULT_MODEL_ID);
 
-// Mock de las 3 tools reales de ADR-005 (mismos schemas de @presencia/shared,
-// sin tocar DB). Mide el diseño real: 3 tools por arquetipo, el modelo elige
-// cuál llamar en vez de llenar un objeto con reglas condicionales.
-const culturalSuiteTools = {
-  crear_borrador_visual: tool({
-    description:
-      "Crea un borrador de publicación visual (imagen o carrusel) para " +
-      "Instagram o Facebook. Úsala solo cuando el usuario pida explícitamente " +
-      "un post listo para esas redes — no para lluvia de ideas.",
-    inputSchema: visualFirstToolInputSchema,
+// Mock de las 3 tools reales: itera la misma tabla que produce las tools de
+// producción (CARD_ARCHETYPE_TOOLS en @presencia/shared) — nombre,
+// descripción y schema son exactamente los que ve el modelo en el chat real,
+// nunca una copia a mano que pueda quedarse desactualizada. Solo el
+// execute() difiere (mock sin DB vs inserción real).
+const culturalSuiteTools: ToolSet = {};
+for (const def of CARD_ARCHETYPE_TOOLS) {
+  culturalSuiteTools[def.toolName] = tool({
+    description: def.description,
+    inputSchema: def.inputSchema,
     execute: (input) =>
       Promise.resolve({ cardId: "mock-card", network: input.network, status: "draft" }),
-  }),
-  crear_borrador_video: tool({
-    description:
-      "Crea un borrador de guion de video para TikTok o YouTube. Úsala " +
-      "solo cuando el usuario pida explícitamente un guion listo para esas " +
-      "redes — no para lluvia de ideas.",
-    inputSchema: videoScriptToolInputSchema,
-    execute: (input) =>
-      Promise.resolve({ cardId: "mock-card", network: input.network, status: "draft" }),
-  }),
-  crear_borrador_texto: tool({
-    description:
-      "Crea un borrador de publicación de texto para LinkedIn, Threads o X. " +
-      "Úsala solo cuando el usuario pida explícitamente un post listo para " +
-      "esas redes — no para lluvia de ideas.",
-    inputSchema: textFirstToolInputSchema,
-    execute: (input) =>
-      Promise.resolve({ cardId: "mock-card", network: input.network, status: "draft" }),
-  }),
-};
+  });
+}
 
 interface ToolCallAttempt {
   toolName: string;
@@ -105,7 +83,7 @@ async function runPrompt(modelId: string, promptText: string): Promise<RunResult
       toolAttempts: attempts.map((call) => ({
         toolName: call.toolName,
         valid: call.invalid !== true,
-        input: call.input,
+        input: call.input as unknown,
       })),
       inputTokens: result.usage.inputTokens ?? 0,
       outputTokens: result.usage.outputTokens ?? 0,

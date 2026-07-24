@@ -1,8 +1,9 @@
 // Suite de regresión cultural (ADR-004): prompts en registro mexicano "de
 // barrio". El objetivo es detectar cuál proveedor suena menos a "español de
 // aeropuerto": tuteo natural, modismos, cero voseo, registro cercano.
-// Los prompts con expectsTool: true fuerzan crear_borrador_publicacion para
-// medir la disciplina de tool calling de cada proveedor.
+// Los prompts con expectsTool: true fuerzan alguna de las 3 tools de crear
+// borrador (crear_borrador_visual/video/texto, ADR-005) para medir la
+// disciplina de tool calling de cada proveedor.
 
 export interface CulturalPrompt {
   id: string;

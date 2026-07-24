@@ -1,12 +1,5 @@
 import { tool, type ToolSet } from "ai";
-import {
-  buildTextFirstContent,
-  buildVideoScriptContent,
-  buildVisualFirstContent,
-  textFirstToolInputSchema,
-  videoScriptToolInputSchema,
-  visualFirstToolInputSchema,
-} from "@presencia/shared";
+import { CARD_ARCHETYPE_TOOLS } from "@presencia/shared";
 import type { CardsRepository } from "./cards.repository.js";
 import type { DbService } from "../db/db.service.js";
 
@@ -20,25 +13,25 @@ export interface PublicationCardToolsDeps {
   createdCardIds: string[];
 }
 
-// Tres tools, una por arquetipo (ADR-005): el modelo no llena un objeto con
-// reglas condicionales, elige cuál tool llamar — esa elección es la
-// inferencia del arquetipo. Cada una cierra sobre userId/chatId del request
+// Una tool por entrada de CARD_ARCHETYPE_TOOLS (@presencia/shared) — nombre,
+// descripción y schema viven en un solo lugar, nunca copiados a mano por
+// tool (ADR-005). El modelo elige cuál tool llamar, y esa elección es la
+// inferencia del arquetipo; cada tool cierra sobre userId/chatId del request
 // (mismo patrón que evita fugas de tenant que runWithTenant).
 export function buildPublicationCardTools(deps: PublicationCardToolsDeps): ToolSet {
-  return {
-    crear_borrador_visual: tool({
-      description:
-        "Crea un borrador de publicación visual (imagen o carrusel) para " +
-        "Instagram o Facebook. Úsala solo cuando el usuario pida explícitamente " +
-        "un post listo para esas redes — no para lluvia de ideas.",
-      inputSchema: visualFirstToolInputSchema,
+  const tools: ToolSet = {};
+  for (const def of CARD_ARCHETYPE_TOOLS) {
+    tools[def.toolName] = tool({
+      description: def.description,
+      inputSchema: def.inputSchema,
       execute: async (input) => {
-        const content = buildVisualFirstContent(input);
+        const content = def.buildContent(input);
+        // archetype se deriva de content.archetype dentro de insertCard —
+        // nunca se pasa por separado, así es imposible que se desalineen.
         const card = await deps.dbService.runWithTenant(deps.userId, (tx) =>
           deps.cardsRepository.insertCard(tx, {
             userId: deps.userId,
             chatId: deps.chatId,
-            archetype: "visual_first",
             network: input.network,
             content,
           }),
@@ -46,50 +39,7 @@ export function buildPublicationCardTools(deps: PublicationCardToolsDeps): ToolS
         deps.createdCardIds.push(card.id);
         return { cardId: card.id, network: card.network, status: card.status };
       },
-    }),
-
-    crear_borrador_video: tool({
-      description:
-        "Crea un borrador de guion de video para TikTok o YouTube. Úsala " +
-        "solo cuando el usuario pida explícitamente un guion listo para esas " +
-        "redes — no para lluvia de ideas.",
-      inputSchema: videoScriptToolInputSchema,
-      execute: async (input) => {
-        const content = buildVideoScriptContent(input);
-        const card = await deps.dbService.runWithTenant(deps.userId, (tx) =>
-          deps.cardsRepository.insertCard(tx, {
-            userId: deps.userId,
-            chatId: deps.chatId,
-            archetype: "video_script",
-            network: input.network,
-            content,
-          }),
-        );
-        deps.createdCardIds.push(card.id);
-        return { cardId: card.id, network: card.network, status: card.status };
-      },
-    }),
-
-    crear_borrador_texto: tool({
-      description:
-        "Crea un borrador de publicación de texto para LinkedIn, Threads o X. " +
-        "Úsala solo cuando el usuario pida explícitamente un post listo para " +
-        "esas redes — no para lluvia de ideas.",
-      inputSchema: textFirstToolInputSchema,
-      execute: async (input) => {
-        const content = buildTextFirstContent(input);
-        const card = await deps.dbService.runWithTenant(deps.userId, (tx) =>
-          deps.cardsRepository.insertCard(tx, {
-            userId: deps.userId,
-            chatId: deps.chatId,
-            archetype: "text_first",
-            network: input.network,
-            content,
-          }),
-        );
-        deps.createdCardIds.push(card.id);
-        return { cardId: card.id, network: card.network, status: card.status };
-      },
-    }),
-  };
+    });
+  }
+  return tools;
 }

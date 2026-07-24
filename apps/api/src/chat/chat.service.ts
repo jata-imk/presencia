@@ -9,6 +9,12 @@ import { DbService } from "../db/db.service.js";
 import { ChatRepository, type MessageRow } from "./chat.repository.js";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
 
+// Margen para: tool call + reintento tras input inválido + texto de cierre.
+// Si el modelo agota este presupuesto a mitad de una tool call, onEnd lo
+// detecta (steps.length === MAX_AGENT_STEPS + finishReason "tool-calls") y
+// lo loguea — el turno se persiste igual, truncado, sin bloquear al usuario.
+const MAX_AGENT_STEPS = 5;
+
 @Injectable()
 export class ChatService {
   constructor(
@@ -88,7 +94,7 @@ export class ChatService {
       system: SYSTEM_PROMPT,
       messages: await convertToModelMessages(history),
       tools,
-      stopWhen: stepCountIs(5),
+      stopWhen: stepCountIs(MAX_AGENT_STEPS),
       abortSignal: abortController.signal,
     });
 
@@ -98,20 +104,41 @@ export class ChatService {
         console.error("Error en el stream del chat:", error);
         return "Algo salió mal generando la respuesta. Inténtalo de nuevo.";
       },
-      onEnd: async ({ responseMessage, isAborted }) => {
+      onEnd: async ({ responseMessage, isAborted, finishReason }) => {
         if (isAborted) return;
-        await this.dbService.runWithTenant(userId, async (tx) => {
-          const saved = await this.repo.insertMessage(tx, {
-            chatId,
-            userId,
-            role: "assistant",
-            parts: responseMessage.parts,
-          });
-          await this.repo.touchChat(tx, chatId);
-          if (createdCardIds.length > 0) {
-            await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
+        try {
+          const steps = await result.steps;
+          if (steps.length >= MAX_AGENT_STEPS && finishReason === "tool-calls") {
+            console.warn(
+              `[chat] Turno truncado por el límite de ${MAX_AGENT_STEPS} steps ` +
+                `(chat ${chatId}): el modelo aún quería llamar otra tool.`,
+            );
           }
-        });
+          await this.dbService.runWithTenant(userId, async (tx) => {
+            const saved = await this.repo.insertMessage(tx, {
+              chatId,
+              userId,
+              role: "assistant",
+              parts: responseMessage.parts,
+            });
+            await this.repo.touchChat(tx, chatId);
+            if (createdCardIds.length > 0) {
+              await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
+            }
+          });
+        } catch (error) {
+          // Las cards de este turno ya se insertaron cada una en su propia
+          // transacción (nacen durante el streaming, antes de que exista el
+          // mensaje assistant) — si esto truena, quedan con message_id NULL
+          // sin que nada más lo detecte. Logueado con los ids para poder
+          // investigarlas, en vez de una fuga silenciosa.
+          console.error(
+            `[chat] onEnd falló para chat ${chatId} (turno no abortado). ` +
+              `Cards de este turno posiblemente huérfanas: ` +
+              `${createdCardIds.length > 0 ? createdCardIds.join(", ") : "ninguna"}.`,
+            error,
+          );
+        }
       },
     });
   }
