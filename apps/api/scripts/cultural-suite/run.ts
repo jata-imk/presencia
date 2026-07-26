@@ -1,7 +1,8 @@
 // Runner de la suite de regresión cultural (ADR-004).
 // Corre cada prompt contra cada modelo con el MISMO system prompt de
-// producción y una versión mock (sin DB) de crear_borrador_publicacion,
-// y genera un reporte markdown lado a lado para juicio humano del founder.
+// producción y versiones mock (sin DB) de las 3 tools de crear borrador
+// (ADR-005), y genera un reporte markdown lado a lado para juicio humano
+// del founder.
 //
 // Uso: pnpm --filter @presencia/api suite:cultural
 // Modelos: env AI_SUITE_MODELS="google:x,openai:y" o el default de abajo.
@@ -9,12 +10,11 @@
 // AI_SUITE_DELAY_MS pausa entre llamadas (default 10000 — el free tier de
 // Gemini limita requests por minuto y cada prompt puede usar varios steps).
 
-import { generateText, stepCountIs, tool } from "ai";
+import { generateText, stepCountIs, tool, type ToolSet } from "ai";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { z } from "zod";
-import { cardContentSchema, socialNetworkSchema } from "@presencia/shared";
+import { CARD_ARCHETYPE_TOOLS } from "@presencia/shared";
 import { createModelResolver, DEFAULT_MODEL_ID } from "../../src/ai/provider-registry.js";
 import { SYSTEM_PROMPT } from "../../src/chat/system-prompt.js";
 import { culturalPrompts } from "./prompts.js";
@@ -32,59 +32,71 @@ const DEFAULT_MODELS = [
 // tabla PROVIDERS, sin mapping duplicado aquí.
 const resolveModel = createModelResolver(process.env, process.env.AI_MODEL ?? DEFAULT_MODEL_ID);
 
-// Mock de la tool de ADR-005: mismo contrato de entrada que tendrá la real,
-// pero sin tocar la DB. Mide si el modelo la llama y si su input pasa Zod.
-const mockCardInputSchema = z.object({
-  network: socialNetworkSchema,
-  content: cardContentSchema,
-});
+// Mock de las 3 tools reales: itera la misma tabla que produce las tools de
+// producción (CARD_ARCHETYPE_TOOLS en @presencia/shared) — nombre,
+// descripción y schema son exactamente los que ve el modelo en el chat real,
+// nunca una copia a mano que pueda quedarse desactualizada. Solo el
+// execute() difiere (mock sin DB vs inserción real).
+const culturalSuiteTools: ToolSet = {};
+for (const def of CARD_ARCHETYPE_TOOLS) {
+  culturalSuiteTools[def.toolName] = tool({
+    description: def.description,
+    inputSchema: def.inputSchema,
+    execute: (input) =>
+      Promise.resolve({ cardId: "mock-card", network: input.network, status: "draft" }),
+  });
+}
+
+interface ToolCallAttempt {
+  toolName: string;
+  valid: boolean;
+  input: unknown;
+}
 
 interface RunResult {
   text: string;
   finishReason: string;
-  toolCalls: number;
-  toolInputsValid: boolean;
+  toolAttempts: ToolCallAttempt[];
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
   error?: string;
 }
 
 async function runPrompt(modelId: string, promptText: string): Promise<RunResult> {
-  const crearBorrador = tool({
-    description:
-      "Crea un borrador de publicación para una red social. Úsala cuando el " +
-      "usuario pida explícitamente un post, borrador o guion para una red.",
-    inputSchema: mockCardInputSchema,
-    execute: (input) =>
-      Promise.resolve({
-        cardId: "mock-card",
-        archetype: input.content.archetype,
-        network: input.network,
-        status: "draft",
-      }),
-  });
-
   try {
     const result = await generateText({
       model: resolveModel(modelId),
       system: SYSTEM_PROMPT,
       prompt: promptText,
-      tools: { crear_borrador_publicacion: crearBorrador },
+      tools: culturalSuiteTools,
       stopWhen: stepCountIs(3),
     });
     // Los intentos con input inválido no ejecutan la tool pero sí cuentan:
-    // miden la disciplina de tool calling del proveedor (ADR-004).
+    // miden la disciplina de tool calling del proveedor (ADR-004). Se guarda
+    // el input completo (la card generada) para que el veredicto humano
+    // pueda juzgar el copy, no solo si la tool se llamó bien.
     const attempts = result.steps.flatMap((step) => step.toolCalls);
     return {
       text: result.text,
       finishReason: result.finishReason,
-      toolCalls: attempts.length,
-      toolInputsValid: attempts.every((call) => call.invalid !== true),
+      toolAttempts: attempts.map((call) => ({
+        toolName: call.toolName,
+        valid: call.invalid !== true,
+        input: call.input as unknown,
+      })),
+      inputTokens: result.usage.inputTokens ?? 0,
+      outputTokens: result.usage.outputTokens ?? 0,
+      totalTokens: result.usage.totalTokens ?? 0,
     };
   } catch (error) {
     return {
       text: "",
       finishReason: "error",
-      toolCalls: 0,
-      toolInputsValid: true,
+      toolAttempts: [],
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -143,6 +155,13 @@ async function main(): Promise<void> {
     "",
   ];
 
+  // Acumulado de tokens por modelo a lo largo de las 10 corridas — mide si
+  // el diseño de tool (3 tools por arquetipo vs. discriminatedUnion/aplanado)
+  // realmente cuesta menos por evitar reintentos de input inválido.
+  const tokensByModel = new Map(
+    models.map((m) => [m, { inputTokens: 0, outputTokens: 0, totalTokens: 0 }]),
+  );
+
   for (const prompt of prompts) {
     console.log(`\n▶ ${prompt.id}`);
     lines.push(`## ${prompt.id}${prompt.expectsTool ? " (espera tool call)" : ""}`, "");
@@ -152,6 +171,14 @@ async function main(): Promise<void> {
       console.log(`  · ${modelId}...`);
       const result = await runPrompt(modelId, prompt.text);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+      const totals = tokensByModel.get(modelId);
+      if (totals) {
+        totals.inputTokens += result.inputTokens;
+        totals.outputTokens += result.outputTokens;
+        totals.totalTokens += result.totalTokens;
+      }
+
       lines.push(`### ${modelId}`, "");
       if (result.error) {
         lines.push(`**Error:** \`${result.error}\``, "");
@@ -161,10 +188,33 @@ async function main(): Promise<void> {
           "",
         );
       }
-      if (prompt.expectsTool || result.toolCalls > 0) {
+      const toolCalls = result.toolAttempts.length;
+      if (prompt.expectsTool || toolCalls > 0) {
+        const toolNames = result.toolAttempts.map((a) => a.toolName).join(", ");
+        const allValid = result.toolAttempts.every((a) => a.valid);
         lines.push(
-          `- ¿Llamó la tool?: ${result.toolCalls > 0 ? `sí (${result.toolCalls})` : "no"}`,
-          `- ¿Input Zod-válido?: ${result.toolCalls > 0 ? (result.toolInputsValid ? "sí" : "NO") : "n/a"}`,
+          `- ¿Llamó la tool?: ${toolCalls > 0 ? `sí (${toolCalls}: ${toolNames})` : "no"}`,
+          `- ¿Input Zod-válido?: ${toolCalls > 0 ? (allValid ? "sí" : "NO") : "n/a"}`,
+          "",
+        );
+      }
+      // Card generada por cada tool call (aunque el input haya sido
+      // inválido — así se ve qué mandó el modelo, no solo si pasó Zod).
+      for (const attempt of result.toolAttempts) {
+        lines.push(
+          `<details><summary>Card generada — <code>${attempt.toolName}</code>${attempt.valid ? "" : " ⚠️ input inválido"}</summary>`,
+          "",
+          "```json",
+          JSON.stringify(attempt.input, null, 2),
+          "```",
+          "",
+          "</details>",
+          "",
+        );
+      }
+      if (!result.error) {
+        lines.push(
+          `- Tokens: input ${result.inputTokens} / output ${result.outputTokens} / total ${result.totalTokens}`,
           "",
         );
       }
@@ -173,6 +223,15 @@ async function main(): Promise<void> {
 
   lines.push(
     "---",
+    "",
+    "## Consumo de tokens por proveedor (10 prompts)",
+    "",
+    "| Modelo | Input | Output | Total |",
+    "| ------ | ----- | ------ | ----- |",
+    ...models.map((m) => {
+      const t = tokensByModel.get(m)!;
+      return `| \`${m}\` | ${t.inputTokens} | ${t.outputTokens} | ${t.totalTokens} |`;
+    }),
     "",
     "## Veredicto (juicio humano)",
     "",
