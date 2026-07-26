@@ -62,11 +62,6 @@ export class ChatRepository {
       .where(eq(chats.id, chatId));
   }
 
-  async getMessage(tx: Tx, messageId: string): Promise<MessageRow | undefined> {
-    const [message] = await tx.select().from(messages).where(eq(messages.id, messageId));
-    return message;
-  }
-
   async deleteMessage(tx: Tx, messageId: string): Promise<void> {
     await tx.delete(messages).where(eq(messages.id, messageId));
   }

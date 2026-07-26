@@ -100,16 +100,20 @@ export class ChatService {
     const history = await this.dbService.runWithTenant(userId, async (tx) => {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
-      const target = await this.repo.getMessage(tx, messageId);
-      if (!target || target.chatId !== chatId || target.role !== "assistant") {
+      const all = await this.repo.listMessages(tx, chatId);
+      const last = all.at(-1);
+      // Solo se reintenta el último turno: messageId viaja del cliente, y
+      // sin este chequeo se podría borrar un mensaje intermedio dejando un
+      // hueco en la conversación (dos turnos user seguidos) sin tocar los
+      // turnos posteriores.
+      if (!last || last.id !== messageId || last.role !== "assistant") {
         throw new NotFoundException("Ese mensaje no se puede reintentar.");
       }
       // Cards antes que mensaje: el FK message_id es "set null", no
       // cascade — sin este orden quedarían huérfanas en vez de borradas.
       await this.cardsRepo.deleteCardsByMessageId(tx, messageId);
       await this.repo.deleteMessage(tx, messageId);
-      const remaining = await this.repo.listMessages(tx, chatId);
-      return remaining.map((row) => this.toUIMessage(row));
+      return all.slice(0, -1).map((row) => this.toUIMessage(row));
     });
 
     await this.runAgentTurn(userId, chatId, history, res);
