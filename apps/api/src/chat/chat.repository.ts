@@ -61,4 +61,23 @@ export class ChatRepository {
       .set({ lastMessageAt: sql`now()`, updatedAt: sql`now()` })
       .where(eq(chats.id, chatId));
   }
+
+  async getMessage(tx: Tx, messageId: string): Promise<MessageRow | undefined> {
+    const [message] = await tx.select().from(messages).where(eq(messages.id, messageId));
+    return message;
+  }
+
+  async deleteMessage(tx: Tx, messageId: string): Promise<void> {
+    await tx.delete(messages).where(eq(messages.id, messageId));
+  }
+
+  async renameChat(tx: Tx, chatId: string, title: string): Promise<ChatRow> {
+    const [chat] = await tx
+      .update(chats)
+      .set({ title, updatedAt: sql`now()` })
+      .where(eq(chats.id, chatId))
+      .returning();
+    if (!chat) throw new Error("No se pudo renombrar el chat");
+    return chat;
+  }
 }

@@ -65,7 +65,7 @@
 
 ### Contenido
 
-**`publication_cards`** — nace de una de las 3 tools de crear borrador, una por arquetipo (`crear_borrador_visual`/`crear_borrador_video`/`crear_borrador_texto`, ADR-005). `message_id` es nullable: la card se inserta durante el stream, antes de que exista la fila `messages` del assistant; se vincula (backfill) cuando el stream termina.
+**`publication_cards`** — nace de una de las 3 tools de crear borrador, una por arquetipo (`crear_borrador_visual`/`crear_borrador_video`/`crear_borrador_texto`, ADR-005). `message_id` es nullable: la card se inserta durante el stream, antes de que exista la fila `messages` del assistant; se vincula (backfill) cuando el stream termina. Al reintentar un turno ("Reintentar" en UI, F3 PR3) las cards vinculadas al mensaje assistant descartado se borran junto con él (ver ADR-006 addendum) — no quedan huérfanas.
 
 | Columna                         | Tipo           | Nota                                                                                                                                       |
 | ------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -37,7 +37,10 @@ export function buildPublicationCardTools(deps: PublicationCardToolsDeps): ToolS
           }),
         );
         deps.createdCardIds.push(card.id);
-        return { cardId: card.id, network: card.network, status: card.status };
+        // content ya está calculado arriba (tipado, sin el roundtrip del
+        // jsonb de vuelta) — viaja en el output de la tool para que el
+        // frontend pinte la card sin fetch extra (ADR-006 addendum F3 PR3).
+        return { cardId: card.id, network: card.network, status: card.status, content };
       },
     });
   }

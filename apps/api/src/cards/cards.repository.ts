@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
 import { publicationCards } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
@@ -38,5 +38,12 @@ export class CardsRepository {
       .update(publicationCards)
       .set({ messageId, updatedAt: new Date() })
       .where(inArray(publicationCards.id, cardIds));
+  }
+
+  // Se llama ANTES de borrar el mensaje (FK message_id es "set null", no
+  // cascade): sin este paso las cards quedarían huérfanas en vez de
+  // borradas al reintentar un turno (decisión de producto, F3 PR3).
+  async deleteCardsByMessageId(tx: Tx, messageId: string): Promise<void> {
+    await tx.delete(publicationCards).where(eq(publicationCards.messageId, messageId));
   }
 }

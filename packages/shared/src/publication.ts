@@ -151,3 +151,14 @@ export const CARD_ARCHETYPE_TOOLS: readonly CardArchetypeToolDefinition[] = [
       textFirstContentSchema.parse({ ...input, archetype: "text_first", assetIds: [] }),
   }),
 ] as const;
+
+// Output de las 3 tools (F3 PR3): el content completo viaja en el output de
+// la tool call, no solo {cardId, network, status} — ya se persiste gratis
+// dentro de messages.parts, así que el frontend lo pinta directo desde el
+// tool part sin round-trip/endpoint nuevo.
+export interface CardToolOutput {
+  cardId: string;
+  network: SocialNetwork;
+  status: CardStatus;
+  content: CardContent;
+}
