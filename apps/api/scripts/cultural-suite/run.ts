@@ -20,8 +20,8 @@ import { SYSTEM_PROMPT } from "../../src/chat/system-prompt.js";
 import { culturalPrompts } from "./prompts.js";
 
 const DEFAULT_MODELS = [
-  "google:gemini-3.5-flash",
-  "openai:gpt-5-mini",
+  "google:gemini-3.6-flash",
+  "openai:gpt-5.6-terra",
   "anthropic:claude-haiku-4-5",
   "deepseek:deepseek-v4-flash",
   "minimax:MiniMax-M2",

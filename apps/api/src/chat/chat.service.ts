@@ -47,11 +47,19 @@ export class ChatService {
     });
   }
 
+  renameChat(userId: string, chatId: string, title: string): Promise<ChatSummary> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const chat = await this.repo.getChat(tx, chatId);
+      if (!chat) throw new NotFoundException("Ese chat no existe.");
+      const updated = await this.repo.renameChat(tx, chatId, title);
+      return this.toSummary(updated);
+    });
+  }
+
   /**
-   * El hilo completo del esqueleto: tx corta que persiste el mensaje user y
-   * carga el historial canónico desde la DB (se ignora lo demás del body),
-   * stream del LLM sin transacción abierta, y tx corta en onEnd que
-   * persiste la respuesta — nunca parciales de un stream abortado.
+   * Turno normal: inserta el mensaje user, carga el historial canónico
+   * desde la DB (se ignora lo demás del body) y corre el pipeline del
+   * agente.
    */
   async streamChat(
     userId: string,
@@ -73,6 +81,53 @@ export class ChatService {
       return [...previous, saved].map((row) => this.toUIMessage(row));
     });
 
+    await this.runAgentTurn(userId, chatId, history, res);
+  }
+
+  /**
+   * Reintento ("Reintentar" en UI, ADR-006 addendum F3 PR3): borra el
+   * mensaje assistant a regenerar y sus cards vinculadas (decisión de
+   * producto: no quedan huérfanas), y vuelve a correr el pipeline con el
+   * historial que queda — el turno user ya estaba persistido, no se
+   * inserta nada nuevo.
+   */
+  async regenerateChat(
+    userId: string,
+    chatId: string,
+    messageId: string,
+    res: ServerResponse,
+  ): Promise<void> {
+    const history = await this.dbService.runWithTenant(userId, async (tx) => {
+      const chat = await this.repo.getChat(tx, chatId);
+      if (!chat) throw new NotFoundException("Ese chat no existe.");
+      const all = await this.repo.listMessages(tx, chatId);
+      const last = all.at(-1);
+      // Solo se reintenta el último turno: messageId viaja del cliente, y
+      // sin este chequeo se podría borrar un mensaje intermedio dejando un
+      // hueco en la conversación (dos turnos user seguidos) sin tocar los
+      // turnos posteriores.
+      if (!last || last.id !== messageId || last.role !== "assistant") {
+        throw new NotFoundException("Ese mensaje no se puede reintentar.");
+      }
+      // Cards antes que mensaje: el FK message_id es "set null", no
+      // cascade — sin este orden quedarían huérfanas en vez de borradas.
+      await this.cardsRepo.deleteCardsByMessageId(tx, messageId);
+      await this.repo.deleteMessage(tx, messageId);
+      return all.slice(0, -1).map((row) => this.toUIMessage(row));
+    });
+
+    await this.runAgentTurn(userId, chatId, history, res);
+  }
+
+  // Pipeline compartido por streamChat y regenerateChat: streamText + tools
+  // + persistencia en onEnd. `history` ya trae el turno user que
+  // corresponde en cada caso.
+  private async runAgentTurn(
+    userId: string,
+    chatId: string,
+    history: UIMessage[],
+    res: ServerResponse,
+  ): Promise<void> {
     const abortController = new AbortController();
     res.on("close", () => {
       if (!res.writableFinished) abortController.abort();
@@ -127,11 +182,6 @@ export class ChatService {
             }
           });
         } catch (error) {
-          // Las cards de este turno ya se insertaron cada una en su propia
-          // transacción (nacen durante el streaming, antes de que exista el
-          // mensaje assistant) — si esto truena, quedan con message_id NULL
-          // sin que nada más lo detecte. Logueado con los ids para poder
-          // investigarlas, en vez de una fuga silenciosa.
           console.error(
             `[chat] onEnd falló para chat ${chatId} (turno no abortado). ` +
               `Cards de este turno posiblemente huérfanas: ` +

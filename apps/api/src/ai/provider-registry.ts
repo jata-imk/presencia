@@ -61,7 +61,7 @@ export const PROVIDERS = {
 export type ProviderId = keyof typeof PROVIDERS;
 export const PROVIDER_IDS = Object.keys(PROVIDERS) as ProviderId[];
 
-export const DEFAULT_MODEL_ID = "google:gemini-3.5-flash";
+export const DEFAULT_MODEL_ID = "google:gemini-3.6-flash";
 
 export type EnvSource = Record<string, string | undefined>;
 export type ModelResolver = (modelId?: string) => LanguageModel;

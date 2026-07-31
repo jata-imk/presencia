@@ -26,3 +26,37 @@
     color: var(--fg-primary);
   }
 }
+
+/* Markdown del chat (F3, provisional — ver ADR-006 addendum): Tailwind
+   preflight resetea listas/headings a estilo plano; sin el plugin
+   @tailwindcss/typography, esto es lo mínimo para que negritas/listas se
+   distingan del texto normal, con los tokens existentes. */
+.markdown :where(ul, ol) {
+  margin: 0.5em 0;
+  padding-left: 1.25em;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown p {
+  margin: 0.5em 0;
+}
+.markdown p:first-child {
+  margin-top: 0;
+}
+.markdown p:last-child {
+  margin-bottom: 0;
+}
+.markdown strong {
+  font-weight: 600;
+}
+.markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-tint-plum);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.3em;
+}

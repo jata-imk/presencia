@@ -79,9 +79,10 @@ type TextFirstToolInput = z.infer<typeof textFirstToolInputSchema>;
 
 export interface CardArchetypeToolDefinition<
   TInput extends { network: SocialNetwork } = { network: SocialNetwork },
+  TName extends string = string,
 > {
   archetype: PublicationArchetype;
-  toolName: string;
+  toolName: TName;
   description: string;
   networks: readonly SocialNetwork[];
   inputSchema: z.ZodType<TInput>;
@@ -93,10 +94,12 @@ export interface CardArchetypeToolDefinition<
 // shape base para que el array sea heterogéneo — cada arquetipo tiene su
 // propio input, pero todas comparten `network`, que es lo único que el
 // consumidor genérico (la factory de tools) necesita leer directamente.
-function defineCardArchetypeTool<TInput extends { network: SocialNetwork }>(
-  def: CardArchetypeToolDefinition<TInput>,
-): CardArchetypeToolDefinition {
-  return def as unknown as CardArchetypeToolDefinition;
+// TName se preserva literal (no se erasiona) para que CardArchetypeToolName
+// abajo se derive del array en vez de duplicarse a mano en cada consumidor.
+function defineCardArchetypeTool<TInput extends { network: SocialNetwork }, TName extends string>(
+  def: CardArchetypeToolDefinition<TInput, TName>,
+): CardArchetypeToolDefinition<{ network: SocialNetwork }, TName> {
+  return def as unknown as CardArchetypeToolDefinition<{ network: SocialNetwork }, TName>;
 }
 
 // Fuente única de las 3 tools de crear borrador (ADR-005). NO usamos
@@ -113,8 +116,8 @@ function defineCardArchetypeTool<TInput extends { network: SocialNetwork }>(
 // suite cultural (apps/api/scripts/cultural-suite/run.ts) iteran este array
 // para construir sus tools — nombre, descripción y schema viven en un solo
 // lugar, nunca duplicados a mano.
-export const CARD_ARCHETYPE_TOOLS: readonly CardArchetypeToolDefinition[] = [
-  defineCardArchetypeTool<VisualFirstToolInput>({
+export const CARD_ARCHETYPE_TOOLS = [
+  defineCardArchetypeTool<VisualFirstToolInput, "crear_borrador_visual">({
     archetype: "visual_first",
     toolName: "crear_borrador_visual",
     description:
@@ -126,7 +129,7 @@ export const CARD_ARCHETYPE_TOOLS: readonly CardArchetypeToolDefinition[] = [
     buildContent: (input) =>
       visualFirstContentSchema.parse({ ...input, archetype: "visual_first", assetIds: [] }),
   }),
-  defineCardArchetypeTool<VideoScriptToolInput>({
+  defineCardArchetypeTool<VideoScriptToolInput, "crear_borrador_video">({
     archetype: "video_script",
     toolName: "crear_borrador_video",
     description:
@@ -138,7 +141,7 @@ export const CARD_ARCHETYPE_TOOLS: readonly CardArchetypeToolDefinition[] = [
     buildContent: (input) =>
       videoScriptContentSchema.parse({ ...input, archetype: "video_script" }),
   }),
-  defineCardArchetypeTool<TextFirstToolInput>({
+  defineCardArchetypeTool<TextFirstToolInput, "crear_borrador_texto">({
     archetype: "text_first",
     toolName: "crear_borrador_texto",
     description:
@@ -151,3 +154,18 @@ export const CARD_ARCHETYPE_TOOLS: readonly CardArchetypeToolDefinition[] = [
       textFirstContentSchema.parse({ ...input, archetype: "text_first", assetIds: [] }),
   }),
 ] as const;
+
+// Nombres de tool derivados del array — fuente única para tipar el lado
+// frontend (apps/web/src/lib/chat-types.ts) sin duplicarlos a mano.
+export type CardArchetypeToolName = (typeof CARD_ARCHETYPE_TOOLS)[number]["toolName"];
+
+// Output de las 3 tools (F3 PR3): el content completo viaja en el output de
+// la tool call, no solo {cardId, network, status} — ya se persiste gratis
+// dentro de messages.parts, así que el frontend lo pinta directo desde el
+// tool part sin round-trip/endpoint nuevo.
+export interface CardToolOutput {
+  cardId: string;
+  network: SocialNetwork;
+  status: CardStatus;
+  content: CardContent;
+}

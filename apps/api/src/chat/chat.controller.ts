@@ -5,11 +5,18 @@ import {
   Get,
   Inject,
   Param,
+  Patch,
   Post,
   Res,
 } from "@nestjs/common";
 import { safeValidateUIMessages, type UIMessage } from "ai";
-import { chatIdParamSchema, createChatBodySchema, type ChatSummary } from "@presencia/shared";
+import {
+  chatIdParamSchema,
+  chatStreamBodySchema,
+  createChatBodySchema,
+  renameChatBodySchema,
+  type ChatSummary,
+} from "@presencia/shared";
 import type { Response } from "express";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { SessionUser } from "../auth/auth.js";
@@ -36,8 +43,22 @@ export class ChatController {
     return this.chatService.getMessages(user.id, this.parseChatId(id));
   }
 
+  @Patch(":id")
+  rename(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<ChatSummary> {
+    const chatId = this.parseChatId(id);
+    const parsed = renameChatBodySchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException("El título no es válido.");
+    return this.chatService.renameChat(user.id, chatId, parsed.data.title);
+  }
+
   // Streaming SSE (ADR-006): con @Res() Nest no toca la respuesta; el
-  // AI SDK escribe el stream directo sobre el ServerResponse.
+  // AI SDK escribe el stream directo sobre el ServerResponse. `trigger`
+  // distingue turno nuevo (submit-message) de reintento (regenerate-message,
+  // ADR-006 addendum F3 PR3) — mismo endpoint, mismo protocolo de useChat.
   @Post(":id/stream")
   async stream(
     @CurrentUser() user: SessionUser,
@@ -46,6 +67,17 @@ export class ChatController {
     @Res() res: Response,
   ): Promise<void> {
     const chatId = this.parseChatId(id);
+    const trigger = chatStreamBodySchema.safeParse(body ?? {});
+    if (!trigger.success) throw new BadRequestException("La solicitud no es válida.");
+
+    if (trigger.data.trigger === "regenerate-message") {
+      if (!trigger.data.messageId) {
+        throw new BadRequestException("Falta el id del mensaje a reintentar.");
+      }
+      await this.chatService.regenerateChat(user.id, chatId, trigger.data.messageId, res);
+      return;
+    }
+
     const userMessage = await this.parseLastUserMessage(body);
     await this.chatService.streamChat(user.id, chatId, userMessage, res);
   }
