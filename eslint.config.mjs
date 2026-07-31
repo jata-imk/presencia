@@ -23,5 +23,14 @@ export default tseslint.config(
     files: ["**/*.{js,mjs,cjs}"],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // vitest mocks (vi.fn()) son props sueltas, no métodos de instancia —
+    // pasarlas a expect(...).toHaveBeenCalledWith es el patrón normal de
+    // mockear un repository/service, no un uso real de "unbound method".
+    files: ["**/*.spec.ts"],
+    rules: {
+      "@typescript-eslint/unbound-method": "off",
+    },
+  },
   prettier,
 );
