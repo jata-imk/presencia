@@ -40,6 +40,9 @@ export type UpdateBrandVoicePatch = Partial<{
   keyTopics: string[];
   preferredCtas: string[];
   referenceExamples: BrandVoiceReferenceExample[];
+  // Escape hatch sin schema propio — ver comentario en
+  // packages/shared/src/brand-voice.ts junto a updateBrandVoiceBodySchema.
+  extras: Record<string, unknown>;
 }>;
 
 @Injectable()

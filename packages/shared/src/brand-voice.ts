@@ -85,6 +85,12 @@ export const updateBrandVoiceBodySchema = z.object({
   keyTopics: tagList(20).optional(),
   preferredCtas: z.array(ctaTag).max(20).optional(),
   referenceExamples: z.array(brandVoiceReferenceExampleSchema).max(2).optional(),
+  // Escape hatch sin schema propio (modelo-de-datos.md: "lo que el
+  // onboarding aprenda después sin migrar"). V1: reemplazo total del
+  // objeto al persistir, no merge — el único escritor hoy es el paso
+  // "Goals" del onboarding (extras.goals). Nunca llega al system prompt
+  // (buildSystemPrompt no lo lee).
+  extras: z.record(z.string(), z.unknown()).optional(),
 });
 export type UpdateBrandVoiceBody = z.infer<typeof updateBrandVoiceBodySchema>;
 

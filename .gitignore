@@ -22,6 +22,7 @@ Thumbs.db
 coverage/
 playwright-report/
 test-results/
+.playwright-mcp/
 
 # Editor (se versiona solo .vscode/settings.json y extensions.json)
 .vscode/*

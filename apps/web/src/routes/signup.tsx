@@ -63,7 +63,7 @@ export function SignupPage() {
           minLength={8}
           required
         />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-error">{error}</p>}
         <button type="submit" className="border p-2 font-semibold" disabled={submitting}>
           {submitting ? "Creando cuenta…" : "Registrarme"}
         </button>
