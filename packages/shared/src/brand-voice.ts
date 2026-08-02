@@ -115,3 +115,15 @@ export type BrandVoiceForPrompt = Omit<
   BrandVoiceDto,
   "id" | "name" | "isDefault" | "createdAt" | "updatedAt"
 >;
+
+// Quita acentos vía descomposición Unicode: "café" y "cafe" cuentan como el
+// mismo modismo. Vive en shared (no en brand-voice.service.ts) porque dos
+// consumidores sin relación de dependencia la necesitan: el service
+// (prohibido gana sobre permitido) y scripts/cultural-suite/prohibited-word.ts
+// (cuenta ocurrencias del modismo prohibido en las generaciones de prueba)
+// — este último no puede importar de apps/api/src sin arrastrar Nest.
+const COMBINING_DIACRITICS = /[\u0300-\u036f]/g;
+
+export function normalizeExpression(term: string): string {
+  return term.trim().toLowerCase().normalize("NFD").replace(COMBINING_DIACRITICS, "");
+}

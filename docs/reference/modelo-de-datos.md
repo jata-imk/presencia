@@ -1,6 +1,6 @@
 # Modelo de datos núcleo + RLS
 
-> **Estado: APROBADO en sesión de diseño del 2026-07-18** (las 5 preguntas abiertas se cerraron; ver "Decisiones de la sesión" al final). **Implementado** en `apps/api/src/db/schema.ts` y migraciones `0000`–`0003` (revisión de drift 2026-07-19). El aislamiento se verifica con el test `apps/api/src/db/rls.spec.ts` (DoD de F2).
+> **Estado: APROBADO en sesión de diseño del 2026-07-18** (las 5 preguntas abiertas se cerraron; ver "Decisiones de la sesión" al final). **Implementado** en `apps/api/src/db/schema.ts` y migraciones `0000`–`0003` (revisión de drift 2026-07-19); `brand_voices.formality`/`reference_examples` y `users.onboarding_completed_at` llegan en la migración `0004` (F4 PR 1/4, 2026-08-02). El aislamiento se verifica con el test `apps/api/src/db/rls.spec.ts` (DoD de F2, extendido con `brand_voices` en F4).
 
 ## Principios
 
@@ -15,25 +15,30 @@
 **`users`** — Better Auth (1.6) es dueño de sus tablas: `users`, `sessions`, `accounts`, `verifications` (plural vía `modelName`; uuid generado por la DB, timestamptz, snake_case — migraciones 0000 y 0002, nacidas con F1). Nuestras tablas de dominio referencian `users.id`. Campos core que usamos: `name` (nombre de cuenta), `email`, `email_verified`, `image`. Extendemos con campos de perfil vía `additionalFields`:
 
 - `display_name` — nombre público (nullable; la UI cae a `name` si es NULL). Migración 0003.
-- `timezone` — zona IANA (ej. `America/Merida`), default `America/Mexico_City`. La columna existe desde la migración 0000; la captura del navegador en onboarding (`Intl.DateTimeFormat().resolvedOptions().timeZone`) y la edición en Mi perfil llegan en F4. La consume toda interpretación de hora humana: programación de posts (F6), "prográmalo mañana" en chat (F3), mejores horarios de Ritmo (F9) y el cierre de ciclo de créditos.
+- `timezone` — zona IANA (ej. `America/Merida`), default `America/Mexico_City`. La columna existe desde la migración 0000. Edición vía `PATCH /api/me` (`apps/api/src/profile/`, F4 PR 1/4, valida contra `Intl.supportedValuesOf("timeZone")`); la captura automática del navegador (`Intl.DateTimeFormat().resolvedOptions().timeZone`) en el paso "Welcome" del onboarding llega en F4 PR 3/4. La consume toda interpretación de hora humana: programación de posts (F6), "prográmalo mañana" en chat (F3), mejores horarios de Ritmo (F9) y el cierre de ciclo de créditos.
+- `onboarding_completed_at` — timestamptz nullable, gate explícito del onboarding (F4 PR 1/4). NULL → el guard del cliente redirige a `/onboarding` (F4 PR 3/4). Se sella con `POST /api/me/complete-onboarding` en el paso "Ready"; no se infiere de "¿existe una voz default?" para no dejar al usuario atrapado si abandona el flujo a medias.
 
 **`brand_voices`** — el moat cultural hecho tabla.
 
-| Columna                                      | Tipo    | Nota                                                                              |
-| -------------------------------------------- | ------- | --------------------------------------------------------------------------------- |
-| `id`                                         | uuid PK |                                                                                   |
-| `user_id`                                    | uuid FK | RLS                                                                               |
-| `name`                                       | text    | "Mi voz", o nombre del cliente (persona CM)                                       |
-| `is_default`                                 | boolean | exactamente 1 default por usuario (índice único parcial)                          |
-| `market_country` / `market_region`           | text    | ej. MX / Yucatán — del onboarding paso "Voz". `market_country` default `'MX'`     |
-| `niche`                                      | text[]  | chips + campo libre                                                               |
-| `audience`                                   | text    | descripción de a quién le habla                                                   |
-| `register`                                   | enum    | `neutro_profesional` (default), `informal`, `de_barrio`, `tecnico`, `profesional` |
-| `allowed_expressions` / `banned_expressions` | text[]  | modismos permitidos/prohibidos                                                    |
-| `use_anglicisms`                             | boolean | default `true`                                                                    |
-| `key_topics`                                 | text[]  |                                                                                   |
-| `preferred_ctas`                             | text[]  |                                                                                   |
-| `extras`                                     | jsonb   | lo que el onboarding aprenda después sin migrar                                   |
+| Columna                                      | Tipo     | Nota                                                                                                                                                                                                |
+| -------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                         | uuid PK  |                                                                                                                                                                                                     |
+| `user_id`                                    | uuid FK  | RLS                                                                                                                                                                                                 |
+| `name`                                       | text     | "Mi voz", o nombre del cliente (persona CM)                                                                                                                                                         |
+| `is_default`                                 | boolean  | exactamente 1 default por usuario (índice único parcial)                                                                                                                                            |
+| `market_country` / `market_region`           | text     | ej. MX / Yucatán — del onboarding paso "Voz". `market_country` default `'MX'`                                                                                                                       |
+| `niche`                                      | text[]   | chips + campo libre                                                                                                                                                                                 |
+| `audience`                                   | text     | descripción de a quién le habla                                                                                                                                                                     |
+| `register`                                   | enum     | `neutro_profesional` (default), `informal`, `de_barrio`, `tecnico`, `profesional`                                                                                                                   |
+| `formality`                                  | smallint | 0-100 (check), posición fina del slider de Configuración (doc §4). `register` es su ancla categórica — ambos viven sincronizados en el mismo objeto, nunca dos sistemas. Migración 0004 (F4 PR 1/4) |
+| `allowed_expressions` / `banned_expressions` | text[]   | modismos permitidos/prohibidos. Un término en ambas listas se resuelve como prohibido al persistir (doc §6, `BrandVoiceService`), no solo en la UI                                                  |
+| `use_anglicisms`                             | boolean  | default `true`                                                                                                                                                                                      |
+| `key_topics`                                 | text[]   |                                                                                                                                                                                                     |
+| `preferred_ctas`                             | text[]   |                                                                                                                                                                                                     |
+| `reference_examples`                         | jsonb    | hasta 2 `{ text, sourceCardId? }` (doc §2 Bloque D), pegados como texto en F4; `sourceCardId` queda sin poblar hasta que exista Biblioteca. Migración 0004 (F4 PR 1/4)                              |
+| `extras`                                     | jsonb    | lo que el onboarding aprenda después sin migrar                                                                                                                                                     |
+
+Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada turno del chat: ensambla un bloque `<voz_de_marca>` con estos campos sobre el prompt base. Sin voz configurada (a medio onboarding), el prompt cae al base sin romper el chat.
 
 **`folders`** — carpetas tipo Projects.
 
@@ -188,4 +193,4 @@ Resueltas con Jose, integradas arriba en cada sección:
 2. **`messages.parts`:** formato `UIMessage` del AI SDK persistido tal cual; versión pineada + repository.
 3. **Grupo multi-red:** `group_id` plano, estado derivado; tabla propia solo si el grupo gana atributos (V2 campañas).
 4. **Créditos:** expiran al cierre del ciclo (`cycle_expiration` + grant nuevo, job pg-boss).
-5. **Timezone:** en el perfil desde F2 (IANA, capturada del navegador, default `America/Mexico_City`).
+5. **Timezone:** en el perfil (IANA, capturada del navegador, default `America/Mexico_City`). La sesión de diseño apuntaba a F2; en la práctica la columna se creó en F1/F2 (migración 0000) pero la UX de captura/edición se corrió a F4 (backlog explícito, PR 1/4 para el endpoint, PR 3/4 para la captura del navegador en onboarding) — el bullet de `users.timezone` arriba refleja el estado real.

@@ -59,7 +59,7 @@ function makeDbService(): DbService {
 function makeRepo(overrides: Partial<BrandVoiceRepository> = {}): BrandVoiceRepository {
   return {
     findDefault: vi.fn(),
-    insertDefault: vi.fn(),
+    upsertDefault: vi.fn(),
     updateDefault: vi.fn(),
     ...overrides,
   };
@@ -68,8 +68,7 @@ function makeRepo(overrides: Partial<BrandVoiceRepository> = {}): BrandVoiceRepo
 describe("BrandVoiceService — formality ↔ register (doc §4)", () => {
   it("upsertDefault (onboarding) deriva formality del register elegido", async () => {
     const repo = makeRepo({
-      findDefault: vi.fn().mockResolvedValue(undefined),
-      insertDefault: vi
+      upsertDefault: vi
         .fn()
         .mockImplementation((_tx: Tx, input: object) => Promise.resolve(makeRow(input))),
     });
@@ -81,10 +80,28 @@ describe("BrandVoiceService — formality ↔ register (doc §4)", () => {
       register: "de_barrio",
     });
 
-    expect(repo.insertDefault).toHaveBeenCalledWith(
+    expect(repo.upsertDefault).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ register: "de_barrio", formality: 15 }),
     );
+  });
+
+  it("upsertDefault es un UPSERT atómico: no llama findDefault (evita la race del doble-submit)", async () => {
+    const repo = makeRepo({
+      upsertDefault: vi
+        .fn()
+        .mockImplementation((_tx: Tx, input: object) => Promise.resolve(makeRow(input))),
+    });
+    const service = new BrandVoiceService(makeDbService(), repo);
+
+    await service.upsertDefault("user-1", {
+      marketCountry: "MX",
+      niche: ["comida"],
+      register: "profesional",
+    });
+
+    expect(repo.findDefault).not.toHaveBeenCalled();
+    expect(repo.upsertDefault).toHaveBeenCalledTimes(1);
   });
 
   it("updateDefault (slider) recalcula register cuando llega formality", async () => {

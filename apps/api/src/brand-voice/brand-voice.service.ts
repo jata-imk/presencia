@@ -1,6 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   formalityToRegister,
+  normalizeExpression,
   REGISTER_FORMALITY_ANCHORS,
   type BrandVoiceDto,
   type BrandVoiceForPrompt,
@@ -41,26 +42,12 @@ export class BrandVoiceService {
   }
 
   // PUT — paso "Voz" del onboarding: crea la default con los 3 campos
-  // obligatorios. Idempotente (si ya existe, actualiza) para que reenviar
-  // el paso no truene contra el índice único de is_default.
+  // obligatorios. UPSERT atómico en el repository (brand-voice.repository.ts)
+  // — reenviar el paso (doble-click) no crea una segunda fila ni truena
+  // contra el índice único de is_default.
   upsertDefault(userId: string, body: CreateBrandVoiceBody): Promise<BrandVoiceDto> {
     return this.dbService.runWithTenant(userId, async (tx) => {
-      const existing = await this.repo.findDefault(tx);
-      const formality = REGISTER_FORMALITY_ANCHORS[body.register];
-
-      if (existing) {
-        const updated = await this.repo.updateDefault(tx, {
-          marketCountry: body.marketCountry,
-          marketRegion: body.marketRegion,
-          niche: body.niche,
-          audience: body.audience,
-          register: body.register,
-          formality,
-        });
-        return this.toDto(updated);
-      }
-
-      const created = await this.repo.insertDefault(tx, {
+      const upserted = await this.repo.upsertDefault(tx, {
         userId,
         name: "Mi voz",
         marketCountry: body.marketCountry,
@@ -68,9 +55,9 @@ export class BrandVoiceService {
         niche: body.niche,
         audience: body.audience ?? null,
         register: body.register,
-        formality,
+        formality: REGISTER_FORMALITY_ANCHORS[body.register],
       });
-      return this.toDto(created);
+      return this.toDto(upserted);
     });
   }
 
@@ -152,13 +139,4 @@ export class BrandVoiceService {
       referenceExamples: row.referenceExamples as BrandVoiceReferenceExample[],
     };
   }
-}
-
-// Quita acentos vía descomposición Unicode: "café" y "cafe" cuentan como el
-// mismo modismo al comparar permitidos contra prohibidos. Rango expresado
-// con \u escapes (no caracteres combinantes literales en el fuente).
-const COMBINING_DIACRITICS = /[\u0300-\u036f]/g;
-
-function normalizeExpression(term: string): string {
-  return term.trim().toLowerCase().normalize("NFD").replace(COMBINING_DIACRITICS, "");
 }
