@@ -9,6 +9,7 @@
     "dev": "tsx watch --env-file=../../.env src/main.ts",
     "test": "vitest run",
     "suite:cultural": "tsx --env-file=../../.env scripts/cultural-suite/run.ts",
+    "suite:voz-prohibida": "tsx --env-file=../../.env scripts/cultural-suite/prohibited-word.ts",
     "start": "node dist/main.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"

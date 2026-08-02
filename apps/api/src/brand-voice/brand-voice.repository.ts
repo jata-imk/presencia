@@ -49,12 +49,33 @@ export class BrandVoiceRepository {
     return row;
   }
 
-  async insertDefault(tx: Tx, input: InsertDefaultBrandVoiceInput): Promise<BrandVoiceRow> {
+  // UPSERT atómico en una sola sentencia (hallazgo del code review de
+  // PR 1): find-then-insert dejaba una ventana de carrera entre dos PUT
+  // concurrentes (doble-click en el paso "Voz" del onboarding) — el
+  // segundo insert chocaba contra el índice único parcial con un error
+  // crudo de Postgres. `targetWhere` replica el predicado de ese índice
+  // (`WHERE is_default`) para que Postgres pueda inferir el conflicto.
+  // `name` queda fuera del `set`: si el usuario ya renombró su voz desde
+  // Configuración, reenviar el paso "Voz" no debe resetearla a "Mi voz".
+  async upsertDefault(tx: Tx, input: InsertDefaultBrandVoiceInput): Promise<BrandVoiceRow> {
     const [row] = await tx
       .insert(brandVoices)
       .values({ ...input, isDefault: true })
+      .onConflictDoUpdate({
+        target: brandVoices.userId,
+        targetWhere: sql`${brandVoices.isDefault}`,
+        set: {
+          marketCountry: input.marketCountry,
+          marketRegion: input.marketRegion,
+          niche: input.niche,
+          audience: input.audience,
+          register: input.register,
+          formality: input.formality,
+          updatedAt: sql`now()`,
+        },
+      })
       .returning();
-    if (!row) throw new Error("No se pudo crear la voz de marca");
+    if (!row) throw new Error("No se pudo guardar la voz de marca");
     return row;
   }
 
