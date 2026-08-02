@@ -2,10 +2,12 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   index,
   jsonb,
   pgEnum,
   pgTable,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -90,6 +92,10 @@ export const users = pgTable("users", {
   // Nombre público (modelo-de-datos.md); NULL → la UI cae a name.
   displayName: text("display_name"),
   timezone: text("timezone").notNull().default("America/Mexico_City"),
+  // Gate explícito del onboarding (F4): NULL → el guard del cliente
+  // redirige a /onboarding. No se infiere de "¿existe brand_voices?" para
+  // no dejar al usuario atrapado si abandona a medias.
+  onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -167,11 +173,18 @@ export const brandVoices = pgTable(
     niche: text("niche").array().notNull().default([]),
     audience: text("audience"),
     register: voiceRegister("register").notNull().default("neutro_profesional"),
+    // Posición fina 0-100 sobre el slider de formalidad (doc §4); `register`
+    // es el ancla categórica que el onboarding escribe con un click. Los dos
+    // campos viven sincronizados en el mismo objeto — nunca dos sistemas.
+    formality: smallint("formality").notNull().default(50),
     allowedExpressions: text("allowed_expressions").array().notNull().default([]),
     bannedExpressions: text("banned_expressions").array().notNull().default([]),
     useAnglicisms: boolean("use_anglicisms").notNull().default(true),
     keyTopics: text("key_topics").array().notNull().default([]),
     preferredCtas: text("preferred_ctas").array().notNull().default([]),
+    // Hasta 2 { text, sourceCardId? } (doc §2 Bloque D). sourceCardId queda
+    // sin usar hasta que exista Biblioteca; sin migración cuando llegue.
+    referenceExamples: jsonb("reference_examples").notNull().default([]),
     extras: jsonb("extras").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -181,6 +194,7 @@ export const brandVoices = pgTable(
     uniqueIndex("brand_voices_one_default_per_user")
       .on(t.userId)
       .where(sql`${t.isDefault}`),
+    check("brand_voices_formality_range", sql`${t.formality} BETWEEN 0 AND 100`),
   ],
 );
 

@@ -37,6 +37,13 @@ export const auth = betterAuth({
         input: false,
         defaultValue: "America/Mexico_City",
       },
+      // Gate de onboarding (F4). input: false — se sella con
+      // POST /api/me/complete-onboarding, no directo por el cliente.
+      onboardingCompletedAt: {
+        type: "date",
+        required: false,
+        input: false,
+      },
     },
   },
   emailAndPassword: {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { chats, messages, users } from "./schema.js";
+import { brandVoices, chats, messages, users } from "./schema.js";
 // Import solo de tipo: el módulo real se carga en beforeAll, después de
 // poblar process.env (env.ts valida el entorno en el import).
 import type { DbService as DbServiceType } from "./db.service.js";
@@ -99,5 +99,46 @@ describe("RLS tenant_isolation", () => {
     // Fuera de runWithTenant no existe app.user_id: la policy no puede
     // evaluarse y Postgres rechaza la query (default-deny, nunca fuga).
     await expect(dbService.db.select().from(chats)).rejects.toThrow();
+  });
+
+  // F4: brand_voices alimenta el system prompt — mismo patrón de
+  // tenant_isolation, misma verificación contra Postgres real. El cascade
+  // de la FK userId al borrar users (afterAll de arriba) limpia esta fila.
+  describe("brand_voices", () => {
+    let voiceA: string;
+
+    beforeAll(async () => {
+      voiceA = await dbService.runWithTenant(userA, async (tx) => {
+        const [voice] = await tx
+          .insert(brandVoices)
+          .values({ userId: userA, name: "Mi voz", isDefault: true, niche: ["comida"] })
+          .returning({ id: brandVoices.id });
+        if (!voice) throw new Error("No se pudo crear la voz de prueba");
+        return voice.id;
+      });
+    }, 15_000);
+
+    it("el dueño ve su propia voz de marca", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userA, (tx) => tx.select().from(brandVoices));
+      expect(rows.map((v) => v.id)).toContain(voiceA);
+    });
+
+    it("otro tenant no lee la voz de marca ajena", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userB, (tx) => tx.select().from(brandVoices));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("otro tenant no puede insertar una voz a nombre ajeno", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx.insert(brandVoices).values({ userId: userA, name: "Intrusa" }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(error).toBeInstanceOf(Error);
+      expect(String((error as Error).cause)).toMatch(/row-level security/);
+    });
   });
 });
