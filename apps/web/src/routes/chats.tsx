@@ -44,13 +44,18 @@ export function ChatsPage() {
     <main className="mx-auto flex min-h-screen max-w-lg flex-col gap-4 p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Tus chats</h1>
-        <button
-          type="button"
-          className="border border-line px-2 py-1 text-sm"
-          onClick={() => void logout()}
-        >
-          Cerrar sesión
-        </button>
+        <div className="flex items-center gap-2">
+          <Link to="/configuracion" className="border border-line px-2 py-1 text-sm">
+            Configuración
+          </Link>
+          <button
+            type="button"
+            className="border border-line px-2 py-1 text-sm"
+            onClick={() => void logout()}
+          >
+            Cerrar sesión
+          </button>
+        </div>
       </div>
       <button
         type="button"
