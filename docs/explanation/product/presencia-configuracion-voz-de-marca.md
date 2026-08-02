@@ -208,14 +208,16 @@ entró a Configuración a profundizar.
 **El diseño:** la pantalla no está vacía — muestra los 3 campos del
 onboarding ya poblados, y el resto de los campos (modismos, CTAs,
 ejemplos) vacíos con copy invitador, NO bloqueante: _"Agrega esto para
-que tu contenido suene aún más a vos."_ El Chat sigue funcionando
+que tu contenido suene aún más a ti."_ (tuteo mexicano — regla dura
+#1 de AGENTS.md; corregido en F4 PR 4/4, el original tenía voseo). El
+Chat sigue funcionando
 perfecto solo con los 3 campos base — Voz de marca profunda mejora la
 calidad, no es un gate.
 
 ### Sin ejemplos de referencia cargados
 
 **El diseño:** los 2 slots del Bloque D se muestran vacíos con CTA
-suave: _"Elegí un post de tu Biblioteca o pegá uno tuyo"_. Sin esto,
+suave: _"Elige un post de tu Biblioteca o pega uno tuyo"_ (tuteo). Sin esto,
 la IA sigue generando con las reglas de tono/registro — los ejemplos
 son un plus, no un requisito.
 

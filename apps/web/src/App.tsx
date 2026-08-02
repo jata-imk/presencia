@@ -1,6 +1,9 @@
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
 import { ChatPage } from "./routes/chat.js";
 import { ChatsPage } from "./routes/chats.js";
+import { ConfiguracionLayout } from "./routes/configuracion/layout.js";
+import { MiPerfilPage } from "./routes/configuracion/mi-perfil.js";
+import { VozDeMarcaPage } from "./routes/configuracion/voz-de-marca.js";
 import { LoginPage } from "./routes/login.js";
 import { OnboardingPage } from "./routes/onboarding.js";
 import { ProtectedLayout } from "./routes/protected.js";
@@ -20,6 +23,20 @@ const router = createBrowserRouter([
       { path: "/chats", element: <ChatsPage /> },
       { path: "/chats/:id", element: <ChatPage /> },
       { path: "/onboarding", element: <OnboardingPage /> },
+      {
+        path: "/configuracion",
+        element: <ConfiguracionLayout />,
+        children: [
+          // Voz de marca es la sub-sección más importante (overview §3) —
+          // default al entrar a /configuracion sin sub-ruta.
+          {
+            path: "/configuracion",
+            element: <Navigate to="/configuracion/voz-de-marca" replace />,
+          },
+          { path: "/configuracion/voz-de-marca", element: <VozDeMarcaPage /> },
+          { path: "/configuracion/mi-perfil", element: <MiPerfilPage /> },
+        ],
+      },
     ],
   },
 ]);
