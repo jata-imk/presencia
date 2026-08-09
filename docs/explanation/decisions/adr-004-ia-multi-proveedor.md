@@ -23,4 +23,8 @@ La suite cultural se extiende con dos verificaciones nuevas, ambas DoD de F4 (`d
 
 Ninguna entra a CI (el workflow no corre `pnpm test`; 20+ llamadas pagadas por push sería peor) — son comandos manuales con reporte versionado, igual que la suite original.
 
+**Addendum (F4.5, 2026-08-09) — instrumentación de usage.** Cada llamada a `streamText` queda registrada: `AiService.resolve(modelId?)` (`apps/api/src/ai/ai.service.ts`) devuelve el modelo junto con su identidad ya parseada (`{ model, id, provider, modelName }`) — una sola llamada, así la telemetría nunca puede reportar un proveedor/modelo distinto del que de verdad ejecutó el turno. `runAgentTurn` (`chat.service.ts`) captura `totalUsage` y `steps` en su propio `try/catch` dentro de `onEnd` — un fallo al registrar usage nunca tumba el mensaje del usuario — y persiste una fila por turno en `ai_usage_events` (append-only, RLS + `REVOKE UPDATE, DELETE` al rol de la API; ver `docs/reference/modelo-de-datos.md`). Se guarda el crudo del proveedor (`provider_raw`: usage y `providerMetadata` por step, más `finishReason`), no una unidad derivada — la normalización a créditos facturables es trabajo de F5. Hueco conocido: un turno abortado no se mide (ver ADR-006 addendum F3 PR3 sobre tokens quemados en cancelación).
+
+El enum `ai_task_kind` (`chat`, `chat_title`, `history_compaction`, `post_adapt`, `voice_distill`, `analytics_narration`) ya nace completo en `ai_usage_events` — es la parte cara de cambiar después — aunque hoy solo `chat` tiene call site real. El routing por tarea (`MODEL_BY_TASK`, env vars por tier) llega en el siguiente addendum.
+
 **Pendiente:** modelo default por acción (chat vs generación vs adaptación) según los resultados versionados de la suite en `docs/reference/suite-cultural/`.

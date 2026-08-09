@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from "ai";
 import type { BrandVoiceForPrompt, ChatSummary } from "@presencia/shared";
 import type { ServerResponse } from "node:http";
+import { AiUsageRepository } from "../ai/ai-usage.repository.js";
 import { AiService } from "../ai/ai.service.js";
 import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
 import { CardsRepository } from "../cards/cards.repository.js";
@@ -24,6 +25,7 @@ export class ChatService {
     @Inject(AiService) private readonly aiService: AiService,
     @Inject(CardsRepository) private readonly cardsRepo: CardsRepository,
     @Inject(BrandVoiceService) private readonly brandVoiceService: BrandVoiceService,
+    @Inject(AiUsageRepository) private readonly aiUsageRepo: AiUsageRepository,
   ) {}
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
@@ -170,8 +172,14 @@ export class ChatService {
     // el chat nunca se bloquea por esto.
     const voice = await voicePromise;
 
+    // Resuelto una sola vez: el mismo objeto alimenta streamText y la
+    // telemetría de abajo, así es imposible que ai_usage_events reporte un
+    // proveedor/modelo distinto del que de verdad corrió (F4.5).
+    const resolved = this.aiService.resolve();
+    const startedAt = Date.now();
+
     const result = streamText({
-      model: this.aiService.resolveModel(),
+      model: resolved.model,
       system: buildSystemPrompt(voice),
       messages: await convertToModelMessages(history),
       tools,
@@ -214,6 +222,37 @@ export class ChatService {
               `${createdCardIds.length > 0 ? createdCardIds.join(", ") : "ninguna"}.`,
             error,
           );
+        }
+
+        // Try/catch propio (F4.5): un fallo al registrar usage nunca debe
+        // costar el mensaje del usuario, que ya se persistió arriba. En un
+        // turno abortado no se llega aquí — los tokens de esa llamada
+        // quedan sin medir (hueco conocido, ver PR feat/f45-usage-telemetry).
+        try {
+          const [usage, steps] = await Promise.all([result.totalUsage, result.steps]);
+          await this.dbService.runWithTenant(userId, (tx) =>
+            this.aiUsageRepo.insertEvent(tx, {
+              userId,
+              chatId,
+              taskKind: "chat",
+              provider: resolved.provider,
+              model: resolved.modelName,
+              inputTokens: usage.inputTokens ?? 0,
+              outputTokens: usage.outputTokens ?? 0,
+              cachedInputTokens: usage.inputTokenDetails.cacheReadTokens ?? null,
+              stepsCount: steps.length,
+              durationMs: Date.now() - startedAt,
+              providerRaw: {
+                steps: steps.map((step) => ({
+                  usage: step.usage,
+                  providerMetadata: step.providerMetadata,
+                })),
+                finishReason,
+              },
+            }),
+          );
+        } catch (error) {
+          console.error(`[chat] No se pudo registrar usage para chat ${chatId}:`, error);
         }
       },
     });

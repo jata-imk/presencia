@@ -36,6 +36,20 @@
       "when": 1785473679215,
       "tag": "0004_brand_voice_formality_onboarding",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786261137994,
+      "tag": "0005_ai_usage_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786261152331,
+      "tag": "0006_rls_ai_usage_events",
+      "breakpoints": true
     }
   ]
 }
