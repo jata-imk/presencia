@@ -12,7 +12,33 @@
       "dependsOn": ["^build"]
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      // Turbo filtra process.env por default (env mode "strict") — sin esta
+      // lista, la vitest que spawnea nunca ve estas vars, aunque el paso de
+      // CI sí las tenga (env.ts:parse revienta con "received undefined").
+      // Mismo inventario que envSchema en src/env.ts — una fuente, dos
+      // lugares por cómo funciona turbo, no se puede importar el schema acá.
+      "env": [
+        "APP_DATABASE_URL",
+        "BETTER_AUTH_SECRET",
+        "BETTER_AUTH_URL",
+        "WEB_URL",
+        "GOOGLE_GENERATIVE_AI_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "MINIMAX_API_KEY",
+        "MINIMAX_BASE_URL",
+        "KIMI_API_KEY",
+        "KIMI_BASE_URL",
+        "AI_MODEL",
+        "AI_MODEL_CHAT",
+        "AI_MODEL_UTILITY",
+        "AI_MODEL_ADAPT",
+        "ZEPTOMAIL_TOKEN",
+        "MAIL_FROM",
+        "PORT"
+      ]
     },
     "dev": {
       "cache": false,
