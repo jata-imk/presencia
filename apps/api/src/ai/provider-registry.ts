@@ -63,6 +63,21 @@ export const PROVIDER_IDS = Object.keys(PROVIDERS) as ProviderId[];
 
 export const DEFAULT_MODEL_ID = "google:gemini-3.6-flash";
 
+// Tareas que consumen un modelo (F4.5, addendum ADR-004). Hoy solo "chat"
+// tiene call site (chat.service.ts); las demás existen porque el enum de
+// Postgres de ai_usage_events es la parte cara de cambiar después — F5-F7
+// les agregan call site sin volver a tocar el schema. MODEL_BY_TASK (PR
+// feat/f45-model-routing) mapea cada una a un tier de env var.
+export const AI_TASK_KINDS = [
+  "chat",
+  "chat_title",
+  "history_compaction",
+  "post_adapt",
+  "voice_distill",
+  "analytics_narration",
+] as const;
+export type AiTaskKind = (typeof AI_TASK_KINDS)[number];
+
 export type EnvSource = Record<string, string | undefined>;
 export type ModelResolver = (modelId?: string) => LanguageModel;
 

@@ -1,6 +1,6 @@
 # Modelo de datos núcleo + RLS
 
-> **Estado: APROBADO en sesión de diseño del 2026-07-18** (las 5 preguntas abiertas se cerraron; ver "Decisiones de la sesión" al final). **Implementado** en `apps/api/src/db/schema.ts` y migraciones `0000`–`0003` (revisión de drift 2026-07-19); `brand_voices.formality`/`reference_examples` y `users.onboarding_completed_at` llegan en la migración `0004` (F4 PR 1/4, 2026-08-02). El aislamiento se verifica con el test `apps/api/src/db/rls.spec.ts` (DoD de F2, extendido con `brand_voices` en F4).
+> **Estado: APROBADO en sesión de diseño del 2026-07-18** (las 5 preguntas abiertas se cerraron; ver "Decisiones de la sesión" al final). **Implementado** en `apps/api/src/db/schema.ts` y migraciones `0000`–`0003` (revisión de drift 2026-07-19); `brand_voices.formality`/`reference_examples` y `users.onboarding_completed_at` llegan en la migración `0004` (F4 PR 1/4, 2026-08-02); `ai_usage_events` llega en las migraciones `0005`/`0006` (F4.5, 2026-08-09). El aislamiento se verifica con el test `apps/api/src/db/rls.spec.ts` (DoD de F2, extendido con `brand_voices` en F4 y `ai_usage_events` en F4.5).
 
 ## Principios
 
@@ -124,6 +124,29 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 - El grant mensual es un job de pg-boss que inserta `monthly_grant` (nunca un UPDATE de contador).
 - **Los créditos del mes expiran** (decisión 2026-07-18): al cierre del ciclo, el job inserta `cycle_expiration` con delta = −(saldo restante) y acto seguido el `monthly_grant` nuevo. Razones: pasivo acotado (cada crédito tiene costo real de cómputo), estándar en SaaS de IA, incentiva el hábito de publicar, y el copy "te quedan X este mes" ya lo asume. Evolución futura posible a rollover-con-tope cambiando solo la lógica del job (el ledger no cambia). Top-ups no-expirables quedan fuera de V1: exigirían contabilidad por bolsas.
 
+### Telemetría de IA
+
+**`ai_usage_events`** — usage crudo por turno (F4.5, addendum ADR-004/ADR-006). Append-only, más estricto que `credit_ledger`: el rol `presencia_app` no tiene permiso de `UPDATE`/`DELETE` sobre la tabla (migración `0006_rls_ai_usage_events`, `REVOKE` explícito) — el motor garantiza el append-only, no solo la convención.
+
+| Columna                          | Tipo              | Nota                                                                                                                                                        |
+| -------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                             | uuid PK           |                                                                                                                                                             |
+| `user_id`                        | uuid FK           | RLS                                                                                                                                                         |
+| `chat_id`                        | uuid FK, nullable | denormalizado a propósito (patrón de `messages`); nullable para tareas futuras fuera de un chat                                                             |
+| `task_kind`                      | enum              | `chat`, `chat_title`, `history_compaction`, `post_adapt`, `voice_distill`, `analytics_narration` — fuente única `AI_TASK_KINDS` (`ai/provider-registry.ts`) |
+| `provider` / `model`             | text              | identidad ya parseada de `AiService.resolve()` — nunca se releé `env.AI_MODEL` por separado                                                                 |
+| `input_tokens` / `output_tokens` | integer           | de `totalUsage` del turno completo (todos los steps)                                                                                                        |
+| `cached_input_tokens`            | integer, nullable | `usage.inputTokenDetails.cacheReadTokens` cuando el proveedor lo reporta                                                                                    |
+| `steps_count`                    | smallint          | llamadas reales al proveedor en el turno (tool calls incluidos)                                                                                             |
+| `duration_ms`                    | integer           | medido desde antes de `streamText` hasta `onEnd`                                                                                                            |
+| `provider_raw`                   | jsonb             | crudo del proveedor: `{ steps: [{usage, providerMetadata}], finishReason }` — nunca normalizado aquí                                                        |
+| `created_at`                     | timestamptz       |                                                                                                                                                             |
+
+- **Se guarda el crudo, no una unidad derivada** (misma razón que `credit_ledger` guarda `delta` y no un saldo): la normalización a créditos facturables es trabajo de F5. Si aquí solo se guardara el número normalizado, se perdería para siempre la capacidad de re-analizar el costo real cuando cambien las tarifas del proveedor.
+- Un fallo al insertar el evento nunca tumba el turno del usuario: se registra en su propio `try/catch` dentro de `onEnd` (`chat.service.ts`), después de persistir el mensaje assistant.
+- **Hueco conocido:** en un turno abortado (`isAborted`) no se registra usage — `onEnd` retorna temprano y las promesas de `streamText` pueden no resolver. Los tokens quemados por "detener generación" (ADR-006) quedan sin medir hasta que se revisite.
+- Índice `usage_by_user` sobre `(user_id, created_at)` — mismo shape que `ledger_balance`, responde "¿cuánto gastó X este mes y en qué modelos?" sin abrir el dashboard de ningún proveedor.
+
 ### Jobs
 
 **pg-boss** crea y administra su propio schema `pgboss` (ADR-008). Sin RLS ahí — no es superficie de la API. Regla: los payloads de jobs llevan `user_id` explícito y el worker lo fija en su transacción (ver abajo).
@@ -152,7 +175,7 @@ En cada request autenticado, la API abre transacción y ejecuta `SET LOCAL app.u
 
 ### Tablas cubiertas
 
-RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `credit_ledger`. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
+RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `credit_ledger`, `ai_usage_events`. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
 
 ## Diagrama ER
 
@@ -162,6 +185,7 @@ erDiagram
     users ||--o{ folders : organiza
     users ||--o{ chats : conversa
     users ||--o{ credit_ledger : consume
+    users ||--o{ ai_usage_events : consume
     users ||--o{ channel_links : vincula
     users ||--o{ social_accounts : conecta
     brand_voices |o--o{ folders : "voz por carpeta"

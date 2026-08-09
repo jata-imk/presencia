@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { brandVoices, chats, messages, users } from "./schema.js";
+import { aiUsageEvents, brandVoices, chats, messages, users } from "./schema.js";
 // Import solo de tipo: el módulo real se carga en beforeAll, después de
 // poblar process.env (env.ts valida el entorno en el import).
 import type { DbService as DbServiceType } from "./db.service.js";
@@ -140,5 +140,96 @@ describe("RLS tenant_isolation", () => {
       expect(error).toBeInstanceOf(Error);
       expect(String((error as Error).cause)).toMatch(/row-level security/);
     });
+  });
+
+  // F4.5: ai_usage_events alimenta el ledger de créditos de F5 — mismo
+  // patrón de tenant_isolation, más una verificación extra específica de
+  // esta tabla: es append-only por diseño (0006_rls_ai_usage_events revoca
+  // UPDATE/DELETE al rol de la API), no solo por convención.
+  describe("ai_usage_events", () => {
+    let eventA: string;
+
+    beforeAll(async () => {
+      eventA = await dbService.runWithTenant(userA, async (tx) => {
+        const [event] = await tx
+          .insert(aiUsageEvents)
+          .values({
+            userId: userA,
+            chatId: chatA,
+            taskKind: "chat",
+            provider: "google",
+            model: "gemini-3.6-flash",
+            inputTokens: 100,
+            outputTokens: 20,
+            stepsCount: 1,
+            durationMs: 500,
+            providerRaw: { steps: [], finishReason: "stop" },
+          })
+          .returning({ id: aiUsageEvents.id });
+        if (!event) throw new Error("No se pudo crear el evento de usage de prueba");
+        return event.id;
+      });
+    }, 15_000);
+
+    it("el dueño ve su propio evento de usage", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userA, (tx) => tx.select().from(aiUsageEvents));
+      expect(rows.map((e) => e.id)).toContain(eventA);
+    });
+
+    it("otro tenant no lee el usage ajeno", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userB, (tx) => tx.select().from(aiUsageEvents));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("otro tenant no puede insertar un evento a nombre ajeno", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx.insert(aiUsageEvents).values({
+            userId: userA,
+            taskKind: "chat",
+            provider: "google",
+            model: "gemini-3.6-flash",
+            inputTokens: 1,
+            outputTokens: 1,
+            stepsCount: 1,
+            durationMs: 1,
+            providerRaw: {},
+          }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(error).toBeInstanceOf(Error);
+      expect(String((error as Error).cause)).toMatch(/row-level security/);
+    });
+
+    it(
+      "presencia_app no puede modificar ni borrar un evento existente (append-only)",
+      { timeout: 15_000 },
+      async () => {
+        const updateError: unknown = await dbService
+          .runWithTenant(userA, (tx) =>
+            tx.update(aiUsageEvents).set({ outputTokens: 999 }).where(eq(aiUsageEvents.id, eventA)),
+          )
+          .then(
+            () => null,
+            (e: unknown) => e,
+          );
+        expect(updateError).toBeInstanceOf(Error);
+        expect(String((updateError as Error).cause)).toMatch(/permission denied/);
+
+        const deleteError: unknown = await dbService
+          .runWithTenant(userA, (tx) =>
+            tx.delete(aiUsageEvents).where(eq(aiUsageEvents.id, eventA)),
+          )
+          .then(
+            () => null,
+            (e: unknown) => e,
+          );
+        expect(deleteError).toBeInstanceOf(Error);
+        expect(String((deleteError as Error).cause)).toMatch(/permission denied/);
+      },
+    );
   });
 });

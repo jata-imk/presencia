@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -13,6 +14,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { AI_TASK_KINDS } from "../ai/provider-registry.js";
 
 // Implementa docs/reference/modelo-de-datos.md (aprobado 2026-07-18).
 // RLS (enable/force, policies, roles) vive en la migración custom
@@ -65,6 +67,10 @@ export const socialAccountStatus = pgEnum("social_account_status", [
   "disconnected",
   "error",
 ]);
+
+// Fuente única de verdad: AI_TASK_KINDS (provider-registry.ts, F4.5). El
+// call site declara su tarea; MODEL_BY_TASK la mapea a un tier de modelo.
+export const aiTaskKind = pgEnum("ai_task_kind", AI_TASK_KINDS);
 
 export const creditReason = pgEnum("credit_reason", [
   "monthly_grant",
@@ -347,4 +353,37 @@ export const creditLedger = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("ledger_balance").on(t.userId, t.createdAt)],
+);
+
+// ── Telemetría de IA ─────────────────────────────────────────────────
+// Append-only (F4.5): guarda el usage crudo del proveedor por turno, no una
+// unidad derivada — la normalización a créditos es trabajo de F5. RLS +
+// REVOKE UPDATE/DELETE viven en la migración custom (mismo patrón que 0001
+// para credit_ledger, pero aquí el motor lo garantiza en vez de la
+// convención).
+
+export const aiUsageEvents = pgTable(
+  "ai_usage_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Denormalizado a propósito (patrón de messages): RLS sin join.
+    chatId: uuid("chat_id").references(() => chats.id, { onDelete: "cascade" }),
+    taskKind: aiTaskKind("task_kind").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull(),
+    outputTokens: integer("output_tokens").notNull(),
+    cachedInputTokens: integer("cached_input_tokens"),
+    // Llamadas reales al proveedor dentro del turno (tool calls incluidos).
+    stepsCount: smallint("steps_count").notNull(),
+    durationMs: integer("duration_ms").notNull(),
+    // Crudo del proveedor: usage + providerMetadata por step, finishReason.
+    // Ver runAgentTurn (chat.service.ts) — nunca se normaliza aquí.
+    providerRaw: jsonb("provider_raw").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("usage_by_user").on(t.userId, t.createdAt)],
 );
