@@ -647,13 +647,21 @@ caer en feature creep.
 
 > El paso de captura cultural vive en la pantalla "Voz" (paso 2 de 5, obligatoria, no-skippable). Captura mercado (país + región), nicho/audiencia (chips + campo libre), y registro/tono (single-select, default neutro-profesional). Esta data prellena la Voz de marca en Configuración y alimenta el grounding de tendencias de Ritmo (vertical + región).
 
+- **F4 (2026-08-08, completo):** Configuración > Voz de marca +
+  Mi perfil, y onboarding de 5 pasos con gate de sesión. Se
+  construyó en 4 PRs: datos + API (`brand_voices`, `/api/me`),
+  ensamblado del system prompt por voz de marca, onboarding con
+  captura de timezone, y las pantallas de Configuración. UI
+  construida "cruda" (componentes `ui/` propios, sin pasar por
+  Claude Design todavía) a propósito — el objetivo de F4 era
+  cerrar el contrato de datos y el flujo funcional; el pase de
+  diseño final llega después, cuando haya evidencia de qué
+  ajustar con el producto ya en uso. Detalle en
+  `presencia-configuracion-voz-de-marca.md`.
+
 ### Lo que viene (en orden)
 
-**Después:** Configuración (sub-secciones). Crítico antes de
-lanzar porque la **Voz de marca** define todo el output del
-producto. Si esto no está bien, nada funciona.
-
-**Después:** Analíticas y Biblioteca. Son los módulos menos
+**Ahora:** Analíticas y Biblioteca. Son los módulos menos
 críticos para el primer momento del producto. Un usuario
 puede empezar a usar Presencia sin tener analíticas perfectas
 todavía (ya las verá cuando publique varias semanas).
