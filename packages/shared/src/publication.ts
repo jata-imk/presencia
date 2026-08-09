@@ -175,8 +175,17 @@ export interface CardToolOutput {
 // sigue leyendo el `content` completo del tool output (ver arriba), esto
 // nunca se persiste ni se manda al navegador.
 export function summarizeCardContent(content: CardContent): string {
-  const truncate = (text: string, max = 80) =>
-    text.length > max ? `${text.slice(0, max)}…` : text;
+  // Corta en el límite de palabra más cercano, no a la mitad (ej. "cuidarlo"
+  // → "c"). Si no hay espacio razonable antes de `max` (texto sin espacios,
+  // o el primer espacio cae muy temprano), cae al corte duro — mejor perder
+  // el límite de palabra que devolver un resumen ridículamente corto.
+  const truncate = (text: string, max = 80) => {
+    if (text.length <= max) return text;
+    const slice = text.slice(0, max);
+    const lastSpace = Math.max(slice.lastIndexOf(" "), slice.lastIndexOf("\n"));
+    const cut = lastSpace >= max * 0.5 ? slice.slice(0, lastSpace) : slice;
+    return `${cut.trimEnd()}…`;
+  };
   switch (content.archetype) {
     case "visual_first":
       return `post visual — ${truncate(content.caption)}`;
