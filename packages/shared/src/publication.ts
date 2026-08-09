@@ -169,3 +169,35 @@ export interface CardToolOutput {
   status: CardStatus;
   content: CardContent;
 }
+
+// F4.5 (dieta de contexto, chat.service.ts): resumen compacto de una card ya
+// creada, para el historial que viaja al MODELO en turnos siguientes — la UI
+// sigue leyendo el `content` completo del tool output (ver arriba), esto
+// nunca se persiste ni se manda al navegador.
+export function summarizeCardContent(content: CardContent): string {
+  // Corta en el límite de palabra más cercano, no a la mitad (ej. "cuidarlo"
+  // → "c"). Si no hay espacio razonable antes de `max` (texto sin espacios,
+  // o el primer espacio cae muy temprano), cae al corte duro — mejor perder
+  // el límite de palabra que devolver un resumen ridículamente corto.
+  //
+  // Se cuenta por code point ([...text]), no por índice UTF-16 (text.slice):
+  // las captions reales usan emojis (🐱💛 al final de frase es el patrón más
+  // común) y slice() por índice puede partir un par subrogado a la mitad,
+  // dejando un carácter suelto que se corrompe al codificar a UTF-8.
+  const truncate = (text: string, max = 80) => {
+    const codePoints = [...text];
+    if (codePoints.length <= max) return text;
+    const slice = codePoints.slice(0, max);
+    const lastSpace = Math.max(slice.lastIndexOf(" "), slice.lastIndexOf("\n"));
+    const cut = lastSpace >= max * 0.5 ? slice.slice(0, lastSpace) : slice;
+    return `${cut.join("").trimEnd()}…`;
+  };
+  switch (content.archetype) {
+    case "visual_first":
+      return `post visual — ${truncate(content.caption)}`;
+    case "video_script":
+      return `guion de video — ${truncate(content.hook)}`;
+    case "text_first":
+      return `post de texto — ${truncate(content.body)}`;
+  }
+}

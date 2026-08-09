@@ -17,11 +17,44 @@ const BASE_ENV = {
   ANTHROPIC_API_KEY: "anthropic-key",
 };
 
-const ORIGINAL_ENV = { ...process.env };
+// Exactamente las keys que env.ts (schema) lee — nunca todo process.env: eso
+// borraría PATH/CI/NODE_ENV/etc. que Vitest o dependencias transitivas
+// pueden necesitar durante el import() dinámico y el cuerpo del test.
+const ENV_KEYS = [
+  "APP_DATABASE_URL",
+  "BETTER_AUTH_SECRET",
+  "BETTER_AUTH_URL",
+  "WEB_URL",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "MINIMAX_API_KEY",
+  "MINIMAX_BASE_URL",
+  "KIMI_API_KEY",
+  "KIMI_BASE_URL",
+  "AI_MODEL",
+  "AI_MODEL_CHAT",
+  "AI_MODEL_UTILITY",
+  "AI_MODEL_ADAPT",
+  "ZEPTOMAIL_TOKEN",
+  "MAIL_FROM",
+  "PORT",
+] as const;
+
+const ORIGINAL_ENV: Partial<Record<(typeof ENV_KEYS)[number], string>> = {};
+for (const key of ENV_KEYS) {
+  const value = process.env[key];
+  if (value !== undefined) ORIGINAL_ENV[key] = value;
+}
+
+function resetEnvKeys() {
+  for (const key of ENV_KEYS) delete process.env[key];
+}
 
 async function loadAiServiceWith(env: Record<string, string>) {
   vi.resetModules();
-  for (const key of Object.keys(process.env)) delete process.env[key];
+  resetEnvKeys();
   Object.assign(process.env, env);
   const { AiService } = await import("./ai.service.js");
   return new AiService();
@@ -33,7 +66,7 @@ describe("AiService.resolveForTask", () => {
   });
 
   afterEach(() => {
-    for (const key of Object.keys(process.env)) delete process.env[key];
+    resetEnvKeys();
     Object.assign(process.env, ORIGINAL_ENV);
   });
 
