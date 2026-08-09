@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import type { QuotaState, QuotaStatusDto } from "@presencia/shared";
 import type { AiTaskKind } from "../ai/provider-registry.js";
 import { DbService, type Tx } from "../db/db.service.js";
 import { CreditsRepository } from "./credits.repository.js";
@@ -119,6 +120,23 @@ export class CreditsService {
   }
 
   /**
+   * La versión que sale por HTTP: nunca crudo, siempre el objeto contable
+   * (addendum ADR-012). La consumen tanto el endpoint GET /api/me/quota
+   * como el 402 del gate de chat — un solo lugar decide los umbrales de
+   * "low"/"critical"/"exhausted".
+   */
+  async getQuotaStatusDto(userId: string): Promise<QuotaStatusDto> {
+    const status = await this.getQuotaStatus(userId);
+    return {
+      tier: status.tier,
+      percentRemaining: status.percentRemaining,
+      publicationsRemaining: status.publicationsRemaining,
+      renewsAt: status.renewsAt.toISOString(),
+      state: quotaStateFromPercent(status.percentRemaining),
+    };
+  }
+
+  /**
    * Bajo advisory lock (lockUser ya tomado por el caller): si el ciclo
    * vigente todavía no tiene su `monthly_grant`, liquida el anterior
    * (`cycle_expiration` si sobraba saldo, `adjustment` si sobregiró) y
@@ -182,4 +200,14 @@ export class CreditsService {
     }
     return { tier: user.planTier, cycleStartId, renewsAt: end };
   }
+}
+
+// Umbrales de presentación (ADR-012 addendum, presencia-chat.md §4): banner
+// sutil bajo 20%, banner urgente bajo 10%, modal bloqueante en 0. Viven
+// aquí, no en rate-card.ts — son UX, no economía del rate card.
+export function quotaStateFromPercent(percentRemaining: number): QuotaState {
+  if (percentRemaining <= 0) return "exhausted";
+  if (percentRemaining < 10) return "critical";
+  if (percentRemaining < 20) return "low";
+  return "ok";
 }
