@@ -169,3 +169,20 @@ export interface CardToolOutput {
   status: CardStatus;
   content: CardContent;
 }
+
+// F4.5 (dieta de contexto, chat.service.ts): resumen compacto de una card ya
+// creada, para el historial que viaja al MODELO en turnos siguientes — la UI
+// sigue leyendo el `content` completo del tool output (ver arriba), esto
+// nunca se persiste ni se manda al navegador.
+export function summarizeCardContent(content: CardContent): string {
+  const truncate = (text: string, max = 80) =>
+    text.length > max ? `${text.slice(0, max)}…` : text;
+  switch (content.archetype) {
+    case "visual_first":
+      return `post visual — ${truncate(content.caption)}`;
+    case "video_script":
+      return `guion de video — ${truncate(content.hook)}`;
+    case "text_first":
+      return `post de texto — ${truncate(content.body)}`;
+  }
+}

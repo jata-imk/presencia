@@ -9,6 +9,7 @@ import { CardsRepository } from "../cards/cards.repository.js";
 import { buildPublicationCardTools } from "../cards/publication-card.tools.js";
 import { DbService } from "../db/db.service.js";
 import { ChatRepository, type MessageRow } from "./chat.repository.js";
+import { compressToolOutputsForModel } from "./context-diet.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
@@ -182,7 +183,12 @@ export class ChatService {
     const result = streamText({
       model: resolved.model,
       system: buildSystemPrompt(voice),
-      messages: await convertToModelMessages(history),
+      // Dieta de contexto (F4.5): al modelo solo le llega íntegro el content
+      // de las últimas 2 cards — el resto va comprimido a un resumen. Nunca
+      // toca `history` en sí: `originalMessages` abajo sigue siendo el
+      // historial completo, así el merge del SDK y lo que se persiste en
+      // onEnd no se contaminan con la versión comprimida.
+      messages: await convertToModelMessages(compressToolOutputsForModel(history)),
       tools,
       stopWhen: stepCountIs(MAX_AGENT_STEPS),
       abortSignal: abortController.signal,
