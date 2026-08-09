@@ -437,7 +437,10 @@ archivar, eliminar).
 **Footer del sidebar:**
 
 - Avatar + nombre del usuario
-- Indicador de créditos: "⚡ 142 créditos restantes"
+- Indicador de cuota (F5, addendum ADR-012 2026-08-09): nunca
+  un contador crudo — "⚡ 62% de tu cuota" o similar, traducido
+  a objeto contable en el badge de sidebar (F6.5, tarea de
+  backlog para cuando exista el App Shell real)
 - Click en el footer abre menú: Mi cuenta, Configuración,
   Modo oscuro toggle, Cerrar sesión
 
@@ -482,8 +485,19 @@ expande a fullscreen modal.
 
 ## 6. El sistema de créditos
 
-Presencia se monetiza con un modelo de **créditos**, no de
-mensajes ilimitados.
+Presencia se monetiza con un modelo de **suscripción con
+cuota incluida** (tiers Creator/Pro/Agencia), no de mensajes
+ilimitados ni de créditos prepago visibles.
+
+> **Actualizado 2026-08-09 (F5, addendum ADR-012):** esta
+> sección describía el modelo prepago original ("142 créditos
+> restantes", "≈ 2 créditos" junto al input) — se descartó por
+> generar ansiedad de consumo y fricción de recompra, decisión
+> tomada 7 días antes de esta corrección y nunca aterrizada
+> aquí. El crédito **sigue existiendo como unidad interna del
+> ledger** (medición y asignación, ver ADR-012) — lo que cambió
+> es la capa de Presentación: el usuario nunca ve un número
+> crudo, solo % de cuota traducido a objeto contable.
 
 ### Por qué créditos y no "mensajes ilimitados"
 
@@ -493,30 +507,37 @@ de alta calidad o adaptar contenido para 5 redes). Un modelo
 de mensajes ilimitados forzaría a poner caps fuertes para
 evitar abuso, lo cual frustra a usuarios pesados. Un modelo
 de créditos permite que cada usuario gaste según sus
-necesidades reales.
+necesidades reales — el crédito es la unidad de medición
+interna, nunca lo que ve el usuario.
 
-### Costos aproximados (referenciales)
+### Costos aproximados (referenciales, unidad interna)
 
 - Chatear con la IA: 1 crédito
 - Generar idea de post: 2 créditos
 - Adaptar a 5 redes: 5 créditos
 - Generar imagen: 3-5 créditos
 - Generar calendario semanal: 10 créditos
-  Esto es referencial. El balance fino se ajusta con uso real.
+  Esto es referencial. El balance fino se ajusta con uso real
+  (ver "Backlog · Calibrar rate card con datos reales de
+  consumo"; los valores provisionales en código viven en
+  `apps/api/src/credits/rate-card.ts`).
 
 ### Cómo se ve en la app
 
 - El indicador en el footer del sidebar es siempre visible
-  pero discreto: "⚡ 142 créditos restantes"
-- Al lado del botón de enviar mensaje aparece un costo
-  estimado cuando hay texto: "≈ 2 créditos"
-- Cuando el usuario baja del 20% de su balance mensual,
-  aparece un banner sutil arriba del input: "Te quedan 28
-  créditos este mes. [Ver plan]". Razón: avisar antes de
-  bloquear es mejor UX que sorprender con un error.
-- Cuando se queda sin créditos al intentar una acción:
-  modal explicativo (no técnico) con opción de upgrade o
-  esperar al próximo ciclo.
+  pero discreto: % de cuota traducido a objeto contable (ej.
+  "⚡ 62% de tu cuota"), nunca un número crudo de créditos.
+- Cuando el usuario baja del 20% de su cuota mensual, aparece
+  un banner sutil arriba del input: "Te alcanza para ~N
+  publicaciones más este mes. [Ver plan]" — escala a banner
+  urgente bajo el 10%. Razón: avisar antes de bloquear es
+  mejor UX que sorprender con un error.
+- Cuando se agota la cuota al intentar una acción: modal
+  explicativo (no técnico), bloqueante, con opción de upgrade
+  o esperar al próximo ciclo — nunca "Error 402" ni un número
+  de créditos.
+- Página "Créditos y plan" en Configuración: barra de %,
+  publicaciones restantes, tier, fecha de renovación.
 
 ---
 

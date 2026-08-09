@@ -168,21 +168,25 @@ resto del producto aplica, adaptado a un slider.
 ## 5. El preview: botón manual, no automático
 
 Confirmado: **botón "Ver ejemplo"**, generación bajo demanda, consume
-créditos.
+cuota.
 
 **Por qué esto era la decisión correcta:** un preview que regenera en
-cada tecla estaría quemando créditos por _configurar_, no por
-_crear_ — rompe la transparencia de costos que el resto del producto
-cuida con obsesión (el indicador "≈2 créditos" de Chat, siempre
-visible ANTES de gastar, según overview sección 6). Sería el
-equivalente a que una herramienta te cobre por cada intento de
-`git status`.
+cada tecla estaría quemando cuota por _configurar_, no por _crear_ —
+rompe la disciplina de consumo intencional que el resto del producto
+cuida con obsesión. Sería el equivalente a que una herramienta te
+cobre por cada intento de `git status`.
+
+**Actualizado 2026-08-09 (F5, addendum ADR-012):** el indicador
+"≈2 créditos" de Chat se descartó — nunca se muestra un número
+crudo de créditos. El botón de este preview no debe mostrar uno
+tampoco; el costo intencional del botón manual (vs. automático) es
+la decisión de diseño que sigue vigente, no el número.
 
 **Implicaciones de diseño:**
 
-- El botón muestra el costo antes de generar: **"✨ Ver ejemplo (≈2
-  créditos)"** — mismo patrón visual que el indicador de costo del
-  input de Chat.
+- El botón dice **"✨ Ver ejemplo"**, sin costo numérico. La
+  transparencia de consumo vive en el banner de cuota y en la página
+  "Créditos y plan" de Configuración, no por acción individual.
 - El ejemplo generado es **efímero**: no se guarda en Biblioteca, no
   aparece como borrador en el panel de Calendario. Es un post
   sintético de demostración, no contenido real del usuario. Esto hay
@@ -246,12 +250,14 @@ Depende de la intención de lectura: información ambiental de un
 vistazo (Calendario, Ritmo) pide dots; configuración deliberada de
 set-and-forget con necesidad de matiz (formalidad) pide slider.
 
-### Por qué el preview es manual y con costo visible
+### Por qué el preview es manual, no automático
 
-Transparencia de créditos es un principio no negociable del producto
-(ver overview sección 6). Un preview "gratis y automático" en
-apariencia estaría escondiendo consumo real, o forzaría subsidiar esa
-pantalla de forma no transparente.
+Consumo intencional es un principio no negociable del producto (ver
+overview sección 6). Un preview "gratis y automático" en apariencia
+estaría escondiendo consumo real, o forzaría subsidiar esa pantalla
+de forma no transparente — aunque, desde el addendum de ADR-012
+(2026-08-09), esa transparencia se expresa en cuota/publicaciones,
+nunca en un número crudo por botón.
 
 ### Por qué pocos ejemplos de referencia (1-2) y sin gestión avanzada
 
