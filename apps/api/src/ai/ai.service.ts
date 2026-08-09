@@ -3,7 +3,9 @@ import type { LanguageModel } from "ai";
 import { env } from "../env.js";
 import {
   createModelResolver,
+  MODEL_BY_TASK,
   parseModelId,
+  type AiTaskKind,
   type ModelResolver,
   type ProviderId,
 } from "./provider-registry.js";
@@ -37,5 +39,13 @@ export class AiService {
     const id = modelId ?? env.AI_MODEL;
     const { provider, model: modelName } = parseModelId(id);
     return { model: this.resolver(modelId), id, provider, modelName };
+  }
+
+  // Routing por tarea (F4.5, addendum ADR-004): el call site declara su
+  // tarea explícitamente, nunca se infiere. MODEL_BY_TASK mapea la tarea a
+  // un tier de env var; sin setear, cae a AI_MODEL vía resolve().
+  resolveForTask(task: AiTaskKind): ResolvedModel {
+    const envVar = MODEL_BY_TASK[task];
+    return this.resolve(env[envVar]);
   }
 }

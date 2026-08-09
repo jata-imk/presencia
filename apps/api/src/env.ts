@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { DEFAULT_MODEL_ID, parseModelId, PROVIDERS } from "./ai/provider-registry.js";
+import {
+  DEFAULT_MODEL_ID,
+  MODEL_TIER_ENV_VARS,
+  parseModelId,
+  PROVIDERS,
+} from "./ai/provider-registry.js";
 
 // Validación fail-fast del entorno (se invoca en main.ts antes de crear la app).
 // DATABASE_URL (rol owner) es solo para migraciones vía drizzle-kit; el runtime
@@ -24,29 +29,46 @@ const envSchema = z
     // proveedor es cambiar esta variable y reiniciar el proceso. El formato
     // y el inventario de proveedores los valida parseModelId (fuente única).
     AI_MODEL: z.string().default(DEFAULT_MODEL_ID),
+    // Routing por tarea (F4.5, addendum ADR-004): tiers opcionales sobre
+    // AI_MODEL — MODEL_BY_TASK (provider-registry.ts) mapea cada AiTaskKind
+    // a una de estas 3. Sin setear, la tarea cae a AI_MODEL.
+    AI_MODEL_CHAT: z.string().optional(),
+    AI_MODEL_UTILITY: z.string().optional(),
+    AI_MODEL_ADAPT: z.string().optional(),
     ZEPTOMAIL_TOKEN: z.string().min(1),
     MAIL_FROM: z.email(),
     PORT: z.coerce.number().int().positive().default(3000),
   })
   .superRefine((value, ctx) => {
-    // Fail-fast: AI_MODEL debe tener formato válido y su proveedor debe tener
-    // API key al boot. Formato e inventario vienen de la tabla PROVIDERS.
-    try {
-      const { provider } = parseModelId(value.AI_MODEL);
-      const envKey = PROVIDERS[provider].envKey;
-      if (!(value as Record<string, unknown>)[envKey]) {
+    // Fail-fast: toda var de modelo (AI_MODEL + los 3 tiers opcionales) debe
+    // tener formato válido y su proveedor debe tener API key al boot.
+    // Formato e inventario vienen de la tabla PROVIDERS.
+    const validateModelEnv = (path: string, modelId: string) => {
+      try {
+        const { provider } = parseModelId(modelId);
+        const envKey = PROVIDERS[provider].envKey;
+        if (!(value as Record<string, unknown>)[envKey]) {
+          ctx.addIssue({
+            code: "custom",
+            path: [path],
+            message: `${path} usa el proveedor "${provider}" pero falta ${envKey} en el entorno`,
+          });
+        }
+      } catch (error) {
         ctx.addIssue({
           code: "custom",
-          path: ["AI_MODEL"],
-          message: `AI_MODEL usa el proveedor "${provider}" pero falta ${envKey} en el entorno`,
+          path: [path],
+          message: error instanceof Error ? error.message : String(error),
         });
       }
-    } catch (error) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["AI_MODEL"],
-        message: error instanceof Error ? error.message : String(error),
-      });
+    };
+
+    validateModelEnv("AI_MODEL", value.AI_MODEL);
+    // Los tiers son opcionales: sin setear, la tarea cae a AI_MODEL (ya
+    // validado arriba) y no hay nada más que revisar aquí.
+    for (const path of MODEL_TIER_ENV_VARS) {
+      const modelId = value[path];
+      if (modelId) validateModelEnv(path, modelId);
     }
   });
 
