@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
 import { ChatPage } from "./routes/chat.js";
 import { ChatsPage } from "./routes/chats.js";
 import { LoginPage } from "./routes/login.js";
+import { OnboardingPage } from "./routes/onboarding.js";
 import { ProtectedLayout } from "./routes/protected.js";
 import { SignupPage } from "./routes/signup.js";
 import { VerifyEmailPage } from "./routes/verify-email.js";
@@ -18,6 +19,7 @@ const router = createBrowserRouter([
       { path: "/", element: <Navigate to="/chats" replace /> },
       { path: "/chats", element: <ChatsPage /> },
       { path: "/chats/:id", element: <ChatPage /> },
+      { path: "/onboarding", element: <OnboardingPage /> },
     ],
   },
 ]);
