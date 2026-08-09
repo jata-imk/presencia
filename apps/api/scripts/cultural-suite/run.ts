@@ -7,6 +7,12 @@
 // Uso: pnpm --filter @presencia/api suite:cultural
 // Modelos: env AI_SUITE_MODELS="google:x,openai:y" o el default de abajo.
 // AI_SUITE_PROMPTS="id1,id2" re-corre solo esos prompts (ids de prompts.ts).
+// AI_SUITE_VOICES="id1,id2" corre cada prompt de cada modelo contra las voces
+// de marca indicadas (ids de voices.ts) en vez del prompt base — DoD de F4
+// (docs/explanation/product/presencia-configuracion-voz-de-marca.md): dos
+// voces distintas deben producir outputs notoriamente distintos del mismo
+// prompt. Sin esta env var, el comportamiento es igual que antes de F4
+// (system = prompt base, sin voz).
 // AI_SUITE_DELAY_MS pausa entre llamadas (default 10000 — el free tier de
 // Gemini limita requests por minuto y cada prompt puede usar varios steps).
 
@@ -16,8 +22,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CARD_ARCHETYPE_TOOLS } from "@presencia/shared";
 import { createModelResolver, DEFAULT_MODEL_ID } from "../../src/ai/provider-registry.js";
-import { SYSTEM_PROMPT } from "../../src/chat/system-prompt.js";
+import { buildSystemPrompt } from "../../src/chat/system-prompt.js";
 import { culturalPrompts } from "./prompts.js";
+import { CULTURAL_SUITE_VOICES, type VoiceFixture } from "./voices.js";
 
 const DEFAULT_MODELS = [
   "google:gemini-3.6-flash",
@@ -63,11 +70,11 @@ interface RunResult {
   error?: string;
 }
 
-async function runPrompt(modelId: string, promptText: string): Promise<RunResult> {
+async function runPrompt(modelId: string, promptText: string, system: string): Promise<RunResult> {
   try {
     const result = await generateText({
       model: resolveModel(modelId),
-      system: SYSTEM_PROMPT,
+      system,
       prompt: promptText,
       tools: culturalSuiteTools,
       stopWhen: stepCountIs(3),
@@ -99,6 +106,47 @@ async function runPrompt(modelId: string, promptText: string): Promise<RunResult
       totalTokens: 0,
       error: error instanceof Error ? error.message : String(error),
     };
+  }
+}
+
+// Bloque de resultado reusado por el modo normal (### modelo) y el modo
+// voces (#### voz dentro de ### modelo) — mismo contenido, distinto nivel
+// de encabezado ya empujado por el caller.
+function appendResultLines(lines: string[], result: RunResult, expectsTool: boolean): void {
+  if (result.error) {
+    lines.push(`**Error:** \`${result.error}\``, "");
+  } else {
+    lines.push(result.text.trim() || `*(sin texto — finishReason: ${result.finishReason})*`, "");
+  }
+  const toolCalls = result.toolAttempts.length;
+  if (expectsTool || toolCalls > 0) {
+    const toolNames = result.toolAttempts.map((a) => a.toolName).join(", ");
+    const allValid = result.toolAttempts.every((a) => a.valid);
+    lines.push(
+      `- ¿Llamó la tool?: ${toolCalls > 0 ? `sí (${toolCalls}: ${toolNames})` : "no"}`,
+      `- ¿Input Zod-válido?: ${toolCalls > 0 ? (allValid ? "sí" : "NO") : "n/a"}`,
+      "",
+    );
+  }
+  // Card generada por cada tool call (aunque el input haya sido inválido —
+  // así se ve qué mandó el modelo, no solo si pasó Zod).
+  for (const attempt of result.toolAttempts) {
+    lines.push(
+      `<details><summary>Card generada — <code>${attempt.toolName}</code>${attempt.valid ? "" : " ⚠️ input inválido"}</summary>`,
+      "",
+      "```json",
+      JSON.stringify(attempt.input, null, 2),
+      "```",
+      "",
+      "</details>",
+      "",
+    );
+  }
+  if (!result.error) {
+    lines.push(
+      `- Tokens: input ${result.inputTokens} / output ${result.outputTokens} / total ${result.totalTokens}`,
+      "",
+    );
   }
 }
 
@@ -136,6 +184,19 @@ async function main(): Promise<void> {
   const prompts = promptFilter
     ? culturalPrompts.filter((p) => promptFilter.includes(p.id))
     : culturalPrompts;
+
+  const voiceFilter = process.env.AI_SUITE_VOICES?.split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const voices: VoiceFixture[] = voiceFilter
+    ? CULTURAL_SUITE_VOICES.filter((v) => voiceFilter.includes(v.id))
+    : [];
+  if (voiceFilter && voices.length === 0) {
+    throw new Error(
+      `AI_SUITE_VOICES no coincide con ningún id de voices.ts (pediste: ${voiceFilter.join(", ")}).`,
+    );
+  }
+
   const delayRaw = Number(process.env.AI_SUITE_DELAY_MS ?? 10_000);
   const delayMs = Number.isFinite(delayRaw) && delayRaw >= 0 ? delayRaw : 10_000;
   if (delayMs !== delayRaw) {
@@ -143,19 +204,40 @@ async function main(): Promise<void> {
       `⚠ AI_SUITE_DELAY_MS inválido ("${process.env.AI_SUITE_DELAY_MS}"); usando 10000ms`,
     );
   }
+
+  const totalCalls = prompts.length * models.length * (voices.length || 1);
+  console.log(
+    `▶ ${prompts.length} prompts × ${models.length} modelos` +
+      (voices.length > 0 ? ` × ${voices.length} voces` : "") +
+      ` = ${totalCalls} llamadas (~${Math.round((totalCalls * delayMs) / 60_000)} min con el delay actual)`,
+  );
+
   const date = new Date().toISOString().slice(0, 10);
   const lines: string[] = [
     `# Suite de regresión cultural — ${date}`,
     "",
-    `System prompt: el de producción (\`apps/api/src/chat/system-prompt.ts\`).`,
+    `System prompt: el de producción (\`apps/api/src/chat/system-prompt.ts\`)` +
+      (voices.length > 0
+        ? `, ensamblado por voz de marca (\`buildSystemPrompt\`).`
+        : `, sin voz de marca (\`buildSystemPrompt(null)\` === prompt base).`),
     `Modelos: ${models.map((m) => `\`${m}\``).join(", ")}.`,
+    ...(voices.length > 0
+      ? [`Voces: ${voices.map((v) => `\`${v.id}\` (${v.label})`).join(", ")}.`]
+      : []),
     "",
     "Criterio de juicio: tuteo natural, cero voseo, modismos mexicanos bien usados,",
     'registro cercano sin caer en caricatura. Lo que suene a "español de aeropuerto" pierde.',
+    ...(voices.length > 0
+      ? [
+          "",
+          "**DoD de voz de marca:** dos voces distintas deben sonar notoriamente distinto — " +
+            "mismo prompt, mismo modelo, comparar las secciones de voz dentro de cada modelo.",
+        ]
+      : []),
     "",
   ];
 
-  // Acumulado de tokens por modelo a lo largo de las 10 corridas — mide si
+  // Acumulado de tokens por modelo a lo largo de todas las corridas — mide si
   // el diseño de tool (3 tools por arquetipo vs. discriminatedUnion/aplanado)
   // realmente cuesta menos por evitar reintentos de input inválido.
   const tokensByModel = new Map(
@@ -168,55 +250,27 @@ async function main(): Promise<void> {
     lines.push(`> ${prompt.text}`, "");
 
     for (const modelId of models) {
-      console.log(`  · ${modelId}...`);
-      const result = await runPrompt(modelId, prompt.text);
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-
-      const totals = tokensByModel.get(modelId);
-      if (totals) {
-        totals.inputTokens += result.inputTokens;
-        totals.outputTokens += result.outputTokens;
-        totals.totalTokens += result.totalTokens;
-      }
-
       lines.push(`### ${modelId}`, "");
-      if (result.error) {
-        lines.push(`**Error:** \`${result.error}\``, "");
-      } else {
-        lines.push(
-          result.text.trim() || `*(sin texto — finishReason: ${result.finishReason})*`,
-          "",
-        );
-      }
-      const toolCalls = result.toolAttempts.length;
-      if (prompt.expectsTool || toolCalls > 0) {
-        const toolNames = result.toolAttempts.map((a) => a.toolName).join(", ");
-        const allValid = result.toolAttempts.every((a) => a.valid);
-        lines.push(
-          `- ¿Llamó la tool?: ${toolCalls > 0 ? `sí (${toolCalls}: ${toolNames})` : "no"}`,
-          `- ¿Input Zod-válido?: ${toolCalls > 0 ? (allValid ? "sí" : "NO") : "n/a"}`,
-          "",
-        );
-      }
-      // Card generada por cada tool call (aunque el input haya sido
-      // inválido — así se ve qué mandó el modelo, no solo si pasó Zod).
-      for (const attempt of result.toolAttempts) {
-        lines.push(
-          `<details><summary>Card generada — <code>${attempt.toolName}</code>${attempt.valid ? "" : " ⚠️ input inválido"}</summary>`,
-          "",
-          "```json",
-          JSON.stringify(attempt.input, null, 2),
-          "```",
-          "",
-          "</details>",
-          "",
-        );
-      }
-      if (!result.error) {
-        lines.push(
-          `- Tokens: input ${result.inputTokens} / output ${result.outputTokens} / total ${result.totalTokens}`,
-          "",
-        );
+
+      // Sin voces: una sola corrida con el prompt base, igual que antes de
+      // F4 (buildSystemPrompt(null) === BASE_SYSTEM_PROMPT).
+      const passes = voices.length > 0 ? voices : [null];
+
+      for (const voiceFixture of passes) {
+        console.log(`  · ${modelId}${voiceFixture ? ` [${voiceFixture.id}]` : ""}...`);
+        const system = buildSystemPrompt(voiceFixture?.voice ?? null);
+        const result = await runPrompt(modelId, prompt.text, system);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+        const totals = tokensByModel.get(modelId);
+        if (totals) {
+          totals.inputTokens += result.inputTokens;
+          totals.outputTokens += result.outputTokens;
+          totals.totalTokens += result.totalTokens;
+        }
+
+        if (voiceFixture) lines.push(`#### Voz: ${voiceFixture.label}`, "");
+        appendResultLines(lines, result, prompt.expectsTool);
       }
     }
   }
@@ -224,7 +278,7 @@ async function main(): Promise<void> {
   lines.push(
     "---",
     "",
-    "## Consumo de tokens por proveedor (10 prompts)",
+    `## Consumo de tokens por proveedor (${prompts.length} prompts${voices.length > 0 ? ` × ${voices.length} voces` : ""})`,
     "",
     "| Modelo | Input | Output | Total |",
     "| ------ | ----- | ------ | ----- |",
@@ -248,7 +302,8 @@ async function main(): Promise<void> {
   const repoRoot = findRepoRoot(process.cwd());
   const outDir = path.join(repoRoot, "docs", "reference", "suite-cultural");
   await mkdir(outDir, { recursive: true });
-  const outFile = path.join(outDir, `${date}-reporte${promptFilter ? "-parcial" : ""}.md`);
+  const suffix = `${voices.length > 0 ? "-voces" : ""}${promptFilter ? "-parcial" : ""}`;
+  const outFile = path.join(outDir, `${date}-reporte${suffix}.md`);
   await writeFile(outFile, lines.join("\n"), "utf8");
   console.log(`\n✔ Reporte: ${path.relative(repoRoot, outFile)}`);
 }

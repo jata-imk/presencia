@@ -3,11 +3,12 @@ import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from 
 import type { ChatSummary } from "@presencia/shared";
 import type { ServerResponse } from "node:http";
 import { AiService } from "../ai/ai.service.js";
+import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
 import { CardsRepository } from "../cards/cards.repository.js";
 import { buildPublicationCardTools } from "../cards/publication-card.tools.js";
 import { DbService } from "../db/db.service.js";
 import { ChatRepository, type MessageRow } from "./chat.repository.js";
-import { SYSTEM_PROMPT } from "./system-prompt.js";
+import { buildSystemPrompt } from "./system-prompt.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
 // Si el modelo agota este presupuesto a mitad de una tool call, onEnd lo
@@ -22,6 +23,7 @@ export class ChatService {
     @Inject(ChatRepository) private readonly repo: ChatRepository,
     @Inject(AiService) private readonly aiService: AiService,
     @Inject(CardsRepository) private readonly cardsRepo: CardsRepository,
+    @Inject(BrandVoiceService) private readonly brandVoiceService: BrandVoiceService,
   ) {}
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
@@ -144,9 +146,14 @@ export class ChatService {
       createdCardIds,
     });
 
+    // Voz de marca del usuario (F4): null durante el onboarding o para
+    // cuentas viejas sin voz configurada — buildSystemPrompt cae al prompt
+    // base en ese caso, el chat nunca se bloquea por esto.
+    const voice = await this.brandVoiceService.getDefaultForPrompt(userId);
+
     const result = streamText({
       model: this.aiService.resolveModel(),
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt(voice),
       messages: await convertToModelMessages(history),
       tools,
       stopWhen: stepCountIs(MAX_AGENT_STEPS),

@@ -14,4 +14,13 @@
 
 **Suite cultural:** `pnpm --filter @presencia/api suite:cultural` (script en `apps/api/scripts/cultural-suite/`) corre los ~10 prompts contra cada modelo con el system prompt de producción y una tool mock, y genera reporte lado a lado en `docs/reference/suite-cultural/` para juicio humano (sin LLM juez — el criterio cultural es del founder).
 
+**Addendum (F4, 2026-08-02) — el system prompt ahora se ensambla por usuario.** Hasta F3, `SYSTEM_PROMPT` era una constante idéntica para todos los tenants. F4 la reemplaza por `buildSystemPrompt(voice?: BrandVoiceForPrompt | null)` (`apps/api/src/chat/system-prompt.ts`), que agrega al prompt base un bloque `<voz_de_marca>` con los campos de `brand_voices` del usuario (mercado, nicho, registro/formalidad, modismos permitidos/prohibidos, anglicismos, temas clave, CTAs, hasta 2 ejemplos de referencia) — o cae al prompt base sin voz configurada (onboarding a medias, cuentas viejas). Sigue sin importar Nest ni DB: `BrandVoiceForPrompt` es un shape plano de `@presencia/shared`, no la fila de Drizzle, así que la suite cultural sigue probando exactamente el mismo código que producción.
+
+La suite cultural se extiende con dos verificaciones nuevas, ambas DoD de F4 (`docs/explanation/product/presencia-configuracion-voz-de-marca.md`):
+
+- `AI_SUITE_VOICES="id1,id2"` sobre `suite:cultural` (fixtures en `apps/api/scripts/cultural-suite/voices.ts`): corre cada prompt contra cada voz y las pone lado a lado por modelo — verifica que dos voces opuestas (de barrio vs. corporativa) suenen notoriamente distinto. Veredicto humano, sin LLM juez, mismo criterio que el resto de la suite.
+- `pnpm --filter @presencia/api suite:voz-prohibida` (script nuevo, `apps/api/scripts/cultural-suite/prohibited-word.ts`): genera 20 veces el mismo prompt con una voz que prohíbe un término tentador para el modelo, cuenta ocurrencias normalizadas y reporta PASA/FALLA.
+
+Ninguna entra a CI (el workflow no corre `pnpm test`; 20+ llamadas pagadas por push sería peor) — son comandos manuales con reporte versionado, igual que la suite original.
+
 **Pendiente:** modelo default por acción (chat vs generación vs adaptación) según los resultados versionados de la suite en `docs/reference/suite-cultural/`.
