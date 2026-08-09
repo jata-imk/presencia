@@ -1,17 +1,13 @@
+import { FORMALITY_ZONES, formalityZoneLabel } from "@presencia/shared";
+
 // Slider continuo 0-100 (doc presencia-configuracion-voz-de-marca.md §4):
 // reemplaza el single-select del onboarding en Configuración. El usuario
 // razona en zonas, no en el número pelado — el pin muestra su posición
-// exacta, las 4 etiquetas dan contexto cualitativo a lo largo del track.
-const ZONES = [
-  { max: 25, label: "De barrio" },
-  { max: 50, label: "Casual" },
-  { max: 75, label: "Neutro-profesional" },
-  { max: 100, label: "Técnico/formal" },
-];
-
-function zoneLabel(value: number): string {
-  return ZONES.find((zone) => value <= zone.max)?.label ?? "Técnico/formal";
-}
+// exacta, las etiquetas dan contexto cualitativo a lo largo del track.
+// Zonas importadas de shared (no propias): tienen que coincidir exacto con
+// las que usa el system prompt (chat/system-prompt.ts) para el mismo
+// valor, o el usuario ve un registro en la UI distinto al que recibe el
+// modelo.
 
 interface FormalitySliderProps {
   value: number;
@@ -32,11 +28,11 @@ export function FormalitySlider({ value, onChange, id }: FormalitySliderProps) {
         className="w-full accent-primary"
       />
       <div className="flex justify-between text-xs text-fg-muted">
-        {ZONES.map((zone) => (
+        {FORMALITY_ZONES.map((zone) => (
           <span key={zone.label}>{zone.label}</span>
         ))}
       </div>
-      <p className="text-xs text-fg-secondary">Zona actual: {zoneLabel(value)}</p>
+      <p className="text-xs text-fg-secondary">Zona actual: {formalityZoneLabel(value)}</p>
     </div>
   );
 }

@@ -196,6 +196,8 @@ export function OnboardingPage() {
               value={niche}
               onChange={setNiche}
               placeholder="Ej. repostería, tips de negocio"
+              maxItems={20}
+              maxLength={40}
             />
           </Field>
           <Field label="Registro" htmlFor="register">

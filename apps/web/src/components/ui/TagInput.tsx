@@ -5,18 +5,22 @@ interface TagInputProps {
   onChange: (next: string[]) => void;
   placeholder?: string;
   maxItems?: number;
+  // Tope por tag: el schema compartido limita cada elemento a 40 chars (80
+  // para CTAs, packages/shared/src/brand-voice.ts). Sin este cap el 400 del
+  // servidor no dice qué tag es el problema — ver callers.
+  maxLength?: number;
   id?: string;
 }
 
 // Chips removibles + input de texto libre (Enter o coma agrega). Usado para
 // nicho (onboarding) y, en Configuración, modismos permitidos/prohibidos,
 // temas clave y CTAs preferidos — vocabulario abierto, sin presets (doc §3).
-export function TagInput({ value, onChange, placeholder, maxItems, id }: TagInputProps) {
+export function TagInput({ value, onChange, placeholder, maxItems, maxLength, id }: TagInputProps) {
   const [draft, setDraft] = useState("");
   const atLimit = maxItems !== undefined && value.length >= maxItems;
 
   function addTag() {
-    const trimmed = draft.trim();
+    const trimmed = draft.trim().slice(0, maxLength);
     setDraft("");
     if (!trimmed || atLimit || value.includes(trimmed)) return;
     onChange([...value, trimmed]);
@@ -60,6 +64,7 @@ export function TagInput({ value, onChange, placeholder, maxItems, id }: TagInpu
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={addTag}
+          maxLength={maxLength}
           placeholder={value.length === 0 ? placeholder : undefined}
           className="min-w-20 flex-1 bg-transparent text-sm text-fg placeholder:text-fg-muted focus:outline-none"
         />

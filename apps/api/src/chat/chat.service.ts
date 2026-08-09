@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from "ai";
-import type { ChatSummary } from "@presencia/shared";
+import type { BrandVoiceForPrompt, ChatSummary } from "@presencia/shared";
 import type { ServerResponse } from "node:http";
 import { AiService } from "../ai/ai.service.js";
 import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
@@ -69,6 +69,7 @@ export class ChatService {
     userMessage: UIMessage,
     res: ServerResponse,
   ): Promise<void> {
+    const voicePromise = this.loadVoiceForPrompt(userId);
     const history = await this.dbService.runWithTenant(userId, async (tx) => {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
@@ -83,7 +84,22 @@ export class ChatService {
       return [...previous, saved].map((row) => this.toUIMessage(row));
     });
 
-    await this.runAgentTurn(userId, chatId, history, res);
+    await this.runAgentTurn(userId, chatId, history, res, voicePromise);
+  }
+
+  // Nunca debe tumbar el turno: una voz de marca que no cargó cae al
+  // prompt base, igual que una cuenta sin voz configurada. Se dispara en
+  // paralelo con la carga del historial (no depende de ella) en vez de
+  // encadenarse después, para no pagar dos round-trips secuenciales a la
+  // DB en el hot path de cada turno.
+  private loadVoiceForPrompt(userId: string): Promise<BrandVoiceForPrompt | null> {
+    return this.brandVoiceService.getDefaultForPrompt(userId).catch((error: unknown) => {
+      console.error(
+        `[chat] No se pudo cargar la voz de marca de ${userId} para este turno:`,
+        error,
+      );
+      return null;
+    });
   }
 
   /**
@@ -99,6 +115,7 @@ export class ChatService {
     messageId: string,
     res: ServerResponse,
   ): Promise<void> {
+    const voicePromise = this.loadVoiceForPrompt(userId);
     const history = await this.dbService.runWithTenant(userId, async (tx) => {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
@@ -118,7 +135,7 @@ export class ChatService {
       return all.slice(0, -1).map((row) => this.toUIMessage(row));
     });
 
-    await this.runAgentTurn(userId, chatId, history, res);
+    await this.runAgentTurn(userId, chatId, history, res, voicePromise);
   }
 
   // Pipeline compartido por streamChat y regenerateChat: streamText + tools
@@ -129,6 +146,7 @@ export class ChatService {
     chatId: string,
     history: UIMessage[],
     res: ServerResponse,
+    voicePromise: Promise<BrandVoiceForPrompt | null>,
   ): Promise<void> {
     const abortController = new AbortController();
     res.on("close", () => {
@@ -146,10 +164,11 @@ export class ChatService {
       createdCardIds,
     });
 
-    // Voz de marca del usuario (F4): null durante el onboarding o para
-    // cuentas viejas sin voz configurada — buildSystemPrompt cae al prompt
-    // base en ese caso, el chat nunca se bloquea por esto.
-    const voice = await this.brandVoiceService.getDefaultForPrompt(userId);
+    // Voz de marca del usuario (F4): null durante el onboarding, para
+    // cuentas viejas sin voz configurada, o si la carga falló — ver
+    // loadVoiceForPrompt. buildSystemPrompt cae al prompt base en ese caso,
+    // el chat nunca se bloquea por esto.
+    const voice = await voicePromise;
 
     const result = streamText({
       model: this.aiService.resolveModel(),
