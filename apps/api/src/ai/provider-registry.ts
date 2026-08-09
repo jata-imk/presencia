@@ -78,6 +78,26 @@ export const AI_TASK_KINDS = [
 ] as const;
 export type AiTaskKind = (typeof AI_TASK_KINDS)[number];
 
+// Tiers de modelo (F4.5, addendum ADR-004): AI_MODEL_CHAT es el moat
+// cultural, no se abarata. AI_MODEL_UTILITY es modelo chico (titulares,
+// compactar historial, narrar analíticas). AI_MODEL_ADAPT es creativo
+// acotado / utility pesado (adaptar posts entre redes, destilar ejemplos a
+// voz de marca). Cada tier sin setear cae a AI_MODEL (env.ts).
+export const MODEL_TIER_ENV_VARS = ["AI_MODEL_CHAT", "AI_MODEL_UTILITY", "AI_MODEL_ADAPT"] as const;
+export type ModelTierEnvVar = (typeof MODEL_TIER_ENV_VARS)[number];
+
+// El call site declara su tarea (AiService.resolveForTask); nunca se infiere
+// con un clasificador previo — eso sería meter un LLM para decidir qué LLM
+// usar, pagado en latencia justo en el primer token.
+export const MODEL_BY_TASK: Record<AiTaskKind, ModelTierEnvVar> = {
+  chat: "AI_MODEL_CHAT",
+  chat_title: "AI_MODEL_UTILITY",
+  history_compaction: "AI_MODEL_UTILITY",
+  post_adapt: "AI_MODEL_ADAPT",
+  voice_distill: "AI_MODEL_ADAPT",
+  analytics_narration: "AI_MODEL_UTILITY",
+};
+
 export type EnvSource = Record<string, string | undefined>;
 export type ModelResolver = (modelId?: string) => LanguageModel;
 

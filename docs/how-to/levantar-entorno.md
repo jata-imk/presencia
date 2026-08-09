@@ -75,6 +75,7 @@ Notas del modo B:
 - El modelo activo se elige con `AI_MODEL` (formato `proveedor:modelo`). Proveedores soportados: `google`, `openai`, `anthropic`, `deepseek`, `minimax`, `kimi` (ej. `google:gemini-3.6-flash`, `anthropic:claude-haiku-4-5`, `deepseek:deepseek-v4-flash`). Cambiar de proveedor = editar la variable y reiniciar el proceso (`pnpm dev` en local, reciclar contenedor en prod).
 - Solo la API key del proveedor de `AI_MODEL` es obligatoria; las demás (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `MINIMAX_API_KEY`, `KIMI_API_KEY`) son opcionales — sin key, ese proveedor no se registra y la suite lo salta con aviso.
 - Suite de regresión cultural: `pnpm --filter @presencia/api suite:cultural` corre los prompts de `apps/api/scripts/cultural-suite/` contra los modelos de `AI_SUITE_MODELS` (o el trío default) y deja el reporte en `docs/reference/suite-cultural/`.
+- **Routing por tarea (F4.5):** `AI_MODEL_CHAT`, `AI_MODEL_UTILITY`, `AI_MODEL_ADAPT` son opcionales — cada una sobreescribe `AI_MODEL` para su tier (chat / titulares y compactar historial / adaptar posts y destilar voz). Sin setear, esa tarea usa `AI_MODEL` igual que antes de F4.5. Mismo fail-fast: si la seteas, su proveedor necesita la API key correspondiente al boot. `AiService.resolveForTask(task)` es el único punto donde esto se lee — el call site declara su tarea, nunca se infiere.
 
 ## VS Code
 

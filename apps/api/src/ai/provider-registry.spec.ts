@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createModelResolver, parseModelId, type EnvSource } from "./provider-registry.js";
+import {
+  AI_TASK_KINDS,
+  createModelResolver,
+  MODEL_BY_TASK,
+  MODEL_TIER_ENV_VARS,
+  parseModelId,
+  type EnvSource,
+} from "./provider-registry.js";
 
 const baseEnv: EnvSource = {
   GOOGLE_GENERATIVE_AI_API_KEY: "test-google-key",
@@ -71,5 +78,18 @@ describe("createModelResolver", () => {
   it("truena con mensaje claro si el proveedor no tiene key configurada", () => {
     const resolve = createModelResolver(baseEnv, "google:gemini-3.5-flash");
     expect(() => resolve("openai:gpt-5-mini")).toThrow(/no API key configured/);
+  });
+});
+
+describe("MODEL_BY_TASK", () => {
+  it("cubre las 6 tareas de AI_TASK_KINDS, ninguna sin tier", () => {
+    for (const task of AI_TASK_KINDS) {
+      expect(MODEL_TIER_ENV_VARS).toContain(MODEL_BY_TASK[task]);
+    }
+    expect(Object.keys(MODEL_BY_TASK).sort()).toEqual([...AI_TASK_KINDS].sort());
+  });
+
+  it("chat usa su propio tier — el moat cultural no comparte con utility/adapt", () => {
+    expect(MODEL_BY_TASK.chat).toBe("AI_MODEL_CHAT");
   });
 });

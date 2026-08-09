@@ -174,8 +174,9 @@ export class ChatService {
 
     // Resuelto una sola vez: el mismo objeto alimenta streamText y la
     // telemetría de abajo, así es imposible que ai_usage_events reporte un
-    // proveedor/modelo distinto del que de verdad corrió (F4.5).
-    const resolved = this.aiService.resolve();
+    // proveedor/modelo distinto del que de verdad corrió (F4.5). "chat" es
+    // la tarea que este pipeline siempre ejecuta (routing por tarea, F4.5).
+    const resolved = this.aiService.resolveForTask("chat");
     const startedAt = Date.now();
 
     const result = streamText({
