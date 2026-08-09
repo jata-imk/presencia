@@ -174,7 +174,11 @@ export function VozDeMarcaPage() {
         <Field label="Formalidad" htmlFor="formality">
           <FormalitySlider id="formality" value={formality} onChange={setFormality} />
         </Field>
-        <Field label="Modismos permitidos" htmlFor="allowed-expressions">
+        <Field
+          label="Modismos permitidos"
+          htmlFor="allowed-expressions"
+          hint="Palabras o frases que quieres que aparezcan cuando encajen de forma natural — nunca forzadas."
+        >
           <TagInput
             id="allowed-expressions"
             value={allowedExpressions}
@@ -182,7 +186,11 @@ export function VozDeMarcaPage() {
             maxItems={20}
           />
         </Field>
-        <Field label="Modismos prohibidos" htmlFor="banned-expressions">
+        <Field
+          label="Modismos prohibidos"
+          htmlFor="banned-expressions"
+          hint="Palabras que nunca deben aparecer en tu contenido, ni siquiera citándolas."
+        >
           <TagInput
             id="banned-expressions"
             value={bannedExpressions}
@@ -220,9 +228,15 @@ export function VozDeMarcaPage() {
 
       {/* Bloque D — Ejemplos de referencia */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-fg-secondary uppercase">
-          Ejemplos de referencia
-        </h2>
+        <div>
+          <h2 className="text-sm font-semibold text-fg-secondary uppercase">
+            Ejemplos de referencia
+          </h2>
+          <p className="mt-1 text-xs text-fg-secondary">
+            De todos los campos, este es el que más influye en que el contenido suene a ti — la IA
+            imita el ritmo y el vocabulario de lo que pegues aquí.
+          </p>
+        </div>
         {[0, 1].map((slot) => {
           const text = examples[slot] ?? "";
           return (
