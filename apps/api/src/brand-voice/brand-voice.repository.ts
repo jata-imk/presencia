@@ -60,6 +60,12 @@ export class BrandVoiceRepository {
   // (`WHERE is_default`) para que Postgres pueda inferir el conflicto.
   // `name` queda fuera del `set`: si el usuario ya renombró su voz desde
   // Configuración, reenviar el paso "Voz" no debe resetearla a "Mi voz".
+  // `audience` usa COALESCE en vez de sobrescribir directo: el paso "Voz"
+  // del onboarding nunca captura audience (lo pide Configuración después,
+  // "lo que el onboarding no pedía por tiempo") — sin el COALESCE, reenviar
+  // el PUT (doble-click) borraría en silencio lo que el usuario ya guardó
+  // ahí. `marketRegion` sí se sobrescribe directo: el onboarding SÍ lo
+  // captura, así que un reenvío es una actualización legítima.
   async upsertDefault(tx: Tx, input: InsertDefaultBrandVoiceInput): Promise<BrandVoiceRow> {
     const [row] = await tx
       .insert(brandVoices)
@@ -71,7 +77,7 @@ export class BrandVoiceRepository {
           marketCountry: input.marketCountry,
           marketRegion: input.marketRegion,
           niche: input.niche,
-          audience: input.audience,
+          audience: sql`coalesce(excluded.audience, ${brandVoices.audience})`,
           register: input.register,
           formality: input.formality,
           updatedAt: sql`now()`,

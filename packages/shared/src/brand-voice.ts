@@ -26,6 +26,25 @@ export const REGISTER_FORMALITY_ANCHORS: Record<BrandVoiceRegister, number> = {
   tecnico: 90,
 };
 
+// Zonas nombradas del slider de formalidad 0-100 (doc §4), mismas 5
+// posiciones que REGISTER_FORMALITY_ANCHORS pero como rangos con límite
+// superior en vez de puntos únicos. Única fuente de verdad: vive en shared
+// porque tanto la UI (FormalitySlider, qué zona le muestra al usuario)
+// como el system prompt (chat/system-prompt.ts, qué registro recibe el
+// modelo) tienen que coincidir para el mismo valor — antes de este fix
+// cada uno tenía su propia tabla, desincronizadas.
+export const FORMALITY_ZONES: ReadonlyArray<{ max: number; label: string }> = [
+  { max: 24, label: "De barrio" },
+  { max: 44, label: "Casual" },
+  { max: 64, label: "Neutro-profesional" },
+  { max: 84, label: "Profesional" },
+  { max: 100, label: "Técnico/formal" },
+];
+
+export function formalityZoneLabel(formality: number): string {
+  return FORMALITY_ZONES.find((zone) => formality <= zone.max)?.label ?? "Neutro-profesional";
+}
+
 export function formalityToRegister(formality: number): BrandVoiceRegister {
   let closest: BrandVoiceRegister = "neutro_profesional";
   let closestDistance = Number.POSITIVE_INFINITY;
@@ -74,9 +93,13 @@ export type CreateBrandVoiceBody = z.infer<typeof createBrandVoiceBodySchema>;
 export const updateBrandVoiceBodySchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   marketCountry: z.string().trim().min(2).max(56).optional(),
-  marketRegion: z.string().trim().min(1).max(80).optional(),
-  niche: tagList(20).optional(),
-  audience: z.string().trim().max(500).optional(),
+  // nullable, a diferencia de create: Configuración necesita poder borrar
+  // un campo ya guardado, no solo dejarlo intacto. `undefined` = "no
+  // tocar" (omitido del PATCH), `null` = "borrar" — ver
+  // voz-de-marca.tsx::handleSave.
+  marketRegion: z.string().trim().min(1).max(80).nullable().optional(),
+  niche: tagList(20).min(1).optional(),
+  audience: z.string().trim().max(500).nullable().optional(),
   register: brandVoiceRegisterSchema.optional(),
   formality: z.number().int().min(0).max(100).optional(),
   allowedExpressions: tagList(20).optional(),

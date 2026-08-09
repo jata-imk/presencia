@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { BrandVoiceDto } from "@presencia/shared";
+import { normalizeExpression, type BrandVoiceDto } from "@presencia/shared";
 import { FormalitySlider } from "../../components/ui/FormalitySlider.js";
 import { Textarea } from "../../components/ui/Textarea.js";
 import { TagInput } from "../../components/ui/TagInput.js";
@@ -11,14 +11,6 @@ import { ApiError, apiFetch } from "../../lib/api.js";
 
 const DEFAULT_ERROR = "Algo salió mal. Inténtalo de nuevo.";
 const MAX_EXAMPLES = 2;
-
-// Heurística de UI, no autoritativa: el servidor (brand-voice.service.ts,
-// resolveConflicts) ya aplica "prohibido gana" de verdad al persistir, con
-// normalización de acentos incluida. Esta versión es solo lowercase+trim —
-// buena para el warning inline, no reemplaza la resolución del servidor.
-function normalizeForConflictCheck(term: string): string {
-  return term.trim().toLowerCase();
-}
 
 export function VozDeMarcaPage() {
   const [voice, setVoice] = useState<BrandVoiceDto | null>(null);
@@ -68,9 +60,14 @@ export function VozDeMarcaPage() {
   }, []);
 
   // Doc §6 "Modismos en conflicto": mismo modismo en las dos listas.
+  // normalizeExpression (shared) es la misma función que usa el servidor
+  // (brand-voice.service.ts::resolveConflicts) para aplicar "prohibido
+  // gana" de verdad al persistir — con acentos incluidos ("café"/"cafe"
+  // cuentan como el mismo modismo). El warning inline solo avisa lo que el
+  // servidor sí va a resolver.
   const conflictingTerm = useMemo(() => {
-    const bannedSet = new Set(bannedExpressions.map(normalizeForConflictCheck));
-    return allowedExpressions.find((term) => bannedSet.has(normalizeForConflictCheck(term)));
+    const bannedSet = new Set(bannedExpressions.map(normalizeExpression));
+    return allowedExpressions.find((term) => bannedSet.has(normalizeExpression(term)));
   }, [allowedExpressions, bannedExpressions]);
 
   function updateExample(slot: number, value: string) {
@@ -90,9 +87,11 @@ export function VozDeMarcaPage() {
         method: "PATCH",
         body: {
           marketCountry,
-          marketRegion: marketRegion.trim() || undefined,
+          // "" -> null (borra el campo guardado), no undefined (que el
+          // PATCH interpretaría como "no tocar" y dejaría el valor viejo).
+          marketRegion: marketRegion.trim() || null,
           niche,
-          audience: audience.trim() || undefined,
+          audience: audience.trim() || null,
           // register no se manda: el servidor lo recalcula desde formality
           // (brand-voice.service.ts::reconcileFormality, doc §4).
           formality,
@@ -151,7 +150,7 @@ export function VozDeMarcaPage() {
           />
         </Field>
         <Field label="Nicho" htmlFor="niche">
-          <TagInput id="niche" value={niche} onChange={setNiche} maxItems={20} />
+          <TagInput id="niche" value={niche} onChange={setNiche} maxItems={20} maxLength={40} />
         </Field>
         <Field
           label="Audiencia"
@@ -184,6 +183,7 @@ export function VozDeMarcaPage() {
             value={allowedExpressions}
             onChange={setAllowedExpressions}
             maxItems={20}
+            maxLength={40}
           />
         </Field>
         <Field
@@ -196,6 +196,7 @@ export function VozDeMarcaPage() {
             value={bannedExpressions}
             onChange={setBannedExpressions}
             maxItems={20}
+            maxLength={40}
           />
         </Field>
         {conflictingTerm && (
@@ -214,7 +215,13 @@ export function VozDeMarcaPage() {
       <section className="flex flex-col gap-4">
         <h2 className="text-sm font-semibold text-fg-secondary uppercase">Contenido</h2>
         <Field label="Temas clave" htmlFor="key-topics">
-          <TagInput id="key-topics" value={keyTopics} onChange={setKeyTopics} maxItems={20} />
+          <TagInput
+            id="key-topics"
+            value={keyTopics}
+            onChange={setKeyTopics}
+            maxItems={20}
+            maxLength={40}
+          />
         </Field>
         <Field label="CTAs preferidos" htmlFor="preferred-ctas">
           <TagInput
@@ -222,6 +229,7 @@ export function VozDeMarcaPage() {
             value={preferredCtas}
             onChange={setPreferredCtas}
             maxItems={20}
+            maxLength={80}
           />
         </Field>
       </section>
