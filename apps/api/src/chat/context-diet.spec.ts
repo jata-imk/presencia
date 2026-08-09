@@ -1,7 +1,7 @@
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
-import { compressToolOutputsForModel, stripReasoningParts } from "./context-diet.js";
+import { compressToolOutputsForModel } from "./context-diet.js";
 
 function textPart(text: string) {
   return { type: "text" as const, text };
@@ -9,23 +9,6 @@ function textPart(text: string) {
 
 function stepStartPart() {
   return { type: "step-start" as const };
-}
-
-function reasoningPart(text = "razonamiento interno") {
-  return {
-    type: "reasoning" as const,
-    text,
-    state: "done" as const,
-    providerMetadata: { openai: {} },
-  };
-}
-
-function reasoningFilePart() {
-  return {
-    type: "reasoning-file" as const,
-    data: "base64...",
-    mediaType: "application/octet-stream",
-  };
 }
 
 function visualContent(caption: string): CardContent {
@@ -183,86 +166,5 @@ describe("compressToolOutputsForModel", () => {
     expect(outputs[1]).toHaveProperty("content"); // card-2..4: últimas 3, íntegras
     expect(outputs[2]).toHaveProperty("content");
     expect(outputs[3]).toHaveProperty("content");
-  });
-});
-
-describe("stripReasoningParts", () => {
-  it("quita reasoning y reasoning-file de todos los mensajes, incluido el más reciente", () => {
-    const history: UIMessage[] = [
-      userMessage("u1", "hola"),
-      assistantMessage("a1", [reasoningPart("pensando en el turno 1"), textPart("respuesta 1")]),
-      userMessage("u2", "otra pregunta"),
-      assistantMessage("a2", [
-        reasoningFilePart(),
-        reasoningPart("pensando en el turno 2, el más reciente"),
-        textPart("respuesta 2"),
-      ]),
-    ];
-
-    const stripped = stripReasoningParts(history);
-
-    expect(stripped[1]!.parts).toEqual([textPart("respuesta 1")]);
-    expect(stripped[3]!.parts).toEqual([textPart("respuesta 2")]);
-  });
-
-  it("no toca texto, step-start ni tool parts", () => {
-    const history: UIMessage[] = [
-      assistantMessage("a1", [
-        reasoningPart(),
-        stepStartPart(),
-        textPart("hola"),
-        cardToolPart("card-1", "instagram", visualContent("uno")),
-      ]),
-    ];
-
-    const stripped = stripReasoningParts(history);
-    expect(stripped[0]!.parts).toEqual([
-      stepStartPart(),
-      textPart("hola"),
-      cardToolPart("card-1", "instagram", visualContent("uno")),
-    ]);
-  });
-
-  it("historial sin reasoning sale idéntico por referencia", () => {
-    const history: UIMessage[] = [
-      userMessage("u1", "hola"),
-      assistantMessage("a1", [textPart("respuesta")]),
-    ];
-    expect(stripReasoningParts(history)).toBe(history);
-  });
-
-  it("compone con compressToolOutputsForModel sin pisarse (mismo patrón que chat.service.ts)", () => {
-    const history: UIMessage[] = [
-      assistantMessage("a1", [
-        reasoningPart(),
-        cardToolPart("card-1", "instagram", visualContent("uno")),
-      ]),
-      assistantMessage("a2", [
-        reasoningPart(),
-        cardToolPart("card-2", "instagram", visualContent("dos")),
-      ]),
-      assistantMessage("a3", [
-        reasoningPart(),
-        cardToolPart("card-3", "instagram", visualContent("tres")),
-      ]),
-      assistantMessage("a4", [
-        reasoningPart(),
-        cardToolPart("card-4", "instagram", visualContent("cuatro")),
-      ]),
-    ];
-
-    const result = stripReasoningParts(compressToolOutputsForModel(history, 3));
-    const allParts = result.flatMap((m) => m.parts);
-
-    expect(
-      allParts.some(
-        (p) => typeof p === "object" && p !== null && "type" in p && p.type === "reasoning",
-      ),
-    ).toBe(false);
-    const outputs = allParts
-      .filter((p) => typeof p === "object" && p !== null && "output" in p)
-      .map((p) => (p as unknown as { output: Record<string, unknown> }).output);
-    expect(outputs[0]).not.toHaveProperty("content"); // card-1 comprimida
-    expect(outputs[1]).toHaveProperty("content"); // card-2..4 íntegras
   });
 });

@@ -73,33 +73,3 @@ export function compressToolOutputsForModel(history: UIMessage[], keepFull = 3):
     return changed ? { ...message, parts } : message;
   });
 }
-
-// F4.5 (hallazgo de verificación manual, 2026-08-09): los proveedores con
-// modelos de razonamiento (ej. OpenAI Responses API) adjuntan una parte
-// `reasoning` por turno con un blob cifrado (`providerMetadata`) que
-// convertToModelMessages reenvía tal cual en cada request — sin pasar por
-// compressToolOutputsForModel, porque no es una tool part. Ese blob puede
-// darle al modelo acceso indirecto al detalle de turnos viejos aunque su
-// card ya esté comprimida (el modelo "rederiva" desde su propio razonamiento
-// pasado, no desde el resumen).
-//
-// A diferencia de las cards, el reasoning no tiene ventana de "últimos N":
-// es memoria de trabajo del turno donde nació, invisible para el usuario y
-// nunca referenciada por un turno futuro — se descarta siempre, sin
-// excepción, para todos los mensajes (incluido el más reciente).
-export function stripReasoningParts(history: UIMessage[]): UIMessage[] {
-  let changedAny = false;
-  const next = history.map((message) => {
-    const parts = message.parts.filter(
-      (part) =>
-        typeof part !== "object" ||
-        part === null ||
-        !("type" in part) ||
-        (part.type !== "reasoning" && part.type !== "reasoning-file"),
-    );
-    if (parts.length === message.parts.length) return message;
-    changedAny = true;
-    return { ...message, parts };
-  });
-  return changedAny ? next : history;
-}
