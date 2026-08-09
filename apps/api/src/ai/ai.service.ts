@@ -26,10 +26,6 @@ export class AiService {
   // keys por nombre desde la tabla PROVIDERS (fuente única, ADR-004).
   private readonly resolver: ModelResolver = createModelResolver(process.env, env.AI_MODEL);
 
-  resolveModel(modelId?: string): LanguageModel {
-    return this.resolver(modelId);
-  }
-
   // F4.5: devuelve el modelo junto con su identidad ya parseada — así la
   // telemetría (ai_usage_events) nunca puede reportar un proveedor/modelo
   // distinto del que de verdad ejecutó la llamada.

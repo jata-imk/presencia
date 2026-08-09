@@ -184,10 +184,12 @@ export class ChatService {
       model: resolved.model,
       system: buildSystemPrompt(voice),
       // Dieta de contexto (F4.5): al modelo solo le llega íntegro el content
-      // de las últimas 3 cards — el resto va comprimido a un resumen. Nunca
-      // toca `history` en sí: `originalMessages` abajo sigue siendo el
-      // historial completo, así el merge del SDK y lo que se persiste en
-      // onEnd no se contaminan con la versión comprimida.
+      // de las últimas cards (keepFull, default en context-diet.ts — no se
+      // repite el número aquí para no tener que mantenerlo en dos lugares).
+      // El resto va comprimido a un resumen. Nunca toca `history` en sí:
+      // `originalMessages` abajo sigue siendo el historial completo, así el
+      // merge del SDK y lo que se persiste en onEnd no se contaminan con la
+      // versión comprimida.
       //
       // NO se descarta el `reasoning` de turnos viejos (se evaluó y se
       // revirtió, 2026-08-09): OpenAI Responses API exige que cada mensaje
@@ -196,7 +198,7 @@ export class ChatService {
       // item". El reasoning sigue viajando completo en cada turno; es un
       // hueco de contexto conocido (ver ADR-006 addendum), no algo que se
       // pueda recortar del lado del cliente sin cambiar de API mode.
-      messages: await convertToModelMessages(compressToolOutputsForModel(history, 3)),
+      messages: await convertToModelMessages(compressToolOutputsForModel(history)),
       tools,
       stopWhen: stepCountIs(MAX_AGENT_STEPS),
       abortSignal: abortController.signal,

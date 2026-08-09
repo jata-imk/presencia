@@ -1,5 +1,12 @@
 import type { UIMessage } from "ai";
-import { summarizeCardContent, type CardToolOutput } from "@presencia/shared";
+import { CARD_ARCHETYPE_TOOLS, summarizeCardContent, type CardToolOutput } from "@presencia/shared";
+
+// Discriminante explícito: solo las 3 tools de card (ADR-005), nunca "toda
+// tool cuyo output tenga un campo content". F5-F7 ya tienen tareas futuras
+// (post_adapt, voice_distill...) que podrían registrar tools nuevas — sin
+// este filtro, una tool no-card con un output.content propio se reescribiría
+// por error a {cardId: undefined, ...}.
+const CARD_TOOL_TYPES = new Set(CARD_ARCHETYPE_TOOLS.map((def) => `tool-${def.toolName}`));
 
 // F4.5: un chat con 5 cards arrastra 5 JSONs completos de publicación en
 // cada request nuevo, porque `messages.parts` guarda el output de la tool
@@ -15,14 +22,15 @@ type ToolOutputPart = UIMessage["parts"][number] & {
   output: CardToolOutput;
 };
 
-// Duck-typing en vez de un type guard estricto: `output` es `unknown` en el
-// tipo genérico de UIMessage, y las parts vienen del jsonb crudo de la DB.
-// El guard de `content` cubre las parts legacy (pre F3 PR3) que no lo traen
-// — esas se dejan intactas, igual que hace PublicationCard.tsx en la UI.
+// `output` es `unknown` en el tipo genérico de UIMessage, y las parts vienen
+// del jsonb crudo de la DB — de ahí el cast al final, ya acotado por
+// CARD_TOOL_TYPES. El guard de `content` cubre las parts legacy (pre F3 PR3)
+// que no lo traen — esas se dejan intactas, igual que hace PublicationCard.tsx
+// en la UI.
 function asCardToolOutputPart(part: UIMessage["parts"][number]): ToolOutputPart | null {
   if (typeof part !== "object" || part === null) return null;
   const candidate = part as { type?: unknown; state?: unknown; output?: unknown };
-  if (typeof candidate.type !== "string" || !candidate.type.startsWith("tool-")) return null;
+  if (typeof candidate.type !== "string" || !CARD_TOOL_TYPES.has(candidate.type)) return null;
   if (candidate.state !== "output-available") return null;
   const output = candidate.output as Partial<CardToolOutput> | undefined;
   if (!output || typeof output !== "object" || !("content" in output)) return null;

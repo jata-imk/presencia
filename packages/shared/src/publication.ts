@@ -179,12 +179,18 @@ export function summarizeCardContent(content: CardContent): string {
   // → "c"). Si no hay espacio razonable antes de `max` (texto sin espacios,
   // o el primer espacio cae muy temprano), cae al corte duro — mejor perder
   // el límite de palabra que devolver un resumen ridículamente corto.
+  //
+  // Se cuenta por code point ([...text]), no por índice UTF-16 (text.slice):
+  // las captions reales usan emojis (🐱💛 al final de frase es el patrón más
+  // común) y slice() por índice puede partir un par subrogado a la mitad,
+  // dejando un carácter suelto que se corrompe al codificar a UTF-8.
   const truncate = (text: string, max = 80) => {
-    if (text.length <= max) return text;
-    const slice = text.slice(0, max);
+    const codePoints = [...text];
+    if (codePoints.length <= max) return text;
+    const slice = codePoints.slice(0, max);
     const lastSpace = Math.max(slice.lastIndexOf(" "), slice.lastIndexOf("\n"));
     const cut = lastSpace >= max * 0.5 ? slice.slice(0, lastSpace) : slice;
-    return `${cut.trimEnd()}…`;
+    return `${cut.join("").trimEnd()}…`;
   };
   switch (content.archetype) {
     case "visual_first":

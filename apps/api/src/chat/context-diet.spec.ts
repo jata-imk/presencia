@@ -98,6 +98,24 @@ describe("compressToolOutputsForModel", () => {
     expect(firstOutput.resumen).toContain("…");
   });
 
+  it("no parte un emoji a la mitad al truncar (par subrogado)", () => {
+    // 79 'a' + 3 emojis, sin espacios: el corte UTF-16 ingenuo (slice(0,80))
+    // caería justo a la mitad del primer emoji, dejando un subrogado suelto.
+    const caption = `${"a".repeat(79)}😀😀😀`;
+    const history: UIMessage[] = [
+      assistantMessage("a1", [cardToolPart("card-1", "instagram", visualContent(caption))]),
+      assistantMessage("a2", [cardToolPart("card-2", "instagram", visualContent("dos"))]),
+      assistantMessage("a3", [cardToolPart("card-3", "instagram", visualContent("tres"))]),
+      assistantMessage("a4", [cardToolPart("card-4", "instagram", visualContent("cuatro"))]),
+    ];
+
+    const compressed = compressToolOutputsForModel(history, 3);
+    const firstOutput = (compressed[0]!.parts[0] as { output: { resumen: string } }).output;
+
+    const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    expect(firstOutput.resumen).not.toMatch(loneSurrogate);
+  });
+
   it("no toca texto ni step-start", () => {
     const history: UIMessage[] = [
       userMessage("u1", "hola"),
