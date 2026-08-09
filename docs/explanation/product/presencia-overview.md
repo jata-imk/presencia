@@ -314,6 +314,27 @@ Hay una jerarquía clara que refleja a nuestro creator mexicano:
   guion-de-video, texto-first). El módulo Chat actual asume el
   arquetipo texto-first como molde único; eso hay que reconciliar.
 
+  > **Nota para F10 (2026-08-09):** hoy `text_first` no tiene
+  > `imagePrompt` en su schema — por eso "imagen opcional
+  > acompañante" no está construido, solo documentado como
+  > intención. Cuando F10 (generación de imagen) se diseñe,
+  > considerar **dos modos coexistiendo, no uno reemplazando al
+  > otro**: (1) generar la imagen ya, cobrando los créditos
+  > correspondientes, o (2) entregar solo el `imagePrompt` en
+  > texto para que el creator genere en otra herramienta y luego
+  > adjunte el resultado (vía `assetIds`, que ya existe en el
+  > schema). El campo `imagePrompt` de `visual_first` ya es ese
+  > modo (2) hoy — F10 completa el modo (1) sin necesidad de una
+  > rama nueva. Extender el mismo mecanismo a `text_first`
+  > resuelve de regalo la imagen opcional de LinkedIn/X/Threads.
+  > Idea surgida durante la prueba manual de F4.5 (2026-08-09),
+  > anotada en la tarea de Notion "F10 · Generación de imágenes
+  > multi-proveedor + Biblioteca (storage)". Al diseñar F10, esto
+  > se resuelve antes de tocar `NETWORKS_BY_ARCHETYPE` o los 3
+  > content schemas (`packages/shared/src/publication.ts`) — no
+  > amerita ADR propio todavía (no es decisión de arquitectura
+  > tomada, es una consideración de diseño para cuando F10 arranque).
+
 La publicación y programación real se apoya en **PostFast**
 (postfa.st) como capa de infraestructura vía su REST API / MCP
 Server. PostFast es plomería: cubre las 6 redes (y más),
