@@ -65,8 +65,8 @@ export class CreditsService {
   async spend(tx: Tx, input: SpendInput): Promise<void> {
     const units = quoteFlatAction(input.reason);
     await this.repo.lockUser(tx, input.userId);
-    const { cycleStart } = await this.ensureCurrentCycle(tx, input.userId);
-    const balance = await this.repo.balanceSince(tx, input.userId, cycleStart);
+    const { cycleStartId } = await this.ensureCurrentCycle(tx, input.userId);
+    const balance = await this.repo.balanceFrom(tx, input.userId, cycleStartId);
     if (balance < units) {
       throw new InsufficientQuotaError(input.userId, units, balance);
     }
@@ -103,8 +103,8 @@ export class CreditsService {
   async getQuotaStatus(userId: string): Promise<QuotaStatus> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       await this.repo.lockUser(tx, userId);
-      const { tier, cycleStart, renewsAt } = await this.ensureCurrentCycle(tx, userId);
-      const rawBalance = await this.repo.balanceSince(tx, userId, cycleStart);
+      const { tier, cycleStartId, renewsAt } = await this.ensureCurrentCycle(tx, userId);
+      const rawBalance = await this.repo.balanceFrom(tx, userId, cycleStartId);
       const quota = PLAN_QUOTAS[tier];
       const shownBalance = Math.max(rawBalance, 0);
       return {
@@ -130,16 +130,25 @@ export class CreditsService {
   private async ensureCurrentCycle(
     tx: Tx,
     userId: string,
-  ): Promise<{ tier: PlanTier; cycleStart: Date; renewsAt: Date }> {
+  ): Promise<{ tier: PlanTier; cycleStartId: number; renewsAt: Date }> {
     const user = await this.repo.findUserForCycle(tx, userId);
     if (!user) throw new Error(`Usuario ${userId} no encontrado para calcular su ciclo de cuota`);
 
     const { start, end } = currentCycleWindow(user.createdAt, new Date());
     const lastGrant = await this.repo.lastGrant(tx, userId);
 
+    // cycleStartId ancla el saldo al asiento monthly_grant vigente, nunca a
+    // una fecha — ver el comentario de balanceFrom (CreditsRepository) sobre
+    // por qué created_at no sirve para esto dentro de la misma transacción.
+    let cycleStartId = lastGrant?.id;
+
     if (!lastGrant || lastGrant.createdAt < start) {
       if (lastGrant) {
-        const priorBalance = await this.repo.balanceSince(tx, userId, lastGrant.createdAt);
+        // Por id, no por created_at: el lastGrant de un ciclo previo pudo
+        // haberse insertado junto a SU PROPIO cycle_expiration/adjustment en
+        // la misma transacción (mismo problema, un nivel atrás) — balanceFrom
+        // ya excluye esos hermanos porque tienen id menor.
+        const priorBalance = await this.repo.balanceFrom(tx, userId, lastGrant.id);
         if (priorBalance > 0) {
           await this.repo.insertEntry(tx, {
             userId,
@@ -159,14 +168,18 @@ export class CreditsService {
           });
         }
       }
-      await this.repo.insertEntry(tx, {
+      const grant = await this.repo.insertEntry(tx, {
         userId,
         delta: PLAN_QUOTAS[user.planTier],
         reason: "monthly_grant",
         rateCardVersion: CURRENT_RATE_CARD_VERSION,
       });
+      cycleStartId = grant.id;
     }
 
-    return { tier: user.planTier, cycleStart: start, renewsAt: end };
+    if (cycleStartId === undefined) {
+      throw new Error(`No se pudo determinar el ciclo de cuota de ${userId}`);
+    }
+    return { tier: user.planTier, cycleStartId, renewsAt: end };
   }
 }

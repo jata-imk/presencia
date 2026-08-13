@@ -21,6 +21,7 @@ let creditsService: CreditsServiceType;
 let InsufficientQuotaError: typeof InsufficientQuotaErrorType;
 let userA: string;
 let userB: string;
+let userC: string;
 
 describe("CreditsService", () => {
   beforeAll(async () => {
@@ -40,20 +41,22 @@ describe("CreditsService", () => {
 
     // users no tiene RLS (la administra Better Auth); el insert directo es
     // válido, igual que en db/rls.spec.ts. planTier default "creator".
-    const [a, b] = await dbService.db
+    const [a, b, c] = await dbService.db
       .insert(users)
       .values([
         { name: "Créditos A", email: `credits-a-${randomUUID()}@test.local` },
         { name: "Créditos B", email: `credits-b-${randomUUID()}@test.local` },
+        { name: "Créditos C", email: `credits-c-${randomUUID()}@test.local` },
       ])
       .returning({ id: users.id });
-    if (!a || !b) throw new Error("No se pudieron crear los usuarios de prueba");
+    if (!a || !b || !c) throw new Error("No se pudieron crear los usuarios de prueba");
     userA = a.id;
     userB = b.id;
+    userC = c.id;
   }, 30_000);
 
   afterAll(async () => {
-    await dbService.db.delete(users).where(inArray(users.id, [userA, userB]));
+    await dbService.db.delete(users).where(inArray(users.id, [userA, userB, userC]));
     await dbService.onModuleDestroy();
   }, 30_000);
 
@@ -186,6 +189,56 @@ describe("CreditsService", () => {
         );
       expect(error).toBeInstanceOf(Error);
       expect(String((error as Error).cause)).toMatch(/row-level security/);
+    },
+  );
+
+  it(
+    "rollover de ciclo: el saldo nuevo no se contamina con el cierre del anterior",
+    { timeout: 15_000 },
+    async () => {
+      // Ancla el ciclo de userC hace 40 días para forzar un rollover en el
+      // próximo acceso a su cuota (currentCycleWindow ya cruzó su aniversario).
+      const cycleAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+      await dbService.db.update(users).set({ createdAt: cycleAgo }).where(eq(users.id, userC));
+
+      // Simula el ciclo anterior a mano: grant de 30,000, gastó 25,000 →
+      // quedaban 5,000 sin usar cuando debió cerrar.
+      await dbService.runWithTenant(userC, async (tx) => {
+        await tx.insert(creditLedger).values({
+          userId: userC,
+          delta: 30_000,
+          reason: "monthly_grant",
+          rateCardVersion: 1,
+          createdAt: cycleAgo,
+        });
+        await tx.insert(creditLedger).values({
+          userId: userC,
+          delta: -25_000,
+          reason: "chat_message",
+          rateCardVersion: 1,
+          createdAt: new Date(cycleAgo.getTime() + 24 * 60 * 60 * 1000),
+        });
+      });
+
+      const status = await creditsService.getQuotaStatus(userC);
+
+      // Bajo el bug original, cycle_expiration (-5,000) y el monthly_grant
+      // nuevo (+30,000) comparten created_at (mismo now() de transacción) y
+      // el filtro por fecha los sumaba juntos → 25,000. Por id se separan
+      // bien → el ciclo nuevo arranca limpio en 30,000.
+      expect(status.rawBalance).toBe(30_000);
+
+      const entries = await dbService.runWithTenant(userC, (tx) =>
+        tx
+          .select()
+          .from(creditLedger)
+          .where(eq(creditLedger.userId, userC))
+          .orderBy(creditLedger.id),
+      );
+      const expirations = entries.filter((e) => e.reason === "cycle_expiration");
+      expect(expirations).toHaveLength(1);
+      expect(expirations[0]?.delta).toBe(-5_000);
+      expect(entries.filter((e) => e.reason === "monthly_grant")).toHaveLength(2);
     },
   );
 });

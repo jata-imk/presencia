@@ -47,12 +47,30 @@ export class CreditsRepository {
     return Number(row?.balance ?? 0);
   }
 
+  /**
+   * Saldo del ciclo vigente: SUM(delta) desde el `monthly_grant` que lo abrió
+   * (inclusive), por `id` — nunca por `created_at`. Dentro de una misma
+   * transacción, Postgres `now()` devuelve el inicio de la transacción, así
+   * que `cycle_expiration`/`adjustment`/`monthly_grant` insertados juntos en
+   * `ensureCurrentCycle` comparten el mismo `created_at` — un filtro por
+   * timestamp no puede separar "lo que cierra el ciclo viejo" de "lo que
+   * abre el nuevo". `id` (bigint identity) es monotónico incluso dentro de
+   * la misma transacción, así que sí distingue el orden real de inserción.
+   */
+  async balanceFrom(tx: Tx, userId: string, fromId: number): Promise<number> {
+    const [row] = await tx
+      .select({ balance: sql<string>`coalesce(sum(${creditLedger.delta}), 0)` })
+      .from(creditLedger)
+      .where(and(eq(creditLedger.userId, userId), gte(creditLedger.id, fromId)));
+    return Number(row?.balance ?? 0);
+  }
+
   async lastGrant(tx: Tx, userId: string): Promise<CreditLedgerRow | undefined> {
     const [row] = await tx
       .select()
       .from(creditLedger)
       .where(and(eq(creditLedger.userId, userId), eq(creditLedger.reason, "monthly_grant")))
-      .orderBy(desc(creditLedger.createdAt))
+      .orderBy(desc(creditLedger.id))
       .limit(1);
     return row;
   }
