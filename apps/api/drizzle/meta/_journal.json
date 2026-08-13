@@ -50,6 +50,20 @@
       "when": 1786261152331,
       "tag": "0006_rls_ai_usage_events",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786309735477,
+      "tag": "0007_credits",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786309735478,
+      "tag": "0008_credits_ledger_append_only",
+      "breakpoints": true
     }
   ]
 }

@@ -59,3 +59,39 @@ jobs:
         run: pnpm --filter @presencia/api db:migrate
         env:
           DATABASE_URL: postgres://presencia:ci@localhost:5432/presencia
+
+      # 0001_rls_roles_policies crea presencia_app/presencia_worker sin
+      # password (se asigna por entorno, nunca en la migración). Los specs
+      # de RLS y créditos conectan como presencia_app contra Postgres real
+      # (ver db/rls.spec.ts, credits/credits.service.spec.ts) — sin este
+      # paso no podrían autenticar.
+      - name: Grant app role password
+        run: |
+          node -e "
+            const { Client } = require('pg');
+            (async () => {
+              const client = new Client({ connectionString: process.env.DATABASE_URL });
+              await client.connect();
+              await client.query(\"ALTER ROLE presencia_app WITH PASSWORD 'ci'\");
+              await client.query(\"ALTER ROLE presencia_worker WITH PASSWORD 'ci'\");
+              await client.end();
+            })();
+          "
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgres://presencia:ci@localhost:5432/presencia
+
+      # Corre la suite de vitest de apps/api contra el mismo Postgres real —
+      # incluye RLS (db/rls.spec.ts) y el test de race condition del DoD de
+      # F5 (credits/credits.service.spec.ts). Sin este paso, CI nunca
+      # ejecutaba pnpm test.
+      - name: Test
+        run: pnpm test
+        env:
+          APP_DATABASE_URL: postgres://presencia_app:ci@localhost:5432/presencia
+          BETTER_AUTH_SECRET: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+          BETTER_AUTH_URL: http://localhost:3000
+          WEB_URL: http://localhost:5173
+          ZEPTOMAIL_TOKEN: ci-token
+          MAIL_FROM: ci@example.com
+          GOOGLE_GENERATIVE_AI_API_KEY: ci-google-key

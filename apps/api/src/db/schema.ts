@@ -84,6 +84,11 @@ export const creditReason = pgEnum("credit_reason", [
   "adjustment",
 ]);
 
+// Tiers de suscripción (addendum ADR-012, 2026-08-09). La cuota de cada
+// tier vive en apps/api/src/credits/rate-card.ts, no en la DB — cambiarla
+// no debe requerir migración.
+export const planTier = pgEnum("plan_tier", ["creator", "pro", "agencia"]);
+
 // ── Identidad ────────────────────────────────────────────────────────
 // Better Auth será dueño de esta tabla en F1 (configurado con ids uuid
 // y modelName "users"); F0 la crea compatible para que las FKs de
@@ -102,6 +107,10 @@ export const users = pgTable("users", {
   // redirige a /onboarding. No se infiere de "¿existe brand_voices?" para
   // no dejar al usuario atrapado si abandona a medias.
   onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
+  // F5: tier de suscripción, determina la cuota mensual (PLAN_QUOTAS en
+  // credits/rate-card.ts). Default al tier más bajo — nunca NULL, para que
+  // ensureCurrentCycle siempre pueda resolver una cuota.
+  planTier: planTier("plan_tier").notNull().default("creator"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -350,9 +359,21 @@ export const creditLedger = pgTable(
     reason: creditReason("reason").notNull(),
     referenceType: text("reference_type"),
     referenceId: uuid("reference_id"),
+    // F5: qué versión de RATE_CARDS (credits/rate-card.ts) generó este
+    // asiento. Cuando se recalibre la tarifa, los asientos viejos siguen
+    // cuadrando con la tarifa vigente cuando se registraron (ADR-012).
+    rateCardVersion: smallint("rate_card_version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("ledger_balance").on(t.userId, t.createdAt)],
+  (t) => [
+    index("ledger_balance").on(t.userId, t.createdAt),
+    // Idempotencia: un reintento del mismo efecto (mismo mensaje/card/asset)
+    // nunca cobra dos veces. NULL en reference_id (p.ej. monthly_grant) no
+    // participa — cada grant mensual sí necesita poder repetirse por diseño.
+    uniqueIndex("ledger_dedup")
+      .on(t.userId, t.reason, t.referenceType, t.referenceId)
+      .where(sql`${t.referenceId} is not null`),
+  ],
 );
 
 // ── Telemetría de IA ─────────────────────────────────────────────────
