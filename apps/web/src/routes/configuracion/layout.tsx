@@ -29,7 +29,9 @@ const GROUPS: NavGroup[] = [
   },
   {
     title: "PLAN",
-    items: [{ label: "Créditos y plan" }, { label: "Facturación" }],
+    // F5: "Créditos y plan" navegable. "Facturación" se queda deshabilitada
+    // — no hay proveedor de pago decidido todavía.
+    items: [{ label: "Créditos y plan", to: "/configuracion/plan" }, { label: "Facturación" }],
   },
 ];
 
