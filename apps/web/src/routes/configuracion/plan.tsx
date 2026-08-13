@@ -1,4 +1,5 @@
 import type { PlanTier } from "@presencia/shared";
+import { formatShortDate } from "../../lib/format-date.js";
 import { useQuota } from "../../lib/use-quota.js";
 
 const TIER_LABELS: Record<PlanTier, string> = {
@@ -11,11 +12,6 @@ export function PlanPage() {
   const { quota } = useQuota();
 
   if (!quota) return <p className="text-sm text-fg-muted">Cargando…</p>;
-
-  const renewsAtLabel = new Date(quota.renewsAt).toLocaleDateString("es-MX", {
-    day: "numeric",
-    month: "long",
-  });
 
   return (
     <div className="flex max-w-sm flex-col gap-4">
@@ -37,7 +33,7 @@ export function PlanPage() {
         <p className="text-sm text-fg-secondary">
           Te alcanza para ~{quota.publicationsRemaining} publicaciones más
         </p>
-        <p className="text-xs text-fg-muted">Renueva el {renewsAtLabel}</p>
+        <p className="text-xs text-fg-muted">Renueva el {formatShortDate(quota.renewsAt)}</p>
       </div>
     </div>
   );
