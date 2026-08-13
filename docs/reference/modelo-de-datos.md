@@ -108,7 +108,7 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 ### Créditos
 
-**`credit_ledger`** — asientos contables (ADR-012). Append-only.
+**`credit_ledger`** — asientos contables (ADR-012). Append-only por convención desde F0; desde F5 (migración `0008_credits_ledger_append_only`) también por el motor: `REVOKE UPDATE, DELETE` a `presencia_app`/`presencia_worker`, mismo patrón que `ai_usage_events`.
 
 | Columna                           | Tipo               | Nota                                                                                                                                                 |
 | --------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -117,12 +117,17 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 | `delta`                           | bigint             | + acreditación, − consumo. Nunca 0 (CHECK en migración 0001)                                                                                         |
 | `reason`                          | enum               | `monthly_grant`, `cycle_expiration`, `chat_message`, `idea_generation`, `multi_adapt`, `image_generation`, `weekly_calendar`, `refund`, `adjustment` |
 | `reference_type` / `reference_id` | text / uuid        | qué mensaje/card/asset lo causó                                                                                                                      |
+| `rate_card_version`               | smallint           | F5: qué versión de `RATE_CARDS` (`credits/rate-card.ts`) generó el asiento — recalibrar la tarifa no rompe los asientos viejos (ADR-012)             |
 | `created_at`                      | timestamptz        |                                                                                                                                                      |
 
 - **Saldo = `SUM(delta)`** con índice `(user_id, created_at)`. Si a escala duele, se agrega tabla de snapshot mensual — no antes (YAGNI).
-- Consumo dentro de la MISMA transacción que crea el efecto (mensaje/card/asset): o se cobra y se produce, o ninguna de las dos.
-- El grant mensual es un job de pg-boss que inserta `monthly_grant` (nunca un UPDATE de contador).
-- **Los créditos del mes expiran** (decisión 2026-07-18): al cierre del ciclo, el job inserta `cycle_expiration` con delta = −(saldo restante) y acto seguido el `monthly_grant` nuevo. Razones: pasivo acotado (cada crédito tiene costo real de cómputo), estándar en SaaS de IA, incentiva el hábito de publicar, y el copy "te quedan X este mes" ya lo asume. Evolución futura posible a rollover-con-tope cambiando solo la lógica del job (el ledger no cambia). Top-ups no-expirables quedan fuera de V1: exigirían contabilidad por bolsas.
+- Índice único parcial `ledger_dedup` sobre `(user_id, reason, reference_type, reference_id)` donde `reference_id IS NOT NULL` (F5): idempotencia — un reintento del mismo efecto no cobra dos veces. `monthly_grant` no lleva `reference_id`, así que no participa (cada ciclo sí necesita poder repetirse).
+- Consumo dentro de la MISMA transacción que crea el efecto (mensaje/card/asset): o se cobra y se produce, o ninguna de las dos. `CreditsService.charge()` (turno de chat) es la excepción intencional: cobra el costo real aunque deje saldo negativo; `CreditsService.spend()` (imagen, multi-adapt, calendario) sí rechaza si no alcanza.
+- **Anti-race (F5):** `pg_advisory_xact_lock(hashtextextended(user_id, 0))` serializa lecturas-luego-escrituras del ledger de un mismo usuario dentro de la transacción — mecanismo real detrás del DoD ("una acción concurrente doble no produce saldo negativo"), no el CHECK ni el índice único.
+- El grant mensual se otorga de forma perezosa (F5, `CreditsService.ensureCurrentCycle`, hasta que exista el job de pg-boss de F8): el primer acceso a la cuota tras el aniversario mensual de `users.created_at` cierra el ciclo anterior y otorga el nuevo, bajo el mismo advisory lock.
+- **Los créditos del mes expiran** (decisión 2026-07-18): al cierre del ciclo, el job inserta `cycle_expiration` con delta = −(saldo restante) y acto seguido el `monthly_grant` nuevo. Razones: pasivo acotado (cada crédito tiene costo real de cómputo), estándar en SaaS de IA, incentiva el hábito de publicar. Evolución futura posible a rollover-con-tope cambiando solo la lógica del job (el ledger no cambia). Top-ups no-expirables quedan fuera de V1: exigirían contabilidad por bolsas.
+- **Sobregiro (F5):** si `charge()` deja saldo negativo, al cierre del ciclo se inserta un `adjustment` que perdona el sobregiro — el pasivo nunca cruza al ciclo siguiente, pero el asiento que lo causó sigue siendo fiel al costo real.
+- **Presentación (addendum ADR-012, 2026-08-09):** el saldo nunca se muestra crudo. `GET /api/me/quota` devuelve `QuotaStatusDto` (`@presencia/shared`) — % de cuota (clampeado a 0-100) y traducción a publicaciones (`unitsToPublications`, `credits/rate-card.ts`). `users.plan_tier` (enum `creator`/`pro`/`agencia`, migración `0007_credits`) determina la cuota vía `PLAN_QUOTAS` — la cuota vive en código, no en la DB.
 
 ### Telemetría de IA
 
@@ -142,7 +147,7 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 | `provider_raw`                   | jsonb             | crudo del proveedor: `{ steps: [{usage, providerMetadata}], finishReason }` — nunca normalizado aquí                                                        |
 | `created_at`                     | timestamptz       |                                                                                                                                                             |
 
-- **Se guarda el crudo, no una unidad derivada** (misma razón que `credit_ledger` guarda `delta` y no un saldo): la normalización a créditos facturables es trabajo de F5. Si aquí solo se guardara el número normalizado, se perdería para siempre la capacidad de re-analizar el costo real cuando cambien las tarifas del proveedor.
+- **Se guarda el crudo, no una unidad derivada** (misma razón que `credit_ledger` guarda `delta` y no un saldo): la normalización a créditos facturables vive en `credits/rate-card.ts` (`quoteChatTurn`, F5), como una capa aparte que lee este crudo — nunca al revés. Si aquí solo se guardara el número normalizado, se perdería para siempre la capacidad de re-analizar el costo real cuando cambien las tarifas del proveedor.
 - Un fallo al insertar el evento nunca tumba el turno del usuario: se registra en su propio `try/catch` dentro de `onEnd` (`chat.service.ts`), después de persistir el mensaje assistant.
 - **Hueco conocido:** en un turno abortado (`isAborted`) no se registra usage — `onEnd` retorna temprano y las promesas de `streamText` pueden no resolver. Los tokens quemados por "detener generación" (ADR-006) quedan sin medir hasta que se revisite.
 - Índice `usage_by_user` sobre `(user_id, created_at)` — mismo shape que `ledger_balance`, responde "¿cuánto gastó X este mes y en qué modelos?" sin abrir el dashboard de ningún proveedor.

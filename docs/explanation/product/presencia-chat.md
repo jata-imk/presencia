@@ -129,8 +129,7 @@ el input.
 A medida que escribe, varias cosas pasan:
 
 1. El botón de enviar se activa (de disabled a primario)
-2. Aparece un indicador discreto de costo: "≈ 2 créditos"
-3. La toolbar inferior del input muestra los botones disponibles:
+2. La toolbar inferior del input muestra los botones disponibles:
    - 📎 Adjuntar archivo (si quiere mandar referencias visuales)
    - 🎤 Transcribir audio (si prefiere dictar en lugar de tipear)
    - 🎨 Estilo de respuesta (selector tipo Claude: Conciso,
@@ -673,10 +672,12 @@ ChatGPT y Claude.ai mantienen input simple por algo.
   de marca del usuario (que es fija). El estilo es ad-hoc
   por mensaje.
 
-**El indicador de costo:** Cuando hay texto, aparece "≈ 2
-créditos" sutil cerca del botón send. Razón: transparencia
-sobre consumo sin ser invasivo. El usuario sabe lo que está
-gastando antes de gastarlo.
+**El indicador de costo:** descartado (addendum ADR-012,
+2026-08-09) — un número crudo de créditos junto al input
+contradice el modelo de suscripción con cuota (nunca se
+muestra la unidad interna). La transparencia sobre consumo
+vive en el banner de cuota baja y en la página "Créditos y
+plan" de Configuración, no por mensaje.
 
 ### Las cards de sugerencias en el estado vacío
 
@@ -972,14 +973,16 @@ total.
 
 ## 4. Estados especiales y por qué importan
 
-### Sin créditos suficientes
+### Sin cuota suficiente
 
 **El estado:** El usuario quiere enviar un mensaje pero su
-balance de créditos es 0.
+cuota mensual está en 0% (F5, addendum ADR-012 — antes decía
+"balance de créditos es 0"; el modelo prepago se descartó,
+nunca se muestra un número crudo de créditos).
 
 **El diseño:** Modal pequeño centrado (bloqueante, porque
-necesita acción). Tono empático no técnico: "Te quedaste
-sin créditos" en lugar de "Error: insufficient balance".
+necesita acción). Tono empático no técnico: "Se te acabó tu
+cuota de este mes" en lugar de "Error: insufficient balance".
 Visual con icono Lucide pero NO rojo agresivo. Botones
 claros: "Ver opciones de upgrade" o "Esperar al próximo
 ciclo".
@@ -990,24 +993,28 @@ hace que el usuario sienta que la app es hostil. Un mensaje
 empático con opciones claras lo hace sentir que la app
 está de su lado.
 
-### Banner proactivo de créditos bajos
+### Banner proactivo de cuota baja
 
-**El estado:** El usuario tiene menos del 20% de créditos
-restantes pero aún puede usar la app.
+**El estado:** El usuario tiene menos del 20% de su cuota
+mensual restante pero aún puede usar la app.
 
 **El diseño:** Banner sutil arriba del input. Tinte Blush
-Pop suave. NO bloquea conversación. Texto: "Te quedan 28
-créditos este mes." con link "Ver plan".
+Pop suave. NO bloquea conversación. Texto: "Te alcanza para
+~N publicaciones más este mes." con link "Ver plan" — nunca
+un número de créditos.
 
 **Por qué este diseño:** Avisar antes de bloquear es mejor
 UX que sorprender. El usuario puede decidir upgradear
 preventivamente o seguir consumiendo. Si lo agarra de
 sorpresa al llegar a 0, se siente engañado.
 
-**Por qué descartable:** El banner es descartable pero
-vuelve a aparecer en thresholds más urgentes (10%, 5%).
-Respeta la elección del usuario pero protege contra
-distracciones.
+**Por qué descartable:** El banner es descartable. Dos
+umbrales (`quotaStateFromPercent`, `credits/credits.service.ts`):
+sutil bajo 20%, urgente bajo 10%. Implementación actual (F5):
+el descarte es por sesión de chat, no se re-dispara solo al
+cruzar de sutil a urgente dentro de la misma sesión — pendiente
+de revisar si vale la pena diferenciarlo en un pase de UI
+posterior.
 
 ### Sin internet
 

@@ -7,7 +7,11 @@ import { Link, useParams } from "react-router";
 // el pulido visual final si se necesita más control.
 import ReactMarkdown from "react-markdown";
 import { PublicationCard } from "../components/PublicationCard.js";
+import { QuotaBanner } from "../components/QuotaBanner.js";
+import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
+import { parseQuotaExhaustedError } from "../lib/chat-error.js";
 import type { ChatUIMessage } from "../lib/chat-types.js";
+import { useQuota } from "../lib/use-quota.js";
 
 export function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -54,11 +58,23 @@ function ChatView({
   });
   const busy = status === "submitted" || status === "streaming";
 
+  // F5: % de cuota + traducción a publicaciones, nunca un número crudo de
+  // créditos (addendum ADR-012). Se refresca al terminar cada turno —
+  // charge() en la API ya cobró el turno para cuando el stream cierra.
+  const { quota, refresh: refreshQuota } = useQuota();
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [modalDismissed, setModalDismissed] = useState(false);
+  useEffect(() => {
+    if (status === "ready") refreshQuota();
+  }, [status, refreshQuota]);
+  const quotaExhaustedError = parseQuotaExhaustedError(error);
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const text = input.trim();
     if (!text || busy) return;
     setInput("");
+    setModalDismissed(false);
     void sendMessage({ text });
   }
 
@@ -95,13 +111,22 @@ function ChatView({
         ))}
         {status === "submitted" && <li className="text-sm text-fg-muted">Pensando…</li>}
       </ul>
-      {error && (
+      {error && !quotaExhaustedError && (
         <p className="flex items-center gap-2 text-sm text-error">
           Algo salió mal generando la respuesta.
           <button type="button" className="underline" onClick={() => void regenerate()}>
             Reintentar
           </button>
         </p>
+      )}
+      {quota && !bannerDismissed && (
+        <QuotaBanner quota={quota} onDismiss={() => setBannerDismissed(true)} />
+      )}
+      {quotaExhaustedError && !modalDismissed && (
+        <QuotaExhaustedModal
+          quota={quotaExhaustedError}
+          onDismiss={() => setModalDismissed(true)}
+        />
       )}
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input

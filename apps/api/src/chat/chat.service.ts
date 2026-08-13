@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { HttpException, HttpStatus, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from "ai";
 import type { BrandVoiceForPrompt, ChatSummary } from "@presencia/shared";
 import type { ServerResponse } from "node:http";
@@ -7,6 +7,9 @@ import { AiService } from "../ai/ai.service.js";
 import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
 import { CardsRepository } from "../cards/cards.repository.js";
 import { buildPublicationCardTools } from "../cards/publication-card.tools.js";
+import { CreditsService } from "../credits/credits.service.js";
+import { InsufficientQuotaError } from "../credits/errors.js";
+import { getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
 import { ChatRepository, type MessageRow } from "./chat.repository.js";
 import { compressToolOutputsForModel } from "./context-diet.js";
@@ -27,6 +30,7 @@ export class ChatService {
     @Inject(CardsRepository) private readonly cardsRepo: CardsRepository,
     @Inject(BrandVoiceService) private readonly brandVoiceService: BrandVoiceService,
     @Inject(AiUsageRepository) private readonly aiUsageRepo: AiUsageRepository,
+    @Inject(CreditsService) private readonly creditsService: CreditsService,
   ) {}
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
@@ -72,6 +76,9 @@ export class ChatService {
     userMessage: UIMessage,
     res: ServerResponse,
   ): Promise<void> {
+    // Bloqueo suave (F5, ADR-012): se rechaza antes de tocar la DB o quemar
+    // tokens del proveedor — nunca deja un mensaje user huérfano sin respuesta.
+    await this.assertQuotaForTurn(userId);
     const voicePromise = this.loadVoiceForPrompt(userId);
     const history = await this.dbService.runWithTenant(userId, async (tx) => {
       const chat = await this.repo.getChat(tx, chatId);
@@ -88,6 +95,23 @@ export class ChatService {
     });
 
     await this.runAgentTurn(userId, chatId, history, res, voicePromise);
+  }
+
+  // 402 con el mismo QuotaStatusDto que consume la UI (banner/modal) — un
+  // solo lugar traduce InsufficientQuotaError a HTTP, tanto para turno
+  // nuevo como para reintento. minimumTurnUnits es un piso conservador: el
+  // costo real del turno (charge(), en onEnd) casi siempre difiere y puede
+  // superarlo — ese caso es sobregiro intencional, no bug de este gate.
+  private async assertQuotaForTurn(userId: string): Promise<void> {
+    try {
+      await this.creditsService.assertHasQuota(userId, getRateCard().minimumTurnUnits);
+    } catch (error) {
+      if (error instanceof InsufficientQuotaError) {
+        const quota = await this.creditsService.getQuotaStatusDto(userId);
+        throw new HttpException({ code: "quota_exhausted", quota }, HttpStatus.PAYMENT_REQUIRED);
+      }
+      throw error;
+    }
   }
 
   // Nunca debe tumbar el turno: una voz de marca que no cargó cae al
@@ -118,6 +142,7 @@ export class ChatService {
     messageId: string,
     res: ServerResponse,
   ): Promise<void> {
+    await this.assertQuotaForTurn(userId);
     const voicePromise = this.loadVoiceForPrompt(userId);
     const history = await this.dbService.runWithTenant(userId, async (tx) => {
       const chat = await this.repo.getChat(tx, chatId);
@@ -212,14 +237,34 @@ export class ChatService {
       },
       onEnd: async ({ responseMessage, isAborted, finishReason }) => {
         if (isAborted) return;
+
+        // Se lee una sola vez, antes de las dos transacciones de abajo: si
+        // esto falla, ni el mensaje ni el cobro se persisten — mismo hueco
+        // conocido que ya existía para ai_usage_events (turno abortado no
+        // llega aquí), extendido a créditos porque ahora comparten
+        // transacción con el mensaje. En un turno abortado tampoco se llega
+        // aquí — los tokens de esa llamada quedan sin medir y sin cobrar
+        // (hueco conocido, ver PR feat/f45-usage-telemetry).
+        let usage: Awaited<typeof result.totalUsage>;
+        let steps: Awaited<typeof result.steps>;
         try {
-          const steps = await result.steps;
-          if (steps.length >= MAX_AGENT_STEPS && finishReason === "tool-calls") {
-            console.warn(
-              `[chat] Turno truncado por el límite de ${MAX_AGENT_STEPS} steps ` +
-                `(chat ${chatId}): el modelo aún quería llamar otra tool.`,
-            );
-          }
+          [usage, steps] = await Promise.all([result.totalUsage, result.steps]);
+        } catch (error) {
+          console.error(
+            `[chat] No se pudo leer el usage del turno de chat ${chatId}; ni el mensaje ni el cobro se persisten:`,
+            error,
+          );
+          return;
+        }
+
+        if (steps.length >= MAX_AGENT_STEPS && finishReason === "tool-calls") {
+          console.warn(
+            `[chat] Turno truncado por el límite de ${MAX_AGENT_STEPS} steps ` +
+              `(chat ${chatId}): el modelo aún quería llamar otra tool.`,
+          );
+        }
+
+        try {
           await this.dbService.runWithTenant(userId, async (tx) => {
             const saved = await this.repo.insertMessage(tx, {
               chatId,
@@ -231,6 +276,22 @@ export class ChatService {
             if (createdCardIds.length > 0) {
               await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
             }
+            // Cobro real con el usage real del turno, en la MISMA
+            // transacción que el mensaje que cobra (modelo-de-datos.md: "o
+            // se cobra y se produce, o ninguna de las dos"). charge() puede
+            // dejar saldo negativo a propósito — el gate de arriba es lo
+            // que evita que esto sea frecuente, no esto.
+            await this.creditsService.charge(tx, {
+              userId,
+              usage: {
+                inputTokens: usage.inputTokens ?? 0,
+                outputTokens: usage.outputTokens ?? 0,
+                cachedInputTokens: usage.inputTokenDetails.cacheReadTokens ?? null,
+              },
+              taskKind: "chat",
+              referenceType: "message",
+              referenceId: saved.id,
+            });
           });
         } catch (error) {
           console.error(
@@ -242,11 +303,8 @@ export class ChatService {
         }
 
         // Try/catch propio (F4.5): un fallo al registrar usage nunca debe
-        // costar el mensaje del usuario, que ya se persistió arriba. En un
-        // turno abortado no se llega aquí — los tokens de esa llamada
-        // quedan sin medir (hueco conocido, ver PR feat/f45-usage-telemetry).
+        // costar el mensaje ni el cobro, que ya se persistieron arriba.
         try {
-          const [usage, steps] = await Promise.all([result.totalUsage, result.steps]);
           await this.dbService.runWithTenant(userId, (tx) =>
             this.aiUsageRepo.insertEvent(tx, {
               userId,
