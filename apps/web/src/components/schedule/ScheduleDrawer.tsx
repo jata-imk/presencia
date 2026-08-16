@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { summarizeCardContent, type PublicationCardDto } from "@presencia/shared";
 import { X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { Link } from "react-router";
 import { Button } from "../ui/Button.js";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
@@ -10,7 +11,9 @@ import { TimeChips } from "./TimeChips.js";
 import { WeekStrip } from "./WeekStrip.js";
 import { combineDateAndTime, dateKey, startOfDay } from "./date-utils.js";
 import { fetchScheduleConflicts, scheduleGroup } from "../../lib/cards-api.js";
+import { backdropFade, drawerPush, sheetUp } from "../../lib/motion.js";
 import { useChannels } from "../../lib/use-channels.js";
+import { useMediaQuery } from "../../lib/use-media-query.js";
 import { useCardsStore } from "../../stores/cards-store.js";
 import { useScheduleDrawerStore } from "../../stores/schedule-drawer-store.js";
 
@@ -37,13 +40,19 @@ function defaultDate(): Date {
 
 // Drawer de programación (reconciliado con Claude Design "Presencia -
 // Chat" / Chat Part 3.html, artboards d1-d6). Un solo <ScheduleDrawer/> vive
-// montado en ChatView; su visibilidad depende de schedule-drawer-store, no
-// de un useState local por card (F6 PR4).
+// montado en protected.tsx, hermano flex del contenido (F6 PR5) — su
+// visibilidad depende de schedule-drawer-store, no de un useState local por
+// card (F6 PR4). AnimatePresence acá arriba: cuando `cards` pasa a null, el
+// hijo no desaparece de golpe, motion le deja terminar su animación de
+// salida (variants "closed"/"exit" — lib/motion.ts) antes de desmontar.
 export function ScheduleDrawer() {
   const cards = useScheduleDrawerStore((s) => s.cards);
   const close = useScheduleDrawerStore((s) => s.close);
-  if (!cards) return null;
-  return <ScheduleDrawerInner cards={cards} onClose={close} />;
+  return (
+    <AnimatePresence>
+      {cards && <ScheduleDrawerInner key="schedule-drawer" cards={cards} onClose={close} />}
+    </AnimatePresence>
+  );
 }
 
 function ScheduleDrawerInner({
@@ -55,6 +64,9 @@ function ScheduleDrawerInner({
 }) {
   const { channels } = useChannels();
   const refreshCards = useCardsStore((s) => s.refresh);
+  // Desktop (≥1024px): hermano flex que empuja, sin backdrop, no es modal.
+  // Mobile: bottom sheet con backdrop, sí es modal (focus-trap + Escape).
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
   const isBatch = cards.length > 1;
   const [sameTime, setSameTime] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -117,13 +129,17 @@ function ScheduleDrawerInner({
   }, [viewMonth]);
 
   useEffect(() => {
-    dialogRef.current?.focus();
+    // El foco solo se roba en mobile: ahí sí es un modal de verdad. En
+    // desktop es un panel hermano no-modal — el chat de al lado sigue
+    // interactivo, robarle el foco sería un bug de accesibilidad, no una
+    // mejora.
+    if (!isDesktop) dialogRef.current?.focus();
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         onClose();
         return;
       }
-      if (e.key !== "Tab") return;
+      if (isDesktop || e.key !== "Tab") return;
       const container = dialogRef.current;
       if (!container) return;
       const focusable = container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
@@ -142,7 +158,7 @@ function ScheduleDrawerInner({
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [onClose, isDesktop]);
 
   function accountsFor(network: PublicationCardDto["network"]) {
     return (channels ?? []).filter((c) => c.network === network && c.status === "active");
@@ -251,180 +267,214 @@ function ScheduleDrawerInner({
   const [leader] = displayRows;
   const anyReschedule = cards.some((c) => c.status === "scheduled" || c.status === "failed");
 
+  const drawerContent = (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-start justify-between border-b border-line px-5 py-4">
+        <div>
+          <h2 id="schedule-drawer-title" className="text-lg font-bold text-fg">
+            {anyReschedule ? "Reprogramar publicación" : "Programar publicación"}
+          </h2>
+          {!isBatch && leader && (
+            <p className="mt-0.5 text-xs text-fg-secondary">{NETWORK_META[leader.network].label}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          aria-label="Cerrar"
+          onClick={onClose}
+          className="rounded-md p-1.5 text-fg-muted hover:bg-secondary-hover"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Cuerpo — única zona de scroll del drawer, independiente de la del
+          chat de al lado (son dos regiones side-by-side, no encimadas). */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <div className="mb-4 flex flex-col gap-2">
+          {cards.map((card) => {
+            const meta = NETWORK_META[card.network];
+            return (
+              <div key={card.id} className="rounded-lg border border-line bg-card px-3 py-2.5">
+                <div className="mb-1 flex items-center gap-1.5">
+                  <meta.Logo size={13} />
+                  <span className="text-xs font-semibold" style={{ color: meta.color }}>
+                    {meta.label}
+                  </span>
+                </div>
+                <p className="line-clamp-2 text-xs text-fg-secondary">
+                  {summarizeCardContent(card.content)}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        {isBatch && (
+          <div className="mb-4 flex items-center gap-1 rounded-lg bg-tint-plum p-1 text-sm">
+            <button
+              type="button"
+              onClick={() => setSameTime(true)}
+              className={`flex-1 rounded-md py-1.5 font-semibold ${sameTime ? "bg-card text-fg shadow-sm" : "text-fg-secondary"}`}
+            >
+              Mismo horario
+            </button>
+            <button
+              type="button"
+              onClick={() => setSameTime(false)}
+              className={`flex-1 rounded-md py-1.5 font-semibold ${!sameTime ? "bg-card text-fg shadow-sm" : "text-fg-secondary"}`}
+            >
+              Personalizar por red
+            </button>
+          </div>
+        )}
+
+        {(!isBatch || sameTime) && leader && (
+          <div className="mb-4 flex flex-col gap-3">
+            <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
+              ¿Cuándo publicar?
+            </p>
+            <MiniCalendar
+              viewMonth={viewMonth}
+              onChangeMonth={setViewMonth}
+              selectedDate={leader.date}
+              onSelectDate={(d) => handleDateChange(leader.cardId, d)}
+              markers={markers}
+            />
+            <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
+              ¿A qué hora?
+            </p>
+            <TimeChips
+              selectedTime={leader.time}
+              onSelectTime={(t) => handleTimeChange(leader.cardId, t)}
+            />
+            <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
+              Tu semana
+            </p>
+            <WeekStrip
+              selectedDate={leader.date}
+              onSelectDate={(d) => handleDateChange(leader.cardId, d)}
+              markers={markers}
+              hasConflict={leader.conflictWarning !== null}
+            />
+            {leader.conflictWarning && (
+              <p className="text-xs text-warning">⚠ {leader.conflictWarning}</p>
+            )}
+            {!isBatch &&
+              (accountsFor(leader.network).length === 0 ? (
+                <p className="text-xs text-warning">
+                  No tienes una cuenta de {NETWORK_META[leader.network].label} conectada.{" "}
+                  <Link to="/configuracion/canales" className="underline">
+                    Conéctala primero
+                  </Link>
+                  .
+                </p>
+              ) : (
+                accountsFor(leader.network).length > 1 && (
+                  <select
+                    value={leader.socialAccountId ?? ""}
+                    onChange={(e) => updateRow(leader.cardId, { socialAccountId: e.target.value })}
+                    className="rounded-md border border-line bg-card px-2.5 py-2 text-sm text-fg"
+                  >
+                    <option value="" disabled>
+                      Elige la cuenta
+                    </option>
+                    {accountsFor(leader.network).map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.displayName ?? a.id}
+                      </option>
+                    ))}
+                  </select>
+                )
+              ))}
+          </div>
+        )}
+
+        {isBatch && (
+          <div className="flex flex-col gap-3">
+            <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
+              Por red
+            </p>
+            {displayRows.map((row) => (
+              <NetworkScheduleRow
+                key={row.cardId}
+                network={row.network}
+                mode={row.mode}
+                onChangeMode={(mode) => updateRow(row.cardId, { mode })}
+                showModeToggle
+                showDateTimePicker={!sameTime}
+                date={row.date}
+                time={row.time}
+                viewMonth={viewMonth}
+                onChangeMonth={setViewMonth}
+                onChangeDate={(d) => handleDateChange(row.cardId, d)}
+                onChangeTime={(t) => handleTimeChange(row.cardId, t)}
+                markers={markers}
+                conflictWarning={sameTime ? null : row.conflictWarning}
+                accounts={accountsFor(row.network)}
+                socialAccountId={row.socialAccountId}
+                onChangeAccount={(id) => updateRow(row.cardId, { socialAccountId: id })}
+              />
+            ))}
+          </div>
+        )}
+
+        {formError && <p className="mt-4 text-sm text-error">{formError}</p>}
+      </div>
+
+      <div className="flex shrink-0 gap-2 border-t border-line px-5 py-4">
+        <Button variant="secondary" onClick={onClose} disabled={submitting} className="flex-1">
+          Cancelar
+        </Button>
+        <Button onClick={() => void handleSubmit()} disabled={submitting} className="flex-1">
+          {submitting ? "Programando…" : anyReschedule ? "Reprogramar" : "Programar"}
+        </Button>
+      </div>
+    </div>
+  );
+
+  if (isDesktop) {
+    return (
+      <motion.aside
+        aria-labelledby="schedule-drawer-title"
+        initial="closed"
+        animate="open"
+        exit="closed"
+        variants={drawerPush}
+        className="h-full shrink-0 overflow-hidden border-l border-line bg-surface shadow-lg"
+      >
+        <div ref={dialogRef} tabIndex={-1} className="h-full w-[520px] outline-none">
+          {drawerContent}
+        </div>
+      </motion.aside>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-overlay">
-      <div
+    <>
+      <motion.div
+        aria-hidden="true"
+        onClick={onClose}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        variants={backdropFade}
+        className="fixed inset-0 z-40 bg-overlay"
+      />
+      <motion.div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="schedule-drawer-title"
         tabIndex={-1}
-        className="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-line bg-surface shadow-lg outline-none"
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        variants={sheetUp}
+        className="fixed inset-x-0 bottom-0 z-50 flex max-h-[85vh] flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface shadow-xl outline-none"
       >
-        <div className="flex items-start justify-between border-b border-line px-5 py-4">
-          <div>
-            <h2 id="schedule-drawer-title" className="text-lg font-bold text-fg">
-              {anyReschedule ? "Reprogramar publicación" : "Programar publicación"}
-            </h2>
-            {!isBatch && leader && (
-              <p className="mt-0.5 text-xs text-fg-secondary">
-                {NETWORK_META[leader.network].label}
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            aria-label="Cerrar"
-            onClick={onClose}
-            className="rounded-md p-1.5 text-fg-muted hover:bg-secondary-hover"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="flex-1 px-5 py-4">
-          <div className="mb-4 flex flex-col gap-2">
-            {cards.map((card) => {
-              const meta = NETWORK_META[card.network];
-              return (
-                <div key={card.id} className="rounded-lg border border-line bg-card px-3 py-2.5">
-                  <div className="mb-1 flex items-center gap-1.5">
-                    <meta.Logo size={13} />
-                    <span className="text-xs font-semibold" style={{ color: meta.color }}>
-                      {meta.label}
-                    </span>
-                  </div>
-                  <p className="line-clamp-2 text-xs text-fg-secondary">
-                    {summarizeCardContent(card.content)}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-
-          {isBatch && (
-            <div className="mb-4 flex items-center gap-1 rounded-lg bg-tint-plum p-1 text-sm">
-              <button
-                type="button"
-                onClick={() => setSameTime(true)}
-                className={`flex-1 rounded-md py-1.5 font-semibold ${sameTime ? "bg-card text-fg shadow-sm" : "text-fg-secondary"}`}
-              >
-                Mismo horario
-              </button>
-              <button
-                type="button"
-                onClick={() => setSameTime(false)}
-                className={`flex-1 rounded-md py-1.5 font-semibold ${!sameTime ? "bg-card text-fg shadow-sm" : "text-fg-secondary"}`}
-              >
-                Personalizar por red
-              </button>
-            </div>
-          )}
-
-          {(!isBatch || sameTime) && leader && (
-            <div className="mb-4 flex flex-col gap-3">
-              <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
-                ¿Cuándo publicar?
-              </p>
-              <MiniCalendar
-                viewMonth={viewMonth}
-                onChangeMonth={setViewMonth}
-                selectedDate={leader.date}
-                onSelectDate={(d) => handleDateChange(leader.cardId, d)}
-                markers={markers}
-              />
-              <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
-                ¿A qué hora?
-              </p>
-              <TimeChips
-                selectedTime={leader.time}
-                onSelectTime={(t) => handleTimeChange(leader.cardId, t)}
-              />
-              <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
-                Tu semana
-              </p>
-              <WeekStrip
-                selectedDate={leader.date}
-                onSelectDate={(d) => handleDateChange(leader.cardId, d)}
-                markers={markers}
-                hasConflict={leader.conflictWarning !== null}
-              />
-              {leader.conflictWarning && (
-                <p className="text-xs text-warning">⚠ {leader.conflictWarning}</p>
-              )}
-              {!isBatch &&
-                (accountsFor(leader.network).length === 0 ? (
-                  <p className="text-xs text-warning">
-                    No tienes una cuenta de {NETWORK_META[leader.network].label} conectada.{" "}
-                    <Link to="/configuracion/canales" className="underline">
-                      Conéctala primero
-                    </Link>
-                    .
-                  </p>
-                ) : (
-                  accountsFor(leader.network).length > 1 && (
-                    <select
-                      value={leader.socialAccountId ?? ""}
-                      onChange={(e) =>
-                        updateRow(leader.cardId, { socialAccountId: e.target.value })
-                      }
-                      className="rounded-md border border-line bg-card px-2.5 py-2 text-sm text-fg"
-                    >
-                      <option value="" disabled>
-                        Elige la cuenta
-                      </option>
-                      {accountsFor(leader.network).map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.displayName ?? a.id}
-                        </option>
-                      ))}
-                    </select>
-                  )
-                ))}
-            </div>
-          )}
-
-          {isBatch && (
-            <div className="flex flex-col gap-3">
-              <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
-                Por red
-              </p>
-              {displayRows.map((row) => (
-                <NetworkScheduleRow
-                  key={row.cardId}
-                  network={row.network}
-                  mode={row.mode}
-                  onChangeMode={(mode) => updateRow(row.cardId, { mode })}
-                  showModeToggle
-                  showDateTimePicker={!sameTime}
-                  date={row.date}
-                  time={row.time}
-                  viewMonth={viewMonth}
-                  onChangeMonth={setViewMonth}
-                  onChangeDate={(d) => handleDateChange(row.cardId, d)}
-                  onChangeTime={(t) => handleTimeChange(row.cardId, t)}
-                  markers={markers}
-                  conflictWarning={sameTime ? null : row.conflictWarning}
-                  accounts={accountsFor(row.network)}
-                  socialAccountId={row.socialAccountId}
-                  onChangeAccount={(id) => updateRow(row.cardId, { socialAccountId: id })}
-                />
-              ))}
-            </div>
-          )}
-
-          {formError && <p className="mt-4 text-sm text-error">{formError}</p>}
-        </div>
-
-        <div className="flex gap-2 border-t border-line px-5 py-4">
-          <Button variant="secondary" onClick={onClose} disabled={submitting} className="flex-1">
-            Cancelar
-          </Button>
-          <Button onClick={() => void handleSubmit()} disabled={submitting} className="flex-1">
-            {submitting ? "Programando…" : anyReschedule ? "Reprogramar" : "Programar"}
-          </Button>
-        </div>
-      </div>
-    </div>
+        {drawerContent}
+      </motion.div>
+    </>
   );
 }
