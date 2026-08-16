@@ -230,6 +230,24 @@ describe("CardsService", () => {
   );
 
   it(
+    "una card 'failed' se puede reintentar (failed → scheduled)",
+    { timeout: 15_000 },
+    async () => {
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+      await dbService.runWithTenant(userA, (tx) =>
+        cardsRepo.markFailed(tx, card.id, { reason: "El proveedor no confirmó la publicación." }),
+      );
+
+      const retried = await service.schedule(userA, card.id, {
+        socialAccountId: account.id,
+        scheduledAt: future(10),
+      });
+      expect(retried.status).toBe("scheduled");
+    },
+  );
+
+  it(
     "cancelar una card programada la vuelve draft, no 'canceled'",
     { timeout: 15_000 },
     async () => {

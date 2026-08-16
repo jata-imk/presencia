@@ -28,9 +28,10 @@ import { CardsRepository, type CardRow } from "./cards.repository.js";
 // Ciclo de vida de la card (F6, ADR-009 addendum): programar, reprogramar,
 // cancelar, reconciliar. Reglas duras:
 //
-// - Solo draft→scheduled y scheduled→scheduled (reprogramar). Cualquier
-//   otra transición es 409 — publicada/fallida/cancelada no se reprograman
-//   desde acá (Adaptar/regenerar crea una card nueva).
+// - Solo draft→scheduled, scheduled→scheduled (reprogramar) y
+//   failed→scheduled (reintentar tras un fallo del proveedor). Cualquier
+//   otra transición es 409 — publicada/cancelada no se reprograman desde
+//   acá (Adaptar/regenerar crea una card nueva).
 // - Invariante DB↔PostFast: markScheduling dejar provider_ref en null a
 //   propósito; solo se llena si la llamada al proveedor tuvo éxito. Si
 //   falla, la card vuelve a draft con el motivo — nunca se queda "scheduled"
@@ -46,6 +47,12 @@ const MIN_LEAD_MS = 5 * 60 * 1000;
 const RECONCILE_GRACE_MS = 2 * 60 * 1000;
 const RECONCILE_COOLDOWN_MS = 60 * 1000;
 const PROVIDER_BATCH_SIZE = 100;
+
+const SCHEDULABLE_STATUSES: ReadonlySet<CardRow["status"]> = new Set([
+  "draft",
+  "scheduled",
+  "failed",
+]);
 
 const NETWORKS_REQUIRING_MEDIA: ReadonlySet<SocialNetwork> = new Set([
   "instagram",
@@ -99,7 +106,7 @@ export class CardsService {
       async (tx) => {
         const existing = await this.repo.findById(tx, cardId);
         if (!existing) throw new NotFoundException("Esa publicación no existe.");
-        if (existing.status !== "draft" && existing.status !== "scheduled") {
+        if (!SCHEDULABLE_STATUSES.has(existing.status)) {
           throw new ConflictException(
             `No se puede programar una publicación en estado "${existing.status}".`,
           );
@@ -113,7 +120,15 @@ export class CardsService {
         }
         assertHasMedia(existing);
 
-        const previousProviderRef = existing.status === "scheduled" ? existing.providerRef : null;
+        // scheduled: hay que cancelar el post viejo antes de programar el
+        // nuevo (reprogramar). failed: puede traer un provider_ref viejo de
+        // cuando aún estaba scheduled (markFailed no lo limpia, queda de
+        // rastro) — cancelarlo también es correcto y, como cancel() es
+        // idempotente, inofensivo si PostFast ya no tiene nada que cancelar.
+        const previousProviderRef =
+          existing.status === "scheduled" || existing.status === "failed"
+            ? existing.providerRef
+            : null;
         const card = await this.repo.markScheduling(tx, cardId, {
           socialAccountId: body.socialAccountId,
           scheduledAt,
