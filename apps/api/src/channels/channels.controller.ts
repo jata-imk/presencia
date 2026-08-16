@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   Get,
@@ -12,6 +13,7 @@ import {
 import {
   channelAccountIdParamSchema,
   channelIntentIdParamSchema,
+  seedFakeAccountBodySchema,
   type ChannelAccountDto,
   type ConnectIntentDto,
 } from "@presencia/shared";
@@ -59,5 +61,16 @@ export class ChannelsController {
     const parsed = channelAccountIdParamSchema.safeParse({ id });
     if (!parsed.success) throw new BadRequestException("El id de la cuenta no es válido.");
     return this.service.reactivateAccount(user.id, parsed.data.id);
+  }
+
+  // Solo-dev: 404 fuera de PUBLISHING_PROVIDER=fake (ChannelsService lo
+  // valida). No requiere @CurrentUser porque no toca social_accounts — solo
+  // agrega la cuenta al "workspace" del proveedor fake, ver el servicio.
+  @Post("dev/seed-fake-account")
+  @HttpCode(204)
+  seedFakeAccount(@Body() body: unknown): void {
+    const parsed = seedFakeAccountBodySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("network/displayName no son válidos.");
+    this.service.seedFakeAccount(parsed.data.network, parsed.data.displayName);
   }
 }

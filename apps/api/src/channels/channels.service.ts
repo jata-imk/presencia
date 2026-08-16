@@ -5,8 +5,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { ChannelAccountDto, ConnectIntentDto } from "@presencia/shared";
+import type { ChannelAccountDto, ConnectIntentDto, SocialNetwork } from "@presencia/shared";
+import { randomUUID } from "node:crypto";
 import { DbService } from "../db/db.service.js";
+import { FakePublishingProvider } from "../publishing/fake.provider.js";
 import { PUBLISHING_PROVIDER, type PublishingProvider } from "../publishing/publishing.provider.js";
 import { ChannelsRepository, type SocialAccountRow } from "./channels.repository.js";
 
@@ -135,6 +137,22 @@ export class ChannelsService {
       const reactivated = await this.repo.reactivateAccount(tx, id, account.displayName);
       return toDto(reactivated);
     });
+  }
+
+  /**
+   * Solo-dev: simula "ya conecté mi cuenta en postfa.st" cuando se prueba
+   * con PUBLISHING_PROVIDER=fake, que arranca sin ninguna cuenta (a
+   * propósito — seedAccount es privado del proveedor, no un default). No
+   * toca social_accounts: agrega la cuenta al lado del "workspace" fake
+   * para que el flujo real (Conectar red → esto → Ya conecté mi cuenta) la
+   * detecte por diff, exactamente como pasaría con PostFast real. 404 si el
+   * provider activo no es el fake — no existe superficie nueva en prod.
+   */
+  seedFakeAccount(network: SocialNetwork, displayName: string): void {
+    if (!(this.provider instanceof FakePublishingProvider)) {
+      throw new NotFoundException();
+    }
+    this.provider.seedAccount({ providerRef: `fake_seed_${randomUUID()}`, network, displayName });
   }
 }
 
