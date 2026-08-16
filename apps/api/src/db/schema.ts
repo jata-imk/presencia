@@ -288,6 +288,14 @@ export const publicationCards = pgTable(
     groupId: uuid("group_id"),
     scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
     publishedAt: timestamp("published_at", { withTimezone: true }),
+    // F6: a qué cuenta conectada se publica — se fija al programar, nunca
+    // antes (una card en draft no tiene destino todavía). "set null" en vez
+    // de cascade: desconectar/borrar la cuenta no debe borrar el contenido
+    // ya generado, solo dejarlo sin destino (CardsService lo rechaza al
+    // reprogramar si la cuenta ya no está).
+    socialAccountId: uuid("social_account_id").references(() => socialAccounts.id, {
+      onDelete: "set null",
+    }),
     providerRef: text("provider_ref"),
     errorDetail: jsonb("error_detail"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -8,6 +8,9 @@ import { ChannelsService } from "./channels.service.js";
   imports: [PublishingModule],
   controllers: [ChannelsController],
   providers: [ChannelsRepository, ChannelsService],
-  exports: [ChannelsService],
+  // CardsModule importa esto para validar la cuenta destino al programar
+  // (CardsService.schedule) sin duplicar la lógica de acceso a
+  // social_accounts.
+  exports: [ChannelsService, ChannelsRepository],
 })
 export class ChannelsModule {}
