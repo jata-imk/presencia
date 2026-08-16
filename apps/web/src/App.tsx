@@ -45,6 +45,9 @@ const router = createBrowserRouter([
   },
 ]);
 
+// ScheduleDrawer/ToastViewport (F6 PR4) se montan dentro de ProtectedLayout,
+// no acá — necesitan el contexto de <RouterProvider> (usan <Link>), que no
+// llega a hermanos renderizados fuera de él.
 export function App() {
   return <RouterProvider router={router} />;
 }

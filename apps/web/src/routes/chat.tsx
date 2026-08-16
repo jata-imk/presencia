@@ -10,13 +10,9 @@ import { PublicationCard } from "../components/PublicationCard.js";
 import { QuotaBanner } from "../components/QuotaBanner.js";
 import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
 import { parseQuotaExhaustedError } from "../lib/chat-error.js";
-import type { CardToolPart, ChatUIMessage } from "../lib/chat-types.js";
-import { useChatCards } from "../lib/use-chat-cards.js";
+import type { ChatUIMessage } from "../lib/chat-types.js";
 import { useQuota } from "../lib/use-quota.js";
-
-function cardIdOf(part: CardToolPart): string | undefined {
-  return part.state === "output-available" ? part.output.cardId : undefined;
-}
+import { useCardsStore } from "../stores/cards-store.js";
 
 export function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -67,16 +63,20 @@ function ChatView({
   // créditos (addendum ADR-012). Se refresca al terminar cada turno —
   // charge() en la API ya cobró el turno para cuando el stream cierra.
   const { quota, refresh: refreshQuota } = useQuota();
-  // Estado vivo de las cards (F6): el tool part solo sabe cómo nació.
-  const { cards: liveCards, refresh: refreshCards } = useChatCards(chatId);
+  // F6: estado vivo de las cards (cards-store, PR4) — el tool part
+  // persistido solo sabe cómo nació la card, nunca se actualiza solo.
+  const refreshCards = useCardsStore((s) => s.refresh);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [modalDismissed, setModalDismissed] = useState(false);
   useEffect(() => {
+    void refreshCards(chatId);
+  }, [chatId, refreshCards]);
+  useEffect(() => {
     if (status === "ready") {
       refreshQuota();
-      refreshCards();
+      void refreshCards(chatId);
     }
-  }, [status, refreshQuota, refreshCards]);
+  }, [status, chatId, refreshQuota, refreshCards]);
   const quotaExhaustedError = parseQuotaExhaustedError(error);
 
   function handleSubmit(e: FormEvent) {
@@ -112,22 +112,7 @@ function ChatView({
                   return i === 0 ? null : <hr key={i} className="border-line-subtle" />;
                 }
                 if (isStaticToolUIPart(part)) {
-                  const cardId = cardIdOf(part);
-                  const liveCard = cardId ? liveCards.get(cardId) : undefined;
-                  const siblingCards = liveCard?.groupId
-                    ? [...liveCards.values()].filter(
-                        (c) => c.groupId === liveCard.groupId && c.id !== liveCard.id,
-                      )
-                    : [];
-                  return (
-                    <PublicationCard
-                      key={i}
-                      part={part}
-                      liveCard={liveCard}
-                      siblingCards={siblingCards}
-                      onCardsChanged={refreshCards}
-                    />
-                  );
+                  return <PublicationCard key={i} part={part} chatId={chatId} />;
                 }
                 return null;
               })}
