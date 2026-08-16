@@ -1,6 +1,4 @@
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
-import { ScheduleDrawer } from "./components/schedule/ScheduleDrawer.js";
-import { ToastViewport } from "./components/ui/Toast.js";
 import { ChatPage } from "./routes/chat.js";
 import { ChatsPage } from "./routes/chats.js";
 import { CanalesPage } from "./routes/configuracion/canales.js";
@@ -47,14 +45,9 @@ const router = createBrowserRouter([
   },
 ]);
 
-// ScheduleDrawer y ToastViewport son overlays globales, guiados por
-// zustand stores (F6 PR4) — se montan una sola vez acá, no por ruta.
+// ScheduleDrawer/ToastViewport (F6 PR4) se montan dentro de ProtectedLayout,
+// no acá — necesitan el contexto de <RouterProvider> (usan <Link>), que no
+// llega a hermanos renderizados fuera de él.
 export function App() {
-  return (
-    <>
-      <RouterProvider router={router} />
-      <ScheduleDrawer />
-      <ToastViewport />
-    </>
-  );
+  return <RouterProvider router={router} />;
 }
