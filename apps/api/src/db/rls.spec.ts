@@ -6,6 +6,7 @@ import {
   brandVoices,
   chats,
   messages,
+  publicationCards,
   socialAccounts,
   socialConnectIntents,
   users,
@@ -355,6 +356,105 @@ describe("RLS tenant_isolation", () => {
           );
         expect(error).toBeInstanceOf(Error);
         expect(String((error as Error).cause)).toMatch(/row-level security/);
+      },
+    );
+  });
+
+  // F6: publication_cards ya tenía la policy desde 0001 (F0) pero nunca se
+  // había probado contra Postgres real — se cierra ese hueco acá, junto con
+  // el FK nuevo social_account_id (migración 0011_cards_social_account).
+  describe("publication_cards", () => {
+    let cardA: string;
+
+    beforeAll(async () => {
+      cardA = await dbService.runWithTenant(userA, async (tx) => {
+        const [card] = await tx
+          .insert(publicationCards)
+          .values({
+            userId: userA,
+            chatId: chatA,
+            archetype: "text_first",
+            network: "linkedin",
+            content: { archetype: "text_first", body: "hola", hashtags: [], assetIds: [] },
+          })
+          .returning({ id: publicationCards.id });
+        if (!card) throw new Error("No se pudo crear la card de prueba");
+        return card.id;
+      });
+    }, 15_000);
+
+    it("el dueño ve su propia card", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userA, (tx) => tx.select().from(publicationCards));
+      expect(rows.map((c) => c.id)).toContain(cardA);
+    });
+
+    it("otro tenant no lee cards ajenas", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userB, (tx) => tx.select().from(publicationCards));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("otro tenant no puede insertar una card a nombre ajeno", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx.insert(publicationCards).values({
+            userId: userA,
+            chatId: chatA,
+            archetype: "text_first",
+            network: "x",
+            content: { archetype: "text_first", body: "intruso", hashtags: [], assetIds: [] },
+          }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(error).toBeInstanceOf(Error);
+      expect(String((error as Error).cause)).toMatch(/row-level security/);
+    });
+
+    it(
+      "otro tenant no puede apuntar social_account_id a una cuenta ajena por FK (aunque no la vea)",
+      { timeout: 15_000 },
+      async () => {
+        const accountA = await dbService.runWithTenant(userA, async (tx) => {
+          const [account] = await tx
+            .insert(socialAccounts)
+            .values({ userId: userA, network: "linkedin", providerRef: `pf_${randomUUID()}` })
+            .returning({ id: socialAccounts.id });
+          if (!account) throw new Error("No se pudo crear la cuenta de prueba");
+          return account.id;
+        });
+
+        // El FK en sí no está gobernado por RLS (existencia, no dueño) — la
+        // fila de userA sí se puede referenciar desde otro tenant a nivel
+        // de Postgres. La defensa real es de aplicación: CardsService
+        // valida la cuenta con ChannelsRepository.findAccountById() DENTRO
+        // de la transacción del tenant que programa, que sí filtra por RLS
+        // (ver cards.service.spec.ts). Este test documenta ese límite, no
+        // lo cierra en la DB.
+        const cardB = await dbService.runWithTenant(userB, async (tx) => {
+          const [card] = await tx
+            .insert(publicationCards)
+            .values({
+              userId: userB,
+              chatId: chatA,
+              archetype: "text_first",
+              network: "linkedin",
+              socialAccountId: accountA,
+              content: { archetype: "text_first", body: "hola", hashtags: [], assetIds: [] },
+            })
+            .returning({
+              id: publicationCards.id,
+              socialAccountId: publicationCards.socialAccountId,
+            });
+          if (!card) throw new Error("No se pudo crear la card de prueba");
+          return card;
+        });
+        expect(cardB.socialAccountId).toBe(accountA);
+
+        await dbService.runWithTenant(userB, (tx) =>
+          tx.delete(publicationCards).where(eq(publicationCards.id, cardB.id)),
+        );
       },
     );
   });
