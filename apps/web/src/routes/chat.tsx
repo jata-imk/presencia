@@ -10,8 +10,13 @@ import { PublicationCard } from "../components/PublicationCard.js";
 import { QuotaBanner } from "../components/QuotaBanner.js";
 import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
 import { parseQuotaExhaustedError } from "../lib/chat-error.js";
-import type { ChatUIMessage } from "../lib/chat-types.js";
+import type { CardToolPart, ChatUIMessage } from "../lib/chat-types.js";
+import { useChatCards } from "../lib/use-chat-cards.js";
 import { useQuota } from "../lib/use-quota.js";
+
+function cardIdOf(part: CardToolPart): string | undefined {
+  return part.state === "output-available" ? part.output.cardId : undefined;
+}
 
 export function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -62,6 +67,8 @@ function ChatView({
   // créditos (addendum ADR-012). Se refresca al terminar cada turno —
   // charge() en la API ya cobró el turno para cuando el stream cierra.
   const { quota, refresh: refreshQuota } = useQuota();
+  // Estado vivo de las cards (F6): el tool part solo sabe cómo nació.
+  const { cards: liveCards, refresh: refreshCards } = useChatCards(chatId);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [modalDismissed, setModalDismissed] = useState(false);
   useEffect(() => {
@@ -102,7 +109,22 @@ function ChatView({
                   return i === 0 ? null : <hr key={i} className="border-line-subtle" />;
                 }
                 if (isStaticToolUIPart(part)) {
-                  return <PublicationCard key={i} part={part} />;
+                  const cardId = cardIdOf(part);
+                  const liveCard = cardId ? liveCards.get(cardId) : undefined;
+                  const siblingCards = liveCard?.groupId
+                    ? [...liveCards.values()].filter(
+                        (c) => c.groupId === liveCard.groupId && c.id !== liveCard.id,
+                      )
+                    : [];
+                  return (
+                    <PublicationCard
+                      key={i}
+                      part={part}
+                      liveCard={liveCard}
+                      siblingCards={siblingCards}
+                      onCardsChanged={refreshCards}
+                    />
+                  );
                 }
                 return null;
               })}
