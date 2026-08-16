@@ -72,8 +72,11 @@ function ChatView({
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [modalDismissed, setModalDismissed] = useState(false);
   useEffect(() => {
-    if (status === "ready") refreshQuota();
-  }, [status, refreshQuota]);
+    if (status === "ready") {
+      refreshQuota();
+      refreshCards();
+    }
+  }, [status, refreshQuota, refreshCards]);
   const quotaExhaustedError = parseQuotaExhaustedError(error);
 
   function handleSubmit(e: FormEvent) {

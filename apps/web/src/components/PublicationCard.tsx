@@ -196,13 +196,19 @@ export function PublicationCard({
         </>
       )}
 
-      {liveCard && (
+      {liveCard ? (
         <Toolbar
           status={status}
           busy={busy}
           onSchedule={openScheduleDrawer}
           onCancel={() => void handleCancel()}
         />
+      ) : (
+        // Card ya existe (el tool part la trajo) pero useChatCards todavía no
+        // trae su estado vivo — pasa un instante si el modelo sigue hablando
+        // después de crearla. Se refresca solo al terminar el turno (ver
+        // chat.tsx), así que esto rara vez dura más de uno o dos segundos.
+        <p className="mt-3 border-t border-line pt-3 text-xs text-fg-muted">Cargando acciones…</p>
       )}
 
       {drawerCards && (
