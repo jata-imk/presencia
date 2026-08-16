@@ -24,7 +24,8 @@ const GROUPS: NavGroup[] = [
     items: [
       { label: "Voz de marca", to: "/configuracion/voz-de-marca" },
       { label: "Plantillas" },
-      { label: "Canales conectados" },
+      // F6: navegable — antes solo listada deshabilitada.
+      { label: "Canales conectados", to: "/configuracion/canales" },
     ],
   },
   {
