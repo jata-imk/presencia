@@ -64,6 +64,20 @@
       "when": 1786309735478,
       "tag": "0008_credits_ledger_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786844505336,
+      "tag": "0009_channels",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786844505337,
+      "tag": "0010_rls_social_connect_intents",
+      "breakpoints": true
     }
   ]
 }
