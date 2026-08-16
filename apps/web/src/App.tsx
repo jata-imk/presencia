@@ -1,3 +1,4 @@
+import { MotionConfig } from "motion/react";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
 import { ChatPage } from "./routes/chat.js";
 import { ChatsPage } from "./routes/chats.js";
@@ -48,6 +49,14 @@ const router = createBrowserRouter([
 // ScheduleDrawer/ToastViewport (F6 PR4) se montan dentro de ProtectedLayout,
 // no acá — necesitan el contexto de <RouterProvider> (usan <Link>), que no
 // llega a hermanos renderizados fuera de él.
+//
+// MotionConfig con reducedMotion="user" (ADR-014): respeta
+// prefers-reduced-motion del SO en todo motion.* de la app de un solo
+// lugar — ningún componente individual tiene que acordarse de chequearlo.
 export function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <MotionConfig reducedMotion="user">
+      <RouterProvider router={router} />
+    </MotionConfig>
+  );
 }

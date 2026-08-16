@@ -13,7 +13,7 @@
 - Componentes usan la capa 3 (semántica) siempre que exista; la capa 1 solo para casos genuinamente decorativos de marca. **Nunca hex** (regla dura #2 de AGENTS.md).
 - Dark mode: atributo `data-theme="dark"` en `<html>`; variante `dark:` de Tailwind configurada sobre ese atributo. Nota clave del diseño: en dark, el elemento activo/CTA primario **invierte** a Blush Pop con texto plum (`--interactive-primary`).
 - Layout: `--sidebar-width` (220px), `--topbar-height` (56px), `--content-max-w` (800px) — vía valores arbitrarios (`w-(--sidebar-width)`).
-- Duraciones: `--duration-fast/normal/slow` (150/250/350ms) con `--ease-out` como default de entrada.
+- Duraciones: `--duration-fast/normal/slow` (150/250/350ms) con `--ease-out` como default de entrada. Ver §Movimiento para cómo se usan de verdad (ADR-014).
 
 ## Dark mode — mapeo canónico
 
@@ -37,8 +37,18 @@
 
 **Regla práctica:** antes de usar un modificador de opacidad sobre cualquier color que no sea un color crudo de Tailwind (`white`, `black`) o de la capa 1 declarada directo en `@theme` con un hex literal (`pink-orchid`, `blush-pop`, etc. — aun así, **verificado que tampoco funciona** para esos: ver arriba), da por hecho que no va a compilar y define el token específico. Verificar generación real: `grep "nombre-clase" dist/assets/index-*.css` tras un build — si no aparece, no se generó.
 
+## Movimiento (ADR-014)
+
+Decisión completa en [ADR-014](../explanation/decisions/adr-014-estrategia-de-animacion.md); acá el resumen operativo.
+
+- **`motion`** (paquete renombrado de framer-motion, `apps/web/src/lib/motion.ts`) para entrada/salida del DOM y cambios de layout: drawer, toasts, modales, cards nuevas. `DURATION`/`EASE_OUT`/`EASE_IN_OUT` en ese archivo son el espejo en JS de `--duration-*`/`--ease-*` — motion no puede leer `var()` de CSS. Variants compartidas: `fadeUp`, `drawerPush`, `sheetUp`, `toastIn`, `backdropFade`.
+- **CSS puro** (`@keyframes` en `app.css`) para loops ambientales infinitos (`glow-rotate`, `glow-pulse`, `shimmer`, `dot-pulse`, `stream-cursor`) y micro-transiciones de hover/focus. Nunca al revés.
+- **Ningún componente hardcodea su propia duración/easing** — mismo criterio que "tokens, no hex" (AGENTS.md #2), aplicado a movimiento.
+- **Accesibilidad:** `<MotionConfig reducedMotion="user">` en `App.tsx` cubre todo `motion.*` de una vez; los `@keyframes` ambientales se apagan enteros bajo `@media (prefers-reduced-motion: reduce)` en `app.css` (no se acortan — son decorativos, no comunican estado).
+- **Una sola zona de scroll por pantalla:** el App Shell (`routes/protected.tsx`) es `h-dvh overflow-hidden`, con un único contenedor `overflow-y-auto` para el `<Outlet/>`. El drawer de programación es un hermano flex (`motion.aside` con `width` animado) en desktop, nunca un overlay `fixed inset-0` — eso fue lo que producía scrolls encimados (F6 PR4→PR5). En mobile sí es bottom-sheet modal con backdrop.
+
 ## Pendientes
 
 - **Fuentes:** hoy vía Google Fonts (`@import` en `app.css`); auto-hostear (woff2 en el repo o bucket) antes de lanzar — privacidad y latencia.
-- Los assets de marca (`isotipo.png`, `logotipo.png`) del proyecto de diseño se importan junto con el App Shell (post-F1).
-- Iconografía: Lucide (stroke 1.5px) — `lucide-react` instalado en F6 PR4. Nota: esta versión no trae ícono de marca de YouTube (`Youtube` no existe en el paquete) — se usa `SquarePlay` genérico en `components/cards/NetworkLogos.tsx`.
+- Los assets de marca (`isotipo.png`, `logotipo.png`) del proyecto de diseño se importan junto con el App Shell (F6 PR5) — pendiente de que Jose los baje de Claude Design a `apps/web/public/assets/`; hasta entonces el avatar de IA cae a un círculo plum sin glifo.
+- Iconografía: Lucide (stroke 1.5px) — `lucide-react` instalado en F6 PR4. Nota: esta versión no trae ícono de marca de YouTube (`Youtube` no existe en el paquete) — se usa `SquarePlay` genérico en `components/cards/NetworkLogos.tsx`. Varios nombres de íconos "clásicos" (`AlertTriangle`, `CheckCircle2`, `MoreHorizontal`, `BarChart3`...) tampoco están declarados como export directo en esta versión — sí existen como alias re-exportado del nombre nuevo (`TriangleAlert as AlertTriangle`, etc., ver `dist/lucide-react.d.ts`); si TypeScript se queja de un nombre de ícono, revisar ahí antes de asumir que no existe.
