@@ -6,11 +6,20 @@ import { ChannelsModule } from "./channels/channels.module.js";
 import { ChatModule } from "./chat/chat.module.js";
 import { CreditsModule } from "./credits/credits.module.js";
 import { DbModule } from "./db/db.module.js";
+import { FoldersModule } from "./folders/folders.module.js";
 import { HealthController } from "./health.controller.js";
 import { ProfileModule } from "./profile/profile.module.js";
 
 @Module({
-  imports: [DbModule, ChatModule, BrandVoiceModule, ProfileModule, CreditsModule, ChannelsModule],
+  imports: [
+    DbModule,
+    ChatModule,
+    BrandVoiceModule,
+    ProfileModule,
+    CreditsModule,
+    ChannelsModule,
+    FoldersModule,
+  ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],
 })

@@ -178,7 +178,8 @@ export interface CardToolOutput {
 
 export interface PublicationCardDto {
   id: string;
-  chatId: string;
+  /** null si el chat que la originó se eliminó (F6 PR8) — la card sobrevive huérfana. */
+  chatId: string | null;
   archetype: PublicationArchetype;
   network: SocialNetwork;
   status: CardStatus;

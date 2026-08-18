@@ -275,9 +275,15 @@ export const publicationCards = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    chatId: uuid("chat_id")
-      .notNull()
-      .references(() => chats.id, { onDelete: "cascade" }),
+    // Nullable a propósito (F6 PR8): borrar un chat NUNCA debe borrar el
+    // rastro de una card — una "scheduled" es un compromiso real vivo en
+    // postfa.st, una "published" es historial de algo que ya ocurrió; ni
+    // siquiera una "draft" vale la pena perder en silencio. Todas
+    // sobreviven huérfanas (chatId → null), mismo patrón que
+    // assets.chatId. ChatService.deleteChat además rechaza el borrado
+    // completo si quedan cards "scheduled" — sobrevivir con chatId null no
+    // basta, esas no se pueden cancelar solas.
+    chatId: uuid("chat_id").references(() => chats.id, { onDelete: "set null" }),
     messageId: uuid("message_id").references(() => messages.id, { onDelete: "set null" }),
     archetype: publicationArchetype("archetype").notNull(),
     network: socialNetwork("network").notNull(),

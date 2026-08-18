@@ -68,6 +68,20 @@ export class CardsRepository {
   }
 
   /**
+   * Usado por ChatService.deleteChat (F6 PR8): borrar un chat con cards
+   * "scheduled" cancelaría un post real en postfa.st sin que nadie lo haya
+   * pedido — se rechaza el borrado en vez de cancelar en silencio.
+   */
+  async hasScheduledCards(tx: Tx, chatId: string): Promise<boolean> {
+    const [row] = await tx
+      .select({ id: publicationCards.id })
+      .from(publicationCards)
+      .where(and(eq(publicationCards.chatId, chatId), eq(publicationCards.status, "scheduled")))
+      .limit(1);
+    return row !== undefined;
+  }
+
+  /**
    * Primer paso de programar/reprogramar: fija destino y horario, deja
    * `provider_ref` en null a propósito — CardsService lo llena en una
    * segunda transacción SOLO si la llamada al proveedor tuvo éxito

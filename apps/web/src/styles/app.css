@@ -7,6 +7,60 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @layer base {
+  /* Scrollbar delgada (Chat Conversation.html §CSS reset) — nunca se portó
+     y quedaba la barra ancha por defecto del navegador en todas las
+     columnas con scroll propio (sidebar, drawer, lista de mensajes).
+     Gris neutro a propósito (no un color de marca) — es cromo del
+     navegador, no un elemento de la UI. Firefox primero (scrollbar-width/
+     -color son la única forma ahí); ::-webkit-scrollbar-* cubre
+     Chrome/Edge/Safari. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-neutral-300) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-neutral-300);
+    border-radius: 9999px;
+  }
+
+  /* Tailwind v4 preflight resetea `button { cursor: default }` a propósito
+     (no es un accidente de nuestro CSS) — sin esto, TODO botón de la app
+     pierde la mano de "esto es clickeable", no solo los nuevos Menu/Modal.
+     Alcance a botones/roles interactivos, no `*`: no queremos pointer en
+     texto ni contenedores sin acción. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  /* Anillo de foco con el token de la marca (mismo --color-line-focus que
+     ya usan los inputs con borde-al-enfocar) en vez del outline azul por
+     defecto del navegador — antes no había NINGÚN focus-visible custom en
+     el proyecto, se notaba al navegar con teclado por los menús nuevos.
+     box-shadow en vez de outline+offset: pegado al borde del elemento
+     (sin el hueco "flotante" del offset) y sigue el border-radius de
+     verdad en todos los navegadores, no solo los que soportan que
+     outline respete radius. */
+  /* Sin `input` acá a propósito: TextInput/Textarea/Select/TagInput ya
+     tienen su propio focus:border-line-focus bien diseñado — un anillo
+     global encima se vería doble. Los inputs de renombrar (sin borde, a
+     pedido de Jose) usan focus-visible:ring-* directo en su className en
+     vez de este bloque, ver ConvHeader.tsx/ChatListItem.tsx. */
+  button:focus-visible,
+  a:focus-visible,
+  [role="menuitem"]:focus-visible,
+  [role="button"]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-line-focus);
+  }
+
   body {
     font-family: var(--font-sans);
     font-size: var(--text-base);

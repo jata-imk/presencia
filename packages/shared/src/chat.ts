@@ -18,6 +18,9 @@ export type ChatIdParam = z.infer<typeof chatIdParamSchema>;
 export interface ChatSummary {
   id: string;
   title: string;
+  folderId: string | null;
+  /** ISO 8601, o null si no está archivado — F6 PR8. */
+  archivedAt: string | null;
   lastMessageAt: string | null;
   createdAt: string;
 }

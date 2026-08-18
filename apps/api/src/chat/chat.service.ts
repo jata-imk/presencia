@@ -1,4 +1,11 @@
-import { HttpException, HttpStatus, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from "ai";
 import type { BrandVoiceForPrompt, ChatSummary } from "@presencia/shared";
 import type { ServerResponse } from "node:http";
@@ -11,6 +18,7 @@ import { CreditsService } from "../credits/credits.service.js";
 import { InsufficientQuotaError } from "../credits/errors.js";
 import { getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
+import { FoldersService } from "../folders/folders.service.js";
 import { ChatRepository, type MessageRow } from "./chat.repository.js";
 import { compressToolOutputsForModel } from "./context-diet.js";
 import { buildSystemPrompt } from "./system-prompt.js";
@@ -31,6 +39,7 @@ export class ChatService {
     @Inject(BrandVoiceService) private readonly brandVoiceService: BrandVoiceService,
     @Inject(AiUsageRepository) private readonly aiUsageRepo: AiUsageRepository,
     @Inject(CreditsService) private readonly creditsService: CreditsService,
+    @Inject(FoldersService) private readonly foldersService: FoldersService,
   ) {}
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
@@ -62,6 +71,64 @@ export class ChatService {
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const updated = await this.repo.renameChat(tx, chatId, title);
       return this.toSummary(updated);
+    });
+  }
+
+  listArchivedChats(userId: string): Promise<ChatSummary[]> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const rows = await this.repo.listArchivedChats(tx);
+      return rows.map((chat) => this.toSummary(chat));
+    });
+  }
+
+  archiveChat(userId: string, chatId: string): Promise<ChatSummary> {
+    return this.setArchived(userId, chatId, true);
+  }
+
+  unarchiveChat(userId: string, chatId: string): Promise<ChatSummary> {
+    return this.setArchived(userId, chatId, false);
+  }
+
+  private setArchived(userId: string, chatId: string, archived: boolean): Promise<ChatSummary> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const chat = await this.repo.getChat(tx, chatId);
+      if (!chat) throw new NotFoundException("Ese chat no existe.");
+      const updated = await this.repo.setArchived(tx, chatId, archived);
+      return this.toSummary(updated);
+    });
+  }
+
+  moveToFolder(userId: string, chatId: string, folderId: string | null): Promise<ChatSummary> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const chat = await this.repo.getChat(tx, chatId);
+      if (!chat) throw new NotFoundException("Ese chat no existe.");
+      // Confirma que folderId es una carpeta del tenant actual, dentro de
+      // la MISMA transacción (mismo RLS) — un FK por sí solo no basta,
+      // valida existencia física de la fila, no visibilidad por tenant
+      // (ADR-003). Ver FoldersService.assertOwnsFolder.
+      if (folderId) await this.foldersService.assertOwnsFolder(tx, folderId);
+      const updated = await this.repo.moveToFolder(tx, chatId, folderId);
+      return this.toSummary(updated);
+    });
+  }
+
+  // No cancela publicaciones "scheduled" solo — es un compromiso real en
+  // postfa.st, cancelarlo sin que el usuario lo haya pedido explícitamente
+  // sería un bug, no una feature. "draft"/"published"/"failed"/"canceled"
+  // sobreviven huérfanas (chatId → null, ver schema.ts) — no se destruye
+  // el historial de algo que ya se publicó por borrar la conversación que
+  // lo originó.
+  deleteChat(userId: string, chatId: string): Promise<void> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const chat = await this.repo.getChat(tx, chatId);
+      if (!chat) throw new NotFoundException("Ese chat no existe.");
+      const hasScheduled = await this.cardsRepo.hasScheduledCards(tx, chatId);
+      if (hasScheduled) {
+        throw new BadRequestException(
+          "Este chat tiene publicaciones programadas — cancélalas o espera a que se publiquen antes de eliminarlo.",
+        );
+      }
+      await this.repo.deleteChat(tx, chatId);
     });
   }
 
@@ -336,12 +403,16 @@ export class ChatService {
   private toSummary(chat: {
     id: string;
     title: string;
+    folderId: string | null;
+    archivedAt: Date | null;
     lastMessageAt: Date | null;
     createdAt: Date;
   }): ChatSummary {
     return {
       id: chat.id,
       title: chat.title,
+      folderId: chat.folderId,
+      archivedAt: chat.archivedAt?.toISOString() ?? null,
       lastMessageAt: chat.lastMessageAt?.toISOString() ?? null,
       createdAt: chat.createdAt.toISOString(),
     };

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { summarizeCardContent, type PublicationCardDto } from "@presencia/shared";
+import { FloatingFocusManager, useFloating } from "@floating-ui/react";
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Link } from "react-router";
@@ -17,8 +18,6 @@ import { useMediaQuery } from "../../lib/use-media-query.js";
 import { useCardsStore } from "../../stores/cards-store.js";
 import { useScheduleDrawerStore } from "../../stores/schedule-drawer-store.js";
 
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"]), select, input';
 const MIN_LEAD_MINUTES = 5;
 const CONFLICT_WINDOW_MINUTES = 30;
 
@@ -76,7 +75,12 @@ function ScheduleDrawerInner({
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
   const [markers, setMarkers] = useState<Record<string, number>>({});
-  const dialogRef = useRef<HTMLDivElement>(null);
+  // Solo para FloatingFocusManager (trampa de foco del bottom-sheet mobile
+  // — ver más abajo). No lleva useDismiss/useClick propios: Escape y el
+  // click en el backdrop ya se manejan a mano abajo, exactamente igual que
+  // antes; esto solo reemplaza el querySelectorAll de ~25 líneas que
+  // ciclaba Tab manualmente (F6 PR8 follow-up, arquitectura de portales).
+  const { refs, context } = useFloating();
 
   const [rows, setRows] = useState<RowState[]>(() =>
     cards.map((card) => ({
@@ -129,36 +133,16 @@ function ScheduleDrawerInner({
   }, [viewMonth]);
 
   useEffect(() => {
-    // El foco solo se roba en mobile: ahí sí es un modal de verdad. En
-    // desktop es un panel hermano no-modal — el chat de al lado sigue
-    // interactivo, robarle el foco sería un bug de accesibilidad, no una
-    // mejora.
-    if (!isDesktop) dialogRef.current?.focus();
+    // Escape cierra en los dos modos. En desktop es un panel hermano
+    // no-modal — el chat de al lado sigue interactivo, la trampa de foco
+    // (FloatingFocusManager, ver el JSX de abajo) solo envuelve la rama
+    // mobile.
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (isDesktop || e.key !== "Tab") return;
-      const container = dialogRef.current;
-      if (!container) return;
-      const focusable = container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last?.focus();
-        }
-      } else if (document.activeElement === last) {
-        e.preventDefault();
-        first?.focus();
-      }
+      if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, isDesktop]);
+  }, [onClose]);
 
   function accountsFor(network: PublicationCardDto["network"]) {
     return (channels ?? []).filter((c) => c.network === network && c.status === "active");
@@ -254,7 +238,11 @@ function ScheduleDrawerInner({
     setSubmitting(true);
     try {
       await scheduleGroup({ items });
-      await refreshCards(firstCard.chatId);
+      // chatId nunca es null acá en la práctica: el drawer solo se abre
+      // desde una card renderizada dentro de un chat vivo (F6 PR8, ver
+      // schema.ts — chatId es nullable para cards huérfanas de un chat ya
+      // eliminado, que no tienen ninguna UI que las muestre todavía).
+      if (firstCard.chatId) await refreshCards(firstCard.chatId);
       onClose();
     } catch {
       setFormError("No se pudo programar. Inténtalo de nuevo.");
@@ -443,7 +431,7 @@ function ScheduleDrawerInner({
         variants={drawerPush}
         className="h-full shrink-0 overflow-hidden border-l border-line bg-surface shadow-lg"
       >
-        <div ref={dialogRef} tabIndex={-1} className="h-full w-[520px] outline-none">
+        <div tabIndex={-1} className="h-full w-[520px] outline-none">
           {drawerContent}
         </div>
       </motion.aside>
@@ -461,20 +449,22 @@ function ScheduleDrawerInner({
         variants={backdropFade}
         className="fixed inset-0 z-40 bg-overlay"
       />
-      <motion.div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="schedule-drawer-title"
-        tabIndex={-1}
-        initial="hidden"
-        animate="visible"
-        exit="exit"
-        variants={sheetUp}
-        className="fixed inset-x-0 bottom-0 z-50 flex max-h-[85vh] flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface shadow-xl outline-none"
-      >
-        {drawerContent}
-      </motion.div>
+      <FloatingFocusManager context={context}>
+        <motion.div
+          ref={refs.setFloating}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="schedule-drawer-title"
+          tabIndex={-1}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          variants={sheetUp}
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[85vh] flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface shadow-xl outline-none"
+        >
+          {drawerContent}
+        </motion.div>
+      </FloatingFocusManager>
     </>
   );
 }
