@@ -43,7 +43,6 @@ export function Sidebar() {
   const { quota, refresh: refreshQuota } = useQuota();
   const chats = useChatsStore((s) => s.chats);
   const refreshChats = useChatsStore((s) => s.refresh);
-  const createChat = useChatsStore((s) => s.create);
 
   useEffect(() => {
     void refreshChats();
@@ -60,11 +59,6 @@ export function Sidebar() {
       .slice(0, 2)
       .map((p) => p[0]?.toUpperCase())
       .join("") || "?";
-
-  async function handleNewChat() {
-    const chat = await createChat();
-    void navigate(`/chats/${chat.id}`);
-  }
 
   async function handleLogout() {
     await authClient.signOut();
@@ -86,15 +80,18 @@ export function Sidebar() {
       </div>
 
       <div className="px-3">
-        <button
-          type="button"
-          onClick={() => void handleNewChat()}
+        {/* Navega a la pantalla de nuevo chat (routes/chats.tsx) en vez de
+            crear el chat de una vez — un chat solo debe existir cuando el
+            usuario mandó un mensaje real. Antes esto llamaba createChat()
+            acá mismo y dejaba filas vacías en la DB con cada click. */}
+        <Link
+          to="/chats"
           aria-label="Nuevo chat"
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-fg transition-colors hover:bg-primary-hover active:bg-primary-press"
         >
           <Plus size={15} strokeWidth={2} />
           <span className="hidden lg:inline">Nuevo chat</span>
-        </button>
+        </Link>
       </div>
 
       <ul className="mt-4 flex flex-col gap-0.5 px-3">
