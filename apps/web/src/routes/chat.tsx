@@ -1,11 +1,13 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isStaticToolUIPart } from "ai";
-import { useEffect, useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router";
-// react-markdown es una elección provisional para F3 (ver ADR-006
-// addendum): suficiente para texto simple con streaming; se reevalúa en
-// el pulido visual final si se necesita más control.
-import ReactMarkdown from "react-markdown";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Link, useLocation, useParams } from "react-router";
+import { ConvHeader } from "../components/chat/ConvHeader.js";
+import { Composer } from "../components/chat/Composer.js";
+import { MessageAI } from "../components/chat/MessageAI.js";
+import { MessageUser } from "../components/chat/MessageUser.js";
+import { PresenciaAvatar } from "../components/chat/PresenciaAvatar.js";
+import { TypingDots } from "../components/chat/TypingDots.js";
 import { PublicationCard } from "../components/PublicationCard.js";
 import { QuotaBanner } from "../components/QuotaBanner.js";
 import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
@@ -13,6 +15,7 @@ import { parseQuotaExhaustedError } from "../lib/chat-error.js";
 import type { ChatUIMessage } from "../lib/chat-types.js";
 import { useQuota } from "../lib/use-quota.js";
 import { useCardsStore } from "../stores/cards-store.js";
+import { useChatsStore } from "../stores/chats-store.js";
 
 export function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -32,14 +35,16 @@ export function ChatPage() {
 
   if (loadError) {
     return (
-      <main className="p-8">
-        <p className="text-error">{loadError}</p>
-        <Link to="/chats">Volver a tus chats</Link>
+      <main className="flex h-full flex-col items-center justify-center gap-3 p-8">
+        <p className="text-sm text-error">{loadError}</p>
+        <Link to="/chats" className="text-sm underline">
+          Volver a tus chats
+        </Link>
       </main>
     );
   }
   if (!id || initialMessages === null) {
-    return <main className="p-8">Cargando…</main>;
+    return <main className="p-8 text-sm text-fg-muted">Cargando…</main>;
   }
   return <ChatView key={id} chatId={id} initialMessages={initialMessages} />;
 }
@@ -58,6 +63,22 @@ function ChatView({
     transport: new DefaultChatTransport({ api: `/api/chats/${chatId}/stream` }),
   });
   const busy = status === "submitted" || status === "streaming";
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // routes/chats.tsx crea el chat y navega acá con el prompt de la
+  // sugerencia/composer grande en el state de router (no en la URL — no es
+  // dato para compartir ni para persistir). Se manda una sola vez: el
+  // guard de ref sobrevive los re-renders de este mount, y location.state
+  // no sobrevive un refresh duro del navegador, así que no hay riesgo de
+  // reenvío accidental.
+  const location = useLocation();
+  const initialPrompt = (location.state as { initialPrompt?: string } | null)?.initialPrompt;
+  const sentInitialPrompt = useRef(false);
+  useEffect(() => {
+    if (!initialPrompt || sentInitialPrompt.current) return;
+    sentInitialPrompt.current = true;
+    void sendMessage({ text: initialPrompt });
+  }, []);
 
   // F5: % de cuota + traducción a publicaciones, nunca un número crudo de
   // créditos (addendum ADR-012). Se refresca al terminar cada turno —
@@ -68,19 +89,32 @@ function ChatView({
   const refreshCards = useCardsStore((s) => s.refresh);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [modalDismissed, setModalDismissed] = useState(false);
+
+  // Título real de la conversación: chats-store lo comparte con el Sidebar
+  // (F6 PR5) — si el Sidebar ya lo cargó no hay segundo fetch; si no,
+  // refreshChats() (idempotente) lo trae.
+  const chats = useChatsStore((s) => s.chats);
+  const refreshChats = useChatsStore((s) => s.refresh);
+  const renameChat = useChatsStore((s) => s.rename);
+  const chatTitle = chats?.find((c) => c.id === chatId)?.title ?? "Conversación";
+
   useEffect(() => {
     void refreshCards(chatId);
-  }, [chatId, refreshCards]);
+    if (!chats) void refreshChats();
+  }, [chatId, refreshCards, refreshChats, chats]);
   useEffect(() => {
     if (status === "ready") {
       refreshQuota();
       void refreshCards(chatId);
     }
   }, [status, chatId, refreshQuota, refreshCards]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [messages.length]);
   const quotaExhaustedError = parseQuotaExhaustedError(error);
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  function handleSubmit(e?: FormEvent) {
+    e?.preventDefault();
     const text = input.trim();
     if (!text || busy) return;
     setInput("");
@@ -88,73 +122,104 @@ function ChatView({
     void sendMessage({ text });
   }
 
+  const lastMessage = messages.at(-1);
+  const showTyping = status === "submitted" && (!lastMessage || lastMessage.role !== "assistant");
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-lg flex-col gap-4 p-8">
-      <Link to="/chats" className="text-sm">
-        ← Tus chats
-      </Link>
-      <ul className="flex flex-1 flex-col gap-3">
-        {messages.map((message) => (
-          <li key={message.id} className="border border-line-subtle bg-surface p-3">
-            <span className="block text-xs font-semibold text-fg-muted">
-              {message.role === "user" ? "Tú" : "Presencia"}
-            </span>
-            <div className="flex flex-col gap-2">
-              {message.parts.map((part, i) => {
-                if (part.type === "text") {
-                  return (
-                    <div key={i} className="markdown text-fg">
-                      <ReactMarkdown>{part.text}</ReactMarkdown>
-                    </div>
-                  );
-                }
-                if (part.type === "step-start") {
-                  return i === 0 ? null : <hr key={i} className="border-line-subtle" />;
-                }
-                if (isStaticToolUIPart(part)) {
-                  return <PublicationCard key={i} part={part} chatId={chatId} />;
-                }
-                return null;
-              })}
+    <div className="flex h-full flex-col">
+      <ConvHeader
+        title={chatTitle}
+        onRename={async (title) => {
+          await renameChat(chatId, title);
+        }}
+      />
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-[820px] flex-col gap-[18px] px-4 py-5">
+          {messages.map((message, mi) => {
+            const isLastMessage = mi === messages.length - 1;
+            if (message.role === "user") {
+              return (
+                <div key={message.id} className="flex flex-col gap-[18px]">
+                  {message.parts.map((part, i) =>
+                    part.type === "text" ? <MessageUser key={i} text={part.text} /> : null,
+                  )}
+                </div>
+              );
+            }
+            return (
+              <div key={message.id} className="flex flex-col gap-[18px]">
+                {message.parts.map((part, i) => {
+                  const isLastPart = isLastMessage && i === message.parts.length - 1;
+                  if (part.type === "text") {
+                    const streaming =
+                      status === "streaming" && isLastPart && part.state === "streaming";
+                    return (
+                      <MessageAI
+                        key={i}
+                        text={part.text}
+                        streaming={streaming}
+                        canRegenerate={isLastMessage && !busy}
+                        onRegenerate={() => void regenerate()}
+                      />
+                    );
+                  }
+                  if (part.type === "step-start") return null;
+                  if (isStaticToolUIPart(part)) {
+                    return (
+                      <div key={i} className="flex items-start gap-2.5">
+                        <PresenciaAvatar size={28} />
+                        <div className="max-w-[95%] min-w-0 flex-1 sm:max-w-[82%]">
+                          <PublicationCard part={part} chatId={chatId} />
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
+            );
+          })}
+          {showTyping && (
+            <div className="flex items-start gap-2.5">
+              <PresenciaAvatar size={28} />
+              <div className="rounded-[3px_12px_12px_12px] border border-line bg-card px-[15px] py-3 shadow-xs">
+                <TypingDots />
+              </div>
             </div>
-          </li>
-        ))}
-        {status === "submitted" && <li className="text-sm text-fg-muted">Pensando…</li>}
-      </ul>
-      {error && !quotaExhaustedError && (
-        <p className="flex items-center gap-2 text-sm text-error">
-          Algo salió mal generando la respuesta.
-          <button type="button" className="underline" onClick={() => void regenerate()}>
-            Reintentar
-          </button>
-        </p>
-      )}
-      {quota && !bannerDismissed && (
-        <QuotaBanner quota={quota} onDismiss={() => setBannerDismissed(true)} />
-      )}
-      {quotaExhaustedError && !modalDismissed && (
-        <QuotaExhaustedModal
-          quota={quotaExhaustedError}
-          onDismiss={() => setModalDismissed(true)}
-        />
-      )}
-      <form onSubmit={handleSubmit} className="flex gap-2">
-        <input
-          className="flex-1 border border-line p-2"
-          placeholder="Escribe tu mensaje…"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-        />
-        {busy ? (
-          <button type="button" className="border border-line px-4" onClick={() => void stop()}>
-            Detener
-          </button>
-        ) : (
-          <button type="submit" className="border border-line px-4 font-semibold">
-            Enviar
-          </button>
-        )}
-      </form>
-    </main>
+          )}
+          {error && !quotaExhaustedError && (
+            <p className="flex items-center gap-2 text-sm text-error">
+              Algo salió mal generando la respuesta.
+              <button type="button" className="underline" onClick={() => void regenerate()}>
+                Reintentar
+              </button>
+            </p>
+          )}
+          <div ref={bottomRef} />
+        </div>
+      </div>
+
+      <div className="shrink-0 px-4 pb-4">
+        <div className="mx-auto flex max-w-[820px] flex-col gap-2">
+          {quota && !bannerDismissed && (
+            <QuotaBanner quota={quota} onDismiss={() => setBannerDismissed(true)} />
+          )}
+          {quotaExhaustedError && !modalDismissed && (
+            <QuotaExhaustedModal
+              quota={quotaExhaustedError}
+              onDismiss={() => setModalDismissed(true)}
+            />
+          )}
+          <Composer
+            value={input}
+            onChange={setInput}
+            onSubmit={handleSubmit}
+            busy={busy}
+            onStop={() => void stop()}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
