@@ -83,6 +83,27 @@ export class CardsRepository {
   }
 
   /**
+   * Mismo criterio que hasScheduledCards pero por cuenta conectada — usado
+   * por ChannelsService.deleteAccount (borrado permanente, F6 follow-up):
+   * borrar la cuenta es seguro para el schema (social_account_id es "set
+   * null"), pero borrarla con una card "scheduled" apuntándole dejaría un
+   * compromiso real en postfa.st sin cuenta local que lo referencie.
+   */
+  async hasScheduledCardsForAccount(tx: Tx, socialAccountId: string): Promise<boolean> {
+    const [row] = await tx
+      .select({ id: publicationCards.id })
+      .from(publicationCards)
+      .where(
+        and(
+          eq(publicationCards.socialAccountId, socialAccountId),
+          eq(publicationCards.status, "scheduled"),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
+  }
+
+  /**
    * Primer paso de programar/reprogramar: fija destino y horario, deja
    * `provider_ref` en null a propósito — CardsService lo llena en una
    * segunda transacción SOLO si la llamada al proveedor tuvo éxito

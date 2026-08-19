@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { eq, ne } from "drizzle-orm";
 import type { SocialNetwork } from "@presencia/shared";
 import { socialAccounts, socialConnectIntents } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
@@ -26,8 +26,24 @@ export interface InsertIntentInput {
 
 @Injectable()
 export class ChannelsRepository {
+  // "active" + "error" (nunca asignado hoy, pero un problema real que no
+  // se debe esconder si algún día se usa) — "disconnected" vive aparte en
+  // listDisconnectedAccounts, mismo patrón que ChatRepository.listChats/
+  // listArchivedChats.
   async listAccounts(tx: Tx): Promise<SocialAccountRow[]> {
-    return tx.select().from(socialAccounts).orderBy(socialAccounts.createdAt);
+    return tx
+      .select()
+      .from(socialAccounts)
+      .where(ne(socialAccounts.status, "disconnected"))
+      .orderBy(socialAccounts.createdAt);
+  }
+
+  async listDisconnectedAccounts(tx: Tx): Promise<SocialAccountRow[]> {
+    return tx
+      .select()
+      .from(socialAccounts)
+      .where(eq(socialAccounts.status, "disconnected"))
+      .orderBy(socialAccounts.createdAt);
   }
 
   async findAccountById(tx: Tx, id: string): Promise<SocialAccountRow | undefined> {
@@ -82,6 +98,15 @@ export class ChannelsRepository {
       .update(socialAccounts)
       .set({ status: "disconnected", updatedAt: new Date() })
       .where(eq(socialAccounts.id, id));
+  }
+
+  // Borrado permanente (F6 follow-up) — a diferencia de disconnectAccount
+  // (soft, reversible vía reactivateAccount), esto sí borra la fila.
+  // Seguro para el schema: social_account_id en publication_cards es
+  // "set null" (ver comentario en schema.ts), el guard de cards
+  // "scheduled" vive en ChannelsService antes de llegar acá.
+  async deleteAccount(tx: Tx, id: string): Promise<void> {
+    await tx.delete(socialAccounts).where(eq(socialAccounts.id, id));
   }
 
   async insertIntent(tx: Tx, input: InsertIntentInput): Promise<SocialConnectIntentRow> {

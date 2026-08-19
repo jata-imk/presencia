@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import type { ChannelAccountDto, ConnectIntentDto, SocialNetwork } from "@presencia/shared";
 import { randomUUID } from "node:crypto";
+import { CardsRepository } from "../cards/cards.repository.js";
 import { DbService } from "../db/db.service.js";
 import { FakePublishingProvider } from "../publishing/fake.provider.js";
 import { PUBLISHING_PROVIDER, type PublishingProvider } from "../publishing/publishing.provider.js";
@@ -39,11 +40,21 @@ export class ChannelsService {
     @Inject(DbService) private readonly dbService: DbService,
     @Inject(ChannelsRepository) private readonly repo: ChannelsRepository,
     @Inject(PUBLISHING_PROVIDER) private readonly provider: PublishingProvider,
+    @Inject(CardsRepository) private readonly cardsRepo: CardsRepository,
   ) {}
 
   async listAccounts(userId: string): Promise<ChannelAccountDto[]> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const rows = await this.repo.listAccounts(tx);
+      return rows.map(toDto);
+    });
+  }
+
+  // Vista separada (F6 follow-up, "no me gusta que las desconectadas se
+  // queden mezcladas") — mismo patrón que ChatService.listArchivedChats.
+  async listDisconnectedAccounts(userId: string): Promise<ChannelAccountDto[]> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const rows = await this.repo.listDisconnectedAccounts(tx);
       return rows.map(toDto);
     });
   }
@@ -159,6 +170,27 @@ export class ChannelsService {
       const account = await this.repo.findAccountById(tx, id);
       if (!account) throw new NotFoundException("No encontramos esa cuenta conectada.");
       await this.repo.disconnectAccount(tx, id);
+    });
+  }
+
+  /**
+   * Borrado permanente (F6 follow-up, "no me gusta que las desconectadas
+   * se queden mezcladas") — a diferencia de disconnectAccount (soft,
+   * reversible), esto sí borra la fila. Mismo guard que
+   * ChatService.deleteChat: una card "scheduled" es un compromiso real en
+   * postfa.st, borrar la cuenta que apunta no debe dejarla sin rastro.
+   */
+  async deleteAccount(userId: string, id: string): Promise<void> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const account = await this.repo.findAccountById(tx, id);
+      if (!account) throw new NotFoundException("No encontramos esa cuenta conectada.");
+      const hasScheduled = await this.cardsRepo.hasScheduledCardsForAccount(tx, id);
+      if (hasScheduled) {
+        throw new BadRequestException(
+          "Esta cuenta tiene publicaciones programadas — cancélalas o espera a que se publiquen antes de eliminarla.",
+        );
+      }
+      await this.repo.deleteAccount(tx, id);
     });
   }
 

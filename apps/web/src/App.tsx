@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
 import { ArchivedChatsPage } from "./routes/archived-chats.js";
 import { ChatPage } from "./routes/chat.js";
 import { ChatsPage } from "./routes/chats.js";
+import { CanalesDesconectadasPage } from "./routes/configuracion/canales-desconectadas.js";
 import { CanalesPage } from "./routes/configuracion/canales.js";
 import { ConfiguracionLayout } from "./routes/configuracion/layout.js";
 import { MiPerfilPage } from "./routes/configuracion/mi-perfil.js";
@@ -42,6 +43,10 @@ const router = createBrowserRouter([
           { path: "/configuracion/mi-perfil", element: <MiPerfilPage /> },
           { path: "/configuracion/plan", element: <PlanPage /> },
           { path: "/configuracion/canales", element: <CanalesPage /> },
+          {
+            path: "/configuracion/canales/desconectadas",
+            element: <CanalesDesconectadasPage />,
+          },
         ],
       },
     ],

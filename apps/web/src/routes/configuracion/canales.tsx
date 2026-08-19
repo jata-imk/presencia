@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ChannelAccountDto } from "@presencia/shared";
+import { Link } from "react-router";
 import { Button } from "../../components/ui/Button.js";
 import { ApiError } from "../../lib/api.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
@@ -26,15 +27,8 @@ const STATUS_CLASSES: Record<ChannelAccountDto["status"], string> = {
 type ConnectStep = { intentId: string; connectUrl: string } | null;
 
 export function CanalesPage() {
-  const {
-    channels,
-    error,
-    refresh,
-    createConnectIntent,
-    claimConnectIntent,
-    disconnect,
-    reactivate,
-  } = useChannels();
+  const { channels, error, refresh, createConnectIntent, claimConnectIntent, disconnect } =
+    useChannels();
   const [connectStep, setConnectStep] = useState<ConnectStep>(null);
   const [claimMessage, setClaimMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -83,19 +77,6 @@ export function CanalesPage() {
     }
   }
 
-  async function handleReactivate(id: string) {
-    setBusy(true);
-    setClaimMessage(null);
-    try {
-      await reactivate(id);
-      refresh();
-    } catch (err) {
-      setClaimMessage(err instanceof ApiError ? err.message : "No se pudo reconectar esa cuenta.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="flex max-w-lg flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -104,6 +85,17 @@ export function CanalesPage() {
           Conectar red
         </Button>
       </div>
+
+      {/* Las desconectadas viven en su propia vista (F6 follow-up, Jose:
+          "no me gusta que las que desconecto se queden mezcladas") — mismo
+          patrón que Archivados en Chats. Reconectar/eliminar de verdad
+          pasa por ahí, no por acá. */}
+      <Link
+        to="/configuracion/canales/desconectadas"
+        className="self-start text-xs text-fg-muted underline"
+      >
+        Ver cuentas desconectadas
+      </Link>
 
       {connectStep && (
         <div className="flex flex-col gap-2 rounded-md border border-line bg-tint-plum p-4">
@@ -157,15 +149,6 @@ export function CanalesPage() {
                   disabled={busy}
                 >
                   Desconectar
-                </Button>
-              )}
-              {channel.status === "disconnected" && (
-                <Button
-                  variant="secondary"
-                  onClick={() => void handleReactivate(channel.id)}
-                  disabled={busy}
-                >
-                  Reconectar
                 </Button>
               )}
             </li>
