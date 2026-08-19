@@ -109,15 +109,18 @@ export class ChatController {
     const trigger = chatStreamBodySchema.safeParse(body ?? {});
     if (!trigger.success) throw new BadRequestException("La solicitud no es válida.");
 
+    // El último mensaje del body SIEMPRE es el user al que hay que
+    // responder — para un turno normal o para un regenerate, useChat lo
+    // manda igual (regenerate() ya recortó del lado del cliente cualquier
+    // respuesta assistant vieja antes de reenviar). No hay un campo
+    // `messageId` separado que el protocolo real envíe.
+    const userMessage = await this.parseLastUserMessage(body);
+
     if (trigger.data.trigger === "regenerate-message") {
-      if (!trigger.data.messageId) {
-        throw new BadRequestException("Falta el id del mensaje a reintentar.");
-      }
-      await this.chatService.regenerateChat(user.id, chatId, trigger.data.messageId, res);
+      await this.chatService.regenerateChat(user.id, chatId, userMessage.id, res);
       return;
     }
 
-    const userMessage = await this.parseLastUserMessage(body);
     await this.chatService.streamChat(user.id, chatId, userMessage, res);
   }
 

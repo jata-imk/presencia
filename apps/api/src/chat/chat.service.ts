@@ -204,10 +204,23 @@ export class ChatService {
    * historial que queda — el turno user ya estaba persistido, no se
    * inserta nada nuevo.
    */
+  /**
+   * `userMessageId` es el id del mensaje USER cuya respuesta se quiere
+   * regenerar — no un id de mensaje assistant. Antes esta función esperaba
+   * lo segundo (un `messageId` que el cliente nunca manda: la transport
+   * real de useChat/DefaultChatTransport, al llamar regenerate(), NO
+   * incluye ningún campo `messageId` — solo reenvía `messages` ya recortado
+   * del lado del cliente, sin la respuesta vieja, terminando en el mensaje
+   * user al que hay que responder de nuevo. Ese último mensaje del array SÍ
+   * trae un id real y persistido — es lo que el controller ahora extrae
+   * con el mismo `parseLastUserMessage` que usa el turno normal, en vez de
+   * inventar un campo que el protocolo real nunca envía (bug encontrado
+   * 2026-08-19: "Falta el id del mensaje a reintentar" en cada regenerate).
+   */
   async regenerateChat(
     userId: string,
     chatId: string,
-    messageId: string,
+    userMessageId: string,
     res: ServerResponse,
   ): Promise<void> {
     await this.assertQuotaForTurn(userId);
@@ -216,19 +229,28 @@ export class ChatService {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const all = await this.repo.listMessages(tx, chatId);
-      const last = all.at(-1);
-      // Solo se reintenta el último turno: messageId viaja del cliente, y
-      // sin este chequeo se podría borrar un mensaje intermedio dejando un
-      // hueco en la conversación (dos turnos user seguidos) sin tocar los
-      // turnos posteriores.
-      if (!last || last.id !== messageId || last.role !== "assistant") {
+      const targetIndex = all.findIndex((m) => m.id === userMessageId);
+      const target = targetIndex === -1 ? undefined : all[targetIndex];
+      const staleReply = targetIndex === -1 ? undefined : all[targetIndex + 1];
+      // Solo se reintenta el último turno: el mensaje user tiene que ser
+      // el último de la conversación (turno que falló antes de generar
+      // respuesta — el botón "Reintentar" de un error) o el penúltimo,
+      // seguido exactamente por la respuesta assistant a regenerar — sin
+      // este chequeo se podría borrar un mensaje intermedio dejando un
+      // hueco (dos turnos user seguidos) sin tocar los turnos posteriores.
+      const isLast = targetIndex === all.length - 1;
+      const isSecondToLastWithReply =
+        targetIndex === all.length - 2 && staleReply?.role === "assistant";
+      if (!target || target.role !== "user" || !(isLast || isSecondToLastWithReply)) {
         throw new NotFoundException("Ese mensaje no se puede reintentar.");
       }
-      // Cards antes que mensaje: el FK message_id es "set null", no
-      // cascade — sin este orden quedarían huérfanas en vez de borradas.
-      await this.cardsRepo.deleteCardsByMessageId(tx, messageId);
-      await this.repo.deleteMessage(tx, messageId);
-      return all.slice(0, -1).map((row) => this.toUIMessage(row));
+      if (staleReply) {
+        // Cards antes que mensaje: el FK message_id es "set null", no
+        // cascade — sin este orden quedarían huérfanas en vez de borradas.
+        await this.cardsRepo.deleteCardsByMessageId(tx, staleReply.id);
+        await this.repo.deleteMessage(tx, staleReply.id);
+      }
+      return all.slice(0, targetIndex + 1).map((row) => this.toUIMessage(row));
     });
 
     await this.runAgentTurn(userId, chatId, history, res, voicePromise);
