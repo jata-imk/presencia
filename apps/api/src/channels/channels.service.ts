@@ -130,11 +130,30 @@ export class ChannelsService {
     });
   }
 
+  /**
+   * Antes solo volteaba el flag local sin preguntarle a PostFast nada —
+   * "Reconectar" podía mostrar como activa una cuenta cuyo token ya se
+   * revocó del otro lado, y el usuario no se enteraba hasta que un
+   * schedule() fallara después. Ahora confirma contra el workspace real
+   * primero (mismo patrón que claimConnectIntent: red fuera de la
+   * transacción, luego un segundo runWithTenant para el write).
+   */
   async reactivateAccount(userId: string, id: string): Promise<ChannelAccountDto> {
+    const account = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.findAccountById(tx, id),
+    );
+    if (!account) throw new NotFoundException("No encontramos esa cuenta conectada.");
+
+    const providerAccounts = await this.provider.listAccounts();
+    const stillConnected = providerAccounts.find((a) => a.providerRef === account.providerRef);
+    if (!stillConnected) {
+      throw new ConflictException(
+        'Esa cuenta ya no está conectada en PostFast — desconéctala y vuelve a conectarla desde "Conectar red".',
+      );
+    }
+
     return this.dbService.runWithTenant(userId, async (tx) => {
-      const account = await this.repo.findAccountById(tx, id);
-      if (!account) throw new NotFoundException("No encontramos esa cuenta conectada.");
-      const reactivated = await this.repo.reactivateAccount(tx, id, account.displayName);
+      const reactivated = await this.repo.reactivateAccount(tx, id, stillConnected.displayName);
       return toDto(reactivated);
     });
   }

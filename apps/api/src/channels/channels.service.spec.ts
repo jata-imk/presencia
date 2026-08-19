@@ -161,6 +161,31 @@ describe("ChannelsService", () => {
   });
 
   it(
+    "reactivar una cuenta que ya no existe en el proveedor la rechaza sin voltear el flag",
+    { timeout: 15_000 },
+    async () => {
+      const intent = await service.createConnectIntent(userA);
+      provider.seedAccount({ providerRef: "revoked_1", network: "facebook", displayName: "V1" });
+      const [firstClaim] = await service.claimConnectIntent(userA, intent.id);
+      if (!firstClaim) throw new Error("Debió reclamar la cuenta");
+      await service.disconnectAccount(userA, firstClaim.id);
+
+      // Simula un token revocado / cuenta borrada del lado de PostFast: un
+      // provider fresh, sin esa ref seedeada, mismo repo/dbService que el
+      // service original (así siguen viendo la misma fila en la DB).
+      const revokedProvider = new FakePublishingProvider();
+      const serviceWithRevokedProvider = new ChannelsServiceCtor(dbService, repo, revokedProvider);
+
+      await expect(
+        serviceWithRevokedProvider.reactivateAccount(userA, firstClaim.id),
+      ).rejects.toThrow(/ya no está conectada/);
+
+      const accounts = await service.listAccounts(userA);
+      expect(accounts.find((a) => a.id === firstClaim.id)?.status).toBe("disconnected");
+    },
+  );
+
+  it(
     "dos tenants reclamando la misma cuenta nueva: solo uno se la queda, el otro no la roba",
     { timeout: 15_000 },
     async () => {
