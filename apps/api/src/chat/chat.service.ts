@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from "ai";
 import type { BrandVoiceForPrompt, ChatSummary } from "@presencia/shared";
+import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import { AiUsageRepository } from "../ai/ai-usage.repository.js";
 import { AiService } from "../ai/ai.service.js";
@@ -251,12 +252,21 @@ export class ChatService {
     // Ids de las cards creadas durante este turno (closure compartido con la
     // tool): onEnd las vincula al mensaje assistant una vez que existe.
     const createdCardIds: string[] = [];
+    // Un groupId por turno, no por card — coincide con lo ya documentado
+    // en presencia-chat.md (el toggle multi-red del drawer se dispara
+    // cuando "la publicación se generó para múltiples redes en el mismo
+    // turno"), no con una selección posterior de cards sueltas (eso es
+    // no-objetivo explícito de V1, ver presencia-calendario.md). Se asigna
+    // siempre, incluso si el turno termina creando una sola card — inocuo,
+    // esa card simplemente no tiene hermanas con el mismo groupId.
+    const groupId = randomUUID();
     const tools = buildPublicationCardTools({
       userId,
       chatId,
       dbService: this.dbService,
       cardsRepository: this.cardsRepo,
       createdCardIds,
+      groupId,
     });
 
     // Voz de marca del usuario (F4): null durante el onboarding, para

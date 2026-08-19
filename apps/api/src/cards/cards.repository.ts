@@ -23,6 +23,7 @@ export class CardsRepository {
       chatId: string;
       network: SocialNetwork;
       content: CardContent;
+      groupId?: string | null;
     },
   ): Promise<CardRow> {
     // archetype se deriva de content.archetype (nunca un parámetro aparte):

@@ -167,6 +167,55 @@ describe("CardsService", () => {
   }
 
   it(
+    "dos cards insertadas con el mismo groupId lo conservan al leerlas — así el frontend las reconoce como hermanas",
+    { timeout: 15_000 },
+    async () => {
+      // Regresión del hueco real (2026-08-19): publication-card.tools.ts
+      // no pasaba groupId nunca al crear una card — dos cards del mismo
+      // turno de chat quedaban con groupId null cada una, así que
+      // PublicationCard.tsx (siblingCards, filtra por groupId) nunca las
+      // reconocía como parte del mismo grupo y el drawer nunca abría en
+      // modo batch. Este test cubre el lado del repo/servicio: que el
+      // campo se persiste y se lee de vuelta correctamente. El cálculo de
+      // "hermanas" en sí vive en el frontend (sin test runner, ver
+      // ScheduleDrawer/PublicationCard.tsx), no en este repo de specs.
+      const sharedGroupId = randomUUID();
+      const cardX = await dbService.runWithTenant(userA, (tx) =>
+        cardsRepo.insertCard(tx, {
+          userId: userA,
+          chatId: chatA,
+          network: "x",
+          content: TEXT_CONTENT,
+          groupId: sharedGroupId,
+        }),
+      );
+      const cardThreads = await dbService.runWithTenant(userA, (tx) =>
+        cardsRepo.insertCard(tx, {
+          userId: userA,
+          chatId: chatA,
+          network: "threads",
+          content: TEXT_CONTENT,
+          groupId: sharedGroupId,
+        }),
+      );
+
+      const cards = await service.listByChat(userA, chatA);
+      const dtoX = cards.find((c) => c.id === cardX.id);
+      const dtoThreads = cards.find((c) => c.id === cardThreads.id);
+      expect(dtoX?.groupId).toBe(sharedGroupId);
+      expect(dtoThreads?.groupId).toBe(sharedGroupId);
+    },
+  );
+
+  it("una card sin groupId explícito queda con groupId null", { timeout: 15_000 }, async () => {
+    const card = await createCard(TEXT_CONTENT, "linkedin");
+    const [row] = await service
+      .listByChat(userA, chatA)
+      .then((cards) => cards.filter((c) => c.id === card.id));
+    expect(row?.groupId).toBeNull();
+  });
+
+  it(
     "programa una card en draft (linkedin, sin media requerida)",
     { timeout: 15_000 },
     async () => {
