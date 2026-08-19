@@ -33,10 +33,12 @@ describe("PostFastProvider", () => {
     vi.unstubAllGlobals();
   });
 
+  // Shape real confirmado contra postfa.st/docs/posts/create (2026-08-19):
+  // la respuesta 201 es { postIds: string[] }, no el envelope { data: [...] }
+  // que se había inferido (y que causó el incidente 2026-08-18 — ver
+  // postfast.provider.ts, cabecera).
   it("programa un post y traduce el body a formato PostFast", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { data: [{ id: "pf_123", status: "SCHEDULED" }] }),
-    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { postIds: ["pf_123"] }));
     const provider = new PostFastProvider("test-key");
 
     const result = await provider.schedule({
@@ -72,25 +74,14 @@ describe("PostFastProvider", () => {
     expect(post.content).toContain("#productividad #ia");
   });
 
-  it("acepta también el shape de array plano (sin envelope {data:[...]})", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, [{ id: "pf_456", status: "SCHEDULED" }]));
-    const provider = new PostFastProvider("test-key");
-
-    const result = await provider.schedule({
-      network: "linkedin",
-      content: TEXT_CONTENT,
-      scheduledAt: new Date("2026-09-01T18:00:00.000Z"),
-      accountProviderRef: "acc_1",
-    });
-
-    expect(result).toEqual({ providerRef: "pf_456" });
-  });
-
   // Regresión del incidente 2026-08-18: PostFast creó y programó el post
   // real (2xx), pero el shape de la respuesta no tenía el `id` donde lo
-  // esperábamos — CardsService.schedule() necesita el body crudo en
-  // `.detail` para no perder el rastro (ver errorDetailFrom/markFailed).
-  it("un 2xx sin id lanza PublishingUnavailableError y conserva el body crudo en detail", async () => {
+  // esperábamos entonces (envelope {data:[...]}) — CardsService.schedule()
+  // necesita el body crudo en `.detail` para no perder el rastro (ver
+  // errorDetailFrom/markFailed). El shape real ya se confirmó y se
+  // corrigió (postIds), pero el fallo se prueba igual con un shape
+  // arbitrario, por si el proveedor cambia su respuesta de nuevo.
+  it("un 2xx sin postIds lanza PublishingUnavailableError y conserva el body crudo en detail", async () => {
     const unexpectedBody = { ok: true, postId: "pf_9" };
     fetchMock.mockResolvedValueOnce(jsonResponse(200, unexpectedBody));
     const provider = new PostFastProvider("test-key");
@@ -112,6 +103,20 @@ describe("PostFastProvider", () => {
       reason: "no_id_in_response",
       body: unexpectedBody,
     });
+  });
+
+  it("un postIds vacío (PostFast no creó nada) también lanza PublishingUnavailableError", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { postIds: [] }));
+    const provider = new PostFastProvider("test-key");
+
+    await expect(
+      provider.schedule({
+        network: "linkedin",
+        content: TEXT_CONTENT,
+        scheduledAt: new Date("2026-09-01T18:00:00.000Z"),
+        accountProviderRef: "acc_1",
+      }),
+    ).rejects.toBeInstanceOf(PublishingUnavailableError);
   });
 
   it("cancelar una ref inexistente (404) no lanza — es idempotente", async () => {

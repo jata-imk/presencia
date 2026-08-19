@@ -18,17 +18,18 @@ import type {
 // "publicado" es responsabilidad nuestra vía polling (CardsService,
 // reconciliación perezosa hasta que F8 traiga el job).
 //
-// El shape de respuesta de POST /social-posts NO está documentado en la
-// referencia pública más allá de "crea y programa" — se había inferido
-// consistente con el resto de la API (envelope { data: [...] } con `id` por
-// post, igual que GET /social-posts). Esa inferencia se desmintió en
-// producción el 2026-08-18: PostFast sí creó y programó el post real (
-// confirmado en su dashboard), pero la extracción de abajo no encontró el
-// id esperado — CardsService.schedule() trató eso como "no pasó nada" y la
-// card volvió a draft, dejando un post real sin ningún providerRef que lo
-// referencie (ver CardsService, clasificación rejected/ambiguous). El shape
-// real sigue pendiente de capturar — cuando se capture, ajustar la
-// extracción de abajo con el body real como fixture del test, no adivinar.
+// El shape de respuesta de POST /social-posts se había inferido consistente
+// con el resto de la API (envelope { data: [...] } con `id` por post, igual
+// que GET /social-posts) — esa inferencia se desmintió en producción el
+// 2026-08-18: PostFast sí creó y programó el post real (confirmado en su
+// dashboard), pero la extracción no encontró el id esperado —
+// CardsService.schedule() trató eso como "no pasó nada" y la card volvió a
+// draft, dejando un post real sin ningún providerRef que lo referencie (ver
+// CardsService, clasificación rejected/ambiguous). Shape real confirmado
+// después contra postfa.st/docs/posts/create (2026-08-19): la respuesta 201
+// es { postIds: string[] } — un array de UUIDs, NO un array de objetos con
+// `id`/`status` como GET /social-posts. Como siempre enviamos exactamente un
+// post por llamada (ver el body de abajo), tomamos postIds[0].
 
 const BASE_URL_DEFAULT = "https://api.postfa.st";
 
@@ -83,34 +84,29 @@ export class PostFastProvider implements PublishingProvider {
   }
 
   async schedule(req: SchedulePostRequest): Promise<{ providerRef: string }> {
-    const body = await this.request<{ data?: PostfastPostSummary[] } | PostfastPostSummary[]>(
-      "POST",
-      "/social-posts",
-      {
-        posts: [
-          {
-            content: buildPostText(req.content),
-            // Media real (subir el asset a PostFast y referenciarlo aquí) es
-            // trabajo de F10/F11 — hasta entonces, CardsService rechaza antes
-            // de llegar aquí cualquier red que exija media (instagram, tiktok,
-            // youtube). Enviar [] es seguro para las redes que sí llegan.
-            mediaItems: [],
-            scheduledAt: req.scheduledAt.toISOString(),
-            socialMediaId: req.accountProviderRef,
-            status: "SCHEDULED",
-          },
-        ],
-      },
-    );
-    const posts = Array.isArray(body) ? body : (body.data ?? []);
-    const created = posts[0];
-    if (!created?.id) {
+    const body = await this.request<{ postIds?: string[] }>("POST", "/social-posts", {
+      posts: [
+        {
+          content: buildPostText(req.content),
+          // Media real (subir el asset a PostFast y referenciarlo aquí) es
+          // trabajo de F10/F11 — hasta entonces, CardsService rechaza antes
+          // de llegar aquí cualquier red que exija media (instagram, tiktok,
+          // youtube). Enviar [] es seguro para las redes que sí llegan.
+          mediaItems: [],
+          scheduledAt: req.scheduledAt.toISOString(),
+          socialMediaId: req.accountProviderRef,
+          status: "SCHEDULED",
+        },
+      ],
+    });
+    const providerRef = body.postIds?.[0];
+    if (!providerRef) {
       throw new PublishingUnavailableError("PostFast no devolvió el id del post programado.", {
         reason: "no_id_in_response",
         body,
       });
     }
-    return { providerRef: created.id };
+    return { providerRef };
   }
 
   async cancel(providerRef: string): Promise<void> {
