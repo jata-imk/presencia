@@ -95,6 +95,13 @@ export class ChannelsService {
       // sin perderla en silencio.
       const claimed: SocialAccountRow[] = [];
       for (const account of newAccounts) {
+        // listAccounts() no omite cuentas con token revocado, solo las
+        // marca (connectionStatus !== "CONNECTED" → connected:false, ver
+        // postfa.st/docs/accounts/list) — reclamar o reactivar una cuenta
+        // que el proveedor ya no puede usar sería el mismo error que
+        // reactivateAccount() bloquea abajo, solo que por este otro
+        // camino.
+        if (!account.connected) continue;
         try {
           // SAVEPOINT (tx.transaction anidado), no la tx de afuera
           // directo: un unique_violation dentro de la tx principal la deja
@@ -170,7 +177,13 @@ export class ChannelsService {
     if (!account) throw new NotFoundException("No encontramos esa cuenta conectada.");
 
     const providerAccounts = await this.provider.listAccounts();
-    const stillConnected = providerAccounts.find((a) => a.providerRef === account.providerRef);
+    // .connected, no solo presencia: PostFast sigue listando una cuenta con
+    // token revocado (connectionStatus:"DISABLED"), no la quita — sin este
+    // filtro, "Reconectar" habría vuelto a mostrar como activa justo la
+    // cuenta que este método existe para bloquear.
+    const stillConnected = providerAccounts.find(
+      (a) => a.providerRef === account.providerRef && a.connected,
+    );
     if (!stillConnected) {
       throw new ConflictException(
         'Esa cuenta ya no está conectada en PostFast — vuelve a autorizarla desde "Conectar red".',

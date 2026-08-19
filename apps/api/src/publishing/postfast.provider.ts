@@ -60,18 +60,20 @@ export class PostFastProvider implements PublishingProvider {
     private readonly baseUrl: string = BASE_URL_DEFAULT,
   ) {}
 
+  // Array plano, no un envelope {data:[...]} — verificado contra
+  // postfa.st/docs/accounts/list (2026-08-19). connectionStatus puede ser
+  // "DISABLED" (token revocado, etc) mientras la cuenta SIGUE apareciendo
+  // acá — no se omite, solo se marca (ver ProviderAccount.connected).
   async listAccounts(): Promise<ProviderAccount[]> {
-    const body = await this.request<{
-      id: string;
-      platform: string;
-      displayName: string | null;
-    }>("GET", "/social-media/my-social-accounts");
-    const accounts = Array.isArray(body) ? body : ((body as { data?: unknown[] }).data ?? []);
-    return (accounts as Array<{ id: string; platform: string; displayName: string | null }>)
+    const accounts = await this.request<
+      Array<{ id: string; platform: string; displayName: string | null; connectionStatus: string }>
+    >("GET", "/social-media/my-social-accounts");
+    return accounts
       .map((a) => ({
         providerRef: a.id,
         network: networkFromPlatform(a.platform),
         displayName: a.displayName ?? null,
+        connected: a.connectionStatus === "CONNECTED",
       }))
       .filter((a): a is ProviderAccount => a.network !== null);
   }

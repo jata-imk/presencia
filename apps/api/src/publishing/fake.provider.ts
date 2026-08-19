@@ -18,9 +18,14 @@ export class FakePublishingProvider implements PublishingProvider {
   private readonly posts = new Map<string, { scheduledAt: Date }>();
   private counter = 0;
 
-  /** Solo para tests: simula una cuenta ya conectada en el workspace. */
-  seedAccount(account: ProviderAccount): void {
-    this.accounts.push(account);
+  /**
+   * Solo para tests: simula una cuenta ya conectada en el workspace.
+   * `connected` por defecto true (el caso común) — pasar `connected:false`
+   * para simular una cuenta que el proveedor sigue listando pero ya no es
+   * usable (token revocado, ver postfa.st/docs/accounts/list).
+   */
+  seedAccount(account: Omit<ProviderAccount, "connected"> & { connected?: boolean }): void {
+    this.accounts.push({ ...account, connected: account.connected ?? true });
   }
 
   listAccounts(): Promise<ProviderAccount[]> {

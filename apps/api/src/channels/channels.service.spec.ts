@@ -186,6 +186,62 @@ describe("ChannelsService", () => {
   );
 
   it(
+    "reactivar una cuenta que el proveedor lista pero DISABLED (token revocado) también la rechaza",
+    { timeout: 15_000 },
+    async () => {
+      // Distinto del caso de arriba: acá el proveedor SIGUE listando la
+      // cuenta (no desapareció del workspace), solo que ya no es usable —
+      // postfa.st/docs/accounts/list confirma que connectionStatus:"DISABLED"
+      // no la quita de GET /social-media/my-social-accounts. Antes del fix,
+      // reactivateAccount solo chequeaba presencia por providerRef y esto
+      // habría pasado como "sigue conectada".
+      const intent = await service.createConnectIntent(userA);
+      provider.seedAccount({ providerRef: "disabled_1", network: "facebook", displayName: "V1" });
+      const [firstClaim] = await service.claimConnectIntent(userA, intent.id);
+      if (!firstClaim) throw new Error("Debió reclamar la cuenta");
+      await service.disconnectAccount(userA, firstClaim.id);
+
+      const disabledProvider = new FakePublishingProvider();
+      disabledProvider.seedAccount({
+        providerRef: "disabled_1",
+        network: "facebook",
+        displayName: "V1",
+        connected: false,
+      });
+      const serviceWithDisabledProvider = new ChannelsServiceCtor(
+        dbService,
+        repo,
+        disabledProvider,
+      );
+
+      await expect(
+        serviceWithDisabledProvider.reactivateAccount(userA, firstClaim.id),
+      ).rejects.toThrow(/ya no está conectada/);
+
+      const accounts = await service.listAccounts(userA);
+      expect(accounts.find((a) => a.id === firstClaim.id)?.status).toBe("disconnected");
+    },
+  );
+
+  it(
+    "claimConnectIntent no reclama una cuenta 'nueva' que el proveedor lista como DISABLED",
+    { timeout: 15_000 },
+    async () => {
+      const intent = await service.createConnectIntent(userA);
+      provider.seedAccount({
+        providerRef: "disabled_2",
+        network: "facebook",
+        displayName: "V1",
+        connected: false,
+      });
+
+      const claimed = await service.claimConnectIntent(userA, intent.id);
+
+      expect(claimed).toHaveLength(0);
+    },
+  );
+
+  it(
     "reautorizar en postfa.st una cuenta propia ya conocida la reclama de nuevo en vez de perderla en silencio",
     { timeout: 15_000 },
     async () => {

@@ -119,6 +119,38 @@ describe("PostFastProvider", () => {
     ).rejects.toBeInstanceOf(PublishingUnavailableError);
   });
 
+  // Shape real confirmado contra postfa.st/docs/accounts/list (2026-08-19):
+  // array plano (no envelope), y connectionStatus puede ser "DISABLED" sin
+  // que la cuenta desaparezca de la lista — el caller (ChannelsService)
+  // necesita saber cuáles siguen usables de verdad, ver ProviderAccount.connected.
+  it("listAccounts mapea connectionStatus a connected y no omite cuentas deshabilitadas", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, [
+        { id: "acc_1", platform: "LINKEDIN", displayName: "Activa", connectionStatus: "CONNECTED" },
+        {
+          id: "acc_2",
+          platform: "FACEBOOK",
+          displayName: "Token revocado",
+          connectionStatus: "DISABLED",
+          disabledReason: "TOKEN_REVOKED",
+        },
+      ]),
+    );
+    const provider = new PostFastProvider("test-key");
+
+    const accounts = await provider.listAccounts();
+
+    expect(accounts).toEqual([
+      { providerRef: "acc_1", network: "linkedin", displayName: "Activa", connected: true },
+      {
+        providerRef: "acc_2",
+        network: "facebook",
+        displayName: "Token revocado",
+        connected: false,
+      },
+    ]);
+  });
+
   it("cancelar una ref inexistente (404) no lanza — es idempotente", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(404, { statusCode: 404, message: "not found" }));
     const provider = new PostFastProvider("test-key");
