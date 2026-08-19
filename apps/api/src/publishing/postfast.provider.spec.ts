@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CardContent } from "@presencia/shared";
-import { PublishingRateLimitError, PublishingRejectedError } from "./errors.js";
+import {
+  PublishingRateLimitError,
+  PublishingRejectedError,
+  PublishingUnavailableError,
+} from "./errors.js";
 import { PostFastProvider } from "./postfast.provider.js";
 
 const TEXT_CONTENT: CardContent = {
@@ -66,6 +70,48 @@ describe("PostFastProvider", () => {
     });
     expect(post.content).toContain("Cinco hábitos");
     expect(post.content).toContain("#productividad #ia");
+  });
+
+  it("acepta también el shape de array plano (sin envelope {data:[...]})", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [{ id: "pf_456", status: "SCHEDULED" }]));
+    const provider = new PostFastProvider("test-key");
+
+    const result = await provider.schedule({
+      network: "linkedin",
+      content: TEXT_CONTENT,
+      scheduledAt: new Date("2026-09-01T18:00:00.000Z"),
+      accountProviderRef: "acc_1",
+    });
+
+    expect(result).toEqual({ providerRef: "pf_456" });
+  });
+
+  // Regresión del incidente 2026-08-18: PostFast creó y programó el post
+  // real (2xx), pero el shape de la respuesta no tenía el `id` donde lo
+  // esperábamos — CardsService.schedule() necesita el body crudo en
+  // `.detail` para no perder el rastro (ver errorDetailFrom/markFailed).
+  it("un 2xx sin id lanza PublishingUnavailableError y conserva el body crudo en detail", async () => {
+    const unexpectedBody = { ok: true, postId: "pf_9" };
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, unexpectedBody));
+    const provider = new PostFastProvider("test-key");
+
+    let caught: unknown;
+    try {
+      await provider.schedule({
+        network: "linkedin",
+        content: TEXT_CONTENT,
+        scheduledAt: new Date("2026-09-01T18:00:00.000Z"),
+        accountProviderRef: "acc_1",
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(PublishingUnavailableError);
+    expect((caught as PublishingUnavailableError).detail).toEqual({
+      reason: "no_id_in_response",
+      body: unexpectedBody,
+    });
   });
 
   it("cancelar una ref inexistente (404) no lanza — es idempotente", async () => {
@@ -147,13 +193,23 @@ describe("PostFastProvider", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("un error de red se traduce a PublishingUnavailableError", async () => {
-    fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
+  it("un error de red se traduce a PublishingUnavailableError y conserva el error original en detail", async () => {
+    const networkError = new TypeError("fetch failed");
+    fetchMock.mockRejectedValueOnce(networkError);
     const provider = new PostFastProvider("test-key");
 
-    await expect(provider.listAccounts()).rejects.toThrow(
+    let caught: unknown;
+    try {
+      await provider.listAccounts();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(PublishingUnavailableError);
+    expect((caught as PublishingUnavailableError).message).toBe(
       "No se pudo contactar a PostFast (error de red).",
     );
+    expect((caught as PublishingUnavailableError).detail).toBe(networkError);
   });
 
   it("no rechaza directamente — PublishingRejectedError es una instancia real", async () => {

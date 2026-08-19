@@ -11,6 +11,7 @@ import { NetworkScheduleRow } from "./NetworkScheduleRow.js";
 import { TimeChips } from "./TimeChips.js";
 import { WeekStrip } from "./WeekStrip.js";
 import { combineDateAndTime, dateKey, startOfDay } from "./date-utils.js";
+import { ApiError } from "../../lib/api.js";
 import { fetchScheduleConflicts, scheduleGroup } from "../../lib/cards-api.js";
 import { backdropFade, drawerPush, sheetUp } from "../../lib/motion.js";
 import { useChannels } from "../../lib/use-channels.js";
@@ -70,6 +71,13 @@ function ScheduleDrawerInner({
   const [sameTime, setSameTime] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Errores por card de scheduleGroup (ok:false) — antes se descartaban por
+  // completo, así que un 503 "PostFast no devolvió el id..." (o cualquier
+  // otro fallo específico) nunca llegaba a la pantalla, solo el genérico de
+  // abajo si la llamada entera tronaba.
+  const [submitErrors, setSubmitErrors] = useState<
+    { cardId: string; network: PublicationCardDto["network"] | null; message: string }[]
+  >([]);
   const [viewMonth, setViewMonth] = useState(() => {
     const d = defaultDate();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -203,6 +211,7 @@ function ScheduleDrawerInner({
 
   async function handleSubmit() {
     setFormError(null);
+    setSubmitErrors([]);
     const targetRows = sameTime && rows.length > 0 ? effectiveRows : rows;
 
     const items = targetRows.map((row) => {
@@ -237,15 +246,37 @@ function ScheduleDrawerInner({
 
     setSubmitting(true);
     try {
-      await scheduleGroup({ items });
+      const results = await scheduleGroup({ items });
       // chatId nunca es null acá en la práctica: el drawer solo se abre
       // desde una card renderizada dentro de un chat vivo (F6 PR8, ver
       // schema.ts — chatId es nullable para cards huérfanas de un chat ya
       // eliminado, que no tienen ninguna UI que las muestre todavía).
+      //
+      // Refresca SIEMPRE, no solo en el happy path — antes, una falla
+      // parcial dejaba el badge viejo en pantalla sin reflejar que la card
+      // ahora está failed (ver CardsService.scheduleGroup, cada item es
+      // independiente).
       if (firstCard.chatId) await refreshCards(firstCard.chatId);
-      onClose();
-    } catch {
-      setFormError("No se pudo programar. Inténtalo de nuevo.");
+
+      const failures = results.filter((r) => !r.ok);
+      if (failures.length === 0) {
+        onClose();
+        return;
+      }
+      // No cerrar: el mensaje real ya viene calculado por el backend
+      // (CardsService.scheduleGroup/toHttpException) — antes se
+      // descartaba por completo y Jose solo veía el genérico de abajo.
+      setSubmitErrors(
+        failures.map((f) => ({
+          cardId: f.cardId,
+          network: rows.find((r) => r.cardId === f.cardId)?.network ?? null,
+          message: f.error ?? "No se pudo programar.",
+        })),
+      );
+    } catch (err) {
+      setFormError(
+        err instanceof ApiError ? err.message : "No se pudo programar. Inténtalo de nuevo.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -408,6 +439,18 @@ function ScheduleDrawerInner({
         )}
 
         {formError && <p className="mt-4 text-sm text-error">{formError}</p>}
+        {submitErrors.length > 0 && (
+          <ul className="mt-4 flex flex-col gap-1">
+            {submitErrors.map((e) => (
+              <li key={e.cardId} className="text-sm text-error">
+                {isBatch && e.network && (
+                  <span className="font-semibold">{NETWORK_META[e.network].label}: </span>
+                )}
+                {e.message}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="flex shrink-0 gap-2 border-t border-line px-5 py-4">

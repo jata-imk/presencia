@@ -21,13 +21,22 @@ export class PublishingRateLimitError extends Error {
   }
 }
 
-/** 5xx o error de red — el proveedor no está disponible ahora mismo. */
+/**
+ * 5xx, error de red, o una respuesta 2xx que no pudimos interpretar (el
+ * proveedor procesó la solicitud pero su forma no fue la esperada) — en
+ * cualquiera de los tres casos, NO sabemos con certeza si el proveedor
+ * llegó a crear el efecto del otro lado. A diferencia de
+ * PublishingRejectedError (rechazo explícito, nunca se creó nada), el
+ * caller debe tratar esto como ambiguo, no como "no pasó nada" (ver
+ * CardsService.schedule(), incidente 2026-08-18: un post real se creó en
+ * PostFast pero la card local volvió a draft sin dejar rastro).
+ */
 export class PublishingUnavailableError extends Error {
   constructor(
     message = "El proveedor de publicación no está disponible en este momento.",
-    cause?: unknown,
+    readonly detail?: unknown,
   ) {
-    super(message, { cause });
+    super(message, { cause: detail });
     this.name = "PublishingUnavailableError";
   }
 }

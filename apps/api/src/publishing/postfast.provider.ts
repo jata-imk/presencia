@@ -18,11 +18,17 @@ import type {
 // "publicado" es responsabilidad nuestra vía polling (CardsService,
 // reconciliación perezosa hasta que F8 traiga el job).
 //
-// El shape de respuesta de POST /social-posts no está documentado en la
-// referencia pública más allá de "crea y programa" — se infiere consistente
-// con el resto de la API (envelope { data: [...] } con `id` por post, igual
-// que GET /social-posts). Falta smoke-test contra la API real en cuanto
-// exista POSTFAST_API_KEY (ver plan de F6, DoD).
+// El shape de respuesta de POST /social-posts NO está documentado en la
+// referencia pública más allá de "crea y programa" — se había inferido
+// consistente con el resto de la API (envelope { data: [...] } con `id` por
+// post, igual que GET /social-posts). Esa inferencia se desmintió en
+// producción el 2026-08-18: PostFast sí creó y programó el post real (
+// confirmado en su dashboard), pero la extracción de abajo no encontró el
+// id esperado — CardsService.schedule() trató eso como "no pasó nada" y la
+// card volvió a draft, dejando un post real sin ningún providerRef que lo
+// referencie (ver CardsService, clasificación rejected/ambiguous). El shape
+// real sigue pendiente de capturar — cuando se capture, ajustar la
+// extracción de abajo con el body real como fixture del test, no adivinar.
 
 const BASE_URL_DEFAULT = "https://api.postfa.st";
 
@@ -99,7 +105,10 @@ export class PostFastProvider implements PublishingProvider {
     const posts = Array.isArray(body) ? body : (body.data ?? []);
     const created = posts[0];
     if (!created?.id) {
-      throw new PublishingUnavailableError("PostFast no devolvió el id del post programado.", body);
+      throw new PublishingUnavailableError("PostFast no devolvió el id del post programado.", {
+        reason: "no_id_in_response",
+        body,
+      });
     }
     return { providerRef: created.id };
   }

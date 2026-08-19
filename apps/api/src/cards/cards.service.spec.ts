@@ -3,7 +3,9 @@ import { inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
 import { chats, users } from "../db/schema.js";
+import { PublishingRejectedError, PublishingUnavailableError } from "../publishing/errors.js";
 import { FakePublishingProvider } from "../publishing/fake.provider.js";
+import type { SchedulePostRequest } from "../publishing/publishing.provider.js";
 // Imports solo de tipo: los módulos reales se cargan en beforeAll, mismo
 // patrón que credits.service.spec.ts / channels.service.spec.ts.
 import type { DbService as DbServiceType } from "../db/db.service.js";
@@ -52,6 +54,46 @@ const VISUAL_CONTENT_WITH_MEDIA: CardContent = {
 
 function future(minutes: number): string {
   return new Date(Date.now() + minutes * 60_000).toISOString();
+}
+
+// Providers de prueba que fuerzan cada rama de classifyScheduleFailure en
+// cards.service.ts — el fake normal (fake.provider.ts) siempre tiene éxito,
+// así que necesitamos subclasificarlo para simular las dos formas de
+// fallo que schedule() debe tratar distinto (rejected → draft, sin dudar;
+// ambiguous → failed, conservando el rastro). Subclases in-file, no
+// cambios a fake.provider.ts: ese archivo es el provider real de dev/test,
+// no debe mentir sobre fallos que nunca simula por sí solo.
+class RejectingProvider extends FakePublishingProvider {
+  override schedule(): Promise<{ providerRef: string }> {
+    return Promise.reject(new PublishingRejectedError("socialMediaId inválido", { status: 400 }));
+  }
+}
+
+class AmbiguousProvider extends FakePublishingProvider {
+  override schedule(): Promise<{ providerRef: string }> {
+    return Promise.reject(
+      new PublishingUnavailableError("PostFast no devolvió el id del post programado.", {
+        reason: "no_id_in_response",
+        body: { ok: true },
+      }),
+    );
+  }
+}
+
+class FlakyProvider extends FakePublishingProvider {
+  private failNext = true;
+  override schedule(req: SchedulePostRequest): Promise<{ providerRef: string }> {
+    if (this.failNext) {
+      this.failNext = false;
+      return Promise.reject(
+        new PublishingUnavailableError("PostFast no devolvió el id del post programado.", {
+          reason: "no_id_in_response",
+          body: {},
+        }),
+      );
+    }
+    return super.schedule(req);
+  }
 }
 
 describe("CardsService", () => {
@@ -244,6 +286,194 @@ describe("CardsService", () => {
         scheduledAt: future(10),
       });
       expect(retried.status).toBe("scheduled");
+    },
+  );
+
+  it(
+    "un rechazo explícito del proveedor (4xx) devuelve la card a draft",
+    { timeout: 15_000 },
+    async () => {
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+      const rejectingService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        new RejectingProvider(),
+      );
+
+      await expect(
+        rejectingService.schedule(userA, card.id, {
+          socialAccountId: account.id,
+          scheduledAt: future(10),
+        }),
+      ).rejects.toThrow(/socialMediaId inválido/);
+
+      const row = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
+      expect(row?.status).toBe("draft");
+      expect(row?.scheduledAt).toBeNull();
+      expect(row?.socialAccountId).toBeNull();
+      expect(row?.providerRef).toBeNull();
+      expect((row?.errorDetail as { message?: string } | null)?.message).toContain(
+        "socialMediaId inválido",
+      );
+    },
+  );
+
+  it(
+    "un fallo ambiguo del proveedor deja la card en failed y conserva horario y cuenta",
+    { timeout: 15_000 },
+    async () => {
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+      const ambiguousService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        new AmbiguousProvider(),
+      );
+      const scheduledAt = future(10);
+
+      await expect(
+        ambiguousService.schedule(userA, card.id, {
+          socialAccountId: account.id,
+          scheduledAt,
+        }),
+      ).rejects.toThrow();
+
+      const row = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
+      expect(row?.status).toBe("failed");
+      // El rastro sobrevive — es lo que se perdía en el incidente real: sin
+      // esto, un post que sí se creó en PostFast queda sin forma de
+      // ubicarlo (ni horario, ni cuenta, ni provider_ref).
+      expect(row?.scheduledAt?.toISOString()).toBe(new Date(scheduledAt).toISOString());
+      expect(row?.socialAccountId).toBe(account.id);
+      const detail = row?.errorDetail as { message?: string; providerMessage?: string } | null;
+      expect(detail?.message).toMatch(/panel de PostFast/i);
+      expect(detail?.providerMessage).toBe("PostFast no devolvió el id del post programado.");
+    },
+  );
+
+  it(
+    "un fallo ambiguo devuelve 503 con la copia de aviso de no duplicar",
+    { timeout: 15_000 },
+    async () => {
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+      const ambiguousService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        new AmbiguousProvider(),
+      );
+
+      await expect(
+        ambiguousService.schedule(userA, card.id, {
+          socialAccountId: account.id,
+          scheduledAt: future(10),
+        }),
+      ).rejects.toThrow(/panel de PostFast/i);
+    },
+  );
+
+  it(
+    "una card failed por un fallo ambiguo se puede reintentar y termina scheduled",
+    { timeout: 15_000 },
+    async () => {
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+      const flakyService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        new FlakyProvider(),
+      );
+
+      await expect(
+        flakyService.schedule(userA, card.id, {
+          socialAccountId: account.id,
+          scheduledAt: future(10),
+        }),
+      ).rejects.toThrow();
+      const failedRow = await dbService.runWithTenant(userA, (tx) =>
+        cardsRepo.findById(tx, card.id),
+      );
+      expect(failedRow?.status).toBe("failed");
+
+      const retried = await flakyService.schedule(userA, card.id, {
+        socialAccountId: account.id,
+        scheduledAt: future(10),
+      });
+      expect(retried.status).toBe("scheduled");
+      const row = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
+      expect(row?.providerRef).toBeTruthy();
+      expect(row?.errorDetail).toBeNull();
+    },
+  );
+
+  it(
+    "scheduleGroup: un item ambiguo devuelve ok:false con el aviso y no aborta el resto",
+    { timeout: 15_000 },
+    async () => {
+      const cardAmbiguous = await createCard(TEXT_CONTENT, "linkedin");
+      const cardOk = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+      // FlakyProvider falla en su primera llamada a schedule() y tiene
+      // éxito en la segunda — scheduleGroup itera los items en orden, así
+      // que el primer item (cardAmbiguous) recibe el fallo y el segundo
+      // (cardOk) el éxito. No hace falta un provider nuevo por-cardId:
+      // SchedulePostRequest ni siquiera lleva el cardId (ver
+      // publishing.provider.ts), el orden de la lista ya distingue los dos.
+      const mixedService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        new FlakyProvider(),
+      );
+
+      const results = await mixedService.scheduleGroup(userA, {
+        items: [
+          {
+            cardId: cardAmbiguous.id,
+            socialAccountId: account.id,
+            scheduledAt: future(10),
+          },
+          { cardId: cardOk.id, socialAccountId: account.id, scheduledAt: future(10) },
+        ],
+      });
+
+      const resultAmbiguous = results.find((r) => r.cardId === cardAmbiguous.id);
+      const resultOk = results.find((r) => r.cardId === cardOk.id);
+      expect(resultAmbiguous?.ok).toBe(false);
+      expect(resultAmbiguous?.error).toMatch(/panel de PostFast/i);
+      expect(resultOk?.ok).toBe(true);
+      expect(resultOk?.card?.status).toBe("scheduled");
+    },
+  );
+
+  it(
+    "una card failed por un fallo ambiguo no la toca reconcileDueCards",
+    { timeout: 15_000 },
+    async () => {
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+      const ambiguousService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        new AmbiguousProvider(),
+      );
+      await expect(
+        ambiguousService.schedule(userA, card.id, {
+          socialAccountId: account.id,
+          scheduledAt: future(10),
+        }),
+      ).rejects.toThrow();
+
+      await service.reconcileDueCards(userA);
+
+      const row = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
+      expect(row?.status).toBe("failed");
     },
   );
 

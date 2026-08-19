@@ -189,6 +189,8 @@ export interface PublicationCardDto {
   scheduledAt: string | null;
   publishedAt: string | null;
   socialAccountId: string | null;
+  /** Mensaje en español, listo para mostrar, cuando status es "failed". Null si no hay. */
+  errorMessage: string | null;
 }
 
 export const cardIdParamSchema = z.object({ id: z.uuid() });
