@@ -173,7 +173,7 @@ export class ChannelsService {
     const stillConnected = providerAccounts.find((a) => a.providerRef === account.providerRef);
     if (!stillConnected) {
       throw new ConflictException(
-        'Esa cuenta ya no está conectada en PostFast — desconéctala y vuelve a conectarla desde "Conectar red".',
+        'Esa cuenta ya no está conectada en PostFast — vuelve a autorizarla desde "Conectar red".',
       );
     }
 
