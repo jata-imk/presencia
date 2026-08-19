@@ -39,7 +39,11 @@ export function useChannels() {
   );
 
   // Reconectar una cuenta que ya es nuestra (desconectada solo de nuestro
-  // lado) es directo — no hace falta volver a pasar por postfa.st.
+  // lado, la cuenta sigue viva en PostFast) es directo — no hace falta
+  // volver a pasar por postfa.st. Si el backend rechaza con 409 (la cuenta
+  // ya no existe del lado del proveedor — token revocado, etc.), sí hace
+  // falta: "Conectar red" de nuevo, reautorizar ahí, y el claim se
+  // encarga de reactivarla (ver ChannelsService.claimConnectIntent).
   const reactivate = useCallback(
     (id: string) =>
       apiFetch<ChannelAccountDto>(`/api/channels/${id}/reactivate`, {

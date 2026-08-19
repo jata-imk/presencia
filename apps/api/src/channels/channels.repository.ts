@@ -35,6 +35,25 @@ export class ChannelsRepository {
     return row;
   }
 
+  /**
+   * providerRef es único a nivel de TODO el workspace (índice global, no por
+   * tenant — ver comentario de schema.ts), así que esta query sin filtro
+   * explícito de user_id depende enteramente de RLS: si la fila es de otro
+   * tenant, la transacción no la ve y esto regresa undefined — exactamente
+   * el comportamiento que claimConnectIntent necesita para distinguir "esta
+   * cuenta ya es mía" de "otro usuario se la quedó primero".
+   */
+  async findAccountByProviderRef(
+    tx: Tx,
+    providerRef: string,
+  ): Promise<SocialAccountRow | undefined> {
+    const [row] = await tx
+      .select()
+      .from(socialAccounts)
+      .where(eq(socialAccounts.providerRef, providerRef));
+    return row;
+  }
+
   async insertAccount(tx: Tx, input: InsertAccountInput): Promise<SocialAccountRow> {
     const [row] = await tx
       .insert(socialAccounts)

@@ -85,9 +85,12 @@ export function CanalesPage() {
 
   async function handleReactivate(id: string) {
     setBusy(true);
+    setClaimMessage(null);
     try {
       await reactivate(id);
       refresh();
+    } catch (err) {
+      setClaimMessage(err instanceof ApiError ? err.message : "No se pudo reconectar esa cuenta.");
     } finally {
       setBusy(false);
     }

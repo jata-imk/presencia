@@ -186,6 +186,42 @@ describe("ChannelsService", () => {
   );
 
   it(
+    "reautorizar en postfa.st una cuenta propia ya conocida la reclama de nuevo en vez de perderla en silencio",
+    { timeout: 15_000 },
+    async () => {
+      const intent1 = await service.createConnectIntent(userA);
+      provider.seedAccount({ providerRef: "selfheal_1", network: "linkedin", displayName: "V1" });
+      const [firstClaim] = await service.claimConnectIntent(userA, intent1.id);
+      if (!firstClaim) throw new Error("Debió reclamar la cuenta");
+      await service.disconnectAccount(userA, firstClaim.id);
+
+      // Simula el caso real reportado: el token expiró, reactivateAccount
+      // rechazó (provider.listAccounts() ya no la traía), el usuario le dio
+      // "Conectar red" de nuevo y reautorizó en postfa.st. El intent nuevo
+      // no "conocía" esta cuenta todavía (knownAccountRefs vacío, como si
+      // el token hubiera expirado antes de crear el intent) — el
+      // providerRef vuelve a aparecer como "nuevo" en el diff, choca contra
+      // la fila que ya existe, y el catch de claimConnectIntent debe
+      // reactivarla en vez de tragarse el conflicto en silencio.
+      const freshIntent = await dbService.runWithTenant(userA, (tx) =>
+        repo.insertIntent(tx, {
+          userId: userA,
+          knownAccountRefs: [],
+          expiresAt: new Date(Date.now() + 60_000),
+        }),
+      );
+
+      const reclaimed = await service.claimConnectIntent(userA, freshIntent.id);
+      expect(reclaimed).toHaveLength(1);
+      expect(reclaimed[0]?.id).toBe(firstClaim.id);
+      expect(reclaimed[0]?.status).toBe("active");
+
+      const accounts = await service.listAccounts(userA);
+      expect(accounts.find((a) => a.id === firstClaim.id)?.status).toBe("active");
+    },
+  );
+
+  it(
     "dos tenants reclamando la misma cuenta nueva: solo uno se la queda, el otro no la roba",
     { timeout: 15_000 },
     async () => {

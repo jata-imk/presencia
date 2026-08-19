@@ -82,33 +82,58 @@ export class ChannelsService {
       // procesamos (idempotencia del claim, no del efecto en PostFast).
       await this.repo.consumeIntent(tx, intent.id);
 
-      // Nota: una vez que un providerRef entra a UN snapshot, sigue
-      // apareciendo en todos los siguientes mientras la cuenta exista en
-      // PostFast — así que nunca vuelve a calificar como "nueva" aquí,
-      // incluso si el usuario la desconectó solo de nuestro lado
+      // Nota: mientras la cuenta siga viva en PostFast, un providerRef que
+      // ya entró a un snapshot nunca vuelve a calificar como "nueva" aquí
+      // — incluso si el usuario la desconectó solo de nuestro lado
       // (disconnectAccount es un flag local, no revoca nada en PostFast).
-      // Por diseño, este bucle solo puede toparse con providerRefs que
-      // jamás pasaron por social_accounts: reconectar una cuenta ya
-      // conocida es reactivateAccount(), no este flujo.
+      // Reconectar ESE caso es reactivateAccount(), no este flujo.
+      //
+      // Pero si la cuenta salió del workspace de verdad (token expirado,
+      // revocada) y el usuario la reautoriza en postfa.st desde "Conectar
+      // red" en vez de "Reconectar" (que rechaza justo por eso), SÍ vuelve
+      // a aparecer como "nueva" en el diff — el catch de abajo la reclama
+      // sin perderla en silencio.
       const claimed: SocialAccountRow[] = [];
       for (const account of newAccounts) {
         try {
-          claimed.push(
-            await this.repo.insertAccount(tx, {
+          // SAVEPOINT (tx.transaction anidado), no la tx de afuera
+          // directo: un unique_violation dentro de la tx principal la deja
+          // "aborted" del lado de Postgres — cualquier query siguiente
+          // (el findAccountByProviderRef del catch, o el insertAccount del
+          // próximo account del for) fallaría con 25P02 aunque el error ya
+          // se haya capturado en JS. El savepoint aísla el fallo: si el
+          // insert truena, drizzle hace ROLLBACK TO SAVEPOINT y la tx de
+          // afuera sigue utilizable.
+          const inserted = await tx.transaction((savepoint) =>
+            this.repo.insertAccount(savepoint, {
               userId,
               network: account.network,
               providerRef: account.providerRef,
               displayName: account.displayName,
             }),
           );
+          claimed.push(inserted);
         } catch (error) {
-          if (isProviderRefConflict(error)) {
-            // Otro usuario ya reclamó esta cuenta primero (carrera de
-            // conexión en el workspace compartido, ver comentario de
-            // cabecera) — se ignora, nunca se le atribuye a este usuario.
-            continue;
-          }
-          throw error;
+          if (!isProviderRefConflict(error)) throw error;
+
+          // El índice único de providerRef es GLOBAL (todo el workspace),
+          // no por tenant — este conflicto tiene dos causas posibles y hay
+          // que distinguirlas:
+          //  1. Otro usuario ya reclamó esta cuenta primero (carrera de
+          //     conexión, ver comentario de cabecera) — su fila es
+          //     invisible para mi RLS, así que esta re-lectura regresa
+          //     undefined. Se ignora, nunca se le atribuye a este usuario.
+          //  2. Es MI PROPIA cuenta, ya existía como "disconnected" (p.ej.
+          //     el token expiró, la desconecté, y ahora la reautoricé en
+          //     postfa.st desde "Conectar red" en vez de "Reconectar" —
+          //     que rechaza justo por esto, ver reactivateAccount). Mi RLS
+          //     SÍ ve esa fila — hay que reactivarla, no perder el claim en
+          //     silencio como pasaba antes.
+          const own = await this.repo.findAccountByProviderRef(tx, account.providerRef);
+          if (!own) continue;
+          claimed.push(
+            await this.repo.reactivateAccount(tx, own.id, account.displayName ?? own.displayName),
+          );
         }
       }
       return claimed.map(toDto);
