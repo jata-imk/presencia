@@ -5,6 +5,7 @@ import {
   aiUsageEvents,
   brandVoices,
   chats,
+  folders,
   messages,
   publicationCards,
   socialAccounts,
@@ -148,6 +149,61 @@ describe("RLS tenant_isolation", () => {
         );
       expect(error).toBeInstanceOf(Error);
       expect(String((error as Error).cause)).toMatch(/row-level security/);
+    });
+  });
+
+  // F6 PR8: folders (Carpetas) — tabla desde F0/F4 pero sin rutas hasta
+  // ahora. Mismo patrón de tenant_isolation que brand_voices.
+  describe("folders", () => {
+    let folderA: string;
+
+    beforeAll(async () => {
+      folderA = await dbService.runWithTenant(userA, async (tx) => {
+        const [folder] = await tx
+          .insert(folders)
+          .values({ userId: userA, name: "Marca personal", icon: "💼" })
+          .returning({ id: folders.id });
+        if (!folder) throw new Error("No se pudo crear la carpeta de prueba");
+        return folder.id;
+      });
+    }, 15_000);
+
+    it("el dueño ve su propia carpeta", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userA, (tx) => tx.select().from(folders));
+      expect(rows.map((f) => f.id)).toContain(folderA);
+    });
+
+    it("otro tenant no lee la carpeta ajena", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userB, (tx) => tx.select().from(folders));
+      expect(rows).toHaveLength(0);
+    });
+
+    it(
+      "otro tenant no puede insertar una carpeta a nombre ajeno",
+      { timeout: 15_000 },
+      async () => {
+        const error: unknown = await dbService
+          .runWithTenant(userB, (tx) =>
+            tx.insert(folders).values({ userId: userA, name: "Intrusa" }),
+          )
+          .then(
+            () => null,
+            (e: unknown) => e,
+          );
+        expect(error).toBeInstanceOf(Error);
+        expect(String((error as Error).cause)).toMatch(/row-level security/);
+      },
+    );
+
+    // El caso real que esto previene: ChatService.moveToFolder no debe
+    // aceptar el folderId de OTRO tenant solo porque el FK de Postgres
+    // valida existencia física, no visibilidad por RLS (ver
+    // FoldersService.assertOwnsFolder).
+    it("otro tenant no ve la carpeta ajena aunque sepa su id", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userB, (tx) =>
+        tx.select().from(folders).where(eq(folders.id, folderA)),
+      );
+      expect(rows).toHaveLength(0);
     });
   });
 
@@ -454,6 +510,50 @@ describe("RLS tenant_isolation", () => {
 
         await dbService.runWithTenant(userB, (tx) =>
           tx.delete(publicationCards).where(eq(publicationCards.id, cardB.id)),
+        );
+      },
+    );
+
+    // F6 PR8: chatId pasó a nullable + onDelete:"set null" (migración
+    // 0012) — una card sobrevive al chat que la originó en vez de
+    // cascadear con él. Este test es justo lo que ChatService.deleteChat
+    // depende que sea cierto (ahí se rechaza el borrado si la card sigue
+    // "scheduled"; para una "draft" como esta, el borrado del chat sí
+    // procede y la card queda huérfana).
+    it(
+      "la card sobrevive con chatId null si se borra el chat que la originó",
+      { timeout: 15_000 },
+      async () => {
+        const { chatId, cardId } = await dbService.runWithTenant(userA, async (tx) => {
+          const [chat] = await tx
+            .insert(chats)
+            .values({ userId: userA, title: "Chat a borrar" })
+            .returning({ id: chats.id });
+          if (!chat) throw new Error("No se pudo crear el chat de prueba");
+          const [card] = await tx
+            .insert(publicationCards)
+            .values({
+              userId: userA,
+              chatId: chat.id,
+              archetype: "text_first",
+              network: "linkedin",
+              content: { archetype: "text_first", body: "sobrevive", hashtags: [], assetIds: [] },
+            })
+            .returning({ id: publicationCards.id });
+          if (!card) throw new Error("No se pudo crear la card de prueba");
+          return { chatId: chat.id, cardId: card.id };
+        });
+
+        await dbService.runWithTenant(userA, (tx) => tx.delete(chats).where(eq(chats.id, chatId)));
+
+        const rows = await dbService.runWithTenant(userA, (tx) =>
+          tx.select().from(publicationCards).where(eq(publicationCards.id, cardId)),
+        );
+        expect(rows).toHaveLength(1);
+        expect(rows[0]?.chatId).toBeNull();
+
+        await dbService.runWithTenant(userA, (tx) =>
+          tx.delete(publicationCards).where(eq(publicationCards.id, cardId)),
         );
       },
     );

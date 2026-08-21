@@ -46,6 +46,14 @@ export const videoScriptContentSchema = z.object({
   caption: z.string(),
   hashtags: z.array(z.string()).default([]),
   recordingNotes: z.string().optional(),
+  // Faltaba (code review 2026-08-20): assertHasMedia (cards.service.ts)
+  // exige `"assetIds" in content` para tiktok/youtube igual que para
+  // instagram — sin este campo la propiedad nunca existe en video_script,
+  // así que el check siempre falla por ausencia en vez de por lista vacía.
+  // Mismo resultado hoy (bloqueado, F10/F11 sin construir), pero
+  // estructuralmente honesto y a prueba de que F10/F11 agregue el upload
+  // de video sin que alguien tenga que acordarse de este campo.
+  assetIds: z.array(z.uuid()).default([]),
 });
 
 export const textFirstContentSchema = z.object({
@@ -68,7 +76,7 @@ const visualFirstToolInputSchema = visualFirstContentSchema
 type VisualFirstToolInput = z.infer<typeof visualFirstToolInputSchema>;
 
 const videoScriptToolInputSchema = videoScriptContentSchema
-  .omit({ archetype: true })
+  .omit({ archetype: true, assetIds: true })
   .extend({ network: z.enum(NETWORKS_BY_ARCHETYPE.video_script) });
 type VideoScriptToolInput = z.infer<typeof videoScriptToolInputSchema>;
 
@@ -139,7 +147,7 @@ export const CARD_ARCHETYPE_TOOLS = [
     networks: NETWORKS_BY_ARCHETYPE.video_script,
     inputSchema: videoScriptToolInputSchema,
     buildContent: (input) =>
-      videoScriptContentSchema.parse({ ...input, archetype: "video_script" }),
+      videoScriptContentSchema.parse({ ...input, archetype: "video_script", assetIds: [] }),
   }),
   defineCardArchetypeTool<TextFirstToolInput, "crear_borrador_texto">({
     archetype: "text_first",
@@ -178,16 +186,32 @@ export interface CardToolOutput {
 
 export interface PublicationCardDto {
   id: string;
-  chatId: string;
+  /** null si el chat que la originó se eliminó (F6 PR8) — la card sobrevive huérfana. */
+  chatId: string | null;
   archetype: PublicationArchetype;
   network: SocialNetwork;
   status: CardStatus;
   content: CardContent;
+  /**
+   * Parentesco por turno de generación — todas las cards creadas en el
+   * mismo turno de chat comparten un groupId (asignado en
+   * publication-card.tools.ts), nunca al seleccionar cards después: es
+   * "propiedad emergente", no tabla propia (docs/reference/modelo-de-datos.md
+   * §grupo). El frontend lo usa para ofrecer "programar juntas" con el
+   * toggle de horario compartido (ScheduleDrawer, modo batch).
+   * Null en cards huérfanas o de un solo turno sin hermanas.
+   * Dos cards del MISMO groupId apuntando a la MISMA red son válidas para
+   * el schema (scheduleGroupBodySchema está keyed por cardId, no por red)
+   * pero hoy se ven indistinguibles en el drawer batch — sin concepto de
+   * "versiones" todavía, limitación conocida, no resuelta.
+   */
   groupId: string | null;
   /** ISO 8601 UTC, o null si nunca se programó. */
   scheduledAt: string | null;
   publishedAt: string | null;
   socialAccountId: string | null;
+  /** Mensaje en español, listo para mostrar, cuando status es "failed". Null si no hay. */
+  errorMessage: string | null;
 }
 
 export const cardIdParamSchema = z.object({ id: z.uuid() });

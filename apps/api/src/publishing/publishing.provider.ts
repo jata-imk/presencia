@@ -12,6 +12,14 @@ export interface ProviderAccount {
   providerRef: string;
   network: SocialNetwork;
   displayName: string | null;
+  /**
+   * false si el proveedor la sigue listando pero ya no está usable (token
+   * revocado, etc — PostFast: connectionStatus !== "CONNECTED", ver
+   * postfa.st/docs/accounts/list). listAccounts() NO omite estas cuentas,
+   * solo las marca — el caller decide qué hacer (ChannelsService las trata
+   * como "no disponible", no como ausente).
+   */
+  connected: boolean;
 }
 
 export interface SchedulePostRequest {

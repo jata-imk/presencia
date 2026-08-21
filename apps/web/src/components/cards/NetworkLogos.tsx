@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { AtSign, SquarePlay } from "lucide-react";
 import type { SocialNetwork } from "@presencia/shared";
+import { NETWORK_LABELS } from "../../lib/network-labels.js";
 
 // Logos de marca portados de Claude Design "Presencia - Chat"
 // (Chat Part 3.html / arquetipos.jsx). Colores de marca literales (no son
@@ -78,12 +79,15 @@ export interface NetworkMeta {
   color: string;
 }
 
+// label viene de NETWORK_LABELS (lib/network-labels.ts), no duplicado acá
+// (code review 2026-08-20) — antes esta tabla y canales.tsx podían
+// divergir si alguien corregía el copy de una red en un solo lugar.
 export const NETWORK_META: Record<SocialNetwork, NetworkMeta> = {
-  linkedin: { Logo: LinkedInLogo, label: "LinkedIn", color: "#0A66C2" },
-  x: { Logo: XLogo, label: "X", color: "#000" },
-  instagram: { Logo: InstagramLogo, label: "Instagram", color: "#DD2A7B" },
-  facebook: { Logo: FacebookLogo, label: "Facebook", color: "#1877F2" },
-  tiktok: { Logo: TikTokLogo, label: "TikTok", color: "#000" },
-  youtube: { Logo: YouTubeLogo, label: "YouTube", color: "#FF0000" },
-  threads: { Logo: ThreadsLogo, label: "Threads", color: "#000" },
+  linkedin: { Logo: LinkedInLogo, label: NETWORK_LABELS.linkedin, color: "#0A66C2" },
+  x: { Logo: XLogo, label: NETWORK_LABELS.x, color: "#000" },
+  instagram: { Logo: InstagramLogo, label: NETWORK_LABELS.instagram, color: "#DD2A7B" },
+  facebook: { Logo: FacebookLogo, label: NETWORK_LABELS.facebook, color: "#1877F2" },
+  tiktok: { Logo: TikTokLogo, label: NETWORK_LABELS.tiktok, color: "#000" },
+  youtube: { Logo: YouTubeLogo, label: NETWORK_LABELS.youtube, color: "#FF0000" },
+  threads: { Logo: ThreadsLogo, label: NETWORK_LABELS.threads, color: "#000" },
 };

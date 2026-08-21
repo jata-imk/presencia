@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Inject,
   Param,
   Patch,
@@ -14,6 +16,7 @@ import {
   chatIdParamSchema,
   chatStreamBodySchema,
   createChatBodySchema,
+  moveChatBodySchema,
   renameChatBodySchema,
   type ChatSummary,
 } from "@presencia/shared";
@@ -38,6 +41,14 @@ export class ChatController {
     return this.chatService.listChats(user.id);
   }
 
+  // Ruta estática, sin colisión con ":id/messages" (distinto número de
+  // segmentos) — ver ArchivedView en Chat Part 3.html: pantalla aparte, no
+  // un filtro sobre la misma lista.
+  @Get("archived")
+  listArchived(@CurrentUser() user: SessionUser): Promise<ChatSummary[]> {
+    return this.chatService.listArchivedChats(user.id);
+  }
+
   @Get(":id/messages")
   messages(@CurrentUser() user: SessionUser, @Param("id") id: string): Promise<UIMessage[]> {
     return this.chatService.getMessages(user.id, this.parseChatId(id));
@@ -55,6 +66,34 @@ export class ChatController {
     return this.chatService.renameChat(user.id, chatId, parsed.data.title);
   }
 
+  @Patch(":id/folder")
+  moveToFolder(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<ChatSummary> {
+    const chatId = this.parseChatId(id);
+    const parsed = moveChatBodySchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException("El id de la carpeta no es válido.");
+    return this.chatService.moveToFolder(user.id, chatId, parsed.data.folderId);
+  }
+
+  @Post(":id/archive")
+  archive(@CurrentUser() user: SessionUser, @Param("id") id: string): Promise<ChatSummary> {
+    return this.chatService.archiveChat(user.id, this.parseChatId(id));
+  }
+
+  @Post(":id/unarchive")
+  unarchive(@CurrentUser() user: SessionUser, @Param("id") id: string): Promise<ChatSummary> {
+    return this.chatService.unarchiveChat(user.id, this.parseChatId(id));
+  }
+
+  @Delete(":id")
+  @HttpCode(204)
+  async delete(@CurrentUser() user: SessionUser, @Param("id") id: string): Promise<void> {
+    await this.chatService.deleteChat(user.id, this.parseChatId(id));
+  }
+
   // Streaming SSE (ADR-006): con @Res() Nest no toca la respuesta; el
   // AI SDK escribe el stream directo sobre el ServerResponse. `trigger`
   // distingue turno nuevo (submit-message) de reintento (regenerate-message,
@@ -70,15 +109,18 @@ export class ChatController {
     const trigger = chatStreamBodySchema.safeParse(body ?? {});
     if (!trigger.success) throw new BadRequestException("La solicitud no es válida.");
 
+    // El último mensaje del body SIEMPRE es el user al que hay que
+    // responder — para un turno normal o para un regenerate, useChat lo
+    // manda igual (regenerate() ya recortó del lado del cliente cualquier
+    // respuesta assistant vieja antes de reenviar). No hay un campo
+    // `messageId` separado que el protocolo real envíe.
+    const userMessage = await this.parseLastUserMessage(body);
+
     if (trigger.data.trigger === "regenerate-message") {
-      if (!trigger.data.messageId) {
-        throw new BadRequestException("Falta el id del mensaje a reintentar.");
-      }
-      await this.chatService.regenerateChat(user.id, chatId, trigger.data.messageId, res);
+      await this.chatService.regenerateChat(user.id, chatId, userMessage.id, res);
       return;
     }
 
-    const userMessage = await this.parseLastUserMessage(body);
     await this.chatService.streamChat(user.id, chatId, userMessage, res);
   }
 

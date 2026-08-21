@@ -11,6 +11,13 @@ export interface PublicationCardToolsDeps {
   // Closure compartido con streamChat: onEnd hace el backfill de messageId
   // sobre estos ids una vez que el mensaje assistant existe en DB.
   createdCardIds: string[];
+  /**
+   * Un id por turno (no por card) — todas las cards creadas en el mismo
+   * turno de chat lo comparten, así el frontend las reconoce como
+   * "hermanas" (PublicationCard.tsx, siblingCards) y ofrece programarlas
+   * juntas. Ver chat.service.ts donde se genera.
+   */
+  groupId: string;
 }
 
 // Una tool por entrada de CARD_ARCHETYPE_TOOLS (@presencia/shared) — nombre,
@@ -34,6 +41,7 @@ export function buildPublicationCardTools(deps: PublicationCardToolsDeps): ToolS
             chatId: deps.chatId,
             network: input.network,
             content,
+            groupId: deps.groupId,
           }),
         );
         deps.createdCardIds.push(card.id);

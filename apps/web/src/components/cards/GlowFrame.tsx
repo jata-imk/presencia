@@ -32,9 +32,10 @@ export function GlowFrame({
         animation: pulse
           ? "glow-rotate 5s linear infinite, glow-pulse 4s ease-in-out infinite"
           : "glow-rotate 5s linear infinite",
-        boxShadow: pulse
-          ? undefined
-          : "0 0 14px 1px rgba(205, 180, 219, 0.35), 0 2px 8px rgba(61, 38, 69, 0.06)",
+        // --glow-shadow (tokens.css) en vez de rgba() a mano (code review
+        // 2026-08-20) — mismo color-mix() que ya resuelve variantes
+        // translúcidas de otros tokens en el proyecto.
+        boxShadow: pulse ? undefined : "var(--glow-shadow)",
       }}
     >
       <div className="overflow-hidden bg-card" style={{ borderRadius: radius }}>

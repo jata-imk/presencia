@@ -96,7 +96,9 @@ function ChatView({
   const chats = useChatsStore((s) => s.chats);
   const refreshChats = useChatsStore((s) => s.refresh);
   const renameChat = useChatsStore((s) => s.rename);
-  const chatTitle = chats?.find((c) => c.id === chatId)?.title ?? "Conversación";
+  const currentChat = chats?.find((c) => c.id === chatId);
+  const chatTitle = currentChat?.title ?? "Conversación";
+  const chatFolderId = currentChat?.folderId ?? null;
 
   useEffect(() => {
     void refreshCards(chatId);
@@ -128,7 +130,9 @@ function ChatView({
   return (
     <div className="flex h-full flex-col">
       <ConvHeader
+        chatId={chatId}
         title={chatTitle}
+        folderId={chatFolderId}
         onRename={async (title) => {
           await renameChat(chatId, title);
         }}
