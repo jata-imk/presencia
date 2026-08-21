@@ -137,6 +137,34 @@ export class CardsRepository {
     return row;
   }
 
+  /**
+   * Variante de attachProviderRef con guardia `status = 'scheduled'`
+   * (code review 2026-08-20 — race real): entre que schedule() marca
+   * "scheduled" y la llamada de red al proveedor resuelve, cancelSchedule()
+   * puede correr sobre la misma card mientras `provider_ref` sigue null —
+   * su guard `if (card.providerRef)` no ve nada que cancelar del lado del
+   * proveedor y la deja en "draft". Si attachProviderRef corriera sin
+   * condición después, estamparía un providerRef real sobre esa fila
+   * "draft" — un post de verdad en PostFast sin ninguna card "scheduled"
+   * que lo referencie (reconcileDueCards tampoco lo encuentra, solo mira
+   * status='scheduled'). Con la guardia, si la fila ya no está
+   * "scheduled", el UPDATE no afecta ninguna fila y el caller (ver
+   * CardsService.schedule) sabe que debe cancelar el post huérfano en vez
+   * de asumir que se programó.
+   */
+  async attachProviderRefIfScheduled(
+    tx: Tx,
+    id: string,
+    providerRef: string,
+  ): Promise<CardRow | undefined> {
+    const [row] = await tx
+      .update(publicationCards)
+      .set({ providerRef, updatedAt: new Date() })
+      .where(and(eq(publicationCards.id, id), eq(publicationCards.status, "scheduled")))
+      .returning();
+    return row;
+  }
+
   /** El schedule() al proveedor falló tras marcar "scheduled" — vuelve a draft sin destino. */
   async resetToDraft(tx: Tx, id: string, errorDetail: unknown): Promise<CardRow> {
     const [row] = await tx

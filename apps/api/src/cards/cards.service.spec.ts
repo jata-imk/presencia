@@ -52,6 +52,20 @@ const VISUAL_CONTENT_WITH_MEDIA: CardContent = {
   assetIds: [randomUUID()],
 };
 
+const VIDEO_CONTENT_NO_MEDIA: CardContent = {
+  archetype: "video_script",
+  hook: "Llevo 3 años creando contenido y este es el error que más dinero me costó.",
+  script: "Guion completo del video.",
+  caption: "El error que cometí.",
+  hashtags: [],
+  assetIds: [],
+};
+
+const VIDEO_CONTENT_WITH_MEDIA: CardContent = {
+  ...VIDEO_CONTENT_NO_MEDIA,
+  assetIds: [randomUUID()],
+};
+
 function future(minutes: number): string {
   return new Date(Date.now() + minutes * 60_000).toISOString();
 }
@@ -291,6 +305,29 @@ describe("CardsService", () => {
     expect(scheduled.status).toBe("scheduled");
   });
 
+  // Regresión (code review 2026-08-20): videoScriptContentSchema no tenía
+  // assetIds — assertHasMedia's `"assetIds" in content` fallaba por
+  // ausencia de la propiedad, no por lista vacía, para CUALQUIER card de
+  // tiktok/youtube, sin importar el contenido.
+  it("tiktok sin media se rechaza; con media se programa", { timeout: 15_000 }, async () => {
+    const account = await connectAccount(userA, "tiktok");
+
+    const withoutMedia = await createCard(VIDEO_CONTENT_NO_MEDIA, "tiktok");
+    await expect(
+      service.schedule(userA, withoutMedia.id, {
+        socialAccountId: account.id,
+        scheduledAt: future(10),
+      }),
+    ).rejects.toThrow(/necesita una imagen/);
+
+    const withMedia = await createCard(VIDEO_CONTENT_WITH_MEDIA, "tiktok");
+    const scheduled = await service.schedule(userA, withMedia.id, {
+      socialAccountId: account.id,
+      scheduledAt: future(10),
+    });
+    expect(scheduled.status).toBe("scheduled");
+  });
+
   it(
     "reprogramar cancela el providerRef viejo en el proveedor y programa uno nuevo",
     { timeout: 15_000 },
@@ -523,6 +560,63 @@ describe("CardsService", () => {
 
       const row = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
       expect(row?.status).toBe("failed");
+    },
+  );
+
+  it(
+    "cancelar justo mientras el proveedor sigue en vuelo no deja un providerRef huérfano estampado en una card draft",
+    { timeout: 15_000 },
+    async () => {
+      // Regresión (code review 2026-08-20): schedule() marca "scheduled" y
+      // llama al proveedor FUERA de esa transacción — si cancelSchedule()
+      // corre en ese margen (providerRef todavía null), su guard
+      // `if (card.providerRef)` no ve nada que cancelar y la card queda
+      // "draft". Sin attachProviderRefIfScheduled, el schedule() original
+      // habría estampado el providerRef real igual, encima de una card
+      // draft — un post de verdad en PostFast sin ninguna card "scheduled"
+      // que lo referencie. Este provider simula el race llamando
+      // cancelSchedule() DESDE DENTRO de su propio schedule(), justo
+      // cuando el providerRef real todavía no existe en la DB.
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+
+      // Holder mutable en vez de `let raceService` reasignada: la clase
+      // necesita referenciar el service antes de que exista (se lo pasan
+      // a SU PROPIO constructor), pero solo lo llama de verdad dentro de
+      // schedule(), ya para entonces asignado.
+      const serviceRef: { current?: CardsServiceType } = {};
+      class RacyCancelProvider extends FakePublishingProvider {
+        capturedRef: string | undefined;
+        override async schedule(req: SchedulePostRequest): Promise<{ providerRef: string }> {
+          await serviceRef.current?.cancelSchedule(userA, card.id);
+          const result = await super.schedule(req);
+          this.capturedRef = result.providerRef;
+          return result;
+        }
+      }
+      const racyProvider = new RacyCancelProvider();
+      const raceService = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, racyProvider);
+      serviceRef.current = raceService;
+
+      const result = await raceService.schedule(userA, card.id, {
+        socialAccountId: account.id,
+        scheduledAt: future(10),
+      });
+
+      // El caller de ESTE schedule() (perdedor de la carrera) recibe el
+      // estado real de la card, no una mentira de "sí se programó".
+      expect(result.status).toBe("draft");
+
+      const row = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
+      expect(row?.status).toBe("draft");
+      expect(row?.providerRef).toBeNull();
+
+      // El post huérfano se canceló de verdad del lado del proveedor
+      // (API pública, sin espiar estado privado del fake), no solo se
+      // ignoró en nuestro lado.
+      if (!racyProvider.capturedRef) throw new Error("Debió capturar un providerRef");
+      const states = await racyProvider.getPostStates([racyProvider.capturedRef]);
+      expect(states.has(racyProvider.capturedRef)).toBe(false);
     },
   );
 

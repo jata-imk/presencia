@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   autoUpdate,
   flip,
@@ -42,6 +42,19 @@ export function useMenu({ placement = "bottom-end" }: { placement?: Placement } 
   // detecta pointerdown fuera de verdad (no depende de que lo clickeado
   // sea focuseable, a diferencia de blur) — la clase de bug que el click
   // intermitente del onBlurCapture original tenía.
+  // Menu.tsx's MenuItem.setRef solo agrega al array en el mount (no quita
+  // nada en el unmount — code review 2026-08-20). Como MenuContent
+  // desmonta TODOS los items de golpe al cerrar (`if (!open) return null`),
+  // sin este reset listRef.current se queda con nodos ya desmontados; al
+  // reabrir, los items nuevos calculan su índice como
+  // `listRef.current.length` sobre ese array sucio en vez de arrancar en
+  // 0 — la navegación con flechas (useListNavigation lee este mismo
+  // listRef) se corrompe después del primer cierre/apertura, en cualquier
+  // instancia de Menu de la app.
+  useEffect(() => {
+    if (!open) listRef.current = [];
+  }, [open]);
+
   const { getReferenceProps, getFloatingProps, getItemProps } = useInteractions([
     useClick(context),
     useDismiss(context),

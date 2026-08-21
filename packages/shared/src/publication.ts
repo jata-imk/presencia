@@ -46,6 +46,14 @@ export const videoScriptContentSchema = z.object({
   caption: z.string(),
   hashtags: z.array(z.string()).default([]),
   recordingNotes: z.string().optional(),
+  // Faltaba (code review 2026-08-20): assertHasMedia (cards.service.ts)
+  // exige `"assetIds" in content` para tiktok/youtube igual que para
+  // instagram — sin este campo la propiedad nunca existe en video_script,
+  // así que el check siempre falla por ausencia en vez de por lista vacía.
+  // Mismo resultado hoy (bloqueado, F10/F11 sin construir), pero
+  // estructuralmente honesto y a prueba de que F10/F11 agregue el upload
+  // de video sin que alguien tenga que acordarse de este campo.
+  assetIds: z.array(z.uuid()).default([]),
 });
 
 export const textFirstContentSchema = z.object({
@@ -68,7 +76,7 @@ const visualFirstToolInputSchema = visualFirstContentSchema
 type VisualFirstToolInput = z.infer<typeof visualFirstToolInputSchema>;
 
 const videoScriptToolInputSchema = videoScriptContentSchema
-  .omit({ archetype: true })
+  .omit({ archetype: true, assetIds: true })
   .extend({ network: z.enum(NETWORKS_BY_ARCHETYPE.video_script) });
 type VideoScriptToolInput = z.infer<typeof videoScriptToolInputSchema>;
 
@@ -139,7 +147,7 @@ export const CARD_ARCHETYPE_TOOLS = [
     networks: NETWORKS_BY_ARCHETYPE.video_script,
     inputSchema: videoScriptToolInputSchema,
     buildContent: (input) =>
-      videoScriptContentSchema.parse({ ...input, archetype: "video_script" }),
+      videoScriptContentSchema.parse({ ...input, archetype: "video_script", assetIds: [] }),
   }),
   defineCardArchetypeTool<TextFirstToolInput, "crear_borrador_texto">({
     archetype: "text_first",

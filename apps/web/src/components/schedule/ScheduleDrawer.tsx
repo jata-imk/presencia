@@ -48,9 +48,18 @@ function defaultDate(): Date {
 export function ScheduleDrawer() {
   const cards = useScheduleDrawerStore((s) => s.cards);
   const close = useScheduleDrawerStore((s) => s.close);
+  // key por ids, no un string fijo (code review 2026-08-20): el panel
+  // desktop es a propósito no-modal (el chat de al lado sigue
+  // interactivo), así que dar "Programar" en OTRA card mientras el drawer
+  // sigue abierto llama open() de nuevo sin pasar por null primero — con
+  // un key fijo, React reutiliza la instancia y `rows` (useState inicial
+  // en ScheduleDrawerInner) se queda con las cards/horarios viejos. Un key
+  // que cambia con el set de ids fuerza un remount real, `rows` nace
+  // fresco del nuevo `cards`.
+  const drawerKey = cards ? cards.map((c) => c.id).join(",") : "closed";
   return (
     <AnimatePresence>
-      {cards && <ScheduleDrawerInner key="schedule-drawer" cards={cards} onClose={close} />}
+      {cards && <ScheduleDrawerInner key={drawerKey} cards={cards} onClose={close} />}
     </AnimatePresence>
   );
 }

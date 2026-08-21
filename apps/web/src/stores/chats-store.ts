@@ -79,9 +79,15 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
     set((state) => ({ chats: state.chats?.filter((c) => c.id !== id) ?? null }));
   },
   unarchive: async (id) => {
-    await apiFetch<ChatSummary>(`/api/chats/${id}/unarchive`, { method: "POST" });
+    // El mirror de archive() no basta: archive() solo saca de `chats`
+    // porque archivedChats se carga aparte, pero unarchive() necesita
+    // meterlo de vuelta en `chats` (code review 2026-08-20) — sin esto, un
+    // chat recién desarchivado desaparecía de Recientes hasta un refresh
+    // que nada dispara (Sidebar solo llama refresh() una vez, al montar).
+    const updated = await apiFetch<ChatSummary>(`/api/chats/${id}/unarchive`, { method: "POST" });
     set((state) => ({
       archivedChats: state.archivedChats?.filter((c) => c.id !== id) ?? null,
+      chats: [updated, ...(state.chats ?? [])],
     }));
   },
   remove: async (id) => {

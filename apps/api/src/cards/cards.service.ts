@@ -167,17 +167,14 @@ export class CardsService {
       }
     }
 
+    let providerRef: string;
     try {
-      const { providerRef } = await this.provider.schedule({
+      ({ providerRef } = await this.provider.schedule({
         network: card.network,
         content: card.content as CardContent,
         scheduledAt,
         accountProviderRef,
-      });
-      return this.dbService.runWithTenant(userId, async (tx) => {
-        const withRef = await this.repo.attachProviderRef(tx, cardId, providerRef);
-        return toDto(withRef);
-      });
+      }));
     } catch (error) {
       const failure = classifyScheduleFailure(error);
       const detail = errorDetailFrom(error, failure);
@@ -196,6 +193,36 @@ export class CardsService {
       );
       throw toHttpException(error, failure);
     }
+
+    // Fuera del try/catch de arriba a propósito: el proveedor YA tuvo
+    // éxito acá, lo que sigue es bookkeeping nuestro (race real, code
+    // review 2026-08-20), no un fallo del proveedor — no debe caer en la
+    // clasificación rejected/ambiguous de arriba, que es para errores DE
+    // esa llamada, no para lo que pasa después.
+    const attached = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.attachProviderRefIfScheduled(tx, cardId, providerRef),
+    );
+    if (attached) return toDto(attached);
+
+    // La card dejó de estar "scheduled" mientras la llamada al proveedor
+    // seguía en vuelo (típicamente: el usuario le dio Cancelar justo en
+    // ese margen — ver attachProviderRefIfScheduled). El post YA se creó
+    // del otro lado; hay que deshacerlo en vez de dejarlo huérfano y sin
+    // ninguna card que lo referencie.
+    try {
+      await this.provider.cancel(providerRef);
+    } catch (cancelError) {
+      console.error(
+        `[cards] ${cardId} dejó de estar "scheduled" mientras se programaba — no se pudo cancelar ` +
+          `el post huérfano ${providerRef} en el proveedor, revisión manual:`,
+        cancelError,
+      );
+    }
+    const current = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.findById(tx, cardId),
+    );
+    if (!current) throw new NotFoundException("Esa publicación ya no existe.");
+    return toDto(current);
   }
 
   /**
