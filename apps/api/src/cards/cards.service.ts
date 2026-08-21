@@ -232,36 +232,44 @@ export class CardsService {
    * tenía, el caller solo necesita su snapshot actual para refrescar la UI.
    */
   async scheduleGroup(userId: string, body: ScheduleGroupBody): Promise<ScheduleGroupResultItem[]> {
-    const results: ScheduleGroupResultItem[] = [];
-    for (const item of body.items) {
-      if (item.keepDraft) {
-        const current = await this.dbService.runWithTenant(userId, (tx) =>
-          this.repo.findById(tx, item.cardId),
-        );
-        results.push({
-          cardId: item.cardId,
-          ok: current !== undefined,
-          card: current ? toDto(current) : null,
-          error: current ? null : "Esa publicación no existe.",
-        });
-        continue;
-      }
-      try {
-        const card = await this.schedule(userId, item.cardId, {
-          socialAccountId: item.socialAccountId,
-          scheduledAt: item.scheduledAt,
-        });
-        results.push({ cardId: item.cardId, ok: true, card, error: null });
-      } catch (error) {
-        results.push({
-          cardId: item.cardId,
-          ok: false,
-          card: null,
-          error: error instanceof Error ? error.message : "No se pudo programar.",
-        });
-      }
+    // En paralelo, no secuencial (code review 2026-08-20): cada item ya es
+    // independiente por diseño (docstring de arriba) — nada de mutable
+    // compartido entre ellos, así que encadenarlos con `for...await` solo
+    // sumaba la latencia de cada uno (transacción + red al proveedor) en
+    // vez de pagar el máximo. scheduleItem nunca rechaza — cada item
+    // resuelve su propio resultado, Promise.all conserva el orden.
+    return Promise.all(body.items.map((item) => this.scheduleGroupItem(userId, item)));
+  }
+
+  private async scheduleGroupItem(
+    userId: string,
+    item: ScheduleGroupBody["items"][number],
+  ): Promise<ScheduleGroupResultItem> {
+    if (item.keepDraft) {
+      const current = await this.dbService.runWithTenant(userId, (tx) =>
+        this.repo.findById(tx, item.cardId),
+      );
+      return {
+        cardId: item.cardId,
+        ok: current !== undefined,
+        card: current ? toDto(current) : null,
+        error: current ? null : "Esa publicación no existe.",
+      };
     }
-    return results;
+    try {
+      const card = await this.schedule(userId, item.cardId, {
+        socialAccountId: item.socialAccountId,
+        scheduledAt: item.scheduledAt,
+      });
+      return { cardId: item.cardId, ok: true, card, error: null };
+    } catch (error) {
+      return {
+        cardId: item.cardId,
+        ok: false,
+        card: null,
+        error: error instanceof Error ? error.message : "No se pudo programar.",
+      };
+    }
   }
 
   async cancelSchedule(userId: string, cardId: string): Promise<PublicationCardDto> {
@@ -313,11 +321,17 @@ export class CardsService {
     const orphaned = await this.dbService.runWithTenant(userId, (tx) =>
       this.repo.listOrphanedScheduled(tx, cutoff),
     );
-    for (const card of orphaned) {
+    // Un solo UPDATE (markManyFailed) + una sola transacción para todas
+    // las huérfanas del pase, en vez de una transacción por card (code
+    // review 2026-08-20) — todas comparten el mismo motivo, no hay razón
+    // real para separarlas.
+    if (orphaned.length > 0) {
       await this.dbService.runWithTenant(userId, (tx) =>
-        this.repo.markFailed(tx, card.id, {
-          reason: "No se pudo confirmar la programación con el proveedor de publicación.",
-        }),
+        this.repo.markManyFailed(
+          tx,
+          orphaned.map((c) => c.id),
+          { reason: "No se pudo confirmar la programación con el proveedor de publicación." },
+        ),
       );
     }
 
@@ -332,20 +346,38 @@ export class CardsService {
     for (let i = 0; i < withRef.length; i += PROVIDER_BATCH_SIZE) {
       const batch = withRef.slice(i, i + PROVIDER_BATCH_SIZE);
       const states = await this.provider.getPostStates(batch.map((c) => c.providerRef));
+
+      // Bucket por resultado en vez de una transacción por card dentro
+      // del batch (code review 2026-08-20): "failed"/sin confirmar
+      // comparten motivo → un solo markManyFailed; "published" trae un
+      // publishedAt distinto por card (no se puede fusionar en un solo
+      // UPDATE simple), pero al menos las N cards de este batch quedan
+      // en UNA transacción, no N.
+      const failedIds: string[] = [];
+      const toPublish: { id: string; publishedAt: Date }[] = [];
       for (const card of batch) {
         const state = states.get(card.providerRef);
         if (!state || state.status === "failed") {
-          await this.dbService.runWithTenant(userId, (tx) =>
-            this.repo.markFailed(tx, card.id, {
-              reason: "El proveedor de publicación no confirmó esta publicación.",
-            }),
-          );
+          failedIds.push(card.id);
         } else if (state.status === "published") {
-          await this.dbService.runWithTenant(userId, (tx) =>
-            this.repo.markPublished(tx, card.id, state.publishedAt ?? new Date()),
-          );
+          toPublish.push({ id: card.id, publishedAt: state.publishedAt ?? new Date() });
         }
         // "scheduled": sigue en cola del lado del proveedor, no-op.
+      }
+
+      if (failedIds.length > 0) {
+        await this.dbService.runWithTenant(userId, (tx) =>
+          this.repo.markManyFailed(tx, failedIds, {
+            reason: "El proveedor de publicación no confirmó esta publicación.",
+          }),
+        );
+      }
+      if (toPublish.length > 0) {
+        await this.dbService.runWithTenant(userId, async (tx) => {
+          for (const { id, publishedAt } of toPublish) {
+            await this.repo.markPublished(tx, id, publishedAt);
+          }
+        });
       }
     }
   }

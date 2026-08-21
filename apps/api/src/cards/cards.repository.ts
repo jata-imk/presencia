@@ -223,6 +223,21 @@ export class CardsRepository {
   }
 
   /**
+   * Igual que markFailed pero para varias cards con el MISMO errorDetail
+   * de una sola vez (code review 2026-08-20) — reconcileDueCards llamaba
+   * markFailed en un for-loop, una transacción por card huérfana/fallida;
+   * cuando todas comparten el mismo motivo (típico: "no confirmó nada"),
+   * es un solo UPDATE ... WHERE id = ANY(...) real, no N transacciones.
+   */
+  async markManyFailed(tx: Tx, ids: string[], errorDetail: unknown): Promise<void> {
+    if (ids.length === 0) return;
+    await tx
+      .update(publicationCards)
+      .set({ status: "failed", errorDetail, updatedAt: new Date() })
+      .where(inArray(publicationCards.id, ids));
+  }
+
+  /**
    * Cards que llevan más de `cutoff` en "scheduled" sin `provider_ref` —
    * la llamada al proveedor nunca llegó a confirmarse (el proceso murió
    * entre markScheduling y attachProviderRef). No importa cuándo estaban

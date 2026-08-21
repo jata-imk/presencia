@@ -147,17 +147,20 @@
    y Chat Cards Arquetipos.html (ambos leídos en la reconciliación F6 PR4/PR5;
    el comentario original en GlowFrame.tsx decía que no existía en ningún
    archivo — estaba mal, solo no se había leído ese archivo todavía). */
+/* color-mix() en vez de rgba() paralelo (code review 2026-08-20) — mismo
+   motivo que --glow-shadow en tokens.css: sigue el token de marca si
+   cambia, en vez de un duplicado literal. */
 @keyframes glow-pulse {
   0%,
   100% {
     box-shadow:
-      0 0 24px 2px rgba(205, 180, 219, 0.5),
-      0 0 48px 6px rgba(255, 175, 204, 0.28);
+      0 0 24px 2px color-mix(in srgb, var(--color-pink-orchid) 50%, transparent),
+      0 0 48px 6px color-mix(in srgb, var(--color-blush-pop) 28%, transparent);
   }
   50% {
     box-shadow:
-      0 0 28px 4px rgba(205, 180, 219, 0.5),
-      0 0 56px 8px rgba(189, 224, 254, 0.32);
+      0 0 28px 4px color-mix(in srgb, var(--color-pink-orchid) 50%, transparent),
+      0 0 56px 8px color-mix(in srgb, var(--color-icy-blue) 32%, transparent);
   }
 }
 
