@@ -10,13 +10,14 @@
   /* Scrollbar delgada (Chat Conversation.html §CSS reset) — nunca se portó
      y quedaba la barra ancha por defecto del navegador en todas las
      columnas con scroll propio (sidebar, drawer, lista de mensajes).
-     Gris neutro a propósito (no un color de marca) — es cromo del
-     navegador, no un elemento de la UI. Firefox primero (scrollbar-width/
-     -color son la única forma ahí); ::-webkit-scrollbar-* cubre
-     Chrome/Edge/Safari. */
+     Neutro a propósito (no un color de marca) — es cromo del navegador,
+     no un elemento de la UI. Vía --scrollbar-thumb y no la paleta cruda:
+     el gris claro de light se leía como una barra brillante pegada al
+     borde en dark. Firefox primero (scrollbar-width/-color son la única
+     forma ahí); ::-webkit-scrollbar-* cubre Chrome/Edge/Safari. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-neutral-300) transparent;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
   ::-webkit-scrollbar {
     width: 6px;
@@ -26,7 +27,7 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--color-neutral-300);
+    background: var(--scrollbar-thumb);
     border-radius: 9999px;
   }
 

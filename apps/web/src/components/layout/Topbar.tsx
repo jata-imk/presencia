@@ -1,6 +1,7 @@
 // `Menu` de lucide colisiona con nuestro <Menu> compuesto (ui/Menu.tsx).
-import { ChevronRight, LogOut, Menu as MenuIcon, Settings } from "lucide-react";
+import { ChevronRight, LogOut, Menu as MenuIcon, Palette, Settings } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
+import { ThemeToggle } from "./ThemeToggle.js";
 import { Menu } from "../ui/Menu.js";
 import { authClient } from "../../lib/auth-client.js";
 import { useSidebarStore } from "../../stores/sidebar-store.js";
@@ -69,6 +70,7 @@ export function Topbar() {
         )}
       </div>
       <div className="flex-1" />
+      <ThemeToggle />
       <Menu>
         <Menu.Trigger
           aria-label="Menú de cuenta"
@@ -77,6 +79,15 @@ export function Topbar() {
           {initials}
         </Menu.Trigger>
         <Menu.Content className="w-52 rounded-xl border border-line bg-card p-1.5 shadow-lg outline-none">
+          {/* El overview (§5) pedía un toggle de tema también acá. Se
+              resuelve con un link a Apariencia en vez de un TERCER control
+              del mismo bit (topbar + menú + Configuración): tres formas de
+              voltear el mismo switch es ruido, y Apariencia es la única
+              que ofrece las tres opciones, incluida "Sistema". */}
+          <Menu.Item href="/configuracion/apariencia" className={ITEM_CLASS}>
+            <Palette size={14} strokeWidth={1.75} />
+            Apariencia
+          </Menu.Item>
           <Menu.Item href="/configuracion" className={ITEM_CLASS}>
             <Settings size={14} strokeWidth={1.75} />
             Configuración
