@@ -1,5 +1,5 @@
 import { FloatingFocusManager, FloatingOverlay, FloatingPortal } from "@floating-ui/react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useDialog } from "../../lib/floating/use-dialog.js";
 
 // Shell genérico de diálogo modal (Mover a carpeta, Eliminar, Nueva
@@ -13,11 +13,23 @@ export function Modal({
   onClose,
   labelledBy,
   maxWidth = "max-w-sm",
+  align = "center",
+  initialFocus,
   children,
 }: {
   onClose: () => void;
   labelledBy: string;
   maxWidth?: string;
+  /** "top" para la paleta ⌘K: una lista larga centrada salta al crecer. */
+  align?: "center" | "top";
+  /**
+   * Qué enfocar al abrir. Por defecto FloatingFocusManager elige el primer
+   * tabbable, que sirve para los diálogos de confirmación. La paleta ⌘K lo
+   * necesita explícito: sus opciones están fuera del tab order (combobox
+   * con aria-activedescendant), así que sin esto el foco cae en el
+   * contenedor y el input no recibe lo que el usuario teclea.
+   */
+  initialFocus?: RefObject<HTMLElement | null>;
   children: ReactNode;
 }) {
   const { refs, context } = useDialog({ onClose });
@@ -26,9 +38,11 @@ export function Modal({
     <FloatingPortal>
       <FloatingOverlay
         lockScroll
-        className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
+        className={`fixed inset-0 z-50 flex justify-center bg-overlay p-4 ${
+          align === "top" ? "items-start pt-[12vh]" : "items-center"
+        }`}
       >
-        <FloatingFocusManager context={context}>
+        <FloatingFocusManager context={context} initialFocus={initialFocus}>
           <div
             ref={refs.setFloating}
             role="dialog"

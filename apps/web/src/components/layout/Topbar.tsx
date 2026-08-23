@@ -1,9 +1,10 @@
 // `Menu` de lucide colisiona con nuestro <Menu> compuesto (ui/Menu.tsx).
-import { ChevronRight, LogOut, Menu as MenuIcon, Palette, Settings } from "lucide-react";
+import { ChevronRight, LogOut, Menu as MenuIcon, Palette, Search, Settings } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 import { ThemeToggle } from "./ThemeToggle.js";
 import { Menu } from "../ui/Menu.js";
 import { authClient } from "../../lib/auth-client.js";
+import { useCommandPaletteStore } from "../../stores/command-palette-store.js";
 import { useSidebarStore } from "../../stores/sidebar-store.js";
 
 // Topbar del App Shell (Chat Conversation.html / Chat Module.html, F6 PR5).
@@ -13,10 +14,11 @@ import { useSidebarStore } from "../../stores/sidebar-store.js";
 // riesgo de cortarse contra el borde del viewport (ver el plan de
 // arquitectura de portales).
 //
-// El buscador ⌘K del mockup no se pinta acá: no hay búsqueda implementada
-// todavía y un input muerto es peor que omitirlo. El título de la
-// conversación puntual (folder, red, editable) es responsabilidad de
-// ConvHeader — este breadcrumb solo ubica la sección.
+// El buscador ⌘K abre CommandPalette (montado en ProtectedLayout): acá es
+// solo el trigger, una píldora a ≥md y un ícono en mobile, como pide el
+// overview §5. El título de la conversación puntual (folder, red,
+// editable) es responsabilidad de ConvHeader — este breadcrumb solo ubica
+// la sección.
 const SECTION_LABEL: Record<string, string> = {
   chats: "Chats",
   configuracion: "Configuración",
@@ -30,6 +32,8 @@ export function Topbar() {
   const navigate = useNavigate();
   const { data: session } = authClient.useSession();
   const openMobile = useSidebarStore((s) => s.openMobile);
+  const openPalette = useCommandPaletteStore((s) => s.openPalette);
+  const shortcut = /Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘K" : "Ctrl K";
 
   const segment = location.pathname.split("/")[1] ?? "";
   const label = SECTION_LABEL[segment] ?? "Presencia";
@@ -70,6 +74,26 @@ export function Topbar() {
         )}
       </div>
       <div className="flex-1" />
+      <button
+        type="button"
+        onClick={openPalette}
+        aria-label="Buscar en Presencia"
+        className="hidden min-w-52 items-center gap-2 rounded-lg border border-line bg-secondary px-3 py-1.5 text-fg-muted transition-colors hover:bg-secondary-hover md:flex"
+      >
+        <Search size={14} strokeWidth={1.75} className="shrink-0" />
+        <span className="flex-1 text-left text-xs">Buscar…</span>
+        <span className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[10px] font-semibold">
+          {shortcut}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={openPalette}
+        aria-label="Buscar en Presencia"
+        className="flex size-7 shrink-0 items-center justify-center rounded-md text-fg-secondary transition-colors hover:bg-secondary-hover md:hidden"
+      >
+        <Search size={15} strokeWidth={1.75} />
+      </button>
       <ThemeToggle />
       <Menu>
         <Menu.Trigger
