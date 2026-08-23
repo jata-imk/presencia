@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { Menu } from "../ui/Menu.js";
+import { MENU_CONTENT_CLASS, MENU_ITEM_CLASS, Menu } from "../ui/Menu.js";
 import { ModalDeleteChat } from "./ModalDeleteChat.js";
 import { ModalMoveToFolder } from "./ModalMoveToFolder.js";
 import { ApiError } from "../../lib/api.js";
@@ -18,9 +18,8 @@ import { useChatsStore } from "../../stores/chats-store.js";
 
 const TRIGGER_CLASS =
   "flex size-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-secondary-hover";
-const ITEM_CLASS =
-  "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-fg transition-colors hover:bg-secondary-hover data-[active]:bg-secondary-hover disabled:cursor-not-allowed disabled:opacity-50";
-const CONTENT_CLASS = "w-52 rounded-xl border border-line bg-card p-1.5 shadow-lg outline-none";
+const ITEM_CLASS = MENU_ITEM_CLASS;
+const CONTENT_CLASS = MENU_CONTENT_CLASS;
 
 // Menú "···" de un chat (Renombrar/Mover a carpeta/Exportar/Archivar/
 // Eliminar) — reusado en ConvHeader (header de la conversación) y en cada

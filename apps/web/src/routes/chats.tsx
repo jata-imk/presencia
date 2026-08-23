@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
+import { parseDate } from "@internationalized/date";
 import { Composer } from "../components/chat/Composer.js";
 import { ContextChip } from "../components/chat/ContextChip.js";
 import { SuggestionCard } from "../components/chat/SuggestionCard.js";
+import { formatDayLong } from "../lib/calendar/tz.js";
 import { authClient } from "../lib/auth-client.js";
 import { useChatsStore } from "../stores/chats-store.js";
 
@@ -45,6 +47,7 @@ const SUGGESTIONS = [
 
 export function ChatsPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const { data: session } = authClient.useSession();
   const createChat = useChatsStore((s) => s.create);
   const [input, setInput] = useState("");
@@ -52,6 +55,12 @@ export function ChatsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const name = session?.user.displayName ?? session?.user.name ?? "";
+  // "+ Crear para este día" del Calendario llega como ?fecha=YYYY-MM-DD.
+  // Solo cambia el placeholder: el Calendario decide el DÍA, y la hora la
+  // sigue eligiendo el drawer de programación cuando el usuario programe.
+  // Que la fecha viaje además al contexto del modelo es trabajo del Chat,
+  // no de esta pantalla — todavía no existe y no se finge acá.
+  const requestedDay = parseDayParam(params.get("fecha"));
 
   async function startChat(prompt: string) {
     const trimmed = prompt.trim();
@@ -84,7 +93,11 @@ export function ChatsPage() {
             onSubmit={() => void startChat(input)}
             busy={starting}
             onStop={() => {}}
-            placeholder="Cuéntame qué quieres crear hoy..."
+            placeholder={
+              requestedDay
+                ? `Crear contenido para el ${formatDayLong(requestedDay).toLowerCase()}...`
+                : "Cuéntame qué quieres crear hoy..."
+            }
             large
           />
           {error && <p className="mt-2 text-center text-sm text-error">{error}</p>}
@@ -106,4 +119,13 @@ export function ChatsPage() {
       </div>
     </div>
   );
+}
+
+function parseDayParam(value: string | null) {
+  if (!value) return null;
+  try {
+    return parseDate(value);
+  } catch {
+    return null;
+  }
 }

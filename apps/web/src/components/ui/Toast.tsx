@@ -16,7 +16,13 @@ export function ToastViewport() {
   const dismiss = useToastStore((s) => s.dismiss);
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-col gap-2">
+    <div
+      // Marcador estable para que un panel inspector (el del Calendario)
+      // pueda excluir sus clicks de su propio "cerrar al clickear afuera":
+      // apretar "Deshacer" no debe hacer desaparecer el panel.
+      data-toast-viewport
+      className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-col gap-2"
+    >
       <AnimatePresence>
         {toasts.map((t) => (
           <motion.div

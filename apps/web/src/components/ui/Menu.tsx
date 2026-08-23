@@ -63,6 +63,18 @@ const MenuTrigger = memo(function MenuTrigger({
   );
 });
 
+/**
+ * El look estándar de un menú y de sus items. Vivían copiados literalmente
+ * en ChatOptionsMenu y Topbar, y el tercer caller (el menú ⋮ del panel del
+ * día, F7) iba a ser la tercera copia. `Menu` sigue sin imponer estilo
+ * —quien quiera otro pasa su propio className—, esto es solo el default
+ * compartido para no tener tres definiciones del mismo menú.
+ */
+export const MENU_CONTENT_CLASS =
+  "w-52 rounded-xl border border-line bg-card p-1.5 shadow-lg outline-none";
+export const MENU_ITEM_CLASS =
+  "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-fg transition-colors hover:bg-secondary-hover data-[active]:bg-secondary-hover disabled:cursor-not-allowed disabled:opacity-50";
+
 function MenuContent({ children, className }: { children: ReactNode; className?: string }) {
   const { open, refs, floatingStyles, context, getFloatingProps } = useMenuContext();
   if (!open) return null;
@@ -78,7 +90,14 @@ function MenuContent({ children, className }: { children: ReactNode; className?:
           ref={refs.setFloating}
           style={floatingStyles}
           role="menu"
-          className={className}
+          // z-50 acá y no en cada caller: es correctitud, no estilo. El menú
+          // vive en un portal a nivel de <body> con z-index auto, así que
+          // CUALQUIER elemento posicionado con z-index positivo lo tapa —
+          // pasó de verdad con el panel del día del Calendario (z-20): el
+          // menú abría, se leía en el DOM, y quedaba pintado detrás. Mismo
+          // nivel que Modal y Toast; entre dos z-50 gana el que monta
+          // después, que es siempre el flotante recién abierto.
+          className={`z-50 ${className ?? MENU_CONTENT_CLASS}`}
           {...getFloatingProps()}
         >
           {children}

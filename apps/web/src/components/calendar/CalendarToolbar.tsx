@@ -1,13 +1,19 @@
 import { ChevronLeft, ChevronRight, Plus, SlidersHorizontal } from "lucide-react";
+import { Link } from "react-router";
 import type { CalendarView } from "../../lib/calendar/view.js";
 
 // Toolbar del módulo (presencia-calendario.md §3), de izquierda a derecha:
 // selector de vista, navegador temporal, "Hoy", Filtros y "+ Crear".
 //
-// Filtros y "+ Crear" se pintan deshabilitados en PR1 con el mismo criterio
-// que los módulos "Pronto" del sidebar: el layout ya los reserva, y fingir
-// que la toolbar es más chica de lo que va a ser sería mentira que hay que
-// deshacer después. Filtros llega en PR5, "+ Crear" en PR2.
+// "+ Crear" abre un chat nuevo SIN fecha precargada — es el atajo
+// equivalente a "Nuevo chat" del sidebar. La fecha solo se precarga desde
+// "+ Crear para este día" del panel del día: el Calendario decide el día y
+// el Chat decide la hora, cada módulo con su responsabilidad
+// (presencia-calendario.md §3).
+//
+// Filtros sigue deshabilitado con el mismo criterio que los módulos "Pronto"
+// del sidebar: el layout ya lo reserva, y fingir que la toolbar es más chica
+// de lo que va a ser sería mentira que hay que deshacer después.
 
 const VIEWS: { value: CalendarView; label: string; hint: string }[] = [
   { value: "mes", label: "Mes", hint: "Vista mes (M)" },
@@ -116,15 +122,13 @@ export function CalendarToolbar({
         <SlidersHorizontal size={14} strokeWidth={1.75} />
         Filtros
       </button>
-      <button
-        type="button"
-        disabled
-        title="Crear — próximamente"
-        className="inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-lg bg-primary px-4 py-2 font-display text-[13px] font-semibold text-primary-fg opacity-60"
+      <Link
+        to="/chats"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2 font-display text-[13px] font-semibold text-primary-fg shadow-sm transition-colors hover:bg-primary-hover"
       >
         <Plus size={15} strokeWidth={2.5} />
         Crear
-      </button>
+      </Link>
     </div>
   );
 }
