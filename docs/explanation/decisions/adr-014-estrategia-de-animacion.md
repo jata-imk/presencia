@@ -46,3 +46,26 @@ El **drawer mobile del sidebar** (hamburguesa + backdrop) se suma a la lista de 
 **Bundle:** motion agrega peso real al chunk principal (~790KB sin comprimir a la fecha de este ADR, con `motion/react` incluido). Si eso se vuelve un problema, la salida es `LazyMotion` + el componente `m` (import dinámico de las features de animación) — no se aplica ahora porque no hay evidencia de que el peso importe todavía (YAGNI, AGENTS.md #6).
 
 **Ver también:** [`docs/reference/design-tokens.md`](../../reference/design-tokens.md) §Movimiento — los tokens de duración/easing y la regla de una sola zona de scroll, documentados para consulta rápida sin tener que leer este ADR completo.
+
+## Addendum (2026-08-24, F7 PR1) — "una zona de scroll" es por región, no por pantalla
+
+La regla derivada de arriba se escribió mirando el bug que la produjo: el drawer de programación como overlay `fixed inset-0`, **encimado** sobre el chat, con dos ejes verticales compitiendo en la misma región visual. Al llegar el Calendario quedó claro que la formulación era más estrecha que la intención.
+
+El Calendario tiene un panel de borradores a la izquierda con su propia lista, y un panel del día a la derecha con la suya. Son regiones **hermanas**, lado a lado: en ningún momento el usuario tiene dos scrolls bajo el mismo cursor. Prohibirlas sería aplicar la letra de la regla contra su motivo.
+
+> **Un solo eje de scroll vertical por región.** Regiones hermanas pueden tener el suyo; lo que nunca se apilan son dos ejes en la misma región visual.
+
+Consecuencia de layout: el App Shell sigue siendo `h-dvh overflow-hidden` con un contenedor `overflow-y-auto` **por defecto** para el `<Outlet/>`, porque las páginas viejas dependen de heredarlo. Una pantalla que maneja su propio alto lo declara en su ruta:
+
+```tsx
+// App.tsx
+{ path: "/calendario", element: <CalendarioPage />, handle: { ownScroll: true } }
+
+// protected.tsx
+const ownScroll = useMatches().some((m) => (m.handle as RouteHandle)?.ownScroll);
+<div className={`min-h-0 flex-1 ${ownScroll ? "overflow-hidden" : "overflow-y-auto"}`}>
+```
+
+Declarativo en la ruta y no un contexto nuevo: es información estática de la pantalla, y `useMatches()` ya la propaga sin que nadie monte un provider. Si no se apagara, el Calendario tendría el eje del shell **más** el suyo — el bug original, otra vez, por la puerta de atrás.
+
+La grilla del mes, además, **no scrollea**: son 5-6 filas `1fr` que llenan el alto, con cap de 3 posts por celda y chip "+N más". Es la forma de tener menos ejes, no más.

@@ -12,6 +12,7 @@ import {
   cardIdParamSchema,
   chatIdParamSchema,
   conflictsQuerySchema,
+  listCardsQuerySchema,
   scheduleCardBodySchema,
   scheduleGroupBodySchema,
   type PublicationCardDto,
@@ -50,6 +51,32 @@ export class CardsController {
       new Date(parsed.data.from),
       new Date(parsed.data.to),
     );
+  }
+
+  // F7 (Calendario). Va ANTES de las rutas con parámetro por prolijidad, no
+  // por necesidad: "cards/drafts" y "cards/conflicts" son literales y Nest ya
+  // los prioriza sobre un ":id" del mismo verbo. Si algún día aparece un
+  // GET cards/:id, el orden pasa a importar de verdad.
+  @Get("cards/drafts")
+  drafts(@CurrentUser() user: SessionUser): Promise<PublicationCardDto[]> {
+    return this.service.listDrafts(user.id);
+  }
+
+  @Get("cards")
+  list(@CurrentUser() user: SessionUser, @Query() query: unknown): Promise<PublicationCardDto[]> {
+    const parsed = listCardsQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      // Solo los issues `custom` son nuestros refine (rango invertido /
+      // demasiado amplio) y ya vienen redactados en español. Los demás son
+      // mensajes de Zod en inglés ("Invalid ISO datetime"): no se le
+      // muestran al usuario, caen al genérico.
+      const issue = parsed.error.issues[0];
+      throw new BadRequestException(
+        issue?.code === "custom" ? issue.message : "Los filtros del calendario no son válidos.",
+      );
+    }
+    const { from, to, ...filters } = parsed.data;
+    return this.service.listByRange(user.id, new Date(from), new Date(to), filters);
   }
 
   @Post("cards/:id/schedule")

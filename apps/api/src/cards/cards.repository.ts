@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, isNull, lt, lte } from "drizzle-orm";
-import type { CardContent, SocialNetwork } from "@presencia/shared";
-import { publicationCards } from "../db/schema.js";
+import { and, asc, desc, eq, getTableColumns, gte, inArray, isNull, lt, lte } from "drizzle-orm";
+import type { CardContent, CardStatus, SocialNetwork } from "@presencia/shared";
+import { chats, publicationCards } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
 // Todo acceso a publication_cards vive aquí (patrón de ChatRepository).
@@ -12,6 +12,13 @@ export type CardRow = typeof publicationCards.$inferSelect;
 export interface MarkSchedulingInput {
   socialAccountId: string;
   scheduledAt: Date;
+}
+
+/** Filtros del popover del Calendario. Todos opcionales; ausente = sin filtrar. */
+export interface CalendarFilters {
+  status?: CardStatus[];
+  network?: SocialNetwork[];
+  folderId?: string;
 }
 
 @Injectable()
@@ -280,5 +287,69 @@ export class CardsRepository {
           lte(publicationCards.scheduledAt, to),
         ),
       );
+  }
+
+  /**
+   * F7: todo lo que cae en el rango visible del Calendario, en cualquier
+   * estado. Hermana de findConflicts, no un reemplazo: aquella responde
+   * "¿choca con algo ya programado?" (solo `scheduled`) y la consume el
+   * ScheduleDrawer; esta responde "¿qué hay en pantalla?".
+   *
+   * Pega contra el índice `cards_calendar (user_id, scheduled_at)`. El
+   * user_id no aparece en el WHERE porque lo pone el RLS, pero sigue siendo
+   * la primera columna del índice: el planner lo usa igual.
+   *
+   * Sin paginación a propósito: el rango es un mes (o una semana, o un día),
+   * acotado por construcción. Si algún día un mes trae miles de cards, el
+   * corte natural es por rango más chico, no por offset.
+   */
+  async listByRange(
+    tx: Tx,
+    from: Date,
+    to: Date,
+    filters: CalendarFilters = {},
+  ): Promise<CardRow[]> {
+    const conditions = [
+      gte(publicationCards.scheduledAt, from),
+      lte(publicationCards.scheduledAt, to),
+    ];
+    if (filters.status?.length) {
+      conditions.push(inArray(publicationCards.status, filters.status));
+    }
+    if (filters.network?.length) {
+      conditions.push(inArray(publicationCards.network, filters.network));
+    }
+
+    const base = tx.select(getTableColumns(publicationCards)).from(publicationCards).$dynamic();
+    // La carpeta vive en el chat que originó la card, no en la card. El join
+    // es INNER a propósito: una card huérfana (chat eliminado, chat_id null)
+    // no tiene carpeta de la cual derivar, así que no matchea ningún filtro
+    // por carpeta — desaparece del listado filtrado, y eso es correcto.
+    const filtered = filters.folderId
+      ? base
+          .innerJoin(chats, eq(publicationCards.chatId, chats.id))
+          .where(and(...conditions, eq(chats.folderId, filters.folderId)))
+      : base.where(and(...conditions));
+
+    // Desempate por createdAt: las N redes de un grupo multi-red comparten
+    // scheduled_at exacto, y sin segundo criterio Postgres puede devolverlas
+    // en orden distinto entre requests — el grupo "bailaría" al refrescar.
+    return filtered.orderBy(asc(publicationCards.scheduledAt), asc(publicationCards.createdAt));
+  }
+
+  /**
+   * F7: la bandeja de borradores del panel izquierdo — cards creadas en Chat
+   * que todavía no tienen fecha. `scheduled_at IS NULL` además del estado:
+   * cancelSchedule() devuelve la card a `draft` pero limpia scheduled_at, así
+   * que la condición es redundante hoy; se deja explícita porque el panel
+   * promete "sin fecha programada" y esa promesa no debe depender de que
+   * ningún otro camino olvide limpiar la columna.
+   */
+  async listDrafts(tx: Tx): Promise<CardRow[]> {
+    return tx
+      .select()
+      .from(publicationCards)
+      .where(and(eq(publicationCards.status, "draft"), isNull(publicationCards.scheduledAt)))
+      .orderBy(desc(publicationCards.createdAt));
   }
 }

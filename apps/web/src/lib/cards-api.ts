@@ -1,8 +1,10 @@
 import type {
+  CardStatus,
   PublicationCardDto,
   ScheduleCardBody,
   ScheduleGroupBody,
   ScheduleGroupResultItem,
+  SocialNetwork,
 } from "@presencia/shared";
 import { apiFetch } from "./api.js";
 
@@ -31,4 +33,38 @@ export function rescheduleCard(
 export function fetchScheduleConflicts(from: string, to: string): Promise<PublicationCardDto[]> {
   const params = new URLSearchParams({ from, to });
   return apiFetch<PublicationCardDto[]>(`/api/cards/conflicts?${params.toString()}`);
+}
+
+// ── F7 (Calendario) ───────────────────────────────────────────────────
+
+export interface CalendarFilters {
+  status?: CardStatus[];
+  network?: SocialNetwork[];
+  folderId?: string;
+}
+
+/**
+ * Todo lo que cae en el rango visible, en cualquier estado. No confundir con
+ * `fetchScheduleConflicts` de arriba: ese endpoint devuelve solo `scheduled`
+ * y existe para los markers del ScheduleDrawer.
+ *
+ * Las listas viajan separadas por coma (`?status=draft,scheduled`), que es
+ * una de las tres formas que acepta `listCardsQuerySchema`.
+ */
+export function fetchCardsInRange(
+  from: Date,
+  to: Date,
+  filters: CalendarFilters = {},
+  signal?: AbortSignal,
+): Promise<PublicationCardDto[]> {
+  const params = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
+  if (filters.status?.length) params.set("status", filters.status.join(","));
+  if (filters.network?.length) params.set("network", filters.network.join(","));
+  if (filters.folderId) params.set("folderId", filters.folderId);
+  return apiFetch<PublicationCardDto[]>(`/api/cards?${params.toString()}`, { signal });
+}
+
+/** Borradores sin fecha — la bandeja del panel izquierdo (F7 PR3). */
+export function fetchDraftCards(signal?: AbortSignal): Promise<PublicationCardDto[]> {
+  return apiFetch<PublicationCardDto[]>("/api/cards/drafts", { signal });
 }

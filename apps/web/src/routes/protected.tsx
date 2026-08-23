@@ -1,4 +1,4 @@
-import { Navigate, Outlet, useLocation } from "react-router";
+import { Navigate, Outlet, useLocation, useMatches } from "react-router";
 import { Sidebar } from "../components/layout/Sidebar.js";
 import { Topbar } from "../components/layout/Topbar.js";
 import { CommandPalette } from "../components/search/CommandPalette.js";
@@ -29,9 +29,17 @@ import { authClient } from "../lib/auth-client.js";
 // ScheduleDrawer es hermano flex del contenido, no un overlay fixed: empuja
 // en vez de taparlo — eso es lo que de raíz evita el doble scroll
 // encimado que reportó Jose. Ver ADR-014.
+/** Rutas que declaran `handle: { ownScroll: true }` (ver App.tsx y ADR-018). */
+interface RouteHandle {
+  ownScroll?: boolean;
+}
+
 export function ProtectedLayout() {
   const { data: session, isPending } = authClient.useSession();
   const location = useLocation();
+  const ownScroll = useMatches().some(
+    (match) => (match.handle as RouteHandle | undefined)?.ownScroll,
+  );
 
   if (isPending) {
     return <main className="p-8">Cargando…</main>;
@@ -59,14 +67,16 @@ export function ProtectedLayout() {
       <div className="flex min-w-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <Topbar />
-          {/* Única zona de scroll del contenido — las páginas viejas
-              (Configuración, la lista de chats pre-PR6) no necesitan saber
-              nada de esto, heredan el scroll de acá sin tocar su propio
-              markup. chat.tsx (PR6) sí va a manejar su propio scroll
-              interno para poder fijar el composer abajo; hasta entonces
-              esto es un contenedor genérico, no una regla que cada página
-              tenga que implementar. */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          {/* Zona de scroll por defecto — las páginas viejas (Configuración,
+              la lista de chats pre-PR6) no necesitan saber nada de esto,
+              heredan el scroll de acá sin tocar su propio markup.
+              Las pantallas que manejan su propio alto lo dicen con
+              `handle: { ownScroll: true }` en su ruta y acá se apaga: si no,
+              quedarían dos ejes verticales en la misma región, que es
+              exactamente el bug que corrigió ADR-014. El Calendario (F7) es
+              el primer caso; chat.tsx sigue funcionando adentro porque su
+              raíz es h-full y nunca desborda. */}
+          <div className={`min-h-0 flex-1 ${ownScroll ? "overflow-hidden" : "overflow-y-auto"}`}>
             <Outlet />
           </div>
         </div>

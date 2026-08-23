@@ -23,7 +23,7 @@ import {
   PublishingUnavailableError,
 } from "../publishing/errors.js";
 import { PUBLISHING_PROVIDER, type PublishingProvider } from "../publishing/publishing.provider.js";
-import { CardsRepository, type CardRow } from "./cards.repository.js";
+import { CardsRepository, type CalendarFilters, type CardRow } from "./cards.repository.js";
 
 // Ciclo de vida de la card (F6, ADR-009 addendum): programar, reprogramar,
 // cancelar, reconciliar. Reglas duras:
@@ -100,6 +100,34 @@ export class CardsService {
   async findConflicts(userId: string, from: Date, to: Date): Promise<PublicationCardDto[]> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const rows = await this.repo.findConflicts(tx, from, to);
+      return rows.map(toDto);
+    });
+  }
+
+  /**
+   * F7: lo que el Calendario pinta en el rango visible. Reconcilia primero,
+   * igual que listByChat — es el mismo motivo: sin job de background (F8) el
+   * único momento en que se le pregunta a PostFast por las cards vencidas es
+   * cuando alguien mira una superficie que las muestra, y el Calendario es
+   * justamente donde más se nota una card "programada" cuya hora ya pasó.
+   */
+  async listByRange(
+    userId: string,
+    from: Date,
+    to: Date,
+    filters: CalendarFilters = {},
+  ): Promise<PublicationCardDto[]> {
+    await this.maybeReconcile(userId);
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const rows = await this.repo.listByRange(tx, from, to, filters);
+      return rows.map(toDto);
+    });
+  }
+
+  /** F7: bandeja de borradores del panel izquierdo (sin fecha, no entran en ningún rango). */
+  async listDrafts(userId: string): Promise<PublicationCardDto[]> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const rows = await this.repo.listDrafts(tx);
       return rows.map(toDto);
     });
   }

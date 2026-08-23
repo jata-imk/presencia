@@ -37,7 +37,7 @@ import { useSidebarStore } from "../../stores/sidebar-store.js";
 // no es infra de más, es la nav quedando honesta sobre qué existe).
 const MODULES = [
   { icon: MessageSquare, label: "Chats", to: "/chats" },
-  { icon: Calendar, label: "Calendario", to: null },
+  { icon: Calendar, label: "Calendario", to: "/calendario" },
   { icon: Activity, label: "Ritmo", to: null },
   { icon: BarChart2, label: "Analíticas", to: null },
   { icon: BookOpen, label: "Biblioteca", to: null },

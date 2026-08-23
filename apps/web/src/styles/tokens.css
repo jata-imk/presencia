@@ -196,6 +196,22 @@
   --shadow-tint-xl: rgba(61, 38, 69, 0.18);
   --scrollbar-thumb: var(--color-neutral-300);
 
+  /* Calendario (F7). Solo lo que la grilla NO puede sacar de --status-*: la
+     píldora "programado" reusa el lenguaje del badge Programado
+     (--status-info-bg/-border), la de "publicado" el de éxito y la de
+     borrador el de --status-ai. Lo único que falta es el color del TEXTO
+     sobre esos tintes, porque en oscuro los fondos se invierten y un
+     #2C5480 quedaría ilegible; más el fondo de los días de otro mes y el
+     del contenedor de grupo multi-red.
+     Los tokens del drag (destino válido / objetivo / conflicto / pasado)
+     NO viven acá todavía: llegan en el PR que los pinta, para no dejar CSS
+     que nunca corrió (lección de F6.5, dark mode escrito y jamás ejecutado). */
+  --cal-scheduled-fg: #2c5480;
+  --cal-published-fg: #2f7d52;
+  --cal-draft-fg: #5b4569;
+  --cal-day-out-bg: #fcfbfd;
+  --cal-group-bg: color-mix(in srgb, var(--color-pink-orchid) 12%, transparent);
+
   /* Layout. --sidebar-width es el DEFAULT, no la ley: desde F6.5 el
      usuario puede arrastrar el borde del sidebar y el valor elegido se
      escribe inline sobre <html> (origen inline gana a :root sin pelear
@@ -274,6 +290,18 @@
   /* Cromo del navegador: gris neutro claro sobre fondo oscuro se lee como
      una barra brillante pegada al borde. */
   --scrollbar-thumb: #3d2a4a;
+
+  /* Calendario: los textos de píldora se invierten junto con su fondo
+     (--status-*-bg ya bajó a tintes oscuros unas líneas más arriba). El día
+     de otro mes se hunde por debajo de --bg-card en los dos temas — #FCFBFD
+     bajo el blanco en claro, #120B16 bajo el #1A0F20 en oscuro: siempre un
+     escalón hacia el fondo de la app, nunca hacia la luz.
+     El grupo sube a 16%: sobre una card oscura, 12% de orchid casi no se ve. */
+  --cal-scheduled-fg: #a8cdf5;
+  --cal-published-fg: #7fd6a4;
+  --cal-draft-fg: var(--color-plum-200);
+  --cal-day-out-bg: #120b16;
+  --cal-group-bg: color-mix(in srgb, var(--color-pink-orchid) 16%, transparent);
 }
 
 /* Utilities semánticas: bg-app, bg-card, text-fg, border-line, etc. */
@@ -319,6 +347,12 @@
   --color-info-bg: var(--status-info-bg);
   --color-ai: var(--status-ai);
   --color-ai-bg: var(--status-ai-bg);
+
+  --color-cal-scheduled-fg: var(--cal-scheduled-fg);
+  --color-cal-published-fg: var(--cal-published-fg);
+  --color-cal-draft-fg: var(--cal-draft-fg);
+  --color-cal-day-out: var(--cal-day-out-bg);
+  --color-cal-group: var(--cal-group-bg);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);

@@ -247,6 +247,63 @@ export const conflictsQuerySchema = z.object({
 });
 export type ConflictsQuery = z.infer<typeof conflictsQuerySchema>;
 
+// F7 (Calendario): listado por rango. `conflictsQuerySchema` de arriba no
+// sirve para esto y no se toca — su endpoint devuelve SOLO `scheduled` y lo
+// consume el ScheduleDrawer para pintar sus markers. El Calendario necesita
+// todos los estados y filtros; son dos preguntas distintas a la misma tabla.
+//
+// Los filtros de lista llegan por query string, donde `?status=draft` y
+// `?status=draft&status=scheduled` son el mismo parámetro con cardinalidad
+// distinta: Express entrega string en el primer caso y string[] en el
+// segundo. El preprocess normaliza ambos (y la forma separada por comas,
+// que es la que arma el frontend) a array antes de validar.
+const queryList = <T extends z.ZodType>(item: T) =>
+  z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") return undefined;
+    const raw = Array.isArray(value) ? value : [value];
+    // Si llega algo que no es string (un objeto por `?status[a]=b`), se
+    // devuelve tal cual para que el array de abajo lo rechace con un 400. Un
+    // filtro mal formado que se ignora en silencio es peor que uno que falla:
+    // el usuario vería una lista que cree filtrada y no lo está.
+    if (!raw.every((entry) => typeof entry === "string")) return value;
+    return raw
+      .flatMap((entry) => entry.split(","))
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }, z.array(item).min(1).optional());
+
+/**
+ * Techo del rango pedible de una sola vez. La vista más ancha es la grilla
+ * del mes (6 semanas = 42 días) y el frontend prefetchea el mes contiguo, así
+ * que ~100 días cubre todo con aire. Existe para que un `from` de 1970 no se
+ * traduzca en un scan de la tabla entera.
+ */
+export const MAX_CALENDAR_RANGE_DAYS = 100;
+
+export const listCardsQuerySchema = z
+  .object({
+    from: z.iso.datetime({ offset: true }),
+    to: z.iso.datetime({ offset: true }),
+    status: queryList(cardStatusSchema),
+    network: queryList(socialNetworkSchema),
+    /**
+     * Carpeta del chat que originó la card. Las cards huérfanas (`chatId:
+     * null`, el chat se eliminó) nunca matchean un filtro de carpeta: ya no
+     * hay de dónde derivarla.
+     */
+    folderId: z.uuid().optional(),
+  })
+  .refine(({ from, to }) => new Date(to) > new Date(from), {
+    message: "El rango de fechas está invertido.",
+  })
+  .refine(
+    ({ from, to }) =>
+      new Date(to).getTime() - new Date(from).getTime() <=
+      MAX_CALENDAR_RANGE_DAYS * 24 * 60 * 60 * 1000,
+    { message: "El rango de fechas es demasiado amplio." },
+  );
+export type ListCardsQuery = z.infer<typeof listCardsQuerySchema>;
+
 // Resultado por card de un schedule-group: cada red del grupo actúa
 // independiente (una puede programarse y otra fallar sin abortar el resto,
 // mismo criterio que el modo "personalizar por red, mixto" del drawer).
