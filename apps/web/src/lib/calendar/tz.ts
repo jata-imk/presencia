@@ -142,3 +142,45 @@ export function formatWeekdayShort(date: CalendarDate): string {
   // que las 7 etiquetas queden parejas.
   return capitalize(weekdayShortFormatter.format(asUtcDate(date)).replace(/\.$/, ""));
 }
+
+/**
+ * "Hoy", "Mañana", "Ayer", "En 3 días", "Hace 4 días" — el subtítulo del
+ * panel del día. Es lo que convierte una fecha en una ubicación mental: el
+ * usuario no piensa "24 de octubre", piensa "mañana".
+ */
+export function formatRelativeDay(date: CalendarDate, today: CalendarDate): string {
+  // CalendarDate.compare devuelve la diferencia en DÍAS, no en milisegundos
+  // (ZonedDateTime.compare sí devuelve ms — es fácil confundirlas).
+  const days = date.compare(today);
+  if (days === 0) return "Hoy";
+  if (days === 1) return "Mañana";
+  if (days === -1) return "Ayer";
+  if (days > 0) return `En ${String(days)} días`;
+  return `Hace ${String(-days)} días`;
+}
+
+const scheduleFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * "27 de agosto, 18:00" — el horario de una publicación en el banner de la
+ * card. En la zona del usuario y en 24 h, igual que el resto del producto:
+ * el drawer programa eligiendo "18:00" (input type=time, siempre 24 h) y el
+ * calendario pinta "18:00", así que un banner que dijera "06:00 p.m." en la
+ * zona del navegador estaría contradiciendo a las dos superficies que
+ * rodean a la misma card.
+ */
+export function formatScheduleDateTime(iso: string, timeZone: string): string {
+  let formatter = scheduleFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(CALENDAR_LOCALE, {
+      day: "numeric",
+      month: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone,
+    });
+    scheduleFormatters.set(timeZone, formatter);
+  }
+  return formatter.format(new Date(iso));
+}

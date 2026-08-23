@@ -10,7 +10,7 @@ import { MiniCalendar } from "./MiniCalendar.js";
 import { NetworkScheduleRow } from "./NetworkScheduleRow.js";
 import { TimeChips } from "./TimeChips.js";
 import { WeekStrip } from "./WeekStrip.js";
-import { combineDateAndTime, dateKey, startOfDay } from "./date-utils.js";
+import { combineDateAndTime, dateKey, formatTime, startOfDay } from "./date-utils.js";
 import { ApiError } from "../../lib/api.js";
 import { fetchScheduleConflicts, scheduleGroup } from "../../lib/cards-api.js";
 import { backdropFade, drawerPush, sheetUp } from "../../lib/motion.js";
@@ -47,6 +47,8 @@ function defaultDate(): Date {
 // salida (variants "closed"/"exit" — lib/motion.ts) antes de desmontar.
 export function ScheduleDrawer() {
   const cards = useScheduleDrawerStore((s) => s.cards);
+  const presetDate = useScheduleDrawerStore((s) => s.presetDate);
+  const onDone = useScheduleDrawerStore((s) => s.onDone);
   const close = useScheduleDrawerStore((s) => s.close);
   // key por ids, no un string fijo (code review 2026-08-20): el panel
   // desktop es a propósito no-modal (el chat de al lado sigue
@@ -56,19 +58,37 @@ export function ScheduleDrawer() {
   // en ScheduleDrawerInner) se queda con las cards/horarios viejos. Un key
   // que cambia con el set de ids fuerza un remount real, `rows` nace
   // fresco del nuevo `cards`.
-  const drawerKey = cards ? cards.map((c) => c.id).join(",") : "closed";
+  // El preset entra en la key por el mismo motivo que los ids: reabrir con
+  // la MISMA card pero otra fecha (reprogramar dos veces desde el
+  // Calendario) reutilizaría la instancia y `rows` se quedaría con el
+  // horario anterior.
+  const drawerKey = cards
+    ? `${cards.map((c) => c.id).join(",")}@${String(presetDate?.getTime() ?? "")}`
+    : "closed";
   return (
     <AnimatePresence>
-      {cards && <ScheduleDrawerInner key={drawerKey} cards={cards} onClose={close} />}
+      {cards && (
+        <ScheduleDrawerInner
+          key={drawerKey}
+          cards={cards}
+          presetDate={presetDate}
+          onDone={onDone}
+          onClose={close}
+        />
+      )}
     </AnimatePresence>
   );
 }
 
 function ScheduleDrawerInner({
   cards,
+  presetDate,
+  onDone,
   onClose,
 }: {
   cards: PublicationCardDto[];
+  presetDate: Date | null;
+  onDone: (() => void) | null;
   onClose: () => void;
 }) {
   const { channels } = useChannels();
@@ -87,10 +107,10 @@ function ScheduleDrawerInner({
   const [submitErrors, setSubmitErrors] = useState<
     { cardId: string; network: PublicationCardDto["network"] | null; message: string }[]
   >([]);
-  const [viewMonth, setViewMonth] = useState(() => {
-    const d = defaultDate();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  });
+  const initialDate = presetDate ?? defaultDate();
+  const [viewMonth, setViewMonth] = useState(
+    () => new Date(initialDate.getFullYear(), initialDate.getMonth(), 1),
+  );
   const [markers, setMarkers] = useState<Record<string, number>>({});
   // Solo para FloatingFocusManager (trampa de foco del bottom-sheet mobile
   // — ver más abajo). No lleva useDismiss/useClick propios: Escape y el
@@ -104,8 +124,8 @@ function ScheduleDrawerInner({
       cardId: card.id,
       network: card.network,
       mode: "schedule",
-      date: defaultDate(),
-      time: "10:00",
+      date: initialDate,
+      time: formatTime(initialDate),
       socialAccountId: null,
       conflictWarning: null,
     })),
@@ -265,6 +285,15 @@ function ScheduleDrawerInner({
       // parcial dejaba el badge viejo en pantalla sin reflejar que la card
       // ahora está failed (ver CardsService.scheduleGroup, cada item es
       // independiente).
+      // onDone PRIMERO y sin await: quien abrió el drawer refresca lo suyo
+      // (el Calendario lee por rango, no por chat, y una card huérfana no
+      // tiene chat que refrescar). Encadenarlo detrás del refresh del chat
+      // costaba ~4 s hasta que la grilla reflejaba el cambio, porque ese
+      // refresh dispara maybeReconcile y eso es una llamada de red a
+      // PostFast. De paso, el orden ayuda: la primera de las dos lecturas
+      // deja puesto el cooldown de reconciliación y la segunda ya no paga
+      // ese viaje.
+      onDone?.();
       if (firstCard.chatId) await refreshCards(firstCard.chatId);
 
       const failures = results.filter((r) => !r.ok);
@@ -477,6 +506,11 @@ function ScheduleDrawerInner({
     return (
       <motion.aside
         aria-labelledby="schedule-drawer-title"
+        // Ver el comentario de data-toast-viewport en ui/Toast.tsx: el panel
+        // del día del Calendario excluye estos clicks de su "cerrar al
+        // clickear afuera". El drawer se abre DESDE el panel; que lo cerrara
+        // al primer click adentro sería absurdo.
+        data-schedule-drawer
         initial="closed"
         animate="open"
         exit="closed"

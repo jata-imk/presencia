@@ -1,13 +1,6 @@
 import { useMemo, useState } from "react";
-import type { CardStatus } from "@presencia/shared";
-import { type BadgeKind } from "./cards/Badge.js";
-import { PublishedBanner, ScheduledBanner } from "./cards/Banner.js";
-import { CardHeader } from "./cards/CardHeader.js";
 import { CardToolbar } from "./cards/CardToolbar.js";
-import { GlowFrame } from "./cards/GlowFrame.js";
-import { TextCardBody } from "./cards/TextCardBody.js";
-import { VideoCardBody } from "./cards/VideoCardBody.js";
-import { VisualCardBody } from "./cards/VisualCardBody.js";
+import { PublicationCardView } from "./cards/PublicationCardView.js";
 import { ApiError } from "../lib/api.js";
 import { cancelCardSchedule, rescheduleCard } from "../lib/cards-api.js";
 import type { CardToolPart } from "../lib/chat-types.js";
@@ -20,21 +13,6 @@ const ARCHETYPE_LABEL: Record<string, string> = {
   "tool-crear_borrador_video": "Guion de video",
   "tool-crear_borrador_texto": "Post de texto",
 };
-
-const STATUS_BORDER: Record<Exclude<CardStatus, "draft">, string> = {
-  scheduled: "border-info-border",
-  published: "border-success-border",
-  failed: "border-error-border",
-  canceled: "border-line",
-};
-
-// video_script en draft nunca tiene material listo (Presencia no genera
-// video, F10/F11 pendiente) — el badge lo dice en vez de fingir "Borrador"
-// genérico.
-function badgeKindFor(archetype: string, status: CardStatus): BadgeKind {
-  if (archetype === "video_script" && status === "draft") return "waiting";
-  return status;
-}
 
 // F6 PR4: ya no recibe liveCard/siblingCards/onCardsChanged por props — se
 // suscribe directo a cards-store por chatId (ver stores/cards-store.ts).
@@ -144,58 +122,33 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
     }
   }
 
-  const cardInner = (
-    <>
-      {status === "scheduled" && liveCard?.scheduledAt && (
-        <ScheduledBanner scheduledAt={liveCard.scheduledAt} />
-      )}
-      {status === "published" && liveCard?.publishedAt && (
-        <PublishedBanner publishedAt={liveCard.publishedAt} />
-      )}
-      <CardHeader network={network} badge={badgeKindFor(content.archetype, status)} />
-      {/* liveCard?.errorMessage: el mensaje real (p.ej. "puede que sí se
-          haya creado, revisa PostFast antes de reintentar" para un fallo
-          ambiguo) sobrevive al cierre del drawer via CardsService.toDto —
-          el fallback genérico solo cubre filas viejas sin ese campo. */}
-      {status === "failed" && (
-        <div className="border-b border-error-border bg-error-bg px-4 py-2.5 text-xs font-medium text-error">
-          {liveCard?.errorMessage ??
-            "No se pudo confirmar esta publicación con el proveedor. Puedes reintentar."}
-        </div>
-      )}
-      {content.archetype === "visual_first" && <VisualCardBody content={content} />}
-      {content.archetype === "video_script" && (
-        <VideoCardBody content={content} showWaitingForMaterial={status === "draft"} />
-      )}
-      {content.archetype === "text_first" && <TextCardBody content={content} network={network} />}
-      {liveCard ? (
-        <CardToolbar
-          status={status}
-          busy={busy}
-          onSchedule={openScheduleDrawer}
-          onCancel={() => void handleCancel()}
-        />
-      ) : (
-        // Card ya existe (el tool part la trajo) pero cards-store todavía no
-        // trae su estado vivo — pasa un instante si el modelo sigue hablando
-        // después de crearla (se refresca al terminar el turno, ver chat.tsx).
-        <p className="border-t border-line px-4 py-2.5 text-xs text-fg-muted">Cargando acciones…</p>
-      )}
-    </>
-  );
-
-  if (status === "draft") {
-    return (
-      <GlowFrame radius={14} thickness={2}>
-        {cardInner}
-      </GlowFrame>
-    );
-  }
   return (
-    <div
-      className={`overflow-hidden rounded-2xl border bg-card shadow-sm ${STATUS_BORDER[status]}`}
-    >
-      {cardInner}
-    </div>
+    <PublicationCardView
+      cardId={liveCard?.id}
+      content={content}
+      network={network}
+      status={status}
+      scheduledAt={liveCard?.scheduledAt}
+      publishedAt={liveCard?.publishedAt}
+      errorMessage={liveCard?.errorMessage}
+      footer={
+        liveCard ? (
+          <CardToolbar
+            status={status}
+            busy={busy}
+            onSchedule={openScheduleDrawer}
+            onCancel={() => void handleCancel()}
+          />
+        ) : (
+          // La card ya existe (el tool part la trajo) pero cards-store
+          // todavía no tiene su estado vivo — pasa un instante si el modelo
+          // sigue hablando después de crearla (se refresca al terminar el
+          // turno, ver chat.tsx).
+          <p className="border-t border-line px-4 py-2.5 text-xs text-fg-muted">
+            Cargando acciones…
+          </p>
+        )
+      }
+    />
   );
 }

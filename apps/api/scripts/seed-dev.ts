@@ -193,6 +193,18 @@ async function seed(): Promise<void> {
 // correr el seed. El ref es sintético porque en dev no hay PostFast al que
 // pedirle uno de verdad; reconcileDueCards preguntará por él y no pasará nada
 // (maybeReconcile se traga los fallos del proveedor a propósito).
+//
+// Consecuencia con PUBLISHING_PROVIDER=postfast: cancelar una card sembrada
+// devuelve 400 "subscription.required", porque ese ref no existe en PostFast
+// y cancelSchedule se niega —correctamente— a marcarla cancelada sin que el
+// proveedor confirme. No hay forma de sembrar una card que sea a la vez no
+// huérfana y cancelable contra la API real. Para probar cancelar/deshacer en
+// dev, levantar la API con PUBLISHING_PROVIDER=fake:
+//
+//   PUBLISHING_PROVIDER=fake pnpm --filter @presencia/api dev
+//
+// (directo al filtro, no por `pnpm dev`: turbo solo pasa las variables que
+// declara en turbo.json, y esta no está.)
 
 type Tx = Parameters<Parameters<DbService["runWithTenant"]>[1]>[0];
 
@@ -224,15 +236,21 @@ async function seedCalendar(
   const cuentaDe = (network: SocialNetwork) =>
     cuentas.find((cuenta) => cuenta.network === network)?.id ?? null;
 
-  // Anclado al mes en curso, no a fechas fijas: el seed tiene que seguir
-  // teniendo sentido cuando se corra el mes que viene.
-  const hoy = new Date();
-  const enDia = (dia: number, hora: number, minuto = 0) =>
-    new Date(hoy.getFullYear(), hoy.getMonth(), dia, hora, minuto, 0, 0);
+  // Anclado a AHORA y no a horas fijas del día. Es la diferencia entre un
+  // seed que funciona y uno que se pudre solo: una card `scheduled` cuya
+  // hora ya pasó es, para reconcileDueCards, una programación vencida, y el
+  // reconciliador la marca `failed` en cuanto alguien abre el calendario.
+  // Sembrar "hoy a las 08:00" a las 15:00 pintaba medio mes en rojo.
+  //
+  // Regla: todo lo `published` va al pasado, todo lo `scheduled` al futuro.
+  const ahora = new Date();
+  const enDias = (dias: number, horaDelDia: number) => {
+    const fecha = new Date(ahora);
+    fecha.setDate(fecha.getDate() + dias);
+    fecha.setHours(horaDelDia, 0, 0, 0);
+    return fecha;
+  };
 
-  const dia = hoy.getDate();
-  const antes = Math.max(1, dia - 6);
-  const despues = dia + 2;
   const grupoId = crypto.randomUUID();
 
   interface Semilla {
@@ -250,47 +268,53 @@ async function seedCalendar(
     {
       network: "linkedin",
       content: textoDe("Cinco lecciones de mi primer año como freelance en Mérida."),
-      scheduledAt: enDia(antes, 9),
+      scheduledAt: enDias(-6, 9),
       published: true,
     },
     {
       network: "instagram",
       content: visualDe("Carrusel: las cinco apps de IA que uso todos los días ✨"),
-      scheduledAt: enDia(antes + 1, 12),
+      scheduledAt: enDias(-5, 12),
       published: true,
     },
     {
       network: "x",
       content: textoDe("La constancia le gana a la estrategia el 90% de las veces."),
-      scheduledAt: enDia(antes + 2, 18),
+      scheduledAt: enDias(-4, 18),
+      published: true,
+    },
+    {
+      network: "facebook",
+      content: visualDe("Recordatorio: el sorteo cierra el viernes a medianoche."),
+      scheduledAt: enDias(-2, 10),
       published: true,
     },
 
-    // Hoy — un día saturado, para ver el cap de 3 y el chip "+N más".
+    // Mañana — día saturado, para ver el cap de 3 y el chip "+N más".
     {
       network: "linkedin",
       content: textoDe("Cómo armo mi semana de contenido en bloques de 90 minutos."),
-      scheduledAt: enDia(dia, 8),
+      scheduledAt: enDias(1, 8),
     },
     {
       network: "instagram",
       content: visualDe("Detrás de cámaras del estudio nuevo."),
-      scheduledAt: enDia(dia, 11),
+      scheduledAt: enDias(1, 11),
     },
     {
       network: "x",
       content: textoDe("Pregunta rápida: ¿publicas por la mañana o por la noche?"),
-      scheduledAt: enDia(dia, 14),
+      scheduledAt: enDias(1, 14),
     },
     {
       network: "facebook",
       content: visualDe("Recordatorio: el webinar cierra el viernes."),
-      scheduledAt: enDia(dia, 17),
+      scheduledAt: enDias(1, 17),
     },
     {
       network: "linkedin",
       content: textoDe("Caso de éxito: de 1k a 10k seguidores en cuatro meses."),
-      scheduledAt: enDia(dia, 19),
+      scheduledAt: enDias(1, 19),
     },
 
     // Conflicto real: dos de LinkedIn a la MISMA hora el mismo día. Mismo
@@ -298,12 +322,12 @@ async function seedCalendar(
     {
       network: "linkedin",
       content: textoDe("Newsletter de la semana: lo que aprendí sobre aparecer todos los días."),
-      scheduledAt: enDia(despues, 18),
+      scheduledAt: enDias(3, 18),
     },
     {
       network: "linkedin",
       content: textoDe("Arrancamos el directo de esta noche, no te lo pierdas."),
-      scheduledAt: enDia(despues, 18),
+      scheduledAt: enDias(3, 18),
     },
 
     // Grupo multi-red: mismo groupId Y mismo instante — así se agrupa en la
@@ -311,23 +335,31 @@ async function seedCalendar(
     {
       network: "linkedin",
       content: textoDe("Lanzamos la nueva temporada del pódcast."),
-      scheduledAt: enDia(despues + 2, 18),
+      scheduledAt: enDias(5, 18),
       groupId: grupoId,
       chatId: chatIds.enCarpetaId,
     },
     {
       network: "instagram",
       content: visualDe("Carrusel del lanzamiento de la temporada."),
-      scheduledAt: enDia(despues + 2, 18),
+      scheduledAt: enDias(5, 18),
       groupId: grupoId,
       chatId: chatIds.enCarpetaId,
     },
     {
       network: "x",
       content: textoDe("Ya está afuera la nueva temporada 🎙️"),
-      scheduledAt: enDia(despues + 2, 18),
+      scheduledAt: enDias(5, 18),
       groupId: grupoId,
       chatId: chatIds.enCarpetaId,
+    },
+
+    // Una suelta con chat de origen, para probar "Editar en Chat".
+    {
+      network: "instagram",
+      content: visualDe("Quote del día sobre simplicidad y diseño."),
+      scheduledAt: enDias(2, 12),
+      chatId: chatIds.sueltoId,
     },
 
     // Borradores sin fecha — la bandeja del panel izquierdo (PR3).
@@ -338,7 +370,7 @@ async function seedCalendar(
     },
     {
       network: "instagram",
-      content: visualDe("Quote del día sobre simplicidad y diseño."),
+      content: visualDe("Reel detrás de cámaras del setup de grabación."),
       chatId: chatIds.sueltoId,
     },
     { network: "x", content: textoDe("Hilo: cómo reutilizo un solo post en cuatro formatos 🧵") },

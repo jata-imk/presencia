@@ -46,6 +46,17 @@ export const sheetLeft: Variants = {
 };
 
 /**
+ * Panel inspector que entra desde la derecha (panel del día del Calendario).
+ * Espejo de sheetLeft. No es un modal: no lleva backdrop ni trampa de foco
+ * (ver el addendum de ADR-015).
+ */
+export const sheetRight: Variants = {
+  hidden: { x: "100%" },
+  visible: { x: 0, transition: TRANSITION_NORMAL },
+  exit: { x: "100%", transition: TRANSITION_FAST },
+};
+
+/**
  * Sublista que se despliega en su lugar (acordeón de carpetas del sidebar).
  * Anima `height: "auto"` — el contenedor necesita `overflow-hidden` o el
  * contenido se desborda mientras corre.

@@ -103,7 +103,7 @@ export function Topbar() {
         >
           {initials}
         </Menu.Trigger>
-        <Menu.Content className="w-52 rounded-xl border border-line bg-card p-1.5 shadow-lg outline-none">
+        <Menu.Content>
           {/* El overview (§5) pedía un toggle de tema también acá. Se
               resuelve con un link a Apariencia en vez de un TERCER control
               del mismo bit (topbar + menú + Configuración): tres formas de

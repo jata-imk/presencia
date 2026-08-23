@@ -24,3 +24,20 @@
 Menús anidados de verdad (submenu de un item) — la arquitectura los soporta nativamente (cada submenú es su propio contexto `useFloating`), no se construye ninguno porque no hay un caso real todavía.
 
 **Ver también:** [ADR-014](./adr-014-estrategia-de-animacion.md) — mismo criterio de "adoptar una librería enfocada en vez de reinventar", aplicado ahí a animación.
+
+## Addendum (2026-08-24, F7 PR2) — un tercer caso: el panel inspector
+
+Las dos primitivas se distinguían por la interacción de fondo: `Menu` no-modal, `Dialog` modal. El panel de detalle del día del Calendario no es ninguno de los dos, y no por un detalle de estilo:
+
+- **No es `Menu`.** No cuelga de un trigger ni se posiciona contra él: ocupa el borde derecho de la región del módulo, siempre en el mismo lugar.
+- **No es `Dialog`.** No hay overlay, ni trampa de foco, ni `aria-modal`. La grilla de atrás se sigue leyendo **y se sigue clickeando** — clickear otro día cambia el día del panel.
+
+`lib/floating/use-inspector.ts` es ese tercer motor: `useDismiss` (Escape + click afuera) y nada más. Sin `useRole`, porque `role="dialog"` le anunciaría al lector de pantalla un modal que no lo es; quien lo monta pone su propio rol (`region`) y su etiqueta.
+
+Tiene una excepción que no es cosmética: `outsidePress` ignora los clicks dentro de la grilla. Sin ella el `mousedown` cierra el panel y el `click` siguiente lo reabre para el día nuevo, con las dos animaciones enteras en el medio — un parpadeo en la interacción más común del módulo.
+
+### Por qué no lleva backdrop
+
+El doc de producto pedía uno, pero su propia justificación es _"un panel lateral mantiene la grilla parcialmente visible al fondo"_ — y un backdrop la oscurece, o sea lo contrario de lo que argumenta. La otra alternativa coherente con ADR-014 (empujar in-flow, como el panel de escritorio del `ScheduleDrawer`) reflowearía las siete columnas del mes en cada apertura, encogiendo las celdas justo cuando el usuario quiere compararlas con lo que está leyendo. Overlay sin backdrop conserva las dos cosas: la grilla legible y su tamaño.
+
+El modal "Ver" sí es `Dialog` de verdad, y por la razón opuesta: es un foco temporal sobre un elemento, se abre, se lee y se cierra.
