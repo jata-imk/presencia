@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  summarizeCardContent,
-  type PublicationCardDto,
-  type ScheduleGroupResultItem,
-} from "@presencia/shared";
+import { summarizeCardContent, type PublicationCardDto } from "@presencia/shared";
+import { X } from "lucide-react";
 import { Link } from "react-router";
 import { Button } from "../ui/Button.js";
-import { Select } from "../ui/Select.js";
-import { TextInput } from "../ui/TextInput.js";
+import { NETWORK_META } from "../cards/NetworkLogos.js";
+import { MiniCalendar } from "./MiniCalendar.js";
+import { NetworkScheduleRow } from "./NetworkScheduleRow.js";
+import { TimeChips } from "./TimeChips.js";
+import { WeekStrip } from "./WeekStrip.js";
+import { combineDateAndTime, dateKey, startOfDay } from "./date-utils.js";
 import { fetchScheduleConflicts, scheduleGroup } from "../../lib/cards-api.js";
-import { NETWORK_LABELS } from "../../lib/network-labels.js";
 import { useChannels } from "../../lib/use-channels.js";
+import { useCardsStore } from "../../stores/cards-store.js";
+import { useScheduleDrawerStore } from "../../stores/schedule-drawer-store.js";
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"]), select, input';
@@ -21,72 +23,62 @@ interface RowState {
   cardId: string;
   network: PublicationCardDto["network"];
   mode: "schedule" | "draft";
-  date: string;
+  date: Date;
   time: string;
   socialAccountId: string | null;
   conflictWarning: string | null;
 }
 
-function defaultDateTime(): { date: string; time: string } {
+function defaultDate(): Date {
   const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
   d.setHours(10, 0, 0, 0);
-  return { date: toDateInput(d), time: "10:00" };
+  return d;
 }
 
-function toDateInput(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+// Drawer de programación (reconciliado con Claude Design "Presencia -
+// Chat" / Chat Part 3.html, artboards d1-d6). Un solo <ScheduleDrawer/> vive
+// montado en ChatView; su visibilidad depende de schedule-drawer-store, no
+// de un useState local por card (F6 PR4).
+export function ScheduleDrawer() {
+  const cards = useScheduleDrawerStore((s) => s.cards);
+  const close = useScheduleDrawerStore((s) => s.close);
+  if (!cards) return null;
+  return <ScheduleDrawerInner cards={cards} onClose={close} />;
 }
 
-function combineToISO(date: string, time: string): string | null {
-  if (!date || !time) return null;
-  const local = new Date(`${date}T${time}:00`);
-  if (Number.isNaN(local.getTime())) return null;
-  return local.toISOString();
-}
-
-// Drawer de programación (presencia-chat.md, reconciliado desde Claude
-// Design "Chat Part 3.html" d1-d6): siempre opera sobre un ARRAY de cards
-// (una sola card = array de 1) y siempre llama a schedule-group — un solo
-// camino, nunca dos formas de leer la respuesta. "Personalizar por red"
-// habilita fecha/hora independiente por card; "Mismo horario" copia la del
-// primer renglón a todas al enviar. keepDraft dentro del grupo (variante
-// mixta d3b) deja esa red donde estaba, sin tocarla.
-export function ScheduleDrawer({
+function ScheduleDrawerInner({
   cards,
   onClose,
-  onDone,
 }: {
   cards: PublicationCardDto[];
   onClose: () => void;
-  onDone: (results: ScheduleGroupResultItem[]) => void;
 }) {
   const { channels } = useChannels();
+  const refreshCards = useCardsStore((s) => s.refresh);
   const isBatch = cards.length > 1;
   const [sameTime, setSameTime] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [viewMonth, setViewMonth] = useState(() => {
+    const d = defaultDate();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const [markers, setMarkers] = useState<Record<string, number>>({});
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const [rows, setRows] = useState<RowState[]>(() =>
-    cards.map((card) => {
-      const { date, time } = defaultDateTime();
-      return {
-        cardId: card.id,
-        network: card.network,
-        mode: "schedule",
-        date,
-        time,
-        socialAccountId: null,
-        conflictWarning: null,
-      };
-    }),
+    cards.map((card) => ({
+      cardId: card.id,
+      network: card.network,
+      mode: "schedule",
+      date: defaultDate(),
+      time: "10:00",
+      socialAccountId: null,
+      conflictWarning: null,
+    })),
   );
 
-  // Auto-selecciona la cuenta si solo hay una activa para esa red; deja null
-  // (bloquea programar esa fila) si no hay ninguna conectada todavía.
+  // Auto-selecciona la cuenta si solo hay una activa para esa red.
   useEffect(() => {
     if (!channels) return;
     setRows((prev) =>
@@ -97,6 +89,32 @@ export function ScheduleDrawer({
       }),
     );
   }, [channels]);
+
+  // Marcadores del mes visible — cards realmente programadas, no datos de muestra.
+  useEffect(() => {
+    const from = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1).toISOString();
+    const to = new Date(
+      viewMonth.getFullYear(),
+      viewMonth.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+    ).toISOString();
+    fetchScheduleConflicts(from, to)
+      .then((conflicts) => {
+        const counts: Record<string, number> = {};
+        for (const c of conflicts) {
+          if (!c.scheduledAt) continue;
+          const key = dateKey(new Date(c.scheduledAt));
+          counts[key] = (counts[key] ?? 0) + 1;
+        }
+        setMarkers(counts);
+      })
+      .catch(() => {
+        // Los marcadores son una ayuda visual, no bloquean el drawer.
+      });
+  }, [viewMonth]);
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -134,24 +152,28 @@ export function ScheduleDrawer({
     setRows((prev) => prev.map((r) => (r.cardId === cardId ? { ...r, ...patch } : r)));
   }
 
-  // Cuando "mismo horario" está activo, la fecha/hora del primer renglón
-  // manda — se refleja en los demás en cuanto cambia (solo visual; el envío
-  // vuelve a resolverlo explícito, ver handleSubmit).
   const effectiveRows = useMemo(() => {
     if (!sameTime || rows.length === 0) return rows;
-    const [leader] = rows;
-    if (!leader) return rows;
-    return rows.map((r) => ({ ...r, date: leader.date, time: leader.time }));
+    const [leaderRow] = rows;
+    if (!leaderRow) return rows;
+    return rows.map((r) => ({ ...r, date: leaderRow.date, time: leaderRow.time }));
   }, [rows, sameTime]);
 
-  async function checkConflict(cardId: string, date: string, time: string) {
-    const iso = combineToISO(date, time);
-    if (!iso) return;
-    const dayStart = new Date(`${date}T00:00:00`).toISOString();
-    const dayEnd = new Date(`${date}T23:59:59`).toISOString();
+  async function checkConflict(cardId: string, date: Date, time: string) {
+    const combined = combineDateAndTime(date, time);
+    if (!combined) return;
+    const dayStart = startOfDay(date).toISOString();
+    const dayEnd = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      23,
+      59,
+      59,
+    ).toISOString();
     try {
       const conflicts = await fetchScheduleConflicts(dayStart, dayEnd);
-      const target = new Date(iso).getTime();
+      const target = combined.getTime();
       const clash = conflicts.find(
         (c) =>
           c.id !== cardId &&
@@ -162,14 +184,21 @@ export function ScheduleDrawer({
         conflictWarning: clash ? "Ya tienes una publicación programada cerca de esta hora." : null,
       });
     } catch {
-      // El conflicto es una ayuda, no un bloqueo — si la consulta falla, se
-      // sigue sin advertencia en vez de tumbar el drawer.
+      // El conflicto es una ayuda, no un bloqueo.
     }
   }
 
-  function handleDateTimeChange(cardId: string, date: string, time: string) {
-    updateRow(cardId, { date, time, conflictWarning: null });
-    void checkConflict(cardId, date, time);
+  function handleDateChange(cardId: string, date: Date) {
+    updateRow(cardId, { date, conflictWarning: null });
+    setViewMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+    const row = rows.find((r) => r.cardId === cardId);
+    if (row) void checkConflict(cardId, date, row.time);
+  }
+
+  function handleTimeChange(cardId: string, time: string) {
+    updateRow(cardId, { time, conflictWarning: null });
+    const row = rows.find((r) => r.cardId === cardId);
+    if (row) void checkConflict(cardId, row.date, time);
   }
 
   async function handleSubmit() {
@@ -178,11 +207,11 @@ export function ScheduleDrawer({
 
     const items = targetRows.map((row) => {
       if (row.mode === "draft") return { cardId: row.cardId, keepDraft: true as const };
-      const iso = combineToISO(row.date, row.time);
+      const combined = combineDateAndTime(row.date, row.time);
       return {
         cardId: row.cardId,
         socialAccountId: row.socialAccountId ?? "",
-        scheduledAt: iso ?? "",
+        scheduledAt: combined ? combined.toISOString() : "",
       };
     });
 
@@ -195,18 +224,22 @@ export function ScheduleDrawer({
     }
     const tooSoon = targetRows.some((row) => {
       if (row.mode === "draft") return false;
-      const iso = combineToISO(row.date, row.time);
-      return !iso || new Date(iso).getTime() < Date.now() + MIN_LEAD_MINUTES * 60_000;
+      const combined = combineDateAndTime(row.date, row.time);
+      return !combined || combined.getTime() < Date.now() + MIN_LEAD_MINUTES * 60_000;
     });
     if (tooSoon) {
       setFormError(`Elige un horario al menos ${MIN_LEAD_MINUTES} minutos en el futuro.`);
       return;
     }
 
+    const [firstCard] = cards;
+    if (!firstCard) return;
+
     setSubmitting(true);
     try {
-      const results = await scheduleGroup({ items });
-      onDone(results);
+      await scheduleGroup({ items });
+      await refreshCards(firstCard.chatId);
+      onClose();
     } catch {
       setFormError("No se pudo programar. Inténtalo de nuevo.");
     } finally {
@@ -215,6 +248,7 @@ export function ScheduleDrawer({
   }
 
   const displayRows = sameTime ? effectiveRows : rows;
+  const [leader] = displayRows;
   const anyReschedule = cards.some((c) => c.status === "scheduled" || c.status === "failed");
 
   return (
@@ -225,60 +259,164 @@ export function ScheduleDrawer({
         aria-modal="true"
         aria-labelledby="schedule-drawer-title"
         tabIndex={-1}
-        className="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-line bg-surface p-5 shadow-lg outline-none"
+        className="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-line bg-surface shadow-lg outline-none"
       >
-        <div className="mb-4 flex items-start justify-between">
-          <h2 id="schedule-drawer-title" className="text-lg font-bold text-fg">
-            {anyReschedule ? "Reprogramar publicación" : "Programar publicación"}
-          </h2>
-          <button type="button" aria-label="Cerrar" className="text-fg-muted" onClick={onClose}>
-            ×
+        <div className="flex items-start justify-between border-b border-line px-5 py-4">
+          <div>
+            <h2 id="schedule-drawer-title" className="text-lg font-bold text-fg">
+              {anyReschedule ? "Reprogramar publicación" : "Programar publicación"}
+            </h2>
+            {!isBatch && leader && (
+              <p className="mt-0.5 text-xs text-fg-secondary">
+                {NETWORK_META[leader.network].label}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            aria-label="Cerrar"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-fg-muted hover:bg-secondary-hover"
+          >
+            <X size={16} />
           </button>
         </div>
 
-        {isBatch && (
-          <div className="mb-4 flex items-center gap-2 rounded-md bg-tint-plum p-1 text-sm">
-            <button
-              type="button"
-              className={`flex-1 rounded-md py-1.5 font-medium ${sameTime ? "bg-card text-fg shadow-sm" : "text-fg-secondary"}`}
-              onClick={() => setSameTime(true)}
-            >
-              Mismo horario
-            </button>
-            <button
-              type="button"
-              className={`flex-1 rounded-md py-1.5 font-medium ${!sameTime ? "bg-card text-fg shadow-sm" : "text-fg-secondary"}`}
-              onClick={() => setSameTime(false)}
-            >
-              Personalizar por red
-            </button>
+        <div className="flex-1 px-5 py-4">
+          <div className="mb-4 flex flex-col gap-2">
+            {cards.map((card) => {
+              const meta = NETWORK_META[card.network];
+              return (
+                <div key={card.id} className="rounded-lg border border-line bg-card px-3 py-2.5">
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <meta.Logo size={13} />
+                    <span className="text-xs font-semibold" style={{ color: meta.color }}>
+                      {meta.label}
+                    </span>
+                  </div>
+                  <p className="line-clamp-2 text-xs text-fg-secondary">
+                    {summarizeCardContent(card.content)}
+                  </p>
+                </div>
+              );
+            })}
           </div>
-        )}
 
-        <div className="flex flex-col gap-4">
-          {displayRows.map((row, i) => {
-            const card = cards.find((c) => c.id === row.cardId);
-            const accounts = accountsFor(row.network);
-            const showDateTime = !sameTime || i === 0;
-            return (
-              <ScheduleRow
-                key={row.cardId}
-                row={row}
-                summary={card ? summarizeCardContent(card.content) : ""}
-                accounts={accounts}
-                showDateTime={showDateTime || !isBatch}
-                showKeepDraftOption={isBatch}
-                onChangeDateTime={(date, time) => handleDateTimeChange(row.cardId, date, time)}
-                onChangeAccount={(id) => updateRow(row.cardId, { socialAccountId: id })}
-                onChangeMode={(mode) => updateRow(row.cardId, { mode })}
+          {isBatch && (
+            <div className="mb-4 flex items-center gap-1 rounded-lg bg-tint-plum p-1 text-sm">
+              <button
+                type="button"
+                onClick={() => setSameTime(true)}
+                className={`flex-1 rounded-md py-1.5 font-semibold ${sameTime ? "bg-card text-fg shadow-sm" : "text-fg-secondary"}`}
+              >
+                Mismo horario
+              </button>
+              <button
+                type="button"
+                onClick={() => setSameTime(false)}
+                className={`flex-1 rounded-md py-1.5 font-semibold ${!sameTime ? "bg-card text-fg shadow-sm" : "text-fg-secondary"}`}
+              >
+                Personalizar por red
+              </button>
+            </div>
+          )}
+
+          {(!isBatch || sameTime) && leader && (
+            <div className="mb-4 flex flex-col gap-3">
+              <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
+                ¿Cuándo publicar?
+              </p>
+              <MiniCalendar
+                viewMonth={viewMonth}
+                onChangeMonth={setViewMonth}
+                selectedDate={leader.date}
+                onSelectDate={(d) => handleDateChange(leader.cardId, d)}
+                markers={markers}
               />
-            );
-          })}
+              <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
+                ¿A qué hora?
+              </p>
+              <TimeChips
+                selectedTime={leader.time}
+                onSelectTime={(t) => handleTimeChange(leader.cardId, t)}
+              />
+              <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
+                Tu semana
+              </p>
+              <WeekStrip
+                selectedDate={leader.date}
+                onSelectDate={(d) => handleDateChange(leader.cardId, d)}
+                markers={markers}
+                hasConflict={leader.conflictWarning !== null}
+              />
+              {leader.conflictWarning && (
+                <p className="text-xs text-warning">⚠ {leader.conflictWarning}</p>
+              )}
+              {!isBatch &&
+                (accountsFor(leader.network).length === 0 ? (
+                  <p className="text-xs text-warning">
+                    No tienes una cuenta de {NETWORK_META[leader.network].label} conectada.{" "}
+                    <Link to="/configuracion/canales" className="underline">
+                      Conéctala primero
+                    </Link>
+                    .
+                  </p>
+                ) : (
+                  accountsFor(leader.network).length > 1 && (
+                    <select
+                      value={leader.socialAccountId ?? ""}
+                      onChange={(e) =>
+                        updateRow(leader.cardId, { socialAccountId: e.target.value })
+                      }
+                      className="rounded-md border border-line bg-card px-2.5 py-2 text-sm text-fg"
+                    >
+                      <option value="" disabled>
+                        Elige la cuenta
+                      </option>
+                      {accountsFor(leader.network).map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.displayName ?? a.id}
+                        </option>
+                      ))}
+                    </select>
+                  )
+                ))}
+            </div>
+          )}
+
+          {isBatch && (
+            <div className="flex flex-col gap-3">
+              <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
+                Por red
+              </p>
+              {displayRows.map((row) => (
+                <NetworkScheduleRow
+                  key={row.cardId}
+                  network={row.network}
+                  mode={row.mode}
+                  onChangeMode={(mode) => updateRow(row.cardId, { mode })}
+                  showModeToggle
+                  showDateTimePicker={!sameTime}
+                  date={row.date}
+                  time={row.time}
+                  viewMonth={viewMonth}
+                  onChangeMonth={setViewMonth}
+                  onChangeDate={(d) => handleDateChange(row.cardId, d)}
+                  onChangeTime={(t) => handleTimeChange(row.cardId, t)}
+                  markers={markers}
+                  conflictWarning={sameTime ? null : row.conflictWarning}
+                  accounts={accountsFor(row.network)}
+                  socialAccountId={row.socialAccountId}
+                  onChangeAccount={(id) => updateRow(row.cardId, { socialAccountId: id })}
+                />
+              ))}
+            </div>
+          )}
+
+          {formError && <p className="mt-4 text-sm text-error">{formError}</p>}
         </div>
 
-        {formError && <p className="mt-4 text-sm text-error">{formError}</p>}
-
-        <div className="mt-auto flex gap-2 pt-5">
+        <div className="flex gap-2 border-t border-line px-5 py-4">
           <Button variant="secondary" onClick={onClose} disabled={submitting} className="flex-1">
             Cancelar
           </Button>
@@ -287,104 +425,6 @@ export function ScheduleDrawer({
           </Button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ScheduleRow({
-  row,
-  summary,
-  accounts,
-  showDateTime,
-  showKeepDraftOption,
-  onChangeDateTime,
-  onChangeAccount,
-  onChangeMode,
-}: {
-  row: RowState;
-  summary: string;
-  accounts: { id: string; displayName: string | null }[];
-  showDateTime: boolean;
-  showKeepDraftOption: boolean;
-  onChangeDateTime: (date: string, time: string) => void;
-  onChangeAccount: (id: string) => void;
-  onChangeMode: (mode: RowState["mode"]) => void;
-}) {
-  const hasAccount = accounts.length > 0;
-
-  return (
-    <div className="rounded-md border border-line bg-card p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-semibold text-fg">{NETWORK_LABELS[row.network]}</span>
-        {showKeepDraftOption && (
-          <div className="flex gap-1 rounded-md bg-tint-plum p-0.5 text-xs">
-            <button
-              type="button"
-              className={`rounded px-2 py-1 ${row.mode === "schedule" ? "bg-card font-semibold text-fg" : "text-fg-secondary"}`}
-              onClick={() => onChangeMode("schedule")}
-            >
-              Programar
-            </button>
-            <button
-              type="button"
-              className={`rounded px-2 py-1 ${row.mode === "draft" ? "bg-card font-semibold text-fg" : "text-fg-secondary"}`}
-              onClick={() => onChangeMode("draft")}
-            >
-              Dejar en borrador
-            </button>
-          </div>
-        )}
-      </div>
-      <p className="mb-3 line-clamp-2 text-xs text-fg-secondary">{summary}</p>
-
-      {row.mode === "draft" ? (
-        <p className="text-xs text-fg-muted italic">Esta red se queda como está, sin programar.</p>
-      ) : !hasAccount ? (
-        <p className="text-xs text-warning">
-          No tienes una cuenta de {NETWORK_LABELS[row.network]} conectada.{" "}
-          <Link to="/configuracion/canales" className="underline">
-            Conéctala primero
-          </Link>
-          .
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {accounts.length > 1 && (
-            <Select
-              value={row.socialAccountId ?? ""}
-              onChange={(e) => onChangeAccount(e.target.value)}
-            >
-              <option value="" disabled>
-                Elige la cuenta
-              </option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.displayName ?? a.id}
-                </option>
-              ))}
-            </Select>
-          )}
-          {showDateTime && (
-            <div className="flex gap-2">
-              <TextInput
-                type="date"
-                aria-label="Fecha"
-                value={row.date}
-                onChange={(e) => onChangeDateTime(e.target.value, row.time)}
-                className="flex-1"
-              />
-              <TextInput
-                type="time"
-                aria-label="Hora"
-                value={row.time}
-                onChange={(e) => onChangeDateTime(row.date, e.target.value)}
-                className="w-28"
-              />
-            </div>
-          )}
-          {row.conflictWarning && <p className="text-xs text-warning">⚠ {row.conflictWarning}</p>}
-        </div>
-      )}
     </div>
   );
 }

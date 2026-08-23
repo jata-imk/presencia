@@ -70,3 +70,21 @@
     width: 0%;
   }
 }
+
+/* Borde animado de card en borrador (F6 PR4, components/cards/GlowFrame.tsx —
+   portado de arquetipos.jsx en Claude Design "Presencia - Chat"). */
+@keyframes glow-rotate {
+  to {
+    background-position: 200% 50%;
+  }
+}
+
+/* Shimmer de imagen "generando" (VisualCardBody, mismo mockup). */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}

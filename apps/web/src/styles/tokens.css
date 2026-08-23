@@ -146,6 +146,24 @@
   --status-ai: var(--color-pink-orchid);
   --status-ai-bg: var(--color-plum-50);
 
+  /* Bordes translúcidos de estado (F6 PR4): Tailwind v4 no genera el
+     modificador de opacidad (`/40`) sobre estos tokens indirectos —
+     compila sin avisar y no emite ninguna regla. color-mix() a mano en
+     vez de duplicar el hex en paralelo: sigue el token base si cambia. */
+  --status-success-border: color-mix(in srgb, var(--status-success) 30%, transparent);
+  --status-warning-border: color-mix(in srgb, var(--status-warning) 35%, transparent);
+  --status-error-border: color-mix(in srgb, var(--status-error) 30%, transparent);
+  --status-info-border: color-mix(in srgb, var(--status-info) 55%, transparent);
+  --status-ai-border: color-mix(in srgb, var(--status-ai) 55%, transparent);
+
+  /* Variantes traslúcidas de fg-inverse (components/ui/Toast.tsx — texto
+     secundario/cierre sobre superficie oscura). Mismo motivo que arriba;
+     color-mix() en vez de rgba() paralelo para que siga el flip de tema
+     de --fg-inverse (blanco en claro, plum-800 en oscuro). */
+  --fg-inverse-muted: color-mix(in srgb, var(--fg-inverse) 60%, transparent);
+  --fg-inverse-subtle: color-mix(in srgb, var(--fg-inverse) 50%, transparent);
+  --fg-inverse-faint: color-mix(in srgb, var(--fg-inverse) 10%, transparent);
+
   /* Layout */
   --sidebar-width: 220px;
   --topbar-height: 56px;
@@ -204,6 +222,9 @@
   --color-fg-secondary: var(--fg-secondary);
   --color-fg-muted: var(--fg-muted);
   --color-fg-inverse: var(--fg-inverse);
+  --color-fg-inverse-muted: var(--fg-inverse-muted);
+  --color-fg-inverse-subtle: var(--fg-inverse-subtle);
+  --color-fg-inverse-faint: var(--fg-inverse-faint);
   --color-brand: var(--fg-brand);
   --color-accent: var(--fg-accent);
 
@@ -230,4 +251,10 @@
   --color-info-bg: var(--status-info-bg);
   --color-ai: var(--status-ai);
   --color-ai-bg: var(--status-ai-bg);
+
+  --color-success-border: var(--status-success-border);
+  --color-warning-border: var(--status-warning-border);
+  --color-error-border: var(--status-error-border);
+  --color-info-border: var(--status-info-border);
+  --color-ai-border: var(--status-ai-border);
 }

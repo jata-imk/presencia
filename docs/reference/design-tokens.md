@@ -29,8 +29,16 @@
 | `interactive-primary`    | `#3D2645` (plum-800) | `#FFAFCC` (blush-pop) |
 | `interactive-primary-fg` | `#FFFFFF`            | `#3D2645`             |
 
+## Trampa conocida: modificador de opacidad (`/40`) sobre tokens indirectos
+
+**No uses `border-info/40`, `bg-warning-bg/60`, `text-fg-inverse/60`, etc.** — Tailwind v4 (config CSS-first) genera esa clase con `color-mix()` solo cuando puede resolver el color en el propio `@theme`; nuestros tokens de capa 2/3 son _cadenas_ de `var()` (`--color-info: var(--status-info)`, y `--status-info` a su vez puede ser otro `var()`). Con esa indirección, Tailwind **compila sin error y sin avisar, pero no emite ninguna regla CSS** — el elemento queda sin ese borde/fondo, invisible hasta que alguien inspecciona el DOM. Se detectó así en F6 PR4 (drawer y cards con bordes/fondos "fantasma").
+
+**Solución aplicada:** para cada combinación semántica+opacidad que un componente necesita de verdad, se define su propio token con `color-mix()` explícito en `tokens.css` (sin modificador de Tailwind) — ver `--status-success-border`, `--status-warning-border`, `--status-error-border`, `--status-info-border`, `--status-ai-border`, `--fg-inverse-muted`, `--fg-inverse-subtle`, `--fg-inverse-faint`, registrados en `@theme inline` como `--color-*-border` / `--color-fg-inverse-*`. Se usan como clase normal (`border-info-border`), nunca con `/NN`.
+
+**Regla práctica:** antes de usar un modificador de opacidad sobre cualquier color que no sea un color crudo de Tailwind (`white`, `black`) o de la capa 1 declarada directo en `@theme` con un hex literal (`pink-orchid`, `blush-pop`, etc. — aun así, **verificado que tampoco funciona** para esos: ver arriba), da por hecho que no va a compilar y define el token específico. Verificar generación real: `grep "nombre-clase" dist/assets/index-*.css` tras un build — si no aparece, no se generó.
+
 ## Pendientes
 
 - **Fuentes:** hoy vía Google Fonts (`@import` en `app.css`); auto-hostear (woff2 en el repo o bucket) antes de lanzar — privacidad y latencia.
 - Los assets de marca (`isotipo.png`, `logotipo.png`) del proyecto de diseño se importan junto con el App Shell (post-F1).
-- Iconografía: Lucide (stroke 1.5px) — se agrega `lucide-react` cuando entren las pantallas.
+- Iconografía: Lucide (stroke 1.5px) — `lucide-react` instalado en F6 PR4. Nota: esta versión no trae ícono de marca de YouTube (`Youtube` no existe en el paquete) — se usa `SquarePlay` genérico en `components/cards/NetworkLogos.tsx`.
