@@ -58,6 +58,8 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
   - El `ORDER BY` de `listChats` necesita `pinned_at DESC NULLS LAST` **explícito**: en Postgres `DESC` implica `NULLS FIRST`, así que sin eso los chats sin fijar quedarían arriba de los fijados.
 - Los "iconos de canales tocados" del sidebar se derivan con un `SELECT DISTINCT channel` sobre messages (o columna cache `channels_touched text[]` si duele — medir primero).
 
+> **Columnas derivadas de búsqueda (F6.5, ADR-017).** `messages.search_tsv` y `publication_cards.search_tsv` son columnas `tsvector` **generadas** (`STORED`) que extraen el texto de sus respectivos `jsonb` con `jsonb_path_query_array` —las columnas generadas no admiten subqueries, así que `jsonb_array_elements` no sirve— y lo tokenizan con la configuración `es_unaccent` (`spanish` + `unaccent`, porque el stemmer español no quita acentos). Más índices GIN de trigramas sobre `f_unaccent(chats.title)` y `f_unaccent(folders.name)`. **No están declaradas en `schema.ts` a propósito:** viven solo en la migración custom `0014`, igual que las policies de RLS, porque drizzle-kit diffea contra el snapshot y una declaración a medias haría que el próximo `generate` emita un `DROP COLUMN`.
+
 **`messages`** — la conversación canónica multi-canal.
 
 | Columna      | Tipo        | Nota                                                                                       |
