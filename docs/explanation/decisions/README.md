@@ -23,5 +23,6 @@ Formato: **Decisión** → **Razón** → **Descartado**.
 | [015](./adr-015-portales-floating-ui.md)         | Menús, popovers y modales: `@floating-ui/react`           |
 | [016](./adr-016-tema-claro-oscuro.md)            | Tema: preferencia en localStorage + `data-theme`          |
 | [017](./adr-017-busqueda-full-text.md)           | Búsqueda: full-text de Postgres (tsvector + trigramas)    |
+| [018](./adr-018-arquitectura-calendario.md)      | Calendario: vista sobre las cards, construida a mano      |
 
 Decisiones pendientes de cerrar: proveedor(es) de generación de imágenes; modelo default por acción (según suite de regresión cultural).

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
-import { chats, users } from "../db/schema.js";
+import { chats, folders, users } from "../db/schema.js";
 import { PublishingRejectedError, PublishingUnavailableError } from "../publishing/errors.js";
 import { FakePublishingProvider } from "../publishing/fake.provider.js";
 import type { SchedulePostRequest } from "../publishing/publishing.provider.js";
@@ -695,4 +695,161 @@ describe("CardsService", () => {
       expect(rowOrphaned?.status).toBe("failed");
     },
   );
+  // ── F7: listados que alimentan el Calendario ──────────────────────────
+  //
+  // Se prueban contra Postgres real por lo mismo que el resto del archivo:
+  // lo que está bajo prueba es el RLS, el join a chats por carpeta y el
+  // orden que devuelve el planner, no una rama de JS.
+  describe("listados del Calendario (F7)", () => {
+    // Ventana lejana a propósito: los demás tests del archivo programan a
+    // `future(N minutos)`, o sea alrededor de "ahora". Aislar el rango en
+    // 2031 hace que estas aserciones puedan ser de igualdad exacta en vez
+    // de "contiene", sin depender del orden en que corran los tests.
+    const BASE = new Date("2031-03-10T00:00:00.000Z");
+    const at = (days: number, hours = 0) =>
+      new Date(BASE.getTime() + days * 86_400_000 + hours * 3_600_000);
+    const WINDOW_FROM = BASE;
+    const WINDOW_TO = at(7);
+
+    const accounts: Partial<Record<SocialNetwork, string>> = {};
+    let folderId: string;
+    let chatInFolder: string;
+    let ids: Record<string, string>;
+
+    beforeAll(async () => {
+      for (const network of ["linkedin", "instagram", "x"] as const) {
+        accounts[network] = (await connectAccount(userA, network)).id;
+      }
+
+      ({ folderId, chatInFolder } = await dbService.runWithTenant(userA, async (tx) => {
+        const [folder] = await tx
+          .insert(folders)
+          .values({ userId: userA, name: "Cliente Acme" })
+          .returning({ id: folders.id });
+        if (!folder) throw new Error("No se pudo crear la carpeta de prueba");
+        const [chat] = await tx
+          .insert(chats)
+          .values({ userId: userA, folderId: folder.id })
+          .returning({ id: chats.id });
+        if (!chat) throw new Error("No se pudo crear el chat de la carpeta");
+        return { folderId: folder.id, chatInFolder: chat.id };
+      }));
+
+      // Se arma la escena entera acá y no en cada test: son lecturas puras,
+      // ningún test de este describe muta las cards.
+      const place = async (opts: {
+        network: SocialNetwork;
+        scheduledAt: Date;
+        published?: boolean;
+        chatId?: string;
+        orphan?: boolean;
+      }) =>
+        dbService.runWithTenant(userA, async (tx) => {
+          const card = await cardsRepo.insertCard(tx, {
+            userId: userA,
+            chatId: opts.chatId ?? chatA,
+            network: opts.network,
+            content: TEXT_CONTENT,
+          });
+          const accountId = accounts[opts.network];
+          if (!accountId) throw new Error(`Sin cuenta de prueba para ${opts.network}`);
+          await cardsRepo.markScheduling(tx, card.id, {
+            socialAccountId: accountId,
+            scheduledAt: opts.scheduledAt,
+          });
+          // El ref sintético NO es decorativo: markScheduling deja
+          // provider_ref en null a propósito, y listOrphanedScheduled marca
+          // `failed` cualquier card `scheduled` sin ref con más de
+          // RECONCILE_GRACE_MS (2 min) de antigüedad — sin mirar
+          // scheduled_at. listByRange arranca con maybeReconcile y el
+          // beforeEach construye un CardsService nuevo, así que el cooldown
+          // tampoco protege: si este describe tarda más de dos minutos
+          // contra la DB tunelizada, las fixtures se volvían `failed` a
+          // mitad de la corrida. Mismo motivo por el que seed-dev.ts los
+          // falsea.
+          await cardsRepo.attachProviderRef(tx, card.id, `pf_spec_${randomUUID()}`);
+          if (opts.published) await cardsRepo.markPublished(tx, card.id, opts.scheduledAt);
+          if (opts.orphan) {
+            // insertCard exige chatId; la orfandad real la produce borrar el
+            // chat (FK "set null"). Se simula el estado final directamente.
+            await tx.execute(
+              sql`update publication_cards set chat_id = null where id = ${card.id}`,
+            );
+          }
+          return card.id;
+        });
+
+      ids = {
+        liMorning: await place({ network: "linkedin", scheduledAt: at(0, 9) }),
+        igNoon: await place({ network: "instagram", scheduledAt: at(0, 12) }),
+        xPublished: await place({ network: "x", scheduledAt: at(1, 8), published: true }),
+        orphan: await place({ network: "linkedin", scheduledAt: at(2, 10), orphan: true }),
+        inFolder: await place({
+          network: "instagram",
+          scheduledAt: at(3, 18),
+          chatId: chatInFolder,
+        }),
+        outOfRange: await place({ network: "linkedin", scheduledAt: at(40, 9) }),
+        loose: (await createCard(TEXT_CONTENT, "linkedin")).id,
+      };
+    }, 30_000);
+
+    it(
+      "trae el rango completo en cualquier estado, ordenado por hora, y deja fuera lo de afuera",
+      { timeout: 15_000 },
+      async () => {
+        const rows = await service.listByRange(userA, WINDOW_FROM, WINDOW_TO);
+
+        expect(rows.map((row) => row.id)).toEqual([
+          ids.liMorning,
+          ids.igNoon,
+          ids.xPublished,
+          ids.orphan,
+          ids.inFolder,
+        ]);
+        // El publicado sigue en el calendario (decisión de producto: el
+        // pipeline no borra su historia) — findConflicts jamás lo devolvería.
+        expect(rows.find((row) => row.id === ids.xPublished)?.status).toBe("published");
+        // El borrador sin fecha no cae en ningún rango.
+        expect(rows.some((row) => row.id === ids.loose)).toBe(false);
+      },
+    );
+
+    it("filtra por estado y por red", { timeout: 15_000 }, async () => {
+      const scheduled = await service.listByRange(userA, WINDOW_FROM, WINDOW_TO, {
+        status: ["scheduled"],
+      });
+      expect(scheduled.some((row) => row.id === ids.xPublished)).toBe(false);
+      expect(scheduled.map((row) => row.id)).toContain(ids.liMorning);
+
+      const instagram = await service.listByRange(userA, WINDOW_FROM, WINDOW_TO, {
+        network: ["instagram"],
+      });
+      expect(instagram.map((row) => row.id)).toEqual([ids.igNoon, ids.inFolder]);
+    });
+
+    it(
+      "el filtro por carpeta sale del chat de origen, así que la card huérfana no matchea",
+      { timeout: 15_000 },
+      async () => {
+        const rows = await service.listByRange(userA, WINDOW_FROM, WINDOW_TO, { folderId });
+
+        expect(rows.map((row) => row.id)).toEqual([ids.inFolder]);
+        expect(rows.some((row) => row.id === ids.orphan)).toBe(false);
+      },
+    );
+
+    it("el RLS aísla el calendario entre usuarios", { timeout: 15_000 }, async () => {
+      const rows = await service.listByRange(userB, WINDOW_FROM, WINDOW_TO);
+      expect(rows).toEqual([]);
+    });
+
+    it("listDrafts solo devuelve borradores sin fecha", { timeout: 15_000 }, async () => {
+      const drafts = await service.listDrafts(userA);
+
+      expect(drafts.map((row) => row.id)).toContain(ids.loose);
+      expect(drafts.some((row) => row.id === ids.liMorning)).toBe(false);
+      expect(drafts.every((row) => row.status === "draft" && row.scheduledAt === null)).toBe(true);
+    });
+  });
 });

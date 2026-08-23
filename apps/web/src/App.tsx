@@ -2,6 +2,7 @@ import { MotionConfig } from "motion/react";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
 import { useThemeSync } from "./lib/use-theme.js";
 import { ArchivedChatsPage } from "./routes/archived-chats.js";
+import { CalendarioPage } from "./routes/calendario.js";
 import { ChatPage } from "./routes/chat.js";
 import { ChatsPage } from "./routes/chats.js";
 import { AparienciaPage } from "./routes/configuracion/apariencia.js";
@@ -30,6 +31,12 @@ const router = createBrowserRouter([
       { path: "/chats", element: <ChatsPage /> },
       { path: "/chats/archivados", element: <ArchivedChatsPage /> },
       { path: "/chats/:id", element: <ChatPage /> },
+      // handle.ownScroll: el Calendario se hace cargo de su propio alto y de
+      // sus regiones de scroll, así que ProtectedLayout apaga el contenedor
+      // genérico `overflow-y-auto`. Declarativo en la ruta y no en un
+      // contexto nuevo: es información estática de la pantalla, y react-router
+      // ya la propaga con useMatches(). Ver ADR-018.
+      { path: "/calendario", element: <CalendarioPage />, handle: { ownScroll: true } },
       { path: "/onboarding", element: <OnboardingPage /> },
       {
         path: "/configuracion",

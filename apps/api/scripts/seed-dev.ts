@@ -23,7 +23,16 @@ import { auth } from "../src/auth/auth.js";
 import { db } from "../src/db/client.js";
 import { DbService } from "../src/db/db.service.js";
 import { env } from "../src/env.js";
-import { brandVoices, chats, folders, messages, users } from "../src/db/schema.js";
+import {
+  brandVoices,
+  chats,
+  folders,
+  messages,
+  publicationCards,
+  socialAccounts,
+  users,
+} from "../src/db/schema.js";
+import type { CardContent, SocialNetwork } from "@presencia/shared";
 
 const dbService = new DbService();
 
@@ -151,11 +160,210 @@ async function seed(): Promise<void> {
       ]);
     }
 
+    await seedCalendar(tx, user.id, {
+      sueltoId: rows[0]?.id,
+      enCarpetaId: rows[3]?.id,
+    });
+
     return rows;
   });
 
   console.log(`· Usuario creado con ${String(creados.length)} chats, 1 carpeta y 1 voz de marca.`);
+  console.log("· Calendario sembrado: publicados, programados, un grupo multi-red, un conflicto");
+  console.log("  de horario, un día saturado (+N más) y borradores sin fecha.");
   printCredentials();
+}
+
+// ── Calendario (F7) ───────────────────────────────────────────────────
+//
+// La grilla del mes solo se puede juzgar con contenido que tenga la
+// variedad real: estados mezclados, un grupo multi-red, un conflicto y un
+// día que desborde el cap de 3. Sembrarlo a mano cada vez que se toca el
+// módulo es justo lo que este script existe para evitar.
+//
+// Las cards se insertan ya "programadas" sin pasar por CardsService: no hay
+// PostFast en dev, y lo que interesa acá es el estado de la fila, no el
+// camino que la produce.
+//
+// Todo lo que no es borrador lleva provider_ref. NO es decorativo: cualquier
+// card `scheduled` sin ref y con más de dos minutos de antigüedad es, para
+// listOrphanedScheduled, una programación que se cortó a la mitad, y el
+// reconciliador la marca `failed` — sin mirar si la fecha ya pasó. Sembrarlas
+// sin ref hacía que el calendario se pusiera rojo entero a los dos minutos de
+// correr el seed. El ref es sintético porque en dev no hay PostFast al que
+// pedirle uno de verdad; reconcileDueCards preguntará por él y no pasará nada
+// (maybeReconcile se traga los fallos del proveedor a propósito).
+
+type Tx = Parameters<Parameters<DbService["runWithTenant"]>[1]>[0];
+
+function textoDe(body: string, hashtags: string[] = []): CardContent {
+  return { archetype: "text_first", body, hashtags, assetIds: [] };
+}
+
+function visualDe(caption: string): CardContent {
+  return { archetype: "visual_first", caption, hashtags: [], assetIds: [crypto.randomUUID()] };
+}
+
+async function seedCalendar(
+  tx: Tx,
+  userId: string,
+  chatIds: { sueltoId?: string; enCarpetaId?: string },
+): Promise<void> {
+  const redes: SocialNetwork[] = ["linkedin", "instagram", "x", "facebook"];
+  const cuentas = await tx
+    .insert(socialAccounts)
+    .values(
+      redes.map((network) => ({
+        userId,
+        network,
+        providerRef: `seed_${network}_${crypto.randomUUID()}`,
+        displayName: "Cuenta de dev",
+      })),
+    )
+    .returning({ id: socialAccounts.id, network: socialAccounts.network });
+  const cuentaDe = (network: SocialNetwork) =>
+    cuentas.find((cuenta) => cuenta.network === network)?.id ?? null;
+
+  // Anclado al mes en curso, no a fechas fijas: el seed tiene que seguir
+  // teniendo sentido cuando se corra el mes que viene.
+  const hoy = new Date();
+  const enDia = (dia: number, hora: number, minuto = 0) =>
+    new Date(hoy.getFullYear(), hoy.getMonth(), dia, hora, minuto, 0, 0);
+
+  const dia = hoy.getDate();
+  const antes = Math.max(1, dia - 6);
+  const despues = dia + 2;
+  const grupoId = crypto.randomUUID();
+
+  interface Semilla {
+    network: SocialNetwork;
+    content: CardContent;
+    scheduledAt?: Date;
+    published?: boolean;
+    groupId?: string;
+    chatId?: string;
+  }
+
+  const semillas: Semilla[] = [
+    // Pasado — publicados. Se quedan en el calendario a propósito
+    // (presencia-calendario.md §6: el pipeline no borra su historia).
+    {
+      network: "linkedin",
+      content: textoDe("Cinco lecciones de mi primer año como freelance en Mérida."),
+      scheduledAt: enDia(antes, 9),
+      published: true,
+    },
+    {
+      network: "instagram",
+      content: visualDe("Carrusel: las cinco apps de IA que uso todos los días ✨"),
+      scheduledAt: enDia(antes + 1, 12),
+      published: true,
+    },
+    {
+      network: "x",
+      content: textoDe("La constancia le gana a la estrategia el 90% de las veces."),
+      scheduledAt: enDia(antes + 2, 18),
+      published: true,
+    },
+
+    // Hoy — un día saturado, para ver el cap de 3 y el chip "+N más".
+    {
+      network: "linkedin",
+      content: textoDe("Cómo armo mi semana de contenido en bloques de 90 minutos."),
+      scheduledAt: enDia(dia, 8),
+    },
+    {
+      network: "instagram",
+      content: visualDe("Detrás de cámaras del estudio nuevo."),
+      scheduledAt: enDia(dia, 11),
+    },
+    {
+      network: "x",
+      content: textoDe("Pregunta rápida: ¿publicas por la mañana o por la noche?"),
+      scheduledAt: enDia(dia, 14),
+    },
+    {
+      network: "facebook",
+      content: visualDe("Recordatorio: el webinar cierra el viernes."),
+      scheduledAt: enDia(dia, 17),
+    },
+    {
+      network: "linkedin",
+      content: textoDe("Caso de éxito: de 1k a 10k seguidores en cuatro meses."),
+      scheduledAt: enDia(dia, 19),
+    },
+
+    // Conflicto real: dos de LinkedIn a la MISMA hora el mismo día. Mismo
+    // día en redes distintas no es conflicto, por eso las dos son LinkedIn.
+    {
+      network: "linkedin",
+      content: textoDe("Newsletter de la semana: lo que aprendí sobre aparecer todos los días."),
+      scheduledAt: enDia(despues, 18),
+    },
+    {
+      network: "linkedin",
+      content: textoDe("Arrancamos el directo de esta noche, no te lo pierdas."),
+      scheduledAt: enDia(despues, 18),
+    },
+
+    // Grupo multi-red: mismo groupId Y mismo instante — así se agrupa en la
+    // grilla. Si se cambia la hora de una sola, el grupo se rompe solo.
+    {
+      network: "linkedin",
+      content: textoDe("Lanzamos la nueva temporada del pódcast."),
+      scheduledAt: enDia(despues + 2, 18),
+      groupId: grupoId,
+      chatId: chatIds.enCarpetaId,
+    },
+    {
+      network: "instagram",
+      content: visualDe("Carrusel del lanzamiento de la temporada."),
+      scheduledAt: enDia(despues + 2, 18),
+      groupId: grupoId,
+      chatId: chatIds.enCarpetaId,
+    },
+    {
+      network: "x",
+      content: textoDe("Ya está afuera la nueva temporada 🎙️"),
+      scheduledAt: enDia(despues + 2, 18),
+      groupId: grupoId,
+      chatId: chatIds.enCarpetaId,
+    },
+
+    // Borradores sin fecha — la bandeja del panel izquierdo (PR3).
+    {
+      network: "linkedin",
+      content: textoDe("Tres errores que cometí escalando mi marca personal."),
+      chatId: chatIds.sueltoId,
+    },
+    {
+      network: "instagram",
+      content: visualDe("Quote del día sobre simplicidad y diseño."),
+      chatId: chatIds.sueltoId,
+    },
+    { network: "x", content: textoDe("Hilo: cómo reutilizo un solo post en cuatro formatos 🧵") },
+  ];
+
+  const statusDe = (semilla: Semilla): "draft" | "scheduled" | "published" => {
+    if (!semilla.scheduledAt) return "draft";
+    return semilla.published ? "published" : "scheduled";
+  };
+
+  await tx.insert(publicationCards).values(
+    semillas.map((semilla) => ({
+      userId,
+      chatId: semilla.chatId ?? null,
+      archetype: semilla.content.archetype,
+      network: semilla.network,
+      content: semilla.content,
+      groupId: semilla.groupId ?? null,
+      status: statusDe(semilla),
+      scheduledAt: semilla.scheduledAt ?? null,
+      publishedAt: semilla.published ? (semilla.scheduledAt ?? null) : null,
+      socialAccountId: semilla.scheduledAt ? cuentaDe(semilla.network) : null,
+      providerRef: semilla.scheduledAt ? `pf_seed_${crypto.randomUUID()}` : null,
+    })),
+  );
 }
 
 function printCredentials(): void {

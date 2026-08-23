@@ -70,6 +70,26 @@ Un `var()` sobrevive al inlineado (`var(--tw-shadow-color, var(--shadow-tint-md)
 
 **Regla práctica:** cualquier token de `@theme` que tenga que cambiar con el tema debe llevar el valor variable dentro de un `var()` anidado, no como literal. Y la verificación es la misma que la trampa anterior: mirar el CSS generado (`grep -o "\.shadow-lg{[^}]*}" dist/assets/index-*.css`), no el fuente.
 
+## Tokens del Calendario (`--cal-*`, F7)
+
+La grilla saca casi todo de `--status-*`: la píldora "programado" usa el mismo lenguaje que el badge Programado de la card en Chat (`--status-info-bg` / `-border`), la de "publicado" el de éxito y la de borrador el de `--status-ai`. Que se vea igual en los dos módulos no es coincidencia, es el punto.
+
+Lo único que necesitó tokens nuevos es lo que `--status-*` no cubre:
+
+| Token                | Claro      | Oscuro             | Para qué                                                         |
+| -------------------- | ---------- | ------------------ | ---------------------------------------------------------------- |
+| `--cal-scheduled-fg` | `#2C5480`  | `#A8CDF5`          | Texto sobre la píldora programada (el fondo se invierte en dark) |
+| `--cal-published-fg` | `#2F7D52`  | `#7FD6A4`          | Ídem, publicada                                                  |
+| `--cal-draft-fg`     | `#5B4569`  | `--color-plum-200` | Ídem, borrador                                                   |
+| `--cal-day-out-bg`   | `#FCFBFD`  | `#120B16`          | Celda de un día de otro mes                                      |
+| `--cal-group-bg`     | orchid 12% | orchid 16%         | Fondo del contenedor de grupo multi-red                          |
+
+Utilities: `text-cal-scheduled-fg`, `text-cal-published-fg`, `text-cal-draft-fg`, `bg-cal-day-out`, `bg-cal-group`.
+
+El día de otro mes se **hunde** un escalón por debajo de `--bg-card` en los dos temas (`#FCFBFD` bajo el blanco, `#120B16` bajo el `#1A0F20`). El sentido es el mismo y solo cambia el valor: alejarse del primer plano es lo que se lee como "este día no es de este mes", y hacia dónde queda ese alejamiento depende del tema.
+
+Los tokens del drag (destino válido / objetivo / conflicto / pasado) todavía no existen: llegan en el PR que los pinta. Escribirlos antes repetiría la lección de F6.5 — dark mode escrito desde F1 y jamás ejecutado, con cuatro bugs reales esperando adentro.
+
 ## Movimiento (ADR-014)
 
 Decisión completa en [ADR-014](../explanation/decisions/adr-014-estrategia-de-animacion.md); acá el resumen operativo.
@@ -78,7 +98,7 @@ Decisión completa en [ADR-014](../explanation/decisions/adr-014-estrategia-de-a
 - **CSS puro** (`@keyframes` en `app.css`) para loops ambientales infinitos (`glow-rotate`, `glow-pulse`, `shimmer`, `dot-pulse`, `stream-cursor`) y micro-transiciones de hover/focus. Nunca al revés.
 - **Ningún componente hardcodea su propia duración/easing** — mismo criterio que "tokens, no hex" (AGENTS.md #2), aplicado a movimiento.
 - **Accesibilidad:** `<MotionConfig reducedMotion="user">` en `App.tsx` cubre todo `motion.*` de una vez; los `@keyframes` ambientales se apagan enteros bajo `@media (prefers-reduced-motion: reduce)` en `app.css` (no se acortan — son decorativos, no comunican estado).
-- **Una sola zona de scroll por pantalla:** el App Shell (`routes/protected.tsx`) es `h-dvh overflow-hidden`, con un único contenedor `overflow-y-auto` para el `<Outlet/>`. El drawer de programación es un hermano flex (`motion.aside` con `width` animado) en desktop, nunca un overlay `fixed inset-0` — eso fue lo que producía scrolls encimados (F6 PR4→PR5). En mobile sí es bottom-sheet modal con backdrop.
+- **Un solo eje de scroll vertical por región** (precisado en el addendum de F7 — antes decía "por pantalla"): el App Shell (`routes/protected.tsx`) es `h-dvh overflow-hidden`, con un contenedor `overflow-y-auto` **por defecto** para el `<Outlet/>` — que la ruta puede apagar declarando `handle: { ownScroll: true }` cuando maneja su propio alto (el Calendario, F7). El drawer de programación es un hermano flex (`motion.aside` con `width` animado) en desktop, nunca un overlay `fixed inset-0` — eso fue lo que producía scrolls encimados (F6 PR4→PR5). En mobile sí es bottom-sheet modal con backdrop.
 
 ## Pendientes
 

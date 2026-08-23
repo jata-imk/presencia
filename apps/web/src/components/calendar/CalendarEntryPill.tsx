@@ -1,0 +1,87 @@
+import type { PublicationCardDto } from "@presencia/shared";
+import { Link2 } from "lucide-react";
+import { cardPreviewText } from "../cards/card-text.js";
+import { NETWORK_META } from "../cards/NetworkLogos.js";
+import type { CalendarEntry } from "../../lib/calendar/group.js";
+import { formatTime, zonedFromIso } from "../../lib/calendar/tz.js";
+
+// La píldora de un post dentro de una celda del mes.
+//
+// Los colores salen de --status-* (los mismos que el badge de la card en
+// Chat, para que "programado" se vea igual en los dos módulos); lo único
+// propio del calendario es --cal-*-fg, el color del texto sobre ese tinte
+// (ver tokens.css §Calendario).
+
+const TONE: Record<string, { box: string; text: string }> = {
+  scheduled: { box: "border-info-border bg-info-bg", text: "text-cal-scheduled-fg" },
+  published: { box: "border-success-border bg-success-bg", text: "text-cal-published-fg" },
+  draft: { box: "border-ai-border bg-ai-bg", text: "text-cal-draft-fg" },
+  failed: { box: "border-error-border bg-error-bg", text: "text-error" },
+  canceled: { box: "border-line bg-secondary", text: "text-fg-muted" },
+};
+
+function toneFor(status: PublicationCardDto["status"]) {
+  return TONE[status] ?? TONE.draft!;
+}
+
+function Row({
+  card,
+  timeZone,
+  compact,
+}: {
+  card: PublicationCardDto;
+  timeZone: string;
+  compact: boolean;
+}) {
+  const meta = NETWORK_META[card.network];
+  const time = card.scheduledAt ? formatTime(zonedFromIso(card.scheduledAt, timeZone)) : "";
+  const summary = cardPreviewText(card.content);
+  const tone = toneFor(card.status);
+
+  return (
+    <span
+      className={`flex min-w-0 items-center gap-1.5 ${tone.text}`}
+      title={`${time} · ${meta.label} — ${summary}`}
+    >
+      <meta.Logo size={11} />
+      <span className="shrink-0 font-display text-[10px] font-bold tabular-nums">{time}</span>
+      <span className={`truncate text-[11px] ${compact ? "opacity-90" : ""}`}>{summary}</span>
+    </span>
+  );
+}
+
+export function CalendarEntryPill({ entry, timeZone }: { entry: CalendarEntry; timeZone: string }) {
+  const first = entry.cards[0];
+  if (!first) return null;
+
+  // Grupo multi-red: las N redes van como filas separadas unidas por un
+  // border-left Pink Orchid continuo (§4). El border es lo que comunica
+  // "estas van juntas"; cada fila conserva su estado propio, por eso el
+  // contenedor no pinta un tinte de estado.
+  if (entry.isGroup) {
+    return (
+      <div
+        className="flex flex-col overflow-hidden rounded-md border-l-[3px] border-l-ai bg-cal-group"
+        title={`Publicación multi-red · ${entry.cards.length} redes`}
+      >
+        {entry.cards.map((card) => (
+          <span key={card.id} className="flex min-w-0 items-center gap-1 px-1.5 py-0.5">
+            <Link2 size={9} className="shrink-0 text-accent" aria-hidden />
+            <Row card={card} timeZone={timeZone} compact />
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  const tone = toneFor(first.status);
+  return (
+    <div
+      className={`rounded-md border px-1.5 py-0.5 ${tone.box} ${
+        first.status === "published" ? "opacity-85" : ""
+      }`}
+    >
+      <Row card={first} timeZone={timeZone} compact={false} />
+    </div>
+  );
+}
