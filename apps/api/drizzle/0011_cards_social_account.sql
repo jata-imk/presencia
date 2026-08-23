@@ -1,0 +1,2 @@
+ALTER TABLE "publication_cards" ADD COLUMN "social_account_id" uuid;--> statement-breakpoint
+ALTER TABLE "publication_cards" ADD CONSTRAINT "publication_cards_social_account_id_social_accounts_id_fk" FOREIGN KEY ("social_account_id") REFERENCES "public"."social_accounts"("id") ON DELETE set null ON UPDATE no action;

@@ -170,6 +170,70 @@ export interface CardToolOutput {
   content: CardContent;
 }
 
+// F6: ciclo de vida de la card (ADR-009 addendum) — programar, reprogramar,
+// cancelar. El DTO de card persistida (outbound, nunca se parsea desde el
+// cliente) vive como interfaz simple, mismo criterio que QuotaStatusDto en
+// credits.ts; los bodies que SÍ llegan del cliente son los únicos con
+// z.object.
+
+export interface PublicationCardDto {
+  id: string;
+  chatId: string;
+  archetype: PublicationArchetype;
+  network: SocialNetwork;
+  status: CardStatus;
+  content: CardContent;
+  groupId: string | null;
+  /** ISO 8601 UTC, o null si nunca se programó. */
+  scheduledAt: string | null;
+  publishedAt: string | null;
+  socialAccountId: string | null;
+}
+
+export const cardIdParamSchema = z.object({ id: z.uuid() });
+
+export const scheduleCardBodySchema = z.object({
+  socialAccountId: z.uuid(),
+  scheduledAt: z.iso.datetime({ offset: true }),
+});
+export type ScheduleCardBody = z.infer<typeof scheduleCardBodySchema>;
+
+// Toggle "mismo horario para todas / personalizar por red" del drawer
+// (presencia-chat.md): cada item o trae fecha/hora + cuenta (se programa) o
+// se marca keepDraft (se deja como estaba, sin tocarla). Un grupo puede
+// programar unas redes y dejar otras en borrador en la misma llamada —
+// variante "d3b" del drawer diseñado en Claude Design.
+const scheduleGroupItemSchema = z.union([
+  z.object({
+    cardId: z.uuid(),
+    socialAccountId: z.uuid(),
+    scheduledAt: z.iso.datetime({ offset: true }),
+    keepDraft: z.literal(false).optional(),
+  }),
+  z.object({ cardId: z.uuid(), keepDraft: z.literal(true) }),
+]);
+export const scheduleGroupBodySchema = z.object({
+  items: z.array(scheduleGroupItemSchema).min(1),
+});
+export type ScheduleGroupBody = z.infer<typeof scheduleGroupBodySchema>;
+
+export const conflictsQuerySchema = z.object({
+  from: z.iso.datetime({ offset: true }),
+  to: z.iso.datetime({ offset: true }),
+});
+export type ConflictsQuery = z.infer<typeof conflictsQuerySchema>;
+
+// Resultado por card de un schedule-group: cada red del grupo actúa
+// independiente (una puede programarse y otra fallar sin abortar el resto,
+// mismo criterio que el modo "personalizar por red, mixto" del drawer).
+export interface ScheduleGroupResultItem {
+  cardId: string;
+  ok: boolean;
+  card: PublicationCardDto | null;
+  /** Mensaje en español, listo para mostrar, cuando ok es false. */
+  error: string | null;
+}
+
 // F4.5 (dieta de contexto, chat.service.ts): resumen compacto de una card ya
 // creada, para el historial que viaja al MODELO en turnos siguientes — la UI
 // sigue leyendo el `content` completo del tool output (ver arriba), esto

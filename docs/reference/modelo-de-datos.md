@@ -72,19 +72,20 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 **`publication_cards`** — nace de una de las 3 tools de crear borrador, una por arquetipo (`crear_borrador_visual`/`crear_borrador_video`/`crear_borrador_texto`, ADR-005). `message_id` es nullable: la card se inserta durante el stream, antes de que exista la fila `messages` del assistant; se vincula (backfill) cuando el stream termina. Al reintentar un turno ("Reintentar" en UI, F3 PR3) las cards vinculadas al mensaje assistant descartado se borran junto con él (ver ADR-006 addendum) — no quedan huérfanas.
 
-| Columna                         | Tipo           | Nota                                                                                                                                       |
-| ------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`                            | uuid PK        |                                                                                                                                            |
-| `user_id`                       | uuid FK        | RLS                                                                                                                                        |
-| `chat_id` / `message_id`        | uuid FK        | card linkea a su origen conversacional                                                                                                     |
-| `archetype`                     | enum           | `visual_first`, `video_script`, `text_first`                                                                                               |
-| `network`                       | enum           | `instagram`, `facebook`, `tiktok`, `linkedin`, `youtube`, `threads`, `x`                                                                   |
-| `status`                        | enum           | `draft` → `scheduled` → `published`; ramas `canceled`, `failed`                                                                            |
-| `content`                       | jsonb          | validado con el schema Zod exacto del arquetipo (packages/shared) — la tool que corrió ya determina cuál, sin reconciliación entre schemas |
-| `group_id`                      | uuid nullable  | agrupa cards hermanas de una adaptación multi-red                                                                                          |
-| `scheduled_at` / `published_at` | timestamptz    | `scheduled_at` alimenta el Calendario                                                                                                      |
-| `provider_ref`                  | text nullable  | id del post en PostFast (vía adapter, ADR-009)                                                                                             |
-| `error_detail`                  | jsonb nullable | por qué falló la publicación                                                                                                               |
+| Columna                         | Tipo             | Nota                                                                                                                                       |
+| ------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                            | uuid PK          |                                                                                                                                            |
+| `user_id`                       | uuid FK          | RLS                                                                                                                                        |
+| `chat_id` / `message_id`        | uuid FK          | card linkea a su origen conversacional                                                                                                     |
+| `archetype`                     | enum             | `visual_first`, `video_script`, `text_first`                                                                                               |
+| `network`                       | enum             | `instagram`, `facebook`, `tiktok`, `linkedin`, `youtube`, `threads`, `x`                                                                   |
+| `status`                        | enum             | `draft` → `scheduled` → `published`; ramas `canceled`, `failed`                                                                            |
+| `content`                       | jsonb            | validado con el schema Zod exacto del arquetipo (packages/shared) — la tool que corrió ya determina cuál, sin reconciliación entre schemas |
+| `group_id`                      | uuid nullable    | agrupa cards hermanas de una adaptación multi-red                                                                                          |
+| `scheduled_at` / `published_at` | timestamptz      | `scheduled_at` alimenta el Calendario                                                                                                      |
+| `social_account_id`             | uuid FK nullable | a qué cuenta conectada se publica (F6, migración `0011_cards_social_account`); `SET NULL` — desconectar la cuenta no borra el contenido    |
+| `provider_ref`                  | text nullable    | id del post en PostFast (vía adapter, ADR-009)                                                                                             |
+| `error_detail`                  | jsonb nullable   | por qué falló la publicación                                                                                                               |
 
 - El toggle multi-red del drawer de programación opera sobre `group_id`: programar el grupo o dejar redes individuales en borrador.
 - El grupo NO es tabla propia (decisión 2026-07-18): es puro parentesco, sin atributos ni ciclo de vida propios — cada card conserva fecha, estado y contenido individuales. Su estado agregado ("2 programadas, 1 en borrador") se **deriva** de las cards, nunca se guarda. Criterio: una relación merece tabla solo con atributos propios; si V2 trae "campañas" con nombre/notas, la migración a `card_groups` es aditiva (`INSERT ... SELECT DISTINCT group_id`).
