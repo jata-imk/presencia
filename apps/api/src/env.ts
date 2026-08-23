@@ -38,6 +38,14 @@ const envSchema = z
     ZEPTOMAIL_TOKEN: z.string().min(1),
     MAIL_FROM: z.email(),
     PORT: z.coerce.number().int().positive().default(3000),
+    // Publicación (F6, ADR-009). "fake" es el provider permanente de dev/test
+    // (FakePublishingProvider, in-memory) — "postfast" habla con la API real
+    // y necesita POSTFAST_API_KEY (workspace único y global, ver ADR-009
+    // addendum). Default a "fake": levantar el repo sin la key no debe
+    // tronar el boot.
+    PUBLISHING_PROVIDER: z.enum(["fake", "postfast"]).default("fake"),
+    POSTFAST_API_KEY: z.string().min(1).optional(),
+    POSTFAST_BASE_URL: z.url().default("https://api.postfa.st"),
   })
   .superRefine((value, ctx) => {
     // Fail-fast: toda var de modelo (AI_MODEL + los 3 tiers opcionales) debe
@@ -69,6 +77,16 @@ const envSchema = z
     for (const path of MODEL_TIER_ENV_VARS) {
       const modelId = value[path];
       if (modelId) validateModelEnv(path, modelId);
+    }
+
+    // Fail-fast (mismo criterio que el modelo de IA): pedir el provider real
+    // sin key es un boot roto, no un fallback silencioso a datos falsos.
+    if (value.PUBLISHING_PROVIDER === "postfast" && !value.POSTFAST_API_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["POSTFAST_API_KEY"],
+        message: 'PUBLISHING_PROVIDER="postfast" requiere POSTFAST_API_KEY en el entorno',
+      });
     }
   });
 

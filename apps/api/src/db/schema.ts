@@ -332,17 +332,43 @@ export const channelLinks = pgTable(
   (t) => [uniqueIndex("channel_links_external").on(t.channel, t.externalId)],
 );
 
-export const socialAccounts = pgTable("social_accounts", {
+export const socialAccounts = pgTable(
+  "social_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    network: socialNetwork("network").notNull(),
+    providerRef: text("provider_ref").notNull(),
+    displayName: text("display_name"),
+    status: socialAccountStatus("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // F6: el workspace de PostFast es único y global — providerRef (su
+    // socialMediaId) no puede pertenecer a dos usuarios de Presencia a la
+    // vez. Es la defensa real contra que dos tenants reclamen la misma
+    // cuenta al conectar canales (ADR-009 addendum).
+    uniqueIndex("social_accounts_provider_ref").on(t.providerRef),
+  ],
+);
+
+// F6: snapshot de la conexión de canales (ADR-009 addendum). El workspace de
+// PostFast es compartido entre todos los usuarios de Presencia, así que
+// "conectar tu red" no puede ser "leer las cuentas del workspace" — se
+// resuelve con un diff: se guarda qué refs ya existían antes de mandar al
+// usuario a postfa.st, y al volver, las refs NUEVAS son las suyas.
+export const socialConnectIntents = pgTable("social_connect_intents", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  network: socialNetwork("network").notNull(),
-  providerRef: text("provider_ref").notNull(),
-  displayName: text("display_name"),
-  status: socialAccountStatus("status").notNull().default("active"),
+  knownAccountRefs: jsonb("known_account_refs").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // ── Créditos ─────────────────────────────────────────────────────────

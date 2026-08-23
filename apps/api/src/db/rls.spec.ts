@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { aiUsageEvents, brandVoices, chats, messages, users } from "./schema.js";
+import {
+  aiUsageEvents,
+  brandVoices,
+  chats,
+  messages,
+  socialAccounts,
+  socialConnectIntents,
+  users,
+} from "./schema.js";
 // Import solo de tipo: el módulo real se carga en beforeAll, después de
 // poblar process.env (env.ts valida el entorno en el import).
 import type { DbService as DbServiceType } from "./db.service.js";
@@ -229,6 +237,124 @@ describe("RLS tenant_isolation", () => {
           );
         expect(deleteError).toBeInstanceOf(Error);
         expect(String((deleteError as Error).cause)).toMatch(/permission denied/);
+      },
+    );
+  });
+
+  // F6: social_accounts / social_connect_intents (ADR-009 addendum) — mismo
+  // patrón de tenant_isolation, más una verificación específica de
+  // social_accounts: el índice único sobre provider_ref es GLOBAL (no por
+  // usuario) a propósito, y debe seguir cortando en seco incluso cuando el
+  // que intenta insertar no puede ver la fila existente por RLS — es la base
+  // del mecanismo anti-robo de cuenta en ChannelsService.claimConnectIntent.
+  describe("social_accounts / social_connect_intents", () => {
+    let accountA: string;
+
+    beforeAll(async () => {
+      accountA = await dbService.runWithTenant(userA, async (tx) => {
+        const [account] = await tx
+          .insert(socialAccounts)
+          .values({ userId: userA, network: "linkedin", providerRef: `pf_${randomUUID()}` })
+          .returning({ id: socialAccounts.id, providerRef: socialAccounts.providerRef });
+        if (!account) throw new Error("No se pudo crear la cuenta de prueba");
+        return account.id;
+      });
+    }, 15_000);
+
+    it("el dueño ve su propia cuenta conectada", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userA, (tx) => tx.select().from(socialAccounts));
+      expect(rows.map((a) => a.id)).toContain(accountA);
+    });
+
+    it("otro tenant no lee cuentas ajenas", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userB, (tx) => tx.select().from(socialAccounts));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("otro tenant no puede insertar una cuenta a nombre ajeno", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx
+            .insert(socialAccounts)
+            .values({ userId: userA, network: "x", providerRef: `pf_${randomUUID()}` }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(error).toBeInstanceOf(Error);
+      expect(String((error as Error).cause)).toMatch(/row-level security/);
+    });
+
+    it(
+      "el índice único de provider_ref corta un robo de cuenta entre tenants " +
+        "aunque RLS le esconda la fila existente al segundo tenant",
+      { timeout: 15_000 },
+      async () => {
+        const [existing] = await dbService.runWithTenant(userA, (tx) =>
+          tx
+            .select({ providerRef: socialAccounts.providerRef })
+            .from(socialAccounts)
+            .where(eq(socialAccounts.id, accountA)),
+        );
+        if (!existing) throw new Error("Fixture accountA no encontrada");
+
+        // userB no puede ver la fila de userA (ya probado arriba), pero el
+        // índice único es a nivel de tabla, no de policy — debe rechazar
+        // igual, aunque el conflicto sea "invisible" para quien lo dispara.
+        const error: unknown = await dbService
+          .runWithTenant(userB, (tx) =>
+            tx.insert(socialAccounts).values({
+              userId: userB,
+              network: "x",
+              providerRef: existing.providerRef,
+            }),
+          )
+          .then(
+            () => null,
+            (e: unknown) => e,
+          );
+        expect(error).toBeInstanceOf(Error);
+        expect(String((error as Error).cause)).toMatch(
+          /duplicate key value violates unique constraint "social_accounts_provider_ref"/,
+        );
+      },
+    );
+
+    it(
+      "otro tenant no lee ni escribe intents de conexión ajenos",
+      { timeout: 15_000 },
+      async () => {
+        const intentA = await dbService.runWithTenant(userA, async (tx) => {
+          const [intent] = await tx
+            .insert(socialConnectIntents)
+            .values({
+              userId: userA,
+              knownAccountRefs: [],
+              expiresAt: new Date(Date.now() + 60_000),
+            })
+            .returning({ id: socialConnectIntents.id });
+          if (!intent) throw new Error("No se pudo crear el intent de prueba");
+          return intent.id;
+        });
+
+        const rowsForB = await dbService.runWithTenant(userB, (tx) =>
+          tx.select().from(socialConnectIntents).where(eq(socialConnectIntents.id, intentA)),
+        );
+        expect(rowsForB).toHaveLength(0);
+
+        const error: unknown = await dbService
+          .runWithTenant(userB, (tx) =>
+            tx
+              .insert(socialConnectIntents)
+              .values({ userId: userA, knownAccountRefs: [], expiresAt: new Date() }),
+          )
+          .then(
+            () => null,
+            (e: unknown) => e,
+          );
+        expect(error).toBeInstanceOf(Error);
+        expect(String((error as Error).cause)).toMatch(/row-level security/);
       },
     );
   });

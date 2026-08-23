@@ -105,6 +105,12 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 - `id`, `user_id`, `network` enum, `provider_ref` (id de la cuenta en PostFast), `display_name`, `status` enum (`active`, `disconnected`, `error`), timestamps.
 - Detrás del adapter: si PostFast cambia, solo cambia `provider_ref`.
+- `provider_ref` tiene **índice único global** (migración `0009_channels`, F6) — no por usuario: el workspace de PostFast es único y compartido (ADR-009 addendum), así que una `providerRef` nunca puede pertenecer a dos usuarios de Presencia a la vez.
+
+**`social_connect_intents`** — snapshot del flujo de conexión de canal (F6, ADR-009 addendum).
+
+- `id`, `user_id`, `known_account_refs` (jsonb, array de `provider_ref` que ya existían al iniciar la conexión), `expires_at` (TTL 30 min), `consumed_at` nullable, `created_at`.
+- No es una tabla de dominio de contenido — vive fuera de un minuto o dos, se consume una sola vez (`claimConnectIntent`) y no se vuelve a leer. Existe porque el workspace de PostFast es compartido entre todos los usuarios: "tus cuentas conectadas" se resuelve por diff (foto antes/después), no por lectura directa.
 
 ### Créditos
 
@@ -180,7 +186,7 @@ En cada request autenticado, la API abre transacción y ejecuta `SET LOCAL app.u
 
 ### Tablas cubiertas
 
-RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `credit_ledger`, `ai_usage_events`. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
+RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
 
 ## Diagrama ER
 
