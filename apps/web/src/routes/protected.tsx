@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router";
 import { Sidebar } from "../components/layout/Sidebar.js";
 import { Topbar } from "../components/layout/Topbar.js";
+import { CommandPalette } from "../components/search/CommandPalette.js";
 import { ScheduleDrawer } from "../components/schedule/ScheduleDrawer.js";
 import { ToastViewport } from "../components/ui/Toast.js";
 import { authClient } from "../lib/auth-client.js";
@@ -71,6 +72,7 @@ export function ProtectedLayout() {
         </div>
         <ScheduleDrawer />
       </div>
+      <CommandPalette />
       <ToastViewport />
     </div>
   );

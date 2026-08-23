@@ -471,8 +471,15 @@ Es la barra superior, siempre visible. De izquierda a derecha:
 de un sub-flujo (ej: "Chats > Post sobre IA").
 
 **Search global.** Con atajo Cmd/Ctrl+K visible. Busca en
-chats, posts, plantillas — todo el contenido del usuario.
-Click expande a modal de búsqueda con resultados categorizados.
+títulos de chat, dentro de los mensajes, nombres de carpeta y
+el contenido de las publicaciones (F6.5, ADR-017: full-text de
+Postgres, tolerante a acentos y a typos). Click expande a modal
+de búsqueda con resultados categorizados. En mobile es solo el
+ícono; el modal es el mismo, alineado arriba.
+
+> "Plantillas" queda fuera: no existe como entidad todavía. La
+> búsqueda _semántica_ —encontrar "posts sobre productividad"
+> en algo que nunca dice esa palabra— está en el backlog.
 
 **Toggle modo claro/oscuro.** Icono sun/moon. Atajo de dos
 estados: el ícono muestra el tema actual y un click fija una
