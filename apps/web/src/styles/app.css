@@ -60,3 +60,13 @@
   border-radius: var(--radius-sm);
   padding: 0.1em 0.3em;
 }
+
+/* Barra de progreso del toast (F6, components/ui/Toast.tsx) */
+@keyframes toast-progress {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}

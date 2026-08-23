@@ -1,7 +1,8 @@
 import { useState } from "react";
-import type { ChannelAccountDto, SocialNetwork } from "@presencia/shared";
+import type { ChannelAccountDto } from "@presencia/shared";
 import { Button } from "../../components/ui/Button.js";
 import { ApiError } from "../../lib/api.js";
+import { NETWORK_LABELS } from "../../lib/network-labels.js";
 import { useChannels } from "../../lib/use-channels.js";
 
 // Configuración > Canales conectados (F6, ADR-009 addendum). El workspace de
@@ -9,16 +10,6 @@ import { useChannels } from "../../lib/use-channels.js";
 // abre postfa.st en una pestaña nueva y, al volver, el usuario confirma acá
 // para que el backend reclame la(s) cuenta(s) nueva(s) por diff (ver
 // ChannelsService.claimConnectIntent). No hay webhook que nos avise solo.
-
-const NETWORK_LABELS: Record<SocialNetwork, string> = {
-  instagram: "Instagram",
-  facebook: "Facebook",
-  tiktok: "TikTok",
-  linkedin: "LinkedIn",
-  youtube: "YouTube",
-  threads: "Threads",
-  x: "X",
-};
 
 const STATUS_LABELS: Record<ChannelAccountDto["status"], string> = {
   active: "Conectada",
