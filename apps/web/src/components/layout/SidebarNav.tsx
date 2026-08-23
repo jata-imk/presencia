@@ -11,17 +11,19 @@ import {
   Plus,
   Settings,
   Sparkles,
-  X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
+import type { ChatSummary } from "@presencia/shared";
 import { ChatListItem } from "./ChatListItem.js";
+import { SidebarFolderItem } from "./SidebarFolderItem.js";
 import { ModalNewFolder } from "../folders/ModalNewFolder.js";
 import { BrandMark } from "../ui/BrandMark.js";
 import { authClient } from "../../lib/auth-client.js";
 import { useQuota } from "../../lib/use-quota.js";
 import { useChatsStore } from "../../stores/chats-store.js";
 import { useFoldersStore } from "../../stores/folders-store.js";
+import { useSidebarStore } from "../../stores/sidebar-store.js";
 
 // Contenido del sidebar (F6.5 PR1). Es el MISMO árbol que renderizan las
 // dos superficies: el <nav> in-flow de ≥768px y el drawer modal de mobile
@@ -41,6 +43,12 @@ const MODULES = [
   { icon: BookOpen, label: "Biblioteca", to: null },
 ] as const;
 
+// "Hasta 5 carpetas visibles + link Ver todas" (overview §5).
+const FOLDERS_PREVIEW = 5;
+// "Los últimos 5-7 chats" del overview, con un poco de aire: ahora que
+// Recientes excluye fijados y chats en carpeta, la lista es más corta.
+const RECENTS_LIMIT = 8;
+
 interface SidebarNavProps {
   collapsed: boolean;
   /** Ausente en el drawer: ahí no se colapsa, se cierra. */
@@ -58,8 +66,10 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
   const refreshChats = useChatsStore((s) => s.refresh);
   const folders = useFoldersStore((s) => s.folders);
   const refreshFolders = useFoldersStore((s) => s.refresh);
-  const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const expandedFolderId = useSidebarStore((s) => s.expandedFolderId);
+  const setExpandedFolder = useSidebarStore((s) => s.setExpandedFolder);
   const [showNewFolder, setShowNewFolder] = useState(false);
+  const [showAllFolders, setShowAllFolders] = useState(false);
 
   useEffect(() => {
     void refreshChats();
@@ -85,10 +95,43 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
     void navigate("/login");
   }
 
-  const activeFolderName = folders?.find((f) => f.id === activeFolder)?.name;
-  const visibleChats = activeFolder
-    ? (chats ?? []).filter((c) => c.folderId === activeFolder)
-    : (chats ?? []).slice(0, 12);
+  // Un solo pase por la lista para las tres secciones, en vez de un
+  // .filter() por carpeta en cada render.
+  const { pinnedChats, chatsByFolder, recentChats } = useMemo(() => {
+    const all = chats ?? [];
+    const byFolder = new Map<string, ChatSummary[]>();
+    for (const c of all) {
+      if (!c.folderId) continue;
+      const list = byFolder.get(c.folderId);
+      if (list) list.push(c);
+      else byFolder.set(c.folderId, [c]);
+    }
+    return {
+      // GET /chats ya viene ordenado con los fijados primero y por
+      // pinned_at desc — el último que fijaste queda arriba.
+      pinnedChats: all.filter((c) => c.pinnedAt !== null),
+      chatsByFolder: byFolder,
+      // Regla única: Recientes = ni fijado ni en carpeta. Un chat fijado
+      // que además está en carpeta sale en Fijados Y dentro de su carpeta,
+      // a propósito: fijar es un acto deliberado y la carpeta arranca
+      // colapsada, así que la coincidencia es rara e intencional.
+      recentChats: all.filter((c) => c.pinnedAt === null && !c.folderId).slice(0, RECENTS_LIMIT),
+    };
+  }, [chats]);
+
+  const visibleFolders = showAllFolders
+    ? (folders ?? [])
+    : (folders ?? []).slice(0, FOLDERS_PREVIEW);
+
+  // Si el chat abierto vive en una carpeta colapsada, con la regla nueva
+  // desaparecería del sidebar entero y se perdería el "estás aquí". Abrir
+  // su carpeta también da una expansión inicial con sentido en vez de
+  // arrancar todo cerrado.
+  const activeChatFolderId =
+    chats?.find((c) => location.pathname === `/chats/${c.id}`)?.folderId ?? null;
+  useEffect(() => {
+    if (activeChatFolderId) setExpandedFolder(activeChatFolderId);
+  }, [activeChatFolderId, setExpandedFolder]);
 
   return (
     <>
@@ -182,92 +225,117 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
         })}
       </ul>
 
-      {/* Carpetas + Recientes necesitan ancho real para truncar títulos: se
-          ocultan colapsado, no por breakpoint. Antes esto era `lg:flex`, o
-          sea que a 900px la app no mostraba ni un chat aunque hubiera lugar
-          de sobra — ahora si el usuario lo tiene expandido, se ve. */}
-      {!collapsed && (
-        <div className="mt-5 flex min-h-0 flex-1 flex-col px-3">
-          {folders && folders.length > 0 && (
-            <div className="mb-3 shrink-0">
-              <div className="mb-1.5 flex items-center justify-between px-2.5">
-                <p className="text-[10px] font-bold tracking-wide text-fg-muted uppercase">
-                  Carpetas
-                </p>
-                <button
-                  type="button"
-                  aria-label="Nueva carpeta"
-                  onClick={() => setShowNewFolder(true)}
-                  className="text-fg-muted transition-colors hover:text-fg"
-                >
-                  <Plus size={11} strokeWidth={2.5} />
-                </button>
-              </div>
-              <ul>
-                {folders.map((f) => (
-                  <li key={f.id}>
-                    <button
-                      type="button"
-                      onClick={() => setActiveFolder(activeFolder === f.id ? null : f.id)}
-                      className={`flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors ${
-                        activeFolder === f.id
-                          ? "bg-tint-plum text-brand"
-                          : "text-fg-secondary hover:bg-secondary-hover"
-                      }`}
-                    >
-                      <span className="shrink-0">{f.icon ?? "📁"}</span>
-                      <span className="flex-1 truncate">{f.name}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {(!folders || folders.length === 0) && (
-            <button
-              type="button"
-              onClick={() => setShowNewFolder(true)}
-              className="mb-3 flex shrink-0 items-center gap-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase transition-colors hover:text-fg"
-            >
-              Carpetas <Plus size={10} strokeWidth={2.5} />
-            </button>
-          )}
+      {/* Fijados + Carpetas + Recientes necesitan ancho real para truncar
+          títulos: se ocultan colapsado, no por breakpoint. Antes esto era
+          `lg:flex`, o sea que a 900px la app no mostraba ni un chat aunque
+          hubiera lugar de sobra — ahora si el usuario lo tiene expandido,
+          se ve.
 
-          <div className="mb-1.5 flex shrink-0 items-center justify-between px-2.5">
-            <p className="text-[10px] font-bold tracking-wide text-fg-muted uppercase">
-              {activeFolderName ?? "Recientes"}
-            </p>
-            {activeFolder && (
+          El overflow-y-auto vive en este wrapper y no en un <ul> suelto:
+          con tres secciones, poner el scroll solo en la última dejaría
+          Fijados y Carpetas fuera del área desplazable. px-1.5 en los DOS
+          lados, no solo a la derecha: overflow-y implica overflow-x (spec
+          de CSS Overflow), así que cualquier caja que se salga del borde
+          IZQUIERDO —el anillo de foco de una fila, por ejemplo— se recorta
+          igual que contra el derecho. */}
+      {!collapsed && (
+        <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-1.5">
+          {/* px-1.5 acá + px-1.5 en el contenedor con overflow = los mismos
+              px-3 que usan los módulos de arriba, sin que el anillo de foco
+              de una fila quede pegado al borde recortable. */}
+          <div className="px-1.5">
+            {pinnedChats.length > 0 && (
+              <div className="mb-3">
+                <p className="mb-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase">
+                  Fijados
+                </p>
+                <ul>
+                  {pinnedChats.map((chat) => (
+                    <li key={chat.id}>
+                      <ChatListItem
+                        chat={chat}
+                        active={location.pathname === `/chats/${chat.id}`}
+                        onNavigate={onNavigate}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {folders && folders.length > 0 && (
+              <div className="mb-3">
+                <div className="mb-1.5 flex items-center justify-between px-2.5">
+                  <p className="text-[10px] font-bold tracking-wide text-fg-muted uppercase">
+                    Carpetas
+                  </p>
+                  <button
+                    type="button"
+                    aria-label="Nueva carpeta"
+                    onClick={() => setShowNewFolder(true)}
+                    className="text-fg-muted transition-colors hover:text-fg"
+                  >
+                    <Plus size={11} strokeWidth={2.5} />
+                  </button>
+                </div>
+                <ul>
+                  {visibleFolders.map((f) => (
+                    <SidebarFolderItem
+                      key={f.id}
+                      folder={f}
+                      chats={chatsByFolder.get(f.id) ?? []}
+                      expanded={expandedFolderId === f.id}
+                      onToggle={() => setExpandedFolder(expandedFolderId === f.id ? null : f.id)}
+                      onNavigate={onNavigate}
+                    />
+                  ))}
+                </ul>
+                {/* "Hasta 5 visibles + Ver todas" (overview §5) resuelto como
+                  toggle en el lugar: una ruta /carpetas dedicada no existe
+                  y nadie la pidió todavía. */}
+                {folders.length > FOLDERS_PREVIEW && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllFolders((v) => !v)}
+                    className="mt-0.5 w-full px-2.5 py-1 text-left text-[10px] font-medium text-fg-muted transition-colors hover:text-fg"
+                  >
+                    {showAllFolders ? "Ver menos" : `Ver todas (${String(folders.length)})`}
+                  </button>
+                )}
+              </div>
+            )}
+            {(!folders || folders.length === 0) && (
               <button
                 type="button"
-                aria-label="Volver a Recientes"
-                onClick={() => setActiveFolder(null)}
-                className="text-fg-muted transition-colors hover:text-fg"
+                onClick={() => setShowNewFolder(true)}
+                className="mb-3 flex items-center gap-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase transition-colors hover:text-fg"
               >
-                <X size={11} strokeWidth={2.5} />
+                Carpetas <Plus size={10} strokeWidth={2.5} />
               </button>
             )}
+
+            <p className="mb-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase">
+              Recientes
+            </p>
+            <ul>
+              {recentChats.map((chat) => (
+                <li key={chat.id}>
+                  <ChatListItem
+                    chat={chat}
+                    active={location.pathname === `/chats/${chat.id}`}
+                    onNavigate={onNavigate}
+                  />
+                </li>
+              ))}
+              {/* Un usuario ordenado puede quedarse sin chats sueltos: no
+                dejar un hueco mudo donde antes había una lista. */}
+              {recentChats.length === 0 && (chats?.length ?? 0) > 0 && (
+                <li className="px-2.5 py-1.5 text-[11px] text-fg-muted">
+                  Todos tus chats están en carpetas.
+                </li>
+              )}
+            </ul>
           </div>
-          {/* px-1.5 en los dos lados, no solo pr- (antes solo tenía el
-              padding derecho, para el scrollbar): overflow-y-auto implica
-              overflow-x:auto también (spec de CSS Overflow), así que
-              cualquier caja que se salga del borde IZQUIERDO de este <ul>
-              —el anillo de foco de la fila, por ejemplo— se recorta ahí
-              igual que se recortaba contra el derecho. */}
-          <ul className="flex-1 overflow-y-auto px-1.5">
-            {visibleChats.map((chat) => (
-              <li key={chat.id}>
-                <ChatListItem
-                  chat={chat}
-                  active={location.pathname === `/chats/${chat.id}`}
-                  onNavigate={onNavigate}
-                />
-              </li>
-            ))}
-            {activeFolder && visibleChats.length === 0 && (
-              <li className="px-2.5 py-1.5 text-[12px] text-fg-muted">Esta carpeta está vacía.</li>
-            )}
-          </ul>
         </div>
       )}
       {collapsed && <div className="flex-1" />}

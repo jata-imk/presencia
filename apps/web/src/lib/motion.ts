@@ -45,6 +45,17 @@ export const sheetLeft: Variants = {
   exit: { x: "-100%", transition: TRANSITION_FAST },
 };
 
+/**
+ * Sublista que se despliega en su lugar (acordeón de carpetas del sidebar).
+ * Anima `height: "auto"` — el contenedor necesita `overflow-hidden` o el
+ * contenido se desborda mientras corre.
+ */
+export const collapseSection: Variants = {
+  hidden: { height: 0, opacity: 0 },
+  visible: { height: "auto", opacity: 1, transition: TRANSITION_FAST },
+  exit: { height: 0, opacity: 0, transition: TRANSITION_FAST },
+};
+
 export const backdropFade: Variants = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: TRANSITION_FAST },

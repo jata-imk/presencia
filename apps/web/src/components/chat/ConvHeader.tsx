@@ -70,6 +70,9 @@ export function ConvHeader({
         <div className="flex flex-1 items-center gap-1.5">
           <input
             autoFocus
+            // Selecciona todo al entrar (mismo criterio que ChatListItem):
+            // renombrar casi siempre es reemplazar el título autogenerado.
+            onFocus={(e) => e.currentTarget.select()}
             value={draft}
             disabled={saving}
             onChange={(e) => setDraft(e.target.value)}

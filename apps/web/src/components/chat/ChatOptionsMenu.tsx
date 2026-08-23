@@ -1,4 +1,13 @@
-import { Archive, FolderInput, MoreHorizontal, Pencil, Share2, Trash2 } from "lucide-react";
+import {
+  Archive,
+  FolderInput,
+  MoreHorizontal,
+  Pencil,
+  Pin,
+  PinOff,
+  Share2,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Menu } from "../ui/Menu.js";
@@ -37,13 +46,26 @@ export function ChatOptionsMenu({
   const navigate = useNavigate();
   const chats = useChatsStore((s) => s.chats);
   const archive = useChatsStore((s) => s.archive);
+  const setPinned = useChatsStore((s) => s.setPinned);
   const [showMove, setShowMove] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [pinning, setPinning] = useState(false);
 
-  const title = chats?.find((c) => c.id === chatId)?.title ?? "";
+  const chat = chats?.find((c) => c.id === chatId);
+  const title = chat?.title ?? "";
+  const isPinned = chat?.pinnedAt !== null && chat?.pinnedAt !== undefined;
   const isCurrentChat = location.pathname === `/chats/${chatId}`;
+
+  async function handleTogglePin() {
+    setPinning(true);
+    try {
+      await setPinned(chatId, !isPinned);
+    } finally {
+      setPinning(false);
+    }
+  }
 
   async function handleArchive() {
     setArchiving(true);
@@ -65,6 +87,18 @@ export function ChatOptionsMenu({
           <MoreHorizontal size={16} strokeWidth={1.75} />
         </Menu.Trigger>
         <Menu.Content className={CONTENT_CLASS}>
+          <Menu.Item
+            onClick={() => void handleTogglePin()}
+            disabled={pinning}
+            className={ITEM_CLASS}
+          >
+            {isPinned ? (
+              <PinOff size={13} strokeWidth={1.75} />
+            ) : (
+              <Pin size={13} strokeWidth={1.75} />
+            )}
+            {isPinned ? "Quitar de fijados" : "Fijar"}
+          </Menu.Item>
           <Menu.Item onClick={onRenameRequest} className={ITEM_CLASS}>
             <Pencil size={13} strokeWidth={1.75} />
             Renombrar
