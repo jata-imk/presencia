@@ -15,7 +15,7 @@ export function PresenciaAvatar({ size = 28 }: { size?: number }) {
     >
       <span
         aria-hidden="true"
-        className="bg-current [mask-image:url(/assets/isotipo.png)] [mask-size:contain] [mask-position:center] [mask-repeat:no-repeat]"
+        className="bg-current [mask-image:url(/assets/isotipo.png)] [mask-size:contain] [mask-position:center] [mask-repeat:no-repeat] [-webkit-mask-image:url(/assets/isotipo.png)] [-webkit-mask-position:center] [-webkit-mask-repeat:no-repeat] [-webkit-mask-size:contain]"
         style={{ width: size * 0.55, height: size * 0.55 }}
       />
     </div>

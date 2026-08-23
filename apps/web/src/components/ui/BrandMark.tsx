@@ -18,7 +18,7 @@ export function BrandMark({ withWordmark = true }: { withWordmark?: boolean }) {
       <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-fg">
         <span
           aria-hidden="true"
-          className="size-4 bg-current [mask-image:url(/assets/isotipo.png)] [mask-size:contain] [mask-position:center] [mask-repeat:no-repeat]"
+          className="size-4 bg-current [mask-image:url(/assets/isotipo.png)] [mask-size:contain] [mask-position:center] [mask-repeat:no-repeat] [-webkit-mask-image:url(/assets/isotipo.png)] [-webkit-mask-position:center] [-webkit-mask-repeat:no-repeat] [-webkit-mask-size:contain]"
         />
       </span>
       {withWordmark && (

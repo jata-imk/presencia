@@ -13,6 +13,7 @@ import { useLocation, useNavigate } from "react-router";
 import { Menu } from "../ui/Menu.js";
 import { ModalDeleteChat } from "./ModalDeleteChat.js";
 import { ModalMoveToFolder } from "./ModalMoveToFolder.js";
+import { ApiError } from "../../lib/api.js";
 import { useChatsStore } from "../../stores/chats-store.js";
 
 const TRIGGER_CLASS =
@@ -52,16 +53,27 @@ export function ChatOptionsMenu({
   const [archiving, setArchiving] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [pinning, setPinning] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   const chat = chats?.find((c) => c.id === chatId);
   const title = chat?.title ?? "";
-  const isPinned = chat?.pinnedAt !== null && chat?.pinnedAt !== undefined;
+  const isPinned = chat?.pinnedAt != null;
+  // `chats` solo trae los NO archivados. Si el chat no está ahí, o es
+  // archivado (se llega desde /chats/archivados) o la lista todavía no
+  // cargó — en ninguno de los dos casos tiene sentido ofrecer "Fijar":
+  // el backend responde 409 para un archivado y el usuario no vería nada.
+  const canPin = chat !== undefined;
   const isCurrentChat = location.pathname === `/chats/${chatId}`;
 
   async function handleTogglePin() {
     setPinning(true);
+    setPinError(null);
     try {
       await setPinned(chatId, !isPinned);
+    } catch (err) {
+      // Mismo criterio que handleArchive: un fallo se muestra, no se
+      // traga como unhandled rejection.
+      setPinError(err instanceof ApiError ? err.message : "No se pudo fijar.");
     } finally {
       setPinning(false);
     }
@@ -87,18 +99,21 @@ export function ChatOptionsMenu({
           <MoreHorizontal size={16} strokeWidth={1.75} />
         </Menu.Trigger>
         <Menu.Content className={CONTENT_CLASS}>
-          <Menu.Item
-            onClick={() => void handleTogglePin()}
-            disabled={pinning}
-            className={ITEM_CLASS}
-          >
-            {isPinned ? (
-              <PinOff size={13} strokeWidth={1.75} />
-            ) : (
-              <Pin size={13} strokeWidth={1.75} />
-            )}
-            {isPinned ? "Quitar de fijados" : "Fijar"}
-          </Menu.Item>
+          {canPin && (
+            <Menu.Item
+              onClick={() => void handleTogglePin()}
+              disabled={pinning}
+              className={ITEM_CLASS}
+            >
+              {isPinned ? (
+                <PinOff size={13} strokeWidth={1.75} />
+              ) : (
+                <Pin size={13} strokeWidth={1.75} />
+              )}
+              {isPinned ? "Quitar de fijados" : "Fijar"}
+            </Menu.Item>
+          )}
+          {pinError && <p className="px-2.5 py-1 text-[11px] text-error">{pinError}</p>}
           <Menu.Item onClick={onRenameRequest} className={ITEM_CLASS}>
             <Pencil size={13} strokeWidth={1.75} />
             Renombrar
