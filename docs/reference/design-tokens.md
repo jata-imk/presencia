@@ -12,7 +12,7 @@
 
 - Componentes usan la capa 3 (semántica) siempre que exista; la capa 1 solo para casos genuinamente decorativos de marca. **Nunca hex** (regla dura #2 de AGENTS.md).
 - Dark mode: atributo `data-theme="dark"` en `<html>`; variante `dark:` de Tailwind configurada sobre ese atributo. Nota clave del diseño: en dark, el elemento activo/CTA primario **invierte** a Blush Pop con texto plum (`--interactive-primary`).
-- Layout: `--sidebar-width` (220px), `--topbar-height` (56px), `--content-max-w` (800px) — vía valores arbitrarios (`w-(--sidebar-width)`).
+- Layout: `--sidebar-width` (220px), `--sidebar-width-collapsed` (56px), `--sidebar-width-min`/`-max` (200/320px), `--topbar-height` (56px), `--content-max-w` (800px) — vía valores arbitrarios (`w-(--sidebar-width)`). **`--sidebar-width` es el default, no la ley:** desde F6.5 el usuario arrastra el borde del sidebar y el valor elegido se escribe **inline sobre `<html>`** (`applySidebarWidth` en `stores/sidebar-store.ts`), que gana al `:root` por origen sin pelear especificidad. El `<nav>` nunca lleva un `style` de ancho propio — si lo llevara, cualquier re-render durante el arrastre re-aplicaría el valor viejo de React y la barra saltaría hacia atrás a mitad del gesto.
 - Duraciones: `--duration-fast/normal/slow` (150/250/350ms) con `--ease-out` como default de entrada. Ver §Movimiento para cómo se usan de verdad (ADR-014).
 
 ## Dark mode — mapeo canónico

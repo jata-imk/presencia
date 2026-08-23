@@ -11,7 +11,16 @@ import { useChatsStore } from "../../stores/chats-store.js";
 // conversación abierta). El "···" aparece al hacer hover de la fila
 // (mismo patrón que Slack/Linear), no siempre visible — a 200px de ancho
 // no hay lugar para dos íconos permanentes por fila.
-export function ChatListItem({ chat, active }: { chat: ChatSummary; active: boolean }) {
+export function ChatListItem({
+  chat,
+  active,
+  onNavigate,
+}: {
+  chat: ChatSummary;
+  active: boolean;
+  /** El drawer mobile se cierra al navegar; en el nav in-flow no se pasa. */
+  onNavigate?: () => void;
+}) {
   const renameChat = useChatsStore((s) => s.rename);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(chat.title);
@@ -97,6 +106,7 @@ export function ChatListItem({ chat, active }: { chat: ChatSummary; active: bool
           de "L" (bug real visto antes de este cambio). */}
       <Link
         to={`/chats/${chat.id}`}
+        onClick={onNavigate}
         className="min-w-0 flex-1 px-2.5 py-1.5 text-[13px] focus-visible:shadow-none"
       >
         <span className="block truncate">{chat.title}</span>

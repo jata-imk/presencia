@@ -38,6 +38,13 @@ export const sheetUp: Variants = {
   exit: { y: "100%", transition: TRANSITION_FAST },
 };
 
+/** Drawer del sidebar en mobile — entra desde la izquierda, espejo de sheetUp. */
+export const sheetLeft: Variants = {
+  hidden: { x: "-100%" },
+  visible: { x: 0, transition: TRANSITION_NORMAL },
+  exit: { x: "-100%", transition: TRANSITION_FAST },
+};
+
 export const backdropFade: Variants = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: TRANSITION_FAST },

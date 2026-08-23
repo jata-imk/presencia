@@ -203,4 +203,31 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+
+  /* La regla de arriba solo neutraliza animation-*, no transition-*, y el
+     colapso del sidebar es una transición de `width` (ADR-014 addendum:
+     no puede ser motion porque el arrastre escribe la misma propiedad).
+     Se apaga puntualmente y no con un `transition: none` global — matar
+     todas las transiciones de hover de la app sería un blast radius que
+     nadie pidió, y prefers-reduced-motion es sobre movimiento grande, no
+     sobre un cambio de color de 150ms. */
+  nav[aria-label="Navegación principal"] {
+    transition: none !important;
+  }
+}
+
+/* Mientras se arrastra el borde del sidebar: el cursor no debe parpadear
+   al salirse del handle, y el gesto no debe seleccionar texto de la app.
+   Va en <body> porque el pointer capture lleva los eventos al handle pero
+   el puntero físico anda por encima de cualquier otro elemento. */
+body[data-resizing] {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* El ancho es una transición CSS, pero durante el arrastre tiene que
+   seguir al dedo sin easing: la var cambia ~60 veces por segundo y una
+   transición de 250ms la haría ir siempre atrasada. */
+body[data-resizing] nav[aria-label="Navegación principal"] {
+  transition: none;
 }
