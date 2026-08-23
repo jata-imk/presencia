@@ -5,9 +5,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src drizzle.config.ts",
+    "lint": "eslint src scripts drizzle.config.ts",
     "dev": "tsx watch --env-file=../../.env src/main.ts",
     "test": "vitest run",
+    "seed:dev": "tsx --env-file=../../.env scripts/seed-dev.ts",
     "suite:cultural": "tsx --env-file=../../.env scripts/cultural-suite/run.ts",
     "suite:voz-prohibida": "tsx --env-file=../../.env scripts/cultural-suite/prohibited-word.ts",
     "start": "node dist/main.js",
