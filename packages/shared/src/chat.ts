@@ -18,6 +18,9 @@ export type ChatIdParam = z.infer<typeof chatIdParamSchema>;
 export interface ChatSummary {
   id: string;
   title: string;
+  folderId: string | null;
+  /** ISO 8601, o null si no está archivado — F6 PR8. */
+  archivedAt: string | null;
   lastMessageAt: string | null;
   createdAt: string;
 }
@@ -25,14 +28,17 @@ export interface ChatSummary {
 // Trigger del body de POST /chats/:id/stream — mismo contrato que
 // DefaultChatTransport del AI SDK (ai/dist/index.d.ts, HttpChatTransport).
 // `messages` del body se valida aparte con safeValidateUIMessages (AI SDK);
-// este schema solo cubre los dos campos que el controller lee directamente
-// para decidir el flujo (turno nuevo vs reintento).
+// este schema solo cubre el campo que el controller lee directamente para
+// decidir el flujo (turno nuevo vs reintento). NO hay un `messageId`
+// separado — se probó que DefaultChatTransport nunca lo manda (bug real,
+// 2026-08-19): el id del mensaje a reintentar es el id del último elemento
+// de `messages`, ya validado aparte (mismo parseLastUserMessage que un
+// turno normal).
 export const chatStreamTriggerSchema = z.enum(["submit-message", "regenerate-message"]);
 export type ChatStreamTrigger = z.infer<typeof chatStreamTriggerSchema>;
 
 export const chatStreamBodySchema = z.object({
   trigger: chatStreamTriggerSchema.optional(),
-  messageId: z.uuid().optional(),
 });
 export type ChatStreamBody = z.infer<typeof chatStreamBodySchema>;
 

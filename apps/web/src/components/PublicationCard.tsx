@@ -153,9 +153,14 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
         <PublishedBanner publishedAt={liveCard.publishedAt} />
       )}
       <CardHeader network={network} badge={badgeKindFor(content.archetype, status)} />
+      {/* liveCard?.errorMessage: el mensaje real (p.ej. "puede que sí se
+          haya creado, revisa PostFast antes de reintentar" para un fallo
+          ambiguo) sobrevive al cierre del drawer via CardsService.toDto —
+          el fallback genérico solo cubre filas viejas sin ese campo. */}
       {status === "failed" && (
         <div className="border-b border-error-border bg-error-bg px-4 py-2.5 text-xs font-medium text-error">
-          No se pudo confirmar esta publicación con el proveedor. Puedes reintentar.
+          {liveCard?.errorMessage ??
+            "No se pudo confirmar esta publicación con el proveedor. Puedes reintentar."}
         </div>
       )}
       {content.archetype === "visual_first" && <VisualCardBody content={content} />}

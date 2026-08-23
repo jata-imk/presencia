@@ -23,6 +23,7 @@ export class CardsRepository {
       chatId: string;
       network: SocialNetwork;
       content: CardContent;
+      groupId?: string | null;
     },
   ): Promise<CardRow> {
     // archetype se deriva de content.archetype (nunca un parámetro aparte):
@@ -68,6 +69,41 @@ export class CardsRepository {
   }
 
   /**
+   * Usado por ChatService.deleteChat (F6 PR8): borrar un chat con cards
+   * "scheduled" cancelaría un post real en postfa.st sin que nadie lo haya
+   * pedido — se rechaza el borrado en vez de cancelar en silencio.
+   */
+  async hasScheduledCards(tx: Tx, chatId: string): Promise<boolean> {
+    const [row] = await tx
+      .select({ id: publicationCards.id })
+      .from(publicationCards)
+      .where(and(eq(publicationCards.chatId, chatId), eq(publicationCards.status, "scheduled")))
+      .limit(1);
+    return row !== undefined;
+  }
+
+  /**
+   * Mismo criterio que hasScheduledCards pero por cuenta conectada — usado
+   * por ChannelsService.deleteAccount (borrado permanente, F6 follow-up):
+   * borrar la cuenta es seguro para el schema (social_account_id es "set
+   * null"), pero borrarla con una card "scheduled" apuntándole dejaría un
+   * compromiso real en postfa.st sin cuenta local que lo referencie.
+   */
+  async hasScheduledCardsForAccount(tx: Tx, socialAccountId: string): Promise<boolean> {
+    const [row] = await tx
+      .select({ id: publicationCards.id })
+      .from(publicationCards)
+      .where(
+        and(
+          eq(publicationCards.socialAccountId, socialAccountId),
+          eq(publicationCards.status, "scheduled"),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
+  }
+
+  /**
    * Primer paso de programar/reprogramar: fija destino y horario, deja
    * `provider_ref` en null a propósito — CardsService lo llena en una
    * segunda transacción SOLO si la llamada al proveedor tuvo éxito
@@ -98,6 +134,34 @@ export class CardsRepository {
       .where(eq(publicationCards.id, id))
       .returning();
     if (!row) throw new Error("No se pudo confirmar la programación de la publicación");
+    return row;
+  }
+
+  /**
+   * Variante de attachProviderRef con guardia `status = 'scheduled'`
+   * (code review 2026-08-20 — race real): entre que schedule() marca
+   * "scheduled" y la llamada de red al proveedor resuelve, cancelSchedule()
+   * puede correr sobre la misma card mientras `provider_ref` sigue null —
+   * su guard `if (card.providerRef)` no ve nada que cancelar del lado del
+   * proveedor y la deja en "draft". Si attachProviderRef corriera sin
+   * condición después, estamparía un providerRef real sobre esa fila
+   * "draft" — un post de verdad en PostFast sin ninguna card "scheduled"
+   * que lo referencie (reconcileDueCards tampoco lo encuentra, solo mira
+   * status='scheduled'). Con la guardia, si la fila ya no está
+   * "scheduled", el UPDATE no afecta ninguna fila y el caller (ver
+   * CardsService.schedule) sabe que debe cancelar el post huérfano en vez
+   * de asumir que se programó.
+   */
+  async attachProviderRefIfScheduled(
+    tx: Tx,
+    id: string,
+    providerRef: string,
+  ): Promise<CardRow | undefined> {
+    const [row] = await tx
+      .update(publicationCards)
+      .set({ providerRef, updatedAt: new Date() })
+      .where(and(eq(publicationCards.id, id), eq(publicationCards.status, "scheduled")))
+      .returning();
     return row;
   }
 
@@ -156,6 +220,21 @@ export class CardsRepository {
       .returning();
     if (!row) throw new Error("No se pudo marcar la publicación como fallida");
     return row;
+  }
+
+  /**
+   * Igual que markFailed pero para varias cards con el MISMO errorDetail
+   * de una sola vez (code review 2026-08-20) — reconcileDueCards llamaba
+   * markFailed en un for-loop, una transacción por card huérfana/fallida;
+   * cuando todas comparten el mismo motivo (típico: "no confirmó nada"),
+   * es un solo UPDATE ... WHERE id = ANY(...) real, no N transacciones.
+   */
+  async markManyFailed(tx: Tx, ids: string[], errorDetail: unknown): Promise<void> {
+    if (ids.length === 0) return;
+    await tx
+      .update(publicationCards)
+      .set({ status: "failed", errorDetail, updatedAt: new Date() })
+      .where(inArray(publicationCards.id, ids));
   }
 
   /**

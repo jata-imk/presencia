@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import type { ChannelAccountDto, ConnectIntentDto, SocialNetwork } from "@presencia/shared";
 import { randomUUID } from "node:crypto";
+import { CardsRepository } from "../cards/cards.repository.js";
 import { DbService } from "../db/db.service.js";
 import { FakePublishingProvider } from "../publishing/fake.provider.js";
 import { PUBLISHING_PROVIDER, type PublishingProvider } from "../publishing/publishing.provider.js";
@@ -39,11 +40,21 @@ export class ChannelsService {
     @Inject(DbService) private readonly dbService: DbService,
     @Inject(ChannelsRepository) private readonly repo: ChannelsRepository,
     @Inject(PUBLISHING_PROVIDER) private readonly provider: PublishingProvider,
+    @Inject(CardsRepository) private readonly cardsRepo: CardsRepository,
   ) {}
 
   async listAccounts(userId: string): Promise<ChannelAccountDto[]> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const rows = await this.repo.listAccounts(tx);
+      return rows.map(toDto);
+    });
+  }
+
+  // Vista separada (F6 follow-up, "no me gusta que las desconectadas se
+  // queden mezcladas") — mismo patrón que ChatService.listArchivedChats.
+  async listDisconnectedAccounts(userId: string): Promise<ChannelAccountDto[]> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const rows = await this.repo.listDisconnectedAccounts(tx);
       return rows.map(toDto);
     });
   }
@@ -82,33 +93,65 @@ export class ChannelsService {
       // procesamos (idempotencia del claim, no del efecto en PostFast).
       await this.repo.consumeIntent(tx, intent.id);
 
-      // Nota: una vez que un providerRef entra a UN snapshot, sigue
-      // apareciendo en todos los siguientes mientras la cuenta exista en
-      // PostFast — así que nunca vuelve a calificar como "nueva" aquí,
-      // incluso si el usuario la desconectó solo de nuestro lado
+      // Nota: mientras la cuenta siga viva en PostFast, un providerRef que
+      // ya entró a un snapshot nunca vuelve a calificar como "nueva" aquí
+      // — incluso si el usuario la desconectó solo de nuestro lado
       // (disconnectAccount es un flag local, no revoca nada en PostFast).
-      // Por diseño, este bucle solo puede toparse con providerRefs que
-      // jamás pasaron por social_accounts: reconectar una cuenta ya
-      // conocida es reactivateAccount(), no este flujo.
+      // Reconectar ESE caso es reactivateAccount(), no este flujo.
+      //
+      // Pero si la cuenta salió del workspace de verdad (token expirado,
+      // revocada) y el usuario la reautoriza en postfa.st desde "Conectar
+      // red" en vez de "Reconectar" (que rechaza justo por eso), SÍ vuelve
+      // a aparecer como "nueva" en el diff — el catch de abajo la reclama
+      // sin perderla en silencio.
       const claimed: SocialAccountRow[] = [];
       for (const account of newAccounts) {
+        // listAccounts() no omite cuentas con token revocado, solo las
+        // marca (connectionStatus !== "CONNECTED" → connected:false, ver
+        // postfa.st/docs/accounts/list) — reclamar o reactivar una cuenta
+        // que el proveedor ya no puede usar sería el mismo error que
+        // reactivateAccount() bloquea abajo, solo que por este otro
+        // camino.
+        if (!account.connected) continue;
         try {
-          claimed.push(
-            await this.repo.insertAccount(tx, {
+          // SAVEPOINT (tx.transaction anidado), no la tx de afuera
+          // directo: un unique_violation dentro de la tx principal la deja
+          // "aborted" del lado de Postgres — cualquier query siguiente
+          // (el findAccountByProviderRef del catch, o el insertAccount del
+          // próximo account del for) fallaría con 25P02 aunque el error ya
+          // se haya capturado en JS. El savepoint aísla el fallo: si el
+          // insert truena, drizzle hace ROLLBACK TO SAVEPOINT y la tx de
+          // afuera sigue utilizable.
+          const inserted = await tx.transaction((savepoint) =>
+            this.repo.insertAccount(savepoint, {
               userId,
               network: account.network,
               providerRef: account.providerRef,
               displayName: account.displayName,
             }),
           );
+          claimed.push(inserted);
         } catch (error) {
-          if (isProviderRefConflict(error)) {
-            // Otro usuario ya reclamó esta cuenta primero (carrera de
-            // conexión en el workspace compartido, ver comentario de
-            // cabecera) — se ignora, nunca se le atribuye a este usuario.
-            continue;
-          }
-          throw error;
+          if (!isProviderRefConflict(error)) throw error;
+
+          // El índice único de providerRef es GLOBAL (todo el workspace),
+          // no por tenant — este conflicto tiene dos causas posibles y hay
+          // que distinguirlas:
+          //  1. Otro usuario ya reclamó esta cuenta primero (carrera de
+          //     conexión, ver comentario de cabecera) — su fila es
+          //     invisible para mi RLS, así que esta re-lectura regresa
+          //     undefined. Se ignora, nunca se le atribuye a este usuario.
+          //  2. Es MI PROPIA cuenta, ya existía como "disconnected" (p.ej.
+          //     el token expiró, la desconecté, y ahora la reautoricé en
+          //     postfa.st desde "Conectar red" en vez de "Reconectar" —
+          //     que rechaza justo por esto, ver reactivateAccount). Mi RLS
+          //     SÍ ve esa fila — hay que reactivarla, no perder el claim en
+          //     silencio como pasaba antes.
+          const own = await this.repo.findAccountByProviderRef(tx, account.providerRef);
+          if (!own) continue;
+          claimed.push(
+            await this.repo.reactivateAccount(tx, own.id, account.displayName ?? own.displayName),
+          );
         }
       }
       return claimed.map(toDto);
@@ -130,11 +173,57 @@ export class ChannelsService {
     });
   }
 
-  async reactivateAccount(userId: string, id: string): Promise<ChannelAccountDto> {
+  /**
+   * Borrado permanente (F6 follow-up, "no me gusta que las desconectadas
+   * se queden mezcladas") — a diferencia de disconnectAccount (soft,
+   * reversible), esto sí borra la fila. Mismo guard que
+   * ChatService.deleteChat: una card "scheduled" es un compromiso real en
+   * postfa.st, borrar la cuenta que apunta no debe dejarla sin rastro.
+   */
+  async deleteAccount(userId: string, id: string): Promise<void> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const account = await this.repo.findAccountById(tx, id);
       if (!account) throw new NotFoundException("No encontramos esa cuenta conectada.");
-      const reactivated = await this.repo.reactivateAccount(tx, id, account.displayName);
+      const hasScheduled = await this.cardsRepo.hasScheduledCardsForAccount(tx, id);
+      if (hasScheduled) {
+        throw new BadRequestException(
+          "Esta cuenta tiene publicaciones programadas — cancélalas o espera a que se publiquen antes de eliminarla.",
+        );
+      }
+      await this.repo.deleteAccount(tx, id);
+    });
+  }
+
+  /**
+   * Antes solo volteaba el flag local sin preguntarle a PostFast nada —
+   * "Reconectar" podía mostrar como activa una cuenta cuyo token ya se
+   * revocó del otro lado, y el usuario no se enteraba hasta que un
+   * schedule() fallara después. Ahora confirma contra el workspace real
+   * primero (mismo patrón que claimConnectIntent: red fuera de la
+   * transacción, luego un segundo runWithTenant para el write).
+   */
+  async reactivateAccount(userId: string, id: string): Promise<ChannelAccountDto> {
+    const account = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.findAccountById(tx, id),
+    );
+    if (!account) throw new NotFoundException("No encontramos esa cuenta conectada.");
+
+    const providerAccounts = await this.provider.listAccounts();
+    // .connected, no solo presencia: PostFast sigue listando una cuenta con
+    // token revocado (connectionStatus:"DISABLED"), no la quita — sin este
+    // filtro, "Reconectar" habría vuelto a mostrar como activa justo la
+    // cuenta que este método existe para bloquear.
+    const stillConnected = providerAccounts.find(
+      (a) => a.providerRef === account.providerRef && a.connected,
+    );
+    if (!stillConnected) {
+      throw new ConflictException(
+        'Esa cuenta ya no está conectada en PostFast — vuelve a autorizarla desde "Conectar red".',
+      );
+    }
+
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const reactivated = await this.repo.reactivateAccount(tx, id, stillConnected.displayName);
       return toDto(reactivated);
     });
   }

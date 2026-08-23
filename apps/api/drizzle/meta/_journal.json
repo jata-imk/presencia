@@ -85,6 +85,13 @@
       "when": 1786845946380,
       "tag": "0011_cards_social_account",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787024027350,
+      "tag": "0012_publication_cards_chat_id_nullable",
+      "breakpoints": true
     }
   ]
 }

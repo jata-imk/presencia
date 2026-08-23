@@ -1,24 +1,30 @@
-import { Check, Pencil, X } from "lucide-react";
+import { Check, Loader2, Pencil, X } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
+import { ChatOptionsMenu } from "./ChatOptionsMenu.js";
 
-// Header de la conversación (Chat Conversation.html, ConvHeader) —
-// simplificado a lo que existe de verdad: el título es editable (el rename
-// ya existe, PATCH /api/chats/:id) mediante click-para-editar en vez del
-// menú "···" del mockup (Renombrar/Mover a carpeta/Exportar/Archivar/
-// Eliminar) — de esas cinco acciones solo Renombrar tiene backend; un menú
-// con un ítem real y cuatro decorativos es peor que no tener menú.
+// Header de la conversación (Chat Conversation.html, ConvHeader). El menú
+// "···" (Renombrar/Mover a carpeta/Exportar/Archivar/Eliminar) vive en
+// ChatOptionsMenu, compartido con cada fila de "Recientes" en el Sidebar
+// (F6 PR8 follow-up). Acá solo queda la edición inline del título — la
+// única acción que este layout maneja distinto a una fila angosta.
+//
 // Chips de canal (web/whatsapp/telegram) del mockup tampoco se pintan: un
 // chat no tiene un canal de origen fijo en nuestro modelo de datos hoy.
 export function ConvHeader({
+  chatId,
   title,
+  folderId,
   onRename,
 }: {
+  chatId: string;
   title: string;
+  folderId: string | null;
   onRename: (title: string) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
+  const [saving, setSaving] = useState(false);
 
   function startEdit() {
     setDraft(title);
@@ -27,9 +33,21 @@ export function ConvHeader({
 
   async function commit() {
     const trimmed = draft.trim();
-    setEditing(false);
-    if (!trimmed || trimmed === title) return;
-    await onRename(trimmed);
+    if (!trimmed || trimmed === title) {
+      setEditing(false);
+      return;
+    }
+    // Se queda en modo edición (campo bloqueado + spinner) hasta que el
+    // PATCH vuelve, en vez de saltar a modo lectura con el título viejo de
+    // una — en el entorno real (API detrás del túnel, no localhost) esa
+    // espera se sentía como que el rename no había hecho nada.
+    setSaving(true);
+    try {
+      await onRename(trimmed);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -53,29 +71,38 @@ export function ConvHeader({
           <input
             autoFocus
             value={draft}
+            disabled={saving}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") void commit();
               if (e.key === "Escape") setEditing(false);
             }}
-            className="min-w-0 flex-1 rounded-md border border-line-focus bg-app px-2 py-1 text-sm font-semibold text-fg outline-none"
+            className="min-w-0 flex-1 rounded-md bg-app px-2 py-1 text-sm font-semibold text-fg focus-visible:ring-2 focus-visible:ring-line-focus disabled:opacity-60"
           />
-          <button
-            type="button"
-            aria-label="Guardar"
-            onClick={() => void commit()}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-success"
-          >
-            <Check size={15} strokeWidth={2} />
-          </button>
-          <button
-            type="button"
-            aria-label="Cancelar"
-            onClick={() => setEditing(false)}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-fg-muted"
-          >
-            <X size={15} strokeWidth={2} />
-          </button>
+          {saving ? (
+            <div className="flex size-7 shrink-0 items-center justify-center text-fg-muted">
+              <Loader2 size={15} strokeWidth={2} className="animate-spin" />
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                aria-label="Guardar"
+                onClick={() => void commit()}
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-success"
+              >
+                <Check size={15} strokeWidth={2} />
+              </button>
+              <button
+                type="button"
+                aria-label="Cancelar"
+                onClick={() => setEditing(false)}
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-fg-muted"
+              >
+                <X size={15} strokeWidth={2} />
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <button
@@ -91,6 +118,8 @@ export function ConvHeader({
           />
         </button>
       )}
+
+      <ChatOptionsMenu chatId={chatId} folderId={folderId} onRenameRequest={startEdit} />
     </div>
   );
 }

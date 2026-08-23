@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CardContent } from "@presencia/shared";
-import { PublishingRateLimitError, PublishingRejectedError } from "./errors.js";
+import {
+  PublishingRateLimitError,
+  PublishingRejectedError,
+  PublishingUnavailableError,
+} from "./errors.js";
 import { PostFastProvider } from "./postfast.provider.js";
 
 const TEXT_CONTENT: CardContent = {
@@ -29,10 +33,12 @@ describe("PostFastProvider", () => {
     vi.unstubAllGlobals();
   });
 
+  // Shape real confirmado contra postfa.st/docs/posts/create (2026-08-19):
+  // la respuesta 201 es { postIds: string[] }, no el envelope { data: [...] }
+  // que se había inferido (y que causó el incidente 2026-08-18 — ver
+  // postfast.provider.ts, cabecera).
   it("programa un post y traduce el body a formato PostFast", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { data: [{ id: "pf_123", status: "SCHEDULED" }] }),
-    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { postIds: ["pf_123"] }));
     const provider = new PostFastProvider("test-key");
 
     const result = await provider.schedule({
@@ -66,6 +72,83 @@ describe("PostFastProvider", () => {
     });
     expect(post.content).toContain("Cinco hábitos");
     expect(post.content).toContain("#productividad #ia");
+  });
+
+  // Regresión del incidente 2026-08-18: PostFast creó y programó el post
+  // real (2xx), pero el shape de la respuesta no tenía el `id` donde lo
+  // esperábamos entonces (envelope {data:[...]}) — CardsService.schedule()
+  // necesita el body crudo en `.detail` para no perder el rastro (ver
+  // errorDetailFrom/markFailed). El shape real ya se confirmó y se
+  // corrigió (postIds), pero el fallo se prueba igual con un shape
+  // arbitrario, por si el proveedor cambia su respuesta de nuevo.
+  it("un 2xx sin postIds lanza PublishingUnavailableError y conserva el body crudo en detail", async () => {
+    const unexpectedBody = { ok: true, postId: "pf_9" };
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, unexpectedBody));
+    const provider = new PostFastProvider("test-key");
+
+    let caught: unknown;
+    try {
+      await provider.schedule({
+        network: "linkedin",
+        content: TEXT_CONTENT,
+        scheduledAt: new Date("2026-09-01T18:00:00.000Z"),
+        accountProviderRef: "acc_1",
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(PublishingUnavailableError);
+    expect((caught as PublishingUnavailableError).detail).toEqual({
+      reason: "no_id_in_response",
+      body: unexpectedBody,
+    });
+  });
+
+  it("un postIds vacío (PostFast no creó nada) también lanza PublishingUnavailableError", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { postIds: [] }));
+    const provider = new PostFastProvider("test-key");
+
+    await expect(
+      provider.schedule({
+        network: "linkedin",
+        content: TEXT_CONTENT,
+        scheduledAt: new Date("2026-09-01T18:00:00.000Z"),
+        accountProviderRef: "acc_1",
+      }),
+    ).rejects.toBeInstanceOf(PublishingUnavailableError);
+  });
+
+  // Shape real confirmado contra postfa.st/docs/accounts/list (2026-08-19):
+  // array plano (no envelope), y connectionStatus puede ser "DISABLED" sin
+  // que la cuenta desaparezca de la lista — el caller (ChannelsService)
+  // necesita saber cuáles siguen usables de verdad, ver ProviderAccount.connected.
+  it("listAccounts mapea connectionStatus a connected y no omite cuentas deshabilitadas", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, [
+        { id: "acc_1", platform: "LINKEDIN", displayName: "Activa", connectionStatus: "CONNECTED" },
+        {
+          id: "acc_2",
+          platform: "FACEBOOK",
+          displayName: "Token revocado",
+          connectionStatus: "DISABLED",
+          disabledReason: "TOKEN_REVOKED",
+        },
+      ]),
+    );
+    const provider = new PostFastProvider("test-key");
+
+    const accounts = await provider.listAccounts();
+
+    expect(accounts).toEqual([
+      { providerRef: "acc_1", network: "linkedin", displayName: "Activa", connected: true },
+      {
+        providerRef: "acc_2",
+        network: "facebook",
+        displayName: "Token revocado",
+        connected: false,
+      },
+    ]);
   });
 
   it("cancelar una ref inexistente (404) no lanza — es idempotente", async () => {
@@ -147,13 +230,23 @@ describe("PostFastProvider", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("un error de red se traduce a PublishingUnavailableError", async () => {
-    fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
+  it("un error de red se traduce a PublishingUnavailableError y conserva el error original en detail", async () => {
+    const networkError = new TypeError("fetch failed");
+    fetchMock.mockRejectedValueOnce(networkError);
     const provider = new PostFastProvider("test-key");
 
-    await expect(provider.listAccounts()).rejects.toThrow(
+    let caught: unknown;
+    try {
+      await provider.listAccounts();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(PublishingUnavailableError);
+    expect((caught as PublishingUnavailableError).message).toBe(
       "No se pudo contactar a PostFast (error de red).",
     );
+    expect((caught as PublishingUnavailableError).detail).toBe(networkError);
   });
 
   it("no rechaza directamente — PublishingRejectedError es una instancia real", async () => {

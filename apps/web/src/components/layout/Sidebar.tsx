@@ -1,5 +1,6 @@
 import {
   Activity,
+  Archive,
   BarChart2,
   BookOpen,
   Calendar,
@@ -8,20 +9,23 @@ import {
   Plus,
   Settings,
   Sparkles,
+  X,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
+import { ChatListItem } from "./ChatListItem.js";
+import { ModalNewFolder } from "../folders/ModalNewFolder.js";
 import { authClient } from "../../lib/auth-client.js";
 import { useQuota } from "../../lib/use-quota.js";
 import { useChatsStore } from "../../stores/chats-store.js";
+import { useFoldersStore } from "../../stores/folders-store.js";
 
 // Sidebar del App Shell — portado de Chat Conversation.html /
 // Chat Module.html (F6 PR5). Los módulos que todavía no existen se pintan
 // deshabilitados con "Pronto" en vez de omitirse: el mockup ya los diseñó,
 // y fingir que Presencia solo tiene Chats sería más falso que mostrarlos
 // apagados (ver AGENTS.md #6, YAGNI — esto no es infra de más, es la nav
-// real quedando honesta sobre qué existe). Carpetas del mockup no se
-// pintan: no tienen tabla propia expuesta todavía.
+// real quedando honesta sobre qué existe).
 //
 // Responsive por CSS, sin JS (el mockup usa un prop `collapsed` booleano
 // para tablet y `!mobile` para ocultarlo del todo — acá son breakpoints de
@@ -43,10 +47,17 @@ export function Sidebar() {
   const { quota, refresh: refreshQuota } = useQuota();
   const chats = useChatsStore((s) => s.chats);
   const refreshChats = useChatsStore((s) => s.refresh);
+  const folders = useFoldersStore((s) => s.folders);
+  const refreshFolders = useFoldersStore((s) => s.refresh);
+  const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const [showNewFolder, setShowNewFolder] = useState(false);
 
   useEffect(() => {
     void refreshChats();
   }, [refreshChats]);
+  useEffect(() => {
+    void refreshFolders();
+  }, [refreshFolders]);
   useEffect(() => {
     refreshQuota();
   }, [refreshQuota]);
@@ -64,6 +75,15 @@ export function Sidebar() {
     await authClient.signOut();
     void navigate("/login");
   }
+
+  const activeFolderName = folders?.find((f) => f.id === activeFolder)?.name;
+  // Filtro en el propio sidebar en vez de una FolderView dedicada (el
+  // mockup sí tiene una pantalla completa por carpeta, con su propio header
+  // y "Nuevo chat aquí") — versión mínima por ahora, se separa a su propia
+  // ruta si hace falta más adelante.
+  const visibleChats = activeFolder
+    ? (chats ?? []).filter((c) => c.folderId === activeFolder)
+    : (chats ?? []).slice(0, 12);
 
   return (
     <nav
@@ -130,32 +150,98 @@ export function Sidebar() {
         })}
       </ul>
 
-      {/* Recientes necesita ancho real para truncar títulos — solo desktop,
-          igual que el mockup no lo muestra en su variante "tablet". */}
+      {/* Carpetas + Recientes necesitan ancho real para truncar títulos —
+          solo desktop, igual que el mockup no las muestra en su variante
+          "tablet". */}
       <div className="mt-5 hidden min-h-0 flex-1 flex-col px-3 lg:flex">
-        <p className="mb-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase">
-          Recientes
-        </p>
-        <ul className="flex-1 overflow-y-auto">
-          {(chats ?? []).slice(0, 12).map((chat) => (
-            <li key={chat.id}>
-              <Link
-                to={`/chats/${chat.id}`}
-                className={`block truncate rounded-md px-2.5 py-1.5 text-[13px] transition-colors ${
-                  location.pathname === `/chats/${chat.id}`
-                    ? "bg-tint-plum text-brand"
-                    : "text-fg-secondary hover:bg-secondary-hover"
-                }`}
+        {folders && folders.length > 0 && (
+          <div className="mb-3">
+            <div className="mb-1.5 flex items-center justify-between px-2.5">
+              <p className="text-[10px] font-bold tracking-wide text-fg-muted uppercase">
+                Carpetas
+              </p>
+              <button
+                type="button"
+                aria-label="Nueva carpeta"
+                onClick={() => setShowNewFolder(true)}
+                className="text-fg-muted transition-colors hover:text-fg"
               >
-                {chat.title}
-              </Link>
+                <Plus size={11} strokeWidth={2.5} />
+              </button>
+            </div>
+            <ul>
+              {folders.map((f) => (
+                <li key={f.id}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveFolder(activeFolder === f.id ? null : f.id)}
+                    className={`flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors ${
+                      activeFolder === f.id
+                        ? "bg-tint-plum text-brand"
+                        : "text-fg-secondary hover:bg-secondary-hover"
+                    }`}
+                  >
+                    <span className="shrink-0">{f.icon ?? "📁"}</span>
+                    <span className="flex-1 truncate">{f.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {(!folders || folders.length === 0) && (
+          <button
+            type="button"
+            onClick={() => setShowNewFolder(true)}
+            className="mb-3 flex items-center gap-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase transition-colors hover:text-fg"
+          >
+            Carpetas <Plus size={10} strokeWidth={2.5} />
+          </button>
+        )}
+
+        <div className="mb-1.5 flex items-center justify-between px-2.5">
+          <p className="text-[10px] font-bold tracking-wide text-fg-muted uppercase">
+            {activeFolderName ?? "Recientes"}
+          </p>
+          {activeFolder && (
+            <button
+              type="button"
+              aria-label="Volver a Recientes"
+              onClick={() => setActiveFolder(null)}
+              className="text-fg-muted transition-colors hover:text-fg"
+            >
+              <X size={11} strokeWidth={2.5} />
+            </button>
+          )}
+        </div>
+        {/* px-1.5 en los dos lados, no solo pr- (antes solo tenía el
+            padding derecho, para el scrollbar): overflow-y-auto implica
+            overflow-x:auto también (spec de CSS Overflow), así que
+            cualquier caja que se salga del borde IZQUIERDO de este <ul>
+            —el anillo de foco de la fila, por ejemplo— se recorta ahí
+            igual que se recortaba contra el derecho. */}
+        <ul className="flex-1 overflow-y-auto px-1.5">
+          {visibleChats.map((chat) => (
+            <li key={chat.id}>
+              <ChatListItem chat={chat} active={location.pathname === `/chats/${chat.id}`} />
             </li>
           ))}
+          {activeFolder && visibleChats.length === 0 && (
+            <li className="px-2.5 py-1.5 text-[12px] text-fg-muted">Esta carpeta está vacía.</li>
+          )}
         </ul>
       </div>
       <div className="flex-1 lg:hidden" />
 
       <div className="border-t border-line px-3 py-3">
+        <Link
+          to="/chats/archivados"
+          title="Archivados"
+          className="mb-1 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-fg-secondary transition-colors hover:bg-secondary-hover"
+        >
+          <Archive size={15} strokeWidth={1.75} className="shrink-0" />
+          <span className="hidden lg:inline">Archivados</span>
+        </Link>
         <Link
           to="/configuracion"
           title="Configuración"
@@ -190,6 +276,13 @@ export function Sidebar() {
           </button>
         </div>
       </div>
+
+      {showNewFolder && (
+        <ModalNewFolder
+          onClose={() => setShowNewFolder(false)}
+          onCreated={() => setShowNewFolder(false)}
+        />
+      )}
     </nav>
   );
 }

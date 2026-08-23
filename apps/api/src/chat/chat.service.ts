@@ -1,6 +1,14 @@
-import { HttpException, HttpStatus, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from "ai";
 import type { BrandVoiceForPrompt, ChatSummary } from "@presencia/shared";
+import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import { AiUsageRepository } from "../ai/ai-usage.repository.js";
 import { AiService } from "../ai/ai.service.js";
@@ -11,6 +19,7 @@ import { CreditsService } from "../credits/credits.service.js";
 import { InsufficientQuotaError } from "../credits/errors.js";
 import { getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
+import { FoldersService } from "../folders/folders.service.js";
 import { ChatRepository, type MessageRow } from "./chat.repository.js";
 import { compressToolOutputsForModel } from "./context-diet.js";
 import { buildSystemPrompt } from "./system-prompt.js";
@@ -31,6 +40,7 @@ export class ChatService {
     @Inject(BrandVoiceService) private readonly brandVoiceService: BrandVoiceService,
     @Inject(AiUsageRepository) private readonly aiUsageRepo: AiUsageRepository,
     @Inject(CreditsService) private readonly creditsService: CreditsService,
+    @Inject(FoldersService) private readonly foldersService: FoldersService,
   ) {}
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
@@ -62,6 +72,64 @@ export class ChatService {
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const updated = await this.repo.renameChat(tx, chatId, title);
       return this.toSummary(updated);
+    });
+  }
+
+  listArchivedChats(userId: string): Promise<ChatSummary[]> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const rows = await this.repo.listArchivedChats(tx);
+      return rows.map((chat) => this.toSummary(chat));
+    });
+  }
+
+  archiveChat(userId: string, chatId: string): Promise<ChatSummary> {
+    return this.setArchived(userId, chatId, true);
+  }
+
+  unarchiveChat(userId: string, chatId: string): Promise<ChatSummary> {
+    return this.setArchived(userId, chatId, false);
+  }
+
+  private setArchived(userId: string, chatId: string, archived: boolean): Promise<ChatSummary> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const chat = await this.repo.getChat(tx, chatId);
+      if (!chat) throw new NotFoundException("Ese chat no existe.");
+      const updated = await this.repo.setArchived(tx, chatId, archived);
+      return this.toSummary(updated);
+    });
+  }
+
+  moveToFolder(userId: string, chatId: string, folderId: string | null): Promise<ChatSummary> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const chat = await this.repo.getChat(tx, chatId);
+      if (!chat) throw new NotFoundException("Ese chat no existe.");
+      // Confirma que folderId es una carpeta del tenant actual, dentro de
+      // la MISMA transacción (mismo RLS) — un FK por sí solo no basta,
+      // valida existencia física de la fila, no visibilidad por tenant
+      // (ADR-003). Ver FoldersService.assertOwnsFolder.
+      if (folderId) await this.foldersService.assertOwnsFolder(tx, folderId);
+      const updated = await this.repo.moveToFolder(tx, chatId, folderId);
+      return this.toSummary(updated);
+    });
+  }
+
+  // No cancela publicaciones "scheduled" solo — es un compromiso real en
+  // postfa.st, cancelarlo sin que el usuario lo haya pedido explícitamente
+  // sería un bug, no una feature. "draft"/"published"/"failed"/"canceled"
+  // sobreviven huérfanas (chatId → null, ver schema.ts) — no se destruye
+  // el historial de algo que ya se publicó por borrar la conversación que
+  // lo originó.
+  deleteChat(userId: string, chatId: string): Promise<void> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const chat = await this.repo.getChat(tx, chatId);
+      if (!chat) throw new NotFoundException("Ese chat no existe.");
+      const hasScheduled = await this.cardsRepo.hasScheduledCards(tx, chatId);
+      if (hasScheduled) {
+        throw new BadRequestException(
+          "Este chat tiene publicaciones programadas — cancélalas o espera a que se publiquen antes de eliminarlo.",
+        );
+      }
+      await this.repo.deleteChat(tx, chatId);
     });
   }
 
@@ -136,10 +204,23 @@ export class ChatService {
    * historial que queda — el turno user ya estaba persistido, no se
    * inserta nada nuevo.
    */
+  /**
+   * `userMessageId` es el id del mensaje USER cuya respuesta se quiere
+   * regenerar — no un id de mensaje assistant. Antes esta función esperaba
+   * lo segundo (un `messageId` que el cliente nunca manda: la transport
+   * real de useChat/DefaultChatTransport, al llamar regenerate(), NO
+   * incluye ningún campo `messageId` — solo reenvía `messages` ya recortado
+   * del lado del cliente, sin la respuesta vieja, terminando en el mensaje
+   * user al que hay que responder de nuevo. Ese último mensaje del array SÍ
+   * trae un id real y persistido — es lo que el controller ahora extrae
+   * con el mismo `parseLastUserMessage` que usa el turno normal, en vez de
+   * inventar un campo que el protocolo real nunca envía (bug encontrado
+   * 2026-08-19: "Falta el id del mensaje a reintentar" en cada regenerate).
+   */
   async regenerateChat(
     userId: string,
     chatId: string,
-    messageId: string,
+    userMessageId: string,
     res: ServerResponse,
   ): Promise<void> {
     await this.assertQuotaForTurn(userId);
@@ -148,19 +229,28 @@ export class ChatService {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const all = await this.repo.listMessages(tx, chatId);
-      const last = all.at(-1);
-      // Solo se reintenta el último turno: messageId viaja del cliente, y
-      // sin este chequeo se podría borrar un mensaje intermedio dejando un
-      // hueco en la conversación (dos turnos user seguidos) sin tocar los
-      // turnos posteriores.
-      if (!last || last.id !== messageId || last.role !== "assistant") {
+      const targetIndex = all.findIndex((m) => m.id === userMessageId);
+      const target = targetIndex === -1 ? undefined : all[targetIndex];
+      const staleReply = targetIndex === -1 ? undefined : all[targetIndex + 1];
+      // Solo se reintenta el último turno: el mensaje user tiene que ser
+      // el último de la conversación (turno que falló antes de generar
+      // respuesta — el botón "Reintentar" de un error) o el penúltimo,
+      // seguido exactamente por la respuesta assistant a regenerar — sin
+      // este chequeo se podría borrar un mensaje intermedio dejando un
+      // hueco (dos turnos user seguidos) sin tocar los turnos posteriores.
+      const isLast = targetIndex === all.length - 1;
+      const isSecondToLastWithReply =
+        targetIndex === all.length - 2 && staleReply?.role === "assistant";
+      if (!target || target.role !== "user" || !(isLast || isSecondToLastWithReply)) {
         throw new NotFoundException("Ese mensaje no se puede reintentar.");
       }
-      // Cards antes que mensaje: el FK message_id es "set null", no
-      // cascade — sin este orden quedarían huérfanas en vez de borradas.
-      await this.cardsRepo.deleteCardsByMessageId(tx, messageId);
-      await this.repo.deleteMessage(tx, messageId);
-      return all.slice(0, -1).map((row) => this.toUIMessage(row));
+      if (staleReply) {
+        // Cards antes que mensaje: el FK message_id es "set null", no
+        // cascade — sin este orden quedarían huérfanas en vez de borradas.
+        await this.cardsRepo.deleteCardsByMessageId(tx, staleReply.id);
+        await this.repo.deleteMessage(tx, staleReply.id);
+      }
+      return all.slice(0, targetIndex + 1).map((row) => this.toUIMessage(row));
     });
 
     await this.runAgentTurn(userId, chatId, history, res, voicePromise);
@@ -184,12 +274,21 @@ export class ChatService {
     // Ids de las cards creadas durante este turno (closure compartido con la
     // tool): onEnd las vincula al mensaje assistant una vez que existe.
     const createdCardIds: string[] = [];
+    // Un groupId por turno, no por card — coincide con lo ya documentado
+    // en presencia-chat.md (el toggle multi-red del drawer se dispara
+    // cuando "la publicación se generó para múltiples redes en el mismo
+    // turno"), no con una selección posterior de cards sueltas (eso es
+    // no-objetivo explícito de V1, ver presencia-calendario.md). Se asigna
+    // siempre, incluso si el turno termina creando una sola card — inocuo,
+    // esa card simplemente no tiene hermanas con el mismo groupId.
+    const groupId = randomUUID();
     const tools = buildPublicationCardTools({
       userId,
       chatId,
       dbService: this.dbService,
       cardsRepository: this.cardsRepo,
       createdCardIds,
+      groupId,
     });
 
     // Voz de marca del usuario (F4): null durante el onboarding, para
@@ -336,12 +435,16 @@ export class ChatService {
   private toSummary(chat: {
     id: string;
     title: string;
+    folderId: string | null;
+    archivedAt: Date | null;
     lastMessageAt: Date | null;
     createdAt: Date;
   }): ChatSummary {
     return {
       id: chat.id,
       title: chat.title,
+      folderId: chat.folderId,
+      archivedAt: chat.archivedAt?.toISOString() ?? null,
       lastMessageAt: chat.lastMessageAt?.toISOString() ?? null,
       createdAt: chat.createdAt.toISOString(),
     };
