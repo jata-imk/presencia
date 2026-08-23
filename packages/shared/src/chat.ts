@@ -21,6 +21,12 @@ export interface ChatSummary {
   folderId: string | null;
   /** ISO 8601, o null si no está archivado — F6 PR8. */
   archivedAt: string | null;
+  /**
+   * ISO 8601, o null si no está fijado (F6.5). Es timestamp y no boolean
+   * para dar también el orden entre fijados. Nunca conviven con
+   * `archivedAt`: archivar limpia el pin (CHECK en DB).
+   */
+  pinnedAt: string | null;
   lastMessageAt: string | null;
   createdAt: string;
 }

@@ -92,6 +92,13 @@
       "when": 1787024027350,
       "tag": "0012_publication_cards_chat_id_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787455808028,
+      "tag": "0013_chat_pinned_at",
+      "breakpoints": true
     }
   ]
 }

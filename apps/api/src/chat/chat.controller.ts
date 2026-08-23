@@ -88,6 +88,18 @@ export class ChatController {
     return this.chatService.unarchiveChat(user.id, this.parseChatId(id));
   }
 
+  // POST y no PATCH: el PATCH de acá es solo-título, y el precedente del
+  // repo para estos toggles es el par archive/unarchive.
+  @Post(":id/pin")
+  pin(@CurrentUser() user: SessionUser, @Param("id") id: string): Promise<ChatSummary> {
+    return this.chatService.pinChat(user.id, this.parseChatId(id));
+  }
+
+  @Post(":id/unpin")
+  unpin(@CurrentUser() user: SessionUser, @Param("id") id: string): Promise<ChatSummary> {
+    return this.chatService.unpinChat(user.id, this.parseChatId(id));
+  }
+
   @Delete(":id")
   @HttpCode(204)
   async delete(@CurrentUser() user: SessionUser, @Param("id") id: string): Promise<void> {

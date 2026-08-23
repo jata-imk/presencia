@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   aiUsageEvents,
@@ -204,6 +204,79 @@ describe("RLS tenant_isolation", () => {
         tx.select().from(folders).where(eq(folders.id, folderA)),
       );
       expect(rows).toHaveLength(0);
+    });
+
+    // F6.5: el conteo de FoldersRepository.list es un LEFT JOIN a chats, o
+    // sea que cruza dos tablas — hay que confirmar que RLS filtra las DOS
+    // y que el conteo de A nunca ve chats de B.
+    it("el conteo por carpeta no cruza tenants", { timeout: 15_000 }, async () => {
+      // B intenta meter un chat en la carpeta de A. RLS le esconde la
+      // carpeta, pero el FK es físico: lo que lo frena es que la fila que
+      // inserta tiene que ser suya (user_id = B), y entonces el conteo de
+      // A —que corre bajo el tenant de A— nunca la ve.
+      await dbService.runWithTenant(userB, (tx) =>
+        tx.insert(chats).values({ userId: userB, title: "De B", folderId: folderA }),
+      );
+
+      const [row] = await dbService.runWithTenant(userA, (tx) =>
+        tx
+          .select({ id: folders.id, chatCount: sql<number>`count(${chats.id})::int` })
+          .from(folders)
+          .leftJoin(chats, and(eq(chats.folderId, folders.id), isNull(chats.archivedAt)))
+          .where(eq(folders.id, folderA))
+          .groupBy(folders.id),
+      );
+      expect(row?.chatCount).toBe(0);
+
+      await dbService.runWithTenant(userB, (tx) =>
+        tx.delete(chats).where(eq(chats.folderId, folderA)),
+      );
+    });
+  });
+
+  // F6.5: fijar chats. El pin es una columna nueva sobre una tabla que ya
+  // tenía RLS desde 0001 — se verifica que la policy la cubre igual, más
+  // el invariante de que archivar limpia el pin (CHECK en DB).
+  describe("chats · pinned_at", () => {
+    let chatA: string;
+
+    beforeAll(async () => {
+      chatA = await dbService.runWithTenant(userA, async (tx) => {
+        const [chat] = await tx
+          .insert(chats)
+          .values({ userId: userA, title: "Fijado de prueba" })
+          .returning({ id: chats.id });
+        if (!chat) throw new Error("No se pudo crear el chat de prueba");
+        return chat.id;
+      });
+    }, 15_000);
+
+    it("otro tenant no puede fijar un chat ajeno", { timeout: 15_000 }, async () => {
+      // Bajo RLS un UPDATE sobre fila ajena no lanza: afecta 0 filas. Por
+      // eso los servicios hacen getChat primero para dar un 404 explícito.
+      await dbService.runWithTenant(userB, (tx) =>
+        tx.update(chats).set({ pinnedAt: new Date() }).where(eq(chats.id, chatA)),
+      );
+      const [row] = await dbService.runWithTenant(userA, (tx) =>
+        tx.select().from(chats).where(eq(chats.id, chatA)),
+      );
+      expect(row?.pinnedAt).toBeNull();
+    });
+
+    it("el CHECK impide fijar y archivar a la vez", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userA, (tx) =>
+          tx
+            .update(chats)
+            .set({ pinnedAt: new Date(), archivedAt: new Date() })
+            .where(eq(chats.id, chatA)),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(error).toBeInstanceOf(Error);
+      expect(String((error as Error).cause)).toMatch(/chats_not_pinned_and_archived/);
     });
   });
 

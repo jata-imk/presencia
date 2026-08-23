@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { FolderDto } from "@presencia/shared";
 import { DbService, type Tx } from "../db/db.service.js";
-import { FoldersRepository, type FolderRow } from "./folders.repository.js";
+import { FoldersRepository, type FolderWithCount } from "./folders.repository.js";
 
 @Injectable()
 export class FoldersService {
@@ -20,7 +20,8 @@ export class FoldersService {
   createFolder(userId: string, name: string, icon?: string): Promise<FolderDto> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const row = await this.repo.create(tx, { userId, name, icon: icon ?? null });
-      return toDto(row);
+      // Recién creada: 0 por construcción, no hace falta ir a contar.
+      return toDto({ ...row, chatCount: 0 });
     });
   }
 
@@ -28,7 +29,12 @@ export class FoldersService {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const existing = await this.repo.findById(tx, id);
       if (!existing) throw new NotFoundException("Esa carpeta no existe.");
-      const row = await this.repo.rename(tx, id, { name, icon: icon ?? existing.icon });
+      await this.repo.rename(tx, id, { name, icon: icon ?? existing.icon });
+      // Se relee con el conteo en vez de devolver la fila del UPDATE:
+      // folders-store.ts reemplaza la fila entera con esta respuesta, así
+      // que sin chatCount el badge desaparecería al renombrar.
+      const row = await this.repo.findByIdWithCount(tx, id);
+      if (!row) throw new NotFoundException("Esa carpeta no existe.");
       return toDto(row);
     });
   }
@@ -57,11 +63,12 @@ export class FoldersService {
   }
 }
 
-function toDto(row: FolderRow): FolderDto {
+function toDto(row: FolderWithCount): FolderDto {
   return {
     id: row.id,
     name: row.name,
     icon: row.icon,
+    chatCount: row.chatCount,
     createdAt: row.createdAt.toISOString(),
   };
 }

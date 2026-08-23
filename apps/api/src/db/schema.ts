@@ -239,11 +239,23 @@ export const chats = pgTable(
     folderId: uuid("folder_id").references(() => folders.id, { onDelete: "set null" }),
     title: text("title").notNull().default("Nuevo chat"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // F6.5: timestamp nullable, no boolean — mismo patrón que archivedAt y
+    // socialConnectIntents.consumedAt. Además de "está fijado" da gratis el
+    // orden ENTRE fijados (el último que fijaste, arriba); un boolean
+    // necesitaría una columna de posición aparte.
+    pinnedAt: timestamp("pinned_at", { withTimezone: true }),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("chats_recents").on(t.userId, t.lastMessageAt)],
+  (t) => [
+    index("chats_recents").on(t.userId, t.lastMessageAt),
+    // Archivar significa "sácalo de mi lista de trabajo" y fijar significa
+    // "manténlo arriba de mi lista de trabajo": sostener los dos a la vez
+    // es una contradicción. ChatRepository.setArchived limpia el pin al
+    // archivar; esto lo vuelve un invariante real y no una convención.
+    check("chats_not_pinned_and_archived", sql`${t.pinnedAt} IS NULL OR ${t.archivedAt} IS NULL`),
+  ],
 );
 
 export const messages = pgTable(
