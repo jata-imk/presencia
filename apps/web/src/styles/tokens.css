@@ -87,12 +87,20 @@
   --radius-lg: 12px;
   --radius-xl: 16px;
 
-  /* Sombras (tinte plum) */
-  --shadow-xs: 0 1px 2px rgba(61, 38, 69, 0.05);
-  --shadow-sm: 0 1px 4px rgba(61, 38, 69, 0.06), 0 2px 8px rgba(61, 38, 69, 0.05);
-  --shadow-md: 0 1px 4px rgba(61, 38, 69, 0.06), 0 4px 16px rgba(61, 38, 69, 0.08);
-  --shadow-lg: 0 2px 8px rgba(61, 38, 69, 0.08), 0 8px 32px rgba(61, 38, 69, 0.1);
-  --shadow-xl: 0 8px 40px rgba(61, 38, 69, 0.18);
+  /* Sombras (tinte plum). El COLOR sale de --shadow-tint-*, que se
+     redefine por tema más abajo, en vez de un rgba() literal acá.
+     No es cosmético: Tailwind v4 resuelve los valores de @theme en tiempo
+     de build e inlinea el color dentro de la utility
+     (`--tw-shadow: 0 2px 8px var(--tw-shadow-color,#3d264514)`), así que
+     redefinir --shadow-lg bajo [data-theme="dark"] NO cambia nada — la
+     utility ya tiene el color de light horneado. Un var() sí sobrevive al
+     inlineado y se resuelve en runtime. Misma familia de trampa que el
+     modificador de opacidad sobre tokens indirectos (§Reglas de uso). */
+  --shadow-xs: 0 1px 2px var(--shadow-tint-xs);
+  --shadow-sm: 0 1px 4px var(--shadow-tint-sm-a), 0 2px 8px var(--shadow-tint-sm-b);
+  --shadow-md: 0 1px 4px var(--shadow-tint-sm-a), 0 4px 16px var(--shadow-tint-md);
+  --shadow-lg: 0 2px 8px var(--shadow-tint-md), 0 8px 32px var(--shadow-tint-lg);
+  --shadow-xl: 0 8px 40px var(--shadow-tint-xl);
   /* Halo de GlowFrame (borde animado de card en borrador) — color-mix()
      en vez de rgba() paralelo (code review 2026-08-20), mismo patrón que
      --status-*-border: sigue el token si --color-pink-orchid/plum-800
@@ -176,6 +184,16 @@
      literal desaparecía contra --bg-card en dark. No es retokenizar un
      color de tercero — es la versión correcta del mismo logo. */
   --brand-monochrome: #000000;
+
+  /* Color de las sombras. Ver la nota en @theme §Sombras: viven acá y no
+     inline en --shadow-* porque un var() es lo único que sobrevive al
+     inlineado de Tailwind y puede voltear con el tema. */
+  --shadow-tint-xs: rgba(61, 38, 69, 0.05);
+  --shadow-tint-sm-a: rgba(61, 38, 69, 0.06);
+  --shadow-tint-sm-b: rgba(61, 38, 69, 0.05);
+  --shadow-tint-md: rgba(61, 38, 69, 0.08);
+  --shadow-tint-lg: rgba(61, 38, 69, 0.1);
+  --shadow-tint-xl: rgba(61, 38, 69, 0.18);
   --scrollbar-thumb: var(--color-neutral-300);
 
   /* Layout. --sidebar-width es el DEFAULT, no la ley: desde F6.5 el
@@ -242,15 +260,16 @@
      TikTok y Threads para fondos oscuros. */
   --brand-monochrome: var(--color-plum-100);
 
-  /* Las sombras son rgba plum pensadas para fondo claro — sobre #0f0a12
-     no se ven y el "elevado" lo cargan los bordes. Se refuerzan con negro
-     real para que las superficies flotantes (menús, modales, toasts)
-     sigan despegándose del fondo. */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 1px 4px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 2px 8px rgba(0, 0, 0, 0.5), 0 8px 32px rgba(0, 0, 0, 0.45);
-  --shadow-xl: 0 8px 40px rgba(0, 0, 0, 0.6);
+  /* Las sombras plum están calibradas para fondo claro: sobre #0f0a12 no
+     se ven. Se voltea el COLOR (no --shadow-*, que Tailwind ya inlineó)
+     a negro real y más opaco, para que menús, modales y toasts sigan
+     despegándose del fondo. */
+  --shadow-tint-xs: rgba(0, 0, 0, 0.4);
+  --shadow-tint-sm-a: rgba(0, 0, 0, 0.45);
+  --shadow-tint-sm-b: rgba(0, 0, 0, 0.35);
+  --shadow-tint-md: rgba(0, 0, 0, 0.45);
+  --shadow-tint-lg: rgba(0, 0, 0, 0.5);
+  --shadow-tint-xl: rgba(0, 0, 0, 0.6);
 
   /* Cromo del navegador: gris neutro claro sobre fondo oscuro se lee como
      una barra brillante pegada al borde. */

@@ -130,8 +130,16 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
   const activeChatFolderId =
     chats?.find((c) => location.pathname === `/chats/${c.id}`)?.folderId ?? null;
   useEffect(() => {
-    if (activeChatFolderId) setExpandedFolder(activeChatFolderId);
-  }, [activeChatFolderId, setExpandedFolder]);
+    if (!activeChatFolderId) return;
+    setExpandedFolder(activeChatFolderId);
+    // Con más de FOLDERS_PREVIEW carpetas, la del chat activo puede caer
+    // fuera del slice visible: expandirla no serviría de nada porque ni
+    // siquiera está en el DOM, y como Recientes ya excluye todo lo que
+    // tiene folderId, el chat abierto desaparecería del sidebar entero —
+    // exactamente el problema que este efecto existe para evitar.
+    const visibleIds = (folders ?? []).slice(0, FOLDERS_PREVIEW).map((f) => f.id);
+    if (!visibleIds.includes(activeChatFolderId)) setShowAllFolders(true);
+  }, [activeChatFolderId, setExpandedFolder, folders]);
 
   return (
     <>

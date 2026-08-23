@@ -37,6 +37,39 @@
 
 **Regla práctica:** antes de usar un modificador de opacidad sobre cualquier color que no sea un color crudo de Tailwind (`white`, `black`) o de la capa 1 declarada directo en `@theme` con un hex literal (`pink-orchid`, `blush-pop`, etc. — aun así, **verificado que tampoco funciona** para esos: ver arriba), da por hecho que no va a compilar y define el token específico. Verificar generación real: `grep "nombre-clase" dist/assets/index-*.css` tras un build — si no aparece, no se generó.
 
+## Trampa hermana: valores de `@theme` que Tailwind inlinea (sombras)
+
+Misma familia que la de arriba, distinto mecanismo, encontrada en el code review de F6.5.
+
+**Redefinir `--shadow-*` bajo `[data-theme="dark"]` no hace nada.** Tailwind v4 resuelve los valores de `@theme` **en tiempo de build** y hornea el color dentro de la utility, porque necesita partirlo para poder inyectar `--tw-shadow-color`:
+
+```css
+/* lo que Tailwind genera a partir de --shadow-lg: 0 2px 8px rgba(61,38,69,.08) */
+.shadow-lg {
+  --tw-shadow: 0 2px 8px var(--tw-shadow-color, #3d264514), ...;
+}
+```
+
+El `#3d264514` es literal: para cuando el navegador aplica `[data-theme="dark"]`, la utility ya no consulta `--shadow-lg`. El bloque dark parece correcto, compila, y no cambia un solo píxel.
+
+**Solución aplicada:** el valor en `@theme` referencia otro token para el COLOR, y ese es el que voltea por tema:
+
+```css
+@theme {
+  --shadow-lg: 0 2px 8px var(--shadow-tint-md), 0 8px 32px var(--shadow-tint-lg);
+}
+:root {
+  --shadow-tint-md: rgba(61, 38, 69, 0.08);
+}
+[data-theme="dark"] {
+  --shadow-tint-md: rgba(0, 0, 0, 0.45);
+}
+```
+
+Un `var()` sobrevive al inlineado (`var(--tw-shadow-color, var(--shadow-tint-md))`) y se resuelve en runtime.
+
+**Regla práctica:** cualquier token de `@theme` que tenga que cambiar con el tema debe llevar el valor variable dentro de un `var()` anidado, no como literal. Y la verificación es la misma que la trampa anterior: mirar el CSS generado (`grep -o "\.shadow-lg{[^}]*}" dist/assets/index-*.css`), no el fuente.
+
 ## Movimiento (ADR-014)
 
 Decisión completa en [ADR-014](../explanation/decisions/adr-014-estrategia-de-animacion.md); acá el resumen operativo.

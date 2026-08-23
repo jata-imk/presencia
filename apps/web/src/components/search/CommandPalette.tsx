@@ -64,8 +64,14 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
   const listboxId = useId();
   const titleId = useId();
 
-  const { listRef, activeIndex, getReferenceProps, getFloatingProps, getItemProps } =
-    useCommandPalette({ open: true, onClose });
+  const {
+    listRef,
+    activeIndex,
+    setActiveIndex,
+    getReferenceProps,
+    getFloatingProps,
+    getItemProps,
+  } = useCommandPalette({ open: true, onClose });
 
   // Una sola lista plana de acciones — los índices que useListNavigation
   // maneja son sobre ESTA lista, no sobre cada sección. Las secciones son
@@ -149,6 +155,18 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
       .filter((s) => s.items.length > 0);
   }, [actions]);
 
+  // El reset de use-command-palette solo corre al cerrar, y acá la paleta
+  // vive con `open: true` fijo — o sea que nunca dispara mientras está
+  // abierta. Sin esto, tras mover las flechas y seguir tecleando el índice
+  // apunta a la posición vieja de una lista que ya cambió: Enter abre el
+  // resultado equivocado, o no hace nada si la lista se acortó. Se trunca
+  // también listRef para que useListNavigation no acote contra un largo
+  // que ya no existe.
+  useEffect(() => {
+    setActiveIndex(null);
+    listRef.current.length = actions.length;
+  }, [actions, setActiveIndex, listRef]);
+
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && activeIndex !== null) {
       e.preventDefault();
@@ -210,8 +228,20 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
           )}
 
           {sections.map((section) => (
-            <div key={section.title} className="mb-1 last:mb-0">
-              <p className="px-2.5 py-1 text-[10px] font-bold tracking-wide text-fg-muted uppercase">
+            // role="group" y no un <div> pelado: sin un rol válido, las
+            // opciones dejan de estar "poseídas" por el listbox según ARIA
+            // y un lector de pantalla no las enumera — justo lo que el
+            // aria-activedescendant de arriba intenta lograr.
+            <div
+              key={section.title}
+              role="group"
+              aria-labelledby={`${listboxId}-${section.title}`}
+              className="mb-1 last:mb-0"
+            >
+              <p
+                id={`${listboxId}-${section.title}`}
+                className="px-2.5 py-1 text-[10px] font-bold tracking-wide text-fg-muted uppercase"
+              >
                 {section.title}
               </p>
               {section.items.map(({ action, index }) => (

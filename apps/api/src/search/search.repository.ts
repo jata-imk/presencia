@@ -111,12 +111,17 @@ export class SearchRepository {
 
   searchCards(tx: Tx, q: string): Promise<CardHitRow[]> {
     // Mismos campos que la columna generada de 0014 — los tres arquetipos
-    // tienen campos distintos y el que no aplica aporta ''.
+    // tienen campos distintos y el que no aplica aporta ''. Los hashtags
+    // van incluidos porque search_tsv también los indexa: sin ellos, una
+    // card que hace match SOLO por un hashtag pasa el WHERE pero
+    // ts_headline no encuentra el término en el texto que le damos y
+    // devuelve un fragmento inicial cualquiera, sin nada resaltado.
     const text = sql`
       coalesce(${publicationCards.content} ->> 'caption', '') || ' ' ||
       coalesce(${publicationCards.content} ->> 'body', '') || ' ' ||
       coalesce(${publicationCards.content} ->> 'hook', '') || ' ' ||
-      coalesce(${publicationCards.content} ->> 'script', '')`;
+      coalesce(${publicationCards.content} ->> 'script', '') || ' ' ||
+      coalesce(jsonb_path_query_array(${publicationCards.content}, '$.hashtags[*]')::text, '')`;
     return tx
       .select({
         id: publicationCards.id,

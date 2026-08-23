@@ -1,6 +1,31 @@
 import { create } from "zustand";
 import type { ChatSummary } from "@presencia/shared";
 import { apiFetch } from "../lib/api.js";
+import { useFoldersStore } from "./folders-store.js";
+
+// FolderDto.chatCount cuenta los chats NO archivados de cada carpeta
+// (ver el invariante en shared/folders.ts). Ese número se calcula en el
+// servidor, así que cualquier mutación que cambie la membresía o el
+// archivado tiene que pedirlo de nuevo — si no, el badge dice 0 al lado de
+// una lista de 1 hasta la próxima recarga completa.
+function refreshFolderCounts(): void {
+  void useFoldersStore.getState().refresh();
+}
+
+// Mismo orden que devuelve GET /chats (chat.repository.ts listChats):
+// fijados primero por pinned_at desc, después por actividad. Se replica al
+// mutar en local para no dejar la lista en un orden que el servidor nunca
+// devolvería hasta el próximo refresh.
+function sortLikeServer(rows: ChatSummary[]): ChatSummary[] {
+  return [...rows].sort((a, b) => {
+    if (a.pinnedAt !== b.pinnedAt) {
+      if (a.pinnedAt === null) return 1;
+      if (b.pinnedAt === null) return -1;
+      return b.pinnedAt.localeCompare(a.pinnedAt);
+    }
+    return (b.lastMessageAt ?? b.createdAt).localeCompare(a.lastMessageAt ?? a.createdAt);
+  });
+}
 
 // F6 PR5: la lista de chats la consumen dos lugares que antes no compartían
 // estado — el Sidebar del shell (recientes) y la pantalla de nuevo chat
@@ -73,6 +98,7 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
     set((state) => ({
       chats: state.chats?.map((c) => (c.id === id ? updated : c)) ?? null,
     }));
+    refreshFolderCounts();
     return updated;
   },
   setPinned: async (id, pinned) => {
@@ -80,13 +106,16 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
       method: "POST",
     });
     set((state) => ({
-      chats: state.chats?.map((c) => (c.id === id ? updated : c)) ?? null,
+      chats: state.chats
+        ? sortLikeServer(state.chats.map((c) => (c.id === id ? updated : c)))
+        : null,
     }));
     return updated;
   },
   archive: async (id) => {
     await apiFetch<ChatSummary>(`/api/chats/${id}/archive`, { method: "POST" });
     set((state) => ({ chats: state.chats?.filter((c) => c.id !== id) ?? null }));
+    refreshFolderCounts();
   },
   unarchive: async (id) => {
     // El mirror de archive() no basta: archive() solo saca de `chats`
@@ -97,8 +126,9 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
     const updated = await apiFetch<ChatSummary>(`/api/chats/${id}/unarchive`, { method: "POST" });
     set((state) => ({
       archivedChats: state.archivedChats?.filter((c) => c.id !== id) ?? null,
-      chats: [updated, ...(state.chats ?? [])],
+      chats: sortLikeServer([updated, ...(state.chats ?? [])]),
     }));
+    refreshFolderCounts();
   },
   remove: async (id) => {
     await apiFetch<undefined>(`/api/chats/${id}`, { method: "DELETE" });
@@ -106,5 +136,6 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
       chats: state.chats?.filter((c) => c.id !== id) ?? null,
       archivedChats: state.archivedChats?.filter((c) => c.id !== id) ?? null,
     }));
+    refreshFolderCounts();
   },
 }));
