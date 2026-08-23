@@ -1,5 +1,6 @@
 import {
-  BarChart3,
+  Activity,
+  BarChart2,
   BookOpen,
   Calendar,
   LogOut,
@@ -30,8 +31,8 @@ import { useChatsStore } from "../../stores/chats-store.js";
 const MODULES = [
   { icon: MessageSquare, label: "Chats", to: "/chats" },
   { icon: Calendar, label: "Calendario", to: null },
-  { icon: BarChart3, label: "Ritmo", to: null },
-  { icon: BarChart3, label: "Analíticas", to: null },
+  { icon: Activity, label: "Ritmo", to: null },
+  { icon: BarChart2, label: "Analíticas", to: null },
   { icon: BookOpen, label: "Biblioteca", to: null },
 ] as const;
 

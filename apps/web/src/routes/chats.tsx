@@ -1,135 +1,109 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router";
-import type { ChatSummary } from "@presencia/shared";
+import { useState } from "react";
+import { useNavigate } from "react-router";
+import { Composer } from "../components/chat/Composer.js";
+import { ContextChip } from "../components/chat/ContextChip.js";
+import { SuggestionCard } from "../components/chat/SuggestionCard.js";
 import { authClient } from "../lib/auth-client.js";
+import { useChatsStore } from "../stores/chats-store.js";
+
+// Pantalla de "nuevo chat" (Chat Module.html, ChatEmptyState) — reemplaza
+// la lista cruda de F1. La lista de chats existentes se mudó al Sidebar
+// ("Recientes", F6 PR5); esta pantalla es exclusivamente para empezar uno.
+//
+// El mockup rota el subtítulo entre 3 variantes ("Tienes 3 posts
+// programados esta semana", "Hace 2 días que no creas contenido") — se
+// fabricarían con datos que no existen sin Calendario/Ritmo reales, así
+// que queda solo la primera, siempre. Mismo motivo por el que las 2
+// tarjetas "Tendencia" con métrica no están en SUGGESTIONS: no hay datos
+// reales que respalden un "+24%".
+const SUGGESTIONS = [
+  {
+    emoji: "✨",
+    title: "Ideas para esta semana",
+    description: "Genera 5 conceptos basados en mis tendencias",
+    prompt: "Dame 5 ideas de contenido para esta semana, pensadas en mi nicho.",
+  },
+  {
+    emoji: "🔄",
+    title: "Adaptar mi último post",
+    description: "Crea versiones para cada red social",
+    prompt: "Toma mi post más reciente y adáptalo para otras redes sociales.",
+  },
+  {
+    emoji: "📅",
+    title: "Calendario del mes",
+    description: "Plan editorial completo para 30 días",
+    prompt: "Ayúdame a armar un plan editorial para los próximos 30 días.",
+  },
+  {
+    emoji: "✍️",
+    title: "Hilo viral",
+    description: "Estructura un thread o carrusel paso a paso",
+    prompt: "Estructura un hilo o carrusel viral sobre un tema de mi nicho.",
+  },
+];
 
 export function ChatsPage() {
   const navigate = useNavigate();
-  const [chats, setChats] = useState<ChatSummary[] | null>(null);
+  const { data: session } = authClient.useSession();
+  const createChat = useChatsStore((s) => s.create);
+  const [input, setInput] = useState("");
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/chats")
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        setChats((await res.json()) as ChatSummary[]);
-      })
-      .catch(() => setError("No se pudieron cargar tus chats."));
-  }, []);
+  const name = session?.user.displayName ?? session?.user.name ?? "";
 
-  async function createChat() {
-    const res = await fetch("/api/chats", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    if (!res.ok) {
-      setError("No se pudo crear el chat.");
-      return;
+  async function startChat(prompt: string) {
+    const trimmed = prompt.trim();
+    if (!trimmed || starting) return;
+    setError(null);
+    setStarting(true);
+    try {
+      const chat = await createChat();
+      void navigate(`/chats/${chat.id}`, { state: { initialPrompt: trimmed } });
+    } catch {
+      setError("No se pudo crear el chat. Inténtalo de nuevo.");
+      setStarting(false);
     }
-    const chat = (await res.json()) as ChatSummary;
-    void navigate(`/chats/${chat.id}`);
-  }
-
-  async function logout() {
-    await authClient.signOut();
-    void navigate("/login");
-  }
-
-  function handleRenamed(updated: ChatSummary) {
-    setChats((prev) => prev?.map((c) => (c.id === updated.id ? updated : c)) ?? null);
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-lg flex-col gap-4 p-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Tus chats</h1>
-        <div className="flex items-center gap-2">
-          <Link to="/configuracion" className="border border-line px-2 py-1 text-sm">
-            Configuración
-          </Link>
-          <button
-            type="button"
-            className="border border-line px-2 py-1 text-sm"
-            onClick={() => void logout()}
-          >
-            Cerrar sesión
-          </button>
+    <div className="flex min-h-full flex-col items-center justify-center px-8 py-10">
+      <div className="w-full max-w-[680px]">
+        <div className="mb-9 text-center">
+          <h1 className="font-display text-[38px] font-semibold tracking-tight text-fg">
+            Hola{name ? `, ${name}` : ""}
+          </h1>
+          <p className="mt-2 text-base text-fg-secondary">¿Qué quieres publicar hoy?</p>
         </div>
+
+        <div className="mb-7">
+          <Composer
+            value={input}
+            onChange={setInput}
+            onSubmit={() => void startChat(input)}
+            busy={starting}
+            onStop={() => {}}
+            placeholder="Cuéntame qué quieres crear hoy..."
+            large
+          />
+          {error && <p className="mt-2 text-center text-sm text-error">{error}</p>}
+        </div>
+
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+          {SUGGESTIONS.map((s) => (
+            <SuggestionCard
+              key={s.title}
+              emoji={s.emoji}
+              title={s.title}
+              description={s.description}
+              onClick={() => void startChat(s.prompt)}
+            />
+          ))}
+        </div>
+
+        <ContextChip />
       </div>
-      <button
-        type="button"
-        className="border border-line p-2 font-semibold"
-        onClick={() => void createChat()}
-      >
-        + Nuevo chat
-      </button>
-      {error && <p className="text-sm text-error">{error}</p>}
-      {chats === null && !error && <p>Cargando…</p>}
-      {chats?.length === 0 && <p>Aún no tienes chats. Crea el primero.</p>}
-      <ul className="flex flex-col gap-2">
-        {chats?.map((chat) => (
-          <li key={chat.id}>
-            <ChatListItem chat={chat} onRenamed={handleRenamed} />
-          </li>
-        ))}
-      </ul>
-    </main>
-  );
-}
-
-function ChatListItem({
-  chat,
-  onRenamed,
-}: {
-  chat: ChatSummary;
-  onRenamed: (chat: ChatSummary) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(chat.title);
-
-  async function commit() {
-    const trimmed = title.trim();
-    setEditing(false);
-    if (!trimmed || trimmed === chat.title) {
-      setTitle(chat.title);
-      return;
-    }
-    const res = await fetch(`/api/chats/${chat.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: trimmed }),
-    });
-    if (res.ok) onRenamed((await res.json()) as ChatSummary);
-    else setTitle(chat.title);
-  }
-
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        className="block w-full border border-line-focus bg-surface p-3"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onBlur={() => void commit()}
-        onKeyDown={(e) => e.key === "Enter" && void commit()}
-      />
-    );
-  }
-
-  return (
-    <div className="flex items-center justify-between border border-line p-3">
-      <Link to={`/chats/${chat.id}`} className="flex-1">
-        {chat.title}
-        {chat.lastMessageAt && (
-          <span className="block text-xs text-fg-muted">
-            Último mensaje: {new Date(chat.lastMessageAt).toLocaleString()}
-          </span>
-        )}
-      </Link>
-      <button type="button" className="text-xs text-fg-muted" onClick={() => setEditing(true)}>
-        Renombrar
-      </button>
     </div>
   );
 }
