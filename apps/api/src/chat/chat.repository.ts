@@ -29,7 +29,14 @@ export class ChatRepository {
       .select()
       .from(chats)
       .where(isNull(chats.archivedAt))
-      .orderBy(desc(sql`coalesce(${chats.lastMessageAt}, ${chats.createdAt})`));
+      .orderBy(
+        // `nulls last` explícito NO es opcional: en Postgres DESC implica
+        // NULLS FIRST, así que sin esto los chats SIN fijar quedarían
+        // arriba de los fijados — y con pocos chats en dev el bug pasa
+        // desapercibido.
+        sql`${chats.pinnedAt} desc nulls last`,
+        desc(sql`coalesce(${chats.lastMessageAt}, ${chats.createdAt})`),
+      );
   }
 
   listArchivedChats(tx: Tx): Promise<ChatRow[]> {
@@ -88,13 +95,32 @@ export class ChatRepository {
     return chat;
   }
 
+  // Archivar limpia el pin en el MISMO update (y el CHECK
+  // chats_not_pinned_and_archived lo respalda): las dos cosas se
+  // contradicen. Desarchivar no lo restaura a propósito — resucitar un pin
+  // que el usuario ya olvidó, desde una pantalla (Archivados) que ni
+  // siquiera muestra el estado de fijado, sería un efecto invisible.
   async setArchived(tx: Tx, chatId: string, archived: boolean): Promise<ChatRow> {
     const [chat] = await tx
       .update(chats)
-      .set({ archivedAt: archived ? sql`now()` : null, updatedAt: sql`now()` })
+      .set({
+        archivedAt: archived ? sql`now()` : null,
+        ...(archived ? { pinnedAt: null } : {}),
+        updatedAt: sql`now()`,
+      })
       .where(eq(chats.id, chatId))
       .returning();
     if (!chat) throw new Error("No se pudo archivar/desarchivar el chat");
+    return chat;
+  }
+
+  async setPinned(tx: Tx, chatId: string, pinned: boolean): Promise<ChatRow> {
+    const [chat] = await tx
+      .update(chats)
+      .set({ pinnedAt: pinned ? sql`now()` : null, updatedAt: sql`now()` })
+      .where(eq(chats.id, chatId))
+      .returning();
+    if (!chat) throw new Error("No se pudo fijar/desfijar el chat");
     return chat;
   }
 

@@ -9,6 +9,12 @@ export interface FolderDto {
   id: string;
   name: string;
   icon: string | null;
+  /**
+   * Chats NO archivados en la carpeta (F6.5). Cuenta exactamente lo mismo
+   * que devuelve `GET /chats`: el badge tiene que coincidir con la lista
+   * que el acordeón muestra al expandirla.
+   */
+  chatCount: number;
   createdAt: string;
 }
 

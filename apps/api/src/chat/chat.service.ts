@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   HttpStatus,
   Inject,
@@ -95,6 +96,28 @@ export class ChatService {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const updated = await this.repo.setArchived(tx, chatId, archived);
+      return this.toSummary(updated);
+    });
+  }
+
+  pinChat(userId: string, chatId: string): Promise<ChatSummary> {
+    return this.setPinned(userId, chatId, true);
+  }
+
+  unpinChat(userId: string, chatId: string): Promise<ChatSummary> {
+    return this.setPinned(userId, chatId, false);
+  }
+
+  // Un chat archivado no se puede fijar: el CHECK de la DB lo rechazaría
+  // igual, pero como error 500 opaco en vez de un 409 que explique.
+  private setPinned(userId: string, chatId: string, pinned: boolean): Promise<ChatSummary> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const chat = await this.repo.getChat(tx, chatId);
+      if (!chat) throw new NotFoundException("Ese chat no existe.");
+      if (pinned && chat.archivedAt) {
+        throw new ConflictException("No puedes fijar un chat archivado. Desarchívalo primero.");
+      }
+      const updated = await this.repo.setPinned(tx, chatId, pinned);
       return this.toSummary(updated);
     });
   }
@@ -437,6 +460,7 @@ export class ChatService {
     title: string;
     folderId: string | null;
     archivedAt: Date | null;
+    pinnedAt: Date | null;
     lastMessageAt: Date | null;
     createdAt: Date;
   }): ChatSummary {
@@ -445,6 +469,7 @@ export class ChatService {
       title: chat.title,
       folderId: chat.folderId,
       archivedAt: chat.archivedAt?.toISOString() ?? null,
+      pinnedAt: chat.pinnedAt?.toISOString() ?? null,
       lastMessageAt: chat.lastMessageAt?.toISOString() ?? null,
       createdAt: chat.createdAt.toISOString(),
     };

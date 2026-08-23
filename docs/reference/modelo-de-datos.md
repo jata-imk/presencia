@@ -45,12 +45,17 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 - `id`, `user_id`, `name`, `icon` (emoji), `brand_voice_id` (FK **nullable** → si es NULL usa la voz default del usuario), `position`, timestamps.
 - Así el CM freelance tiene una voz por cliente sin sub-cuentas (decisión de producto V1).
 - Resolución de voz de un chat: `COALESCE(carpeta.brand_voice_id, voz default del usuario)`. Los chats sin carpeta usan siempre la default — por eso el fallback existe de todos modos y la voz por carpeta es opcional, no obligatoria. Mitigación UX: badge "usando tu voz default" en carpetas sin voz propia.
+- **Conteo de chats por carpeta (F6.5):** derivado, no materializado — `FoldersRepository.list` hace un `LEFT JOIN` a `chats` con `count(chats.id)::int` y `groupBy(folders.id)`. Tres detalles que no son cosméticos: el filtro de archivados va en el **ON** del join (en un `WHERE` degradaría el LEFT JOIN a INNER y las carpetas vacías desaparecerían de la lista); `count(chats.id)` y no `count(*)` (con `count(*)` una carpeta vacía devuelve 1, por la fila null-extended); y el `::int` porque `count()` es bigint y node-postgres lo entrega como **string**. Invariante: cuenta exactamente lo mismo que devuelve `GET /chats` (no archivados), para que el badge no contradiga la lista que el acordeón muestra al expandirse.
 
 ### Conversación
 
 **`chats`**
 
-- `id`, `user_id`, `folder_id` (nullable), `title` (default `'Nuevo chat'`), `archived_at` (nullable), `last_message_at` (para ordenar Recientes), timestamps.
+- `id`, `user_id`, `folder_id` (nullable), `title` (default `'Nuevo chat'`), `archived_at` (nullable), `pinned_at` (nullable), `last_message_at` (para ordenar Recientes), timestamps.
+- **`pinned_at` (F6.5)** es timestamp y no boolean, mismo patrón que `archived_at` y `social_connect_intents.consumed_at`: además de "está fijado" da gratis el orden ENTRE fijados (el último que fijaste, arriba), que un boolean necesitaría resolver con una columna de posición aparte.
+  - **Archivar limpia el pin**, en el mismo UPDATE, y un `CHECK (pinned_at IS NULL OR archived_at IS NULL)` lo vuelve un invariante real y no una convención. Archivar es "sácalo de mi lista de trabajo" y fijar es "manténlo arriba de mi lista de trabajo": sostener los dos a la vez es contradictorio. Desarchivar **no** lo restaura — resucitar en silencio un pin olvidado, desde una pantalla que ni siquiera muestra ese estado, sería un efecto invisible.
+  - **Sin índice, a propósito:** bajo RLS toda query está acotada a un usuario, un usuario tiene O(100) chats, `chats_recents` ya cubre el prefijo `(user_id)`, y `pinned_at` solo desempata el `ORDER BY` de ese scan. Medir antes de agregarlo.
+  - El `ORDER BY` de `listChats` necesita `pinned_at DESC NULLS LAST` **explícito**: en Postgres `DESC` implica `NULLS FIRST`, así que sin eso los chats sin fijar quedarían arriba de los fijados.
 - Los "iconos de canales tocados" del sidebar se derivan con un `SELECT DISTINCT channel` sobre messages (o columna cache `channels_touched text[]` si duele — medir primero).
 
 **`messages`** — la conversación canónica multi-canal.
