@@ -69,6 +69,16 @@ Notas del modo B:
 
 4. `pnpm dev` levanta api (puerto 3000) y web (5173, con proxy `/api` → 3000). La API lee `.env` de la raíz vía `tsx --env-file`.
 5. `pnpm --filter @presencia/api test` corre los tests de la API (vitest). El test de RLS (`src/db/rls.spec.ts`, DoD de F2) conecta contra la base real como `presencia_app` usando el mismo `.env` — necesita la DB alcanzable (túnel o compose local).
+6. `pnpm --filter @presencia/api seed:dev` crea la cuenta de desarrollo:
+
+   ```
+   correo:     dev@presencia.local
+   contraseña: presencia-dev-1234
+   ```
+
+   Llega verificada y con el onboarding cerrado —los dos gates que en dev no se pueden pasar de otra forma, porque el correo de verificación no tiene dónde llegar— más una voz de marca y cinco chats de ejemplo: uno fijado, uno dentro de una carpeta, uno archivado y dos sueltos, para poder recorrer el sidebar completo sin preparar datos a mano. `-- --reset` la borra y la recrea.
+
+   Preferí esta cuenta antes que tus datos reales cuando pruebes algo: es desechable y no hay que restaurarla después. El script se niega a correr si `APP_DATABASE_URL` no apunta a localhost o al túnel.
 
 ## IA multi-proveedor (desde F3, ADR-004)
 
