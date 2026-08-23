@@ -422,17 +422,30 @@ Analíticas, Biblioteca. Cada uno con su icono Lucide y nombre
 descriptivo. El módulo actualmente activo se destaca
 visualmente (highlighted con tinte de la paleta).
 
+**Sección Fijados** (F6.5). Solo aparece si hay al menos un
+chat fijado. Son planos, sin importar en qué carpeta estén, y
+se ordenan por el último que fijaste. Fijar y archivar se
+excluyen: archivar un chat le quita el pin.
+
 **Sección Carpetas.** Hasta 5 carpetas visibles + link "Ver
 todas". Las carpetas son tipo Projects (no solo agrupaciones
 visuales — comparten contexto entre los chats que contienen).
 El usuario las usa para organizar chats por proyecto, cliente,
-o tema.
+o tema. Cada una muestra su emoji, su nombre y **cuántos chats
+tiene**; hacer click la **expande en su lugar** (acordeón, una
+abierta a la vez) en vez de reemplazar la lista. Si el chat
+abierto vive en una carpeta, esa carpeta se expande sola — si
+no, desaparecería del sidebar y se perdería el "estás aquí".
 
-**Sección Recientes.** Los últimos 5-7 chats del usuario.
+**Sección Recientes.** Los últimos chats del usuario que **no
+están fijados ni dentro de una carpeta** — cada chat aparece en
+un solo lugar, que fue el pedido concreto de Jose (2026-08-19).
 Cada uno muestra: iconos de canales tocados (max 2 + número
 si hay más), título del chat, timestamp relativo. Hover
-muestra menú contextual con opciones (renombrar, mover,
-archivar, eliminar).
+muestra menú contextual con opciones (fijar, renombrar, mover,
+archivar, eliminar). Si el usuario tiene todo organizado en
+carpetas, la sección lo dice en vez de quedar como un hueco
+mudo.
 
 **Footer del sidebar:**
 

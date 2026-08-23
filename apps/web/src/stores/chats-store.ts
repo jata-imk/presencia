@@ -24,6 +24,7 @@ interface ChatsState {
   create: (title?: string) => Promise<ChatSummary>;
   rename: (id: string, title: string) => Promise<ChatSummary>;
   moveToFolder: (id: string, folderId: string | null) => Promise<ChatSummary>;
+  setPinned: (id: string, pinned: boolean) => Promise<ChatSummary>;
   archive: (id: string) => Promise<void>;
   unarchive: (id: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -68,6 +69,15 @@ export const useChatsStore = create<ChatsState>((set, get) => ({
     const updated = await apiFetch<ChatSummary>(`/api/chats/${id}/folder`, {
       method: "PATCH",
       body: { folderId },
+    });
+    set((state) => ({
+      chats: state.chats?.map((c) => (c.id === id ? updated : c)) ?? null,
+    }));
+    return updated;
+  },
+  setPinned: async (id, pinned) => {
+    const updated = await apiFetch<ChatSummary>(`/api/chats/${id}/${pinned ? "pin" : "unpin"}`, {
+      method: "POST",
     });
     set((state) => ({
       chats: state.chats?.map((c) => (c.id === id ? updated : c)) ?? null,

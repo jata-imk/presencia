@@ -51,6 +51,10 @@ export function ChatListItem({
       <div className="flex items-center gap-1 rounded-md px-1.5 py-1">
         <input
           autoFocus
+          // Selecciona todo al entrar: renombrar casi siempre es reemplazar
+          // el título autogenerado, no editarlo letra por letra. Con solo
+          // autoFocus el cursor caía al final y había que borrar a mano.
+          onFocus={(e) => e.currentTarget.select()}
           value={draft}
           disabled={saving}
           onChange={(e) => setDraft(e.target.value)}
