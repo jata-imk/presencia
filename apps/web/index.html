@@ -3,7 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Presencia</title>
+    <!--
+      Anti-FOUC del tema (ADR-016). Script CLÁSICO e inline a propósito:
+      un `type="module"` es diferido y corre DESPUÉS del primer paint, o
+      sea que el flash blanco pasa igual. Tiene que estar antes de que
+      cargue el CSS.
+
+      Espeja la regla mínima de stores/theme-store.ts + lib/use-theme.ts
+      (no puede importarlos: corre antes del bundle). Es el mismo trato
+      que lib/motion.ts con tokens.css — ver ADR-014, "el espejo es
+      manual". Si cambia la clave o los valores, cambian los dos lados.
+
+      colorScheme importa tanto como data-theme: sin él, el canvas del
+      navegador y los controles nativos siguen en claro y el flash
+      existe aunque el atributo esté puesto.
+    -->
+    <script>
+      (function () {
+        var t = "system";
+        try {
+          t = localStorage.getItem("presencia.theme") || "system";
+        } catch (e) {
+          /* Safari en privado, storage deshabilitado */
+        }
+        if (t !== "light" && t !== "dark") t = "system";
+        var dark =
+          t === "dark" ||
+          (t === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

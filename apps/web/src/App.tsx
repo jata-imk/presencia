@@ -1,8 +1,10 @@
 import { MotionConfig } from "motion/react";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
+import { useThemeSync } from "./lib/use-theme.js";
 import { ArchivedChatsPage } from "./routes/archived-chats.js";
 import { ChatPage } from "./routes/chat.js";
 import { ChatsPage } from "./routes/chats.js";
+import { AparienciaPage } from "./routes/configuracion/apariencia.js";
 import { CanalesDesconectadasPage } from "./routes/configuracion/canales-desconectadas.js";
 import { CanalesPage } from "./routes/configuracion/canales.js";
 import { ConfiguracionLayout } from "./routes/configuracion/layout.js";
@@ -41,6 +43,7 @@ const router = createBrowserRouter([
           },
           { path: "/configuracion/voz-de-marca", element: <VozDeMarcaPage /> },
           { path: "/configuracion/mi-perfil", element: <MiPerfilPage /> },
+          { path: "/configuracion/apariencia", element: <AparienciaPage /> },
           { path: "/configuracion/plan", element: <PlanPage /> },
           { path: "/configuracion/canales", element: <CanalesPage /> },
           {
@@ -61,6 +64,11 @@ const router = createBrowserRouter([
 // prefers-reduced-motion del SO en todo motion.* de la app de un solo
 // lugar — ningún componente individual tiene que acordarse de chequearlo.
 export function App() {
+  // Proyecta la preferencia de tema al <html> (ADR-016). Una sola llamada
+  // en toda la app: el script inline de index.html ya lo pintó antes del
+  // primer paint, esto se hace cargo de los cambios en vivo.
+  useThemeSync();
+
   return (
     <MotionConfig reducedMotion="user">
       <RouterProvider router={router} />

@@ -171,6 +171,13 @@
   --fg-inverse-subtle: color-mix(in srgb, var(--fg-inverse) 50%, transparent);
   --fg-inverse-faint: color-mix(in srgb, var(--fg-inverse) 10%, transparent);
 
+  /* Marcas monocromas (X, TikTok, Threads): su logo ES negro, y su propia
+     guía de marca dice usarlo en blanco sobre fondos oscuros. Un #000
+     literal desaparecía contra --bg-card en dark. No es retokenizar un
+     color de tercero — es la versión correcta del mismo logo. */
+  --brand-monochrome: #000000;
+  --scrollbar-thumb: var(--color-neutral-300);
+
   /* Layout. --sidebar-width es el DEFAULT, no la ley: desde F6.5 el
      usuario puede arrastrar el borde del sidebar y el valor elegido se
      escribe inline sobre <html> (origen inline gana a :root sin pelear
@@ -221,6 +228,33 @@
   --interactive-secondary-hover: var(--color-plum-800);
 
   --status-ai-bg: var(--color-plum-900);
+
+  /* Los fondos de estado son casi blancos en claro (#f0fdf4 y compañía):
+     sobre una card #1a0f20 serían bloques luminosos. Se rebajan a tintes
+     oscuros del mismo matiz; el texto de estado (--status-success etc.)
+     no cambia, ya tiene contraste de sobra contra estos fondos. */
+  --status-success-bg: #0e2a19;
+  --status-warning-bg: #2e2410;
+  --status-error-bg: #2e1418;
+  --status-info-bg: var(--bg-tint-blue);
+
+  /* El logo monocromo se invierte, como pide la guía de marca de X,
+     TikTok y Threads para fondos oscuros. */
+  --brand-monochrome: var(--color-plum-100);
+
+  /* Las sombras son rgba plum pensadas para fondo claro — sobre #0f0a12
+     no se ven y el "elevado" lo cargan los bordes. Se refuerzan con negro
+     real para que las superficies flotantes (menús, modales, toasts)
+     sigan despegándose del fondo. */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 1px 4px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 2px 8px rgba(0, 0, 0, 0.5), 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow-xl: 0 8px 40px rgba(0, 0, 0, 0.6);
+
+  /* Cromo del navegador: gris neutro claro sobre fondo oscuro se lee como
+     una barra brillante pegada al borde. */
+  --scrollbar-thumb: #3d2a4a;
 }
 
 /* Utilities semánticas: bg-app, bg-card, text-fg, border-line, etc. */

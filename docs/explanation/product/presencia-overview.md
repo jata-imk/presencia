@@ -455,7 +455,13 @@ mudo.
   a objeto contable en el badge de sidebar (F6.5, tarea de
   backlog para cuando exista el App Shell real)
 - Click en el footer abre menú: Mi cuenta, Configuración,
-  Modo oscuro toggle, Cerrar sesión
+  Apariencia, Cerrar sesión
+
+> El menú de cuenta lleva a **Apariencia** en vez de repetir el
+> toggle de tema (F6.5, ADR-016): entre el topbar, este menú y
+> Configuración habría tres formas de voltear el mismo bit, y
+> Apariencia es la única que ofrece las tres opciones —
+> incluida "Sistema", que es el default.
 
 ### El Topbar
 
@@ -468,7 +474,10 @@ de un sub-flujo (ej: "Chats > Post sobre IA").
 chats, posts, plantillas — todo el contenido del usuario.
 Click expande a modal de búsqueda con resultados categorizados.
 
-**Toggle modo claro/oscuro.** Icono sun/moon.
+**Toggle modo claro/oscuro.** Icono sun/moon. Atajo de dos
+estados: el ícono muestra el tema actual y un click fija una
+preferencia explícita. La home canónica —con la opción
+"Sistema"— es Configuración > Apariencia (ADR-016).
 
 **Avatar del usuario.** Mismo menú que el footer del sidebar.
 

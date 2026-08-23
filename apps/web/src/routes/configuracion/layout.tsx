@@ -17,7 +17,11 @@ interface NavGroup {
 const GROUPS: NavGroup[] = [
   {
     title: "CUENTA",
-    items: [{ label: "Mi perfil", to: "/configuracion/mi-perfil" }, { label: "Apariencia" }],
+    items: [
+      { label: "Mi perfil", to: "/configuracion/mi-perfil" },
+      // F6.5: navegable — antes solo listada deshabilitada.
+      { label: "Apariencia", to: "/configuracion/apariencia" },
+    ],
   },
   {
     title: "CONTENIDO",

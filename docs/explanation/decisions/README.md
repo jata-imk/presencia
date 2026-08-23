@@ -21,5 +21,6 @@ Formato: **Decisión** → **Razón** → **Descartado**.
 | [013](./adr-013-orm-drizzle.md)                  | ORM y migraciones: Drizzle + drizzle-kit                  |
 | [014](./adr-014-estrategia-de-animacion.md)      | Animación: motion + CSS, tokens obligatorios              |
 | [015](./adr-015-portales-floating-ui.md)         | Menús, popovers y modales: `@floating-ui/react`           |
+| [016](./adr-016-tema-claro-oscuro.md)            | Tema: preferencia en localStorage + `data-theme`          |
 
 Decisiones pendientes de cerrar: proveedor(es) de generación de imágenes; modelo default por acción (según suite de regresión cultural).

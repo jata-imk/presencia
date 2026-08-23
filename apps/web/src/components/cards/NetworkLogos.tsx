@@ -6,7 +6,15 @@ import { NETWORK_LABELS } from "../../lib/network-labels.js";
 // Logos de marca portados de Claude Design "Presencia - Chat"
 // (Chat Part 3.html / arquetipos.jsx). Colores de marca literales (no son
 // una elección de nuestro sistema de diseño — son el logo real de un
-// tercero, no se pueden retokenizar). YouTube y Threads no tienen mockup
+// tercero, no se pueden retokenizar).
+//
+// Excepción: X, TikTok y Threads son logos MONOCROMOS, y su propia guía de
+// marca dice usarlos invertidos sobre fondos oscuros. Un #000 literal
+// desaparecía contra --bg-card en dark mode. Usan --brand-monochrome, que
+// es negro en claro y plum-100 en oscuro — no es retokenizar el color de
+// un tercero, es la versión correcta del mismo logo (F6.5 PR4).
+//
+// YouTube y Threads no tienen mockup
 // de referencia en ningún proyecto de Claude Design existente — en vez de
 // inventar un logo de marca sin fuente, usan un ícono genérico de
 // lucide-react + el nombre en texto (ver NetworkBadge abajo).
@@ -25,7 +33,7 @@ export function LinkedInLogo({ size = 16 }: LogoProps) {
 
 export function XLogo({ size = 16 }: LogoProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="#000">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="var(--brand-monochrome)">
       <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
     </svg>
   );
@@ -57,7 +65,7 @@ export function FacebookLogo({ size = 16 }: LogoProps) {
 
 export function TikTokLogo({ size = 16 }: LogoProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="#000">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="var(--brand-monochrome)">
       <path d="M12.53.02C13.84 0 15.14.01 16.44 0c.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z" />
     </svg>
   );
@@ -70,7 +78,7 @@ export function YouTubeLogo({ size = 16 }: LogoProps) {
 
 /** Sin mockup de referencia — ícono genérico, no un logo de marca inventado. */
 export function ThreadsLogo({ size = 16 }: LogoProps) {
-  return <AtSign size={size} color="#000" strokeWidth={1.75} />;
+  return <AtSign size={size} color="var(--brand-monochrome)" strokeWidth={1.75} />;
 }
 
 export interface NetworkMeta {
@@ -84,10 +92,10 @@ export interface NetworkMeta {
 // divergir si alguien corregía el copy de una red en un solo lugar.
 export const NETWORK_META: Record<SocialNetwork, NetworkMeta> = {
   linkedin: { Logo: LinkedInLogo, label: NETWORK_LABELS.linkedin, color: "#0A66C2" },
-  x: { Logo: XLogo, label: NETWORK_LABELS.x, color: "#000" },
+  x: { Logo: XLogo, label: NETWORK_LABELS.x, color: "var(--brand-monochrome)" },
   instagram: { Logo: InstagramLogo, label: NETWORK_LABELS.instagram, color: "#DD2A7B" },
   facebook: { Logo: FacebookLogo, label: NETWORK_LABELS.facebook, color: "#1877F2" },
-  tiktok: { Logo: TikTokLogo, label: NETWORK_LABELS.tiktok, color: "#000" },
+  tiktok: { Logo: TikTokLogo, label: NETWORK_LABELS.tiktok, color: "var(--brand-monochrome)" },
   youtube: { Logo: YouTubeLogo, label: NETWORK_LABELS.youtube, color: "#FF0000" },
-  threads: { Logo: ThreadsLogo, label: NETWORK_LABELS.threads, color: "#000" },
+  threads: { Logo: ThreadsLogo, label: NETWORK_LABELS.threads, color: "var(--brand-monochrome)" },
 };
