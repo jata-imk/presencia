@@ -22,5 +22,6 @@ Formato: **Decisión** → **Razón** → **Descartado**.
 | [014](./adr-014-estrategia-de-animacion.md)      | Animación: motion + CSS, tokens obligatorios              |
 | [015](./adr-015-portales-floating-ui.md)         | Menús, popovers y modales: `@floating-ui/react`           |
 | [016](./adr-016-tema-claro-oscuro.md)            | Tema: preferencia en localStorage + `data-theme`          |
+| [017](./adr-017-busqueda-full-text.md)           | Búsqueda: full-text de Postgres (tsvector + trigramas)    |
 
 Decisiones pendientes de cerrar: proveedor(es) de generación de imágenes; modelo default por acción (según suite de regresión cultural).

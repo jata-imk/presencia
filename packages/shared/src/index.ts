@@ -5,3 +5,4 @@ export * from "./credits.js";
 export * from "./folders.js";
 export * from "./profile.js";
 export * from "./publication.js";
+export * from "./search.js";

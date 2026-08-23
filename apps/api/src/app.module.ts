@@ -9,6 +9,7 @@ import { DbModule } from "./db/db.module.js";
 import { FoldersModule } from "./folders/folders.module.js";
 import { HealthController } from "./health.controller.js";
 import { ProfileModule } from "./profile/profile.module.js";
+import { SearchModule } from "./search/search.module.js";
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ProfileModule } from "./profile/profile.module.js";
     CreditsModule,
     ChannelsModule,
     FoldersModule,
+    SearchModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],

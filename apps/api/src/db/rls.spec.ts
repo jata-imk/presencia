@@ -263,6 +263,36 @@ describe("RLS tenant_isolation", () => {
       expect(row?.pinnedAt).toBeNull();
     });
 
+    // F6.5: la búsqueda (ADR-017) cruza chats, messages, folders y cards
+    // con índices GIN. Los índices son globales a la tabla, así que hay que
+    // confirmar que RLS sigue filtrando por tenant DESPUÉS del índice — un
+    // hit del GIN sobre una fila ajena no debe llegar al resultado.
+    it("la búsqueda no cruza tenants", { timeout: 15_000 }, async () => {
+      const marca = `zzqx-${randomUUID().slice(0, 8)}`;
+      await dbService.runWithTenant(userA, (tx) =>
+        tx
+          .update(chats)
+          .set({ title: `Secreto ${marca}` })
+          .where(eq(chats.id, chatA)),
+      );
+
+      const mios = await dbService.runWithTenant(userA, (tx) =>
+        tx
+          .select({ id: chats.id })
+          .from(chats)
+          .where(sql`${marca} <% f_unaccent(${chats.title})`),
+      );
+      expect(mios.map((c) => c.id)).toContain(chatA);
+
+      const ajenos = await dbService.runWithTenant(userB, (tx) =>
+        tx
+          .select({ id: chats.id })
+          .from(chats)
+          .where(sql`${marca} <% f_unaccent(${chats.title})`),
+      );
+      expect(ajenos).toHaveLength(0);
+    });
+
     it("el CHECK impide fijar y archivar a la vez", { timeout: 15_000 }, async () => {
       const error: unknown = await dbService
         .runWithTenant(userA, (tx) =>
