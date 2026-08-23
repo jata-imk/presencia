@@ -171,8 +171,16 @@
   --fg-inverse-subtle: color-mix(in srgb, var(--fg-inverse) 50%, transparent);
   --fg-inverse-faint: color-mix(in srgb, var(--fg-inverse) 10%, transparent);
 
-  /* Layout */
+  /* Layout. --sidebar-width es el DEFAULT, no la ley: desde F6.5 el
+     usuario puede arrastrar el borde del sidebar y el valor elegido se
+     escribe inline sobre <html> (origen inline gana a :root sin pelear
+     especificidad). El <nav> nunca lleva un style de ancho propio — ver
+     sidebar-store.ts para por qué. Min/max viven acá además de en TS
+     para que el rango tenga una sola fuente de verdad legible. */
   --sidebar-width: 220px;
+  --sidebar-width-collapsed: 56px;
+  --sidebar-width-min: 200px;
+  --sidebar-width-max: 320px;
   --topbar-height: 56px;
   --content-max-w: 800px;
 

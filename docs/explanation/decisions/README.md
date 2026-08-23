@@ -19,5 +19,7 @@ Formato: **Decisión** → **Razón** → **Descartado**.
 | [011](./adr-011-assets-object-storage.md)        | Assets: Object Storage externo desde día 1                |
 | [012](./adr-012-creditos-ledger.md)              | Créditos: ledger contable transaccional                   |
 | [013](./adr-013-orm-drizzle.md)                  | ORM y migraciones: Drizzle + drizzle-kit                  |
+| [014](./adr-014-estrategia-de-animacion.md)      | Animación: motion + CSS, tokens obligatorios              |
+| [015](./adr-015-portales-floating-ui.md)         | Menús, popovers y modales: `@floating-ui/react`           |
 
 Decisiones pendientes de cerrar: proveedor(es) de generación de imágenes; modelo default por acción (según suite de regresión cultural).

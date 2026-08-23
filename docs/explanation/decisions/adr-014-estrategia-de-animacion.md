@@ -26,6 +26,21 @@ Pasar los loops ambientales a motion sería peor, no mejor: corren en el composi
 
 El bug que expuso la falta de esta decisión no era solo la animación — el drawer de programación vivía como overlay `fixed inset-0`, encimado sobre el chat en vez de empujarlo, lo que producía dos scrolls superpuestos en la misma región visual. La corrección de raíz (F6 PR5, `routes/protected.tsx`) es de layout, no de animación: el App Shell es `h-dvh overflow-hidden` con un único contenedor `overflow-y-auto` para el contenido, y el drawer es un hermano flex (`motion.aside` con `width` animado) en vez de un overlay. El drawer mobile (bottom-sheet con backdrop, `role="dialog"`) sigue siendo modal de verdad — la variante desktop no lo es: no atrapa el foco ni bloquea el chat de al lado.
 
+## Addendum (2026-08-22, F6.5 PR1) — gestos continuos y propiedades con dos escritores
+
+El reparto de arriba manda los "cambios de layout" a motion y los "gestos" también. El sidebar redimensionable de F6.5 cae en ambas casillas y **aun así no usa motion en ninguna de las dos**. La regla que se agrega:
+
+> Una propiedad que puede tener **dos escritores** —un gesto continuo y una animación state-driven— se anima con CSS + variable, nunca con motion.
+
+Los dos motivos, en orden de peso:
+
+1. **El arrastre no puede tener duración ni curva.** Un gesto pointer-driven sigue al dedo: cualquier easing lo deja corriendo atrás. No es una animación, es escritura directa al DOM (`document.documentElement.style.setProperty("--sidebar-width", …)` en cada `pointermove`, sin pasar por React).
+2. **`motion.nav animate={{width}}` escribiría `style.width` inline sobre el mismo elemento cuyo ancho controla la variable del arrastre.** Dos escritores sobre una propiedad es una fábrica de bugs intermitentes. El colapso/expansión usa `transition-[width]` en CSS, y se apaga durante el gesto con `body[data-resizing]`.
+
+Corolario de accesibilidad que no es obvio: el bloque `@media (prefers-reduced-motion: reduce)` de `app.css` solo neutraliza `animation-*`, **no `transition-*`**. La transición de ancho del sidebar necesita su propia regla, acotada al `<nav>` — un `transition: none` global mataría también las micro-transiciones de hover, que no son a lo que apunta `prefers-reduced-motion`.
+
+El **drawer mobile del sidebar** (hamburguesa + backdrop) se suma a la lista de modales de verdad de la sección anterior: `role="dialog"`, `FloatingFocusManager`, `variants={sheetLeft}`. Mismo trato que el bottom-sheet del ScheduleDrawer, distinto de la columna in-flow de escritorio.
+
 **Descartado — sin librería, solo transiciones CSS en cada componente:** era la opción más barata en peso de bundle, pero deja la coordinación de entrada/salida del DOM (cuándo desmontar, cómo animar `AnimatePresence`-style sin la librería) reinventada a mano en cada drawer/modal/toast nuevo — el mismo problema que llevó a esta decisión en primer lugar, solo que sin nombre.
 
 **Bundle:** motion agrega peso real al chunk principal (~790KB sin comprimir a la fecha de este ADR, con `motion/react` incluido). Si eso se vuelve un problema, la salida es `LazyMotion` + el componente `m` (import dinámico de las features de animación) — no se aplica ahora porque no hay evidencia de que el peso importe todavía (YAGNI, AGENTS.md #6).

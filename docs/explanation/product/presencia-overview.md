@@ -471,15 +471,28 @@ y soporta diferentes layouts internos según el módulo:
 
 ### El layout responsive
 
-**Desktop (≥1024px):** Sidebar expandido (240-280px),
-contenido cómodo.
-
-**Tablet (768-1023px):** Sidebar colapsado por default (solo
-iconos, 64px). Hover lo expande temporalmente.
+**≥768px:** el sidebar es una columna in-flow y el usuario
+decide su estado, no el breakpoint (F6.5). Puede colapsarlo a
+solo-iconos (56px) con el botón del header, y arrastrar su
+borde entre 200 y 320px. Ambas cosas se recuerdan entre
+sesiones. Mientras no toque nada manda el ancho de pantalla:
+expandido (220px por default) en ≥1024px, colapsado abajo de
+eso.
 
 **Mobile (<768px):** Sidebar oculto. Hamburger en topbar abre
-drawer overlay con backdrop. Search se vuelve un icono que
-expande a fullscreen modal.
+drawer overlay con backdrop — es modal de verdad (trampa de
+foco, cierra con Escape, con el backdrop y al navegar). Search
+se vuelve un icono que expande a fullscreen modal.
+
+> El hover-expand temporal en tablet quedó descartado en F6.5:
+> con colapso manual conviviendo, la misma barra tendría dos
+> comportamientos según el ancho de pantalla. Un solo modelo
+> mental —el usuario decide y se recuerda— es más predecible,
+> no tapa contenido sin que se lo pidan, y funciona en touch,
+> donde no hay hover. Los anchos bajaron de 240-280/64 a
+> 220/56 para alinearse con el mockup de Claude Design ya
+> portado (`design-tokens.md`); con el arrastre, el número
+> exacto dejó de ser doctrina y lo que importa es el rango.
 
 ---
 

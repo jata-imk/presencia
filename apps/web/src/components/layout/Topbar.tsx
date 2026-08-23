@@ -1,7 +1,9 @@
-import { ChevronRight, LogOut, Settings } from "lucide-react";
+// `Menu` de lucide colisiona con nuestro <Menu> compuesto (ui/Menu.tsx).
+import { ChevronRight, LogOut, Menu as MenuIcon, Settings } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 import { Menu } from "../ui/Menu.js";
 import { authClient } from "../../lib/auth-client.js";
+import { useSidebarStore } from "../../stores/sidebar-store.js";
 
 // Topbar del App Shell (Chat Conversation.html / Chat Module.html, F6 PR5).
 // El menú del avatar vive sobre <Menu> (components/ui/Menu.tsx) desde el
@@ -26,6 +28,7 @@ export function Topbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { data: session } = authClient.useSession();
+  const openMobile = useSidebarStore((s) => s.openMobile);
 
   const segment = location.pathname.split("/")[1] ?? "";
   const label = SECTION_LABEL[segment] ?? "Presencia";
@@ -45,7 +48,17 @@ export function Topbar() {
   }
 
   return (
-    <header className="flex h-(--topbar-height) shrink-0 items-center gap-3 border-b border-line bg-card px-5">
+    <header className="flex h-(--topbar-height) shrink-0 items-center gap-3 border-b border-line bg-card px-3 md:px-5">
+      {/* Único acceso a la navegación abajo de 768px — ahí el Sidebar se
+          monta como drawer modal, no como columna. */}
+      <button
+        type="button"
+        onClick={openMobile}
+        aria-label="Abrir menú"
+        className="-ml-1 shrink-0 rounded-md p-1.5 text-fg-secondary transition-colors hover:bg-secondary-hover md:hidden"
+      >
+        <MenuIcon size={18} strokeWidth={1.75} />
+      </button>
       <div className="flex items-center gap-1.5 text-xs text-fg-muted">
         <span>{label}</span>
         {segment === "chats" && location.pathname !== "/chats" && (
