@@ -45,6 +45,26 @@ Un solo escritor: se guarda el **día enfocado** y el mes se deriva de él. Guar
 
 Un grupo es "estas cards comparten `group_id` **y** el mismo `scheduled_at` exacto". No hay tabla, ni columna, ni flag. Por eso reprogramar una sola red rompe el grupo sin que nadie escriba nada, y devolverla a la hora original lo reconstituye — que es literalmente el comportamiento que pide `presencia-calendario.md` §4. Persistirlo obligaría a mantener sincronizado un espejo de algo que ya se puede leer.
 
+## Cómo quedó el arrastre (F7 PR3)
+
+`lib/calendar/use-drag-schedule.ts`, sin librería y sin motion:
+
+- **Umbral de 6 px** antes de considerar que hay gesto. Es lo que deja convivir "click para ver" y "arrastrar para mover" en el mismo elemento; sin él, el temblor de mano de cualquier click abriría un arrastre.
+- **`setPointerCapture` + listeners sobre el elemento agarrado**, no sobre `window` — igual que `SidebarResizeHandle`.
+- **La posición del fantasma se escribe directo al DOM** (`ghost.style.transform`), cero renders por frame. Lo único que es estado de React es el día bajo el cursor, que cambia unas pocas veces por segundo y tiene que repintar los resaltados.
+- **`elementFromPoint` para resolver el destino**, no `pointerenter` por celda: con el fantasma pegado al cursor, el puntero nunca "entra" a la celda de abajo. El fantasma lleva `pointer-events: none` justamente para que esa consulta lo atraviese.
+- **Escape aborta** el gesto en curso.
+
+**Mover conserva la hora de pared, no el instante.** Arrastrar un post de las 18:00 al martes lo deja a las 18:00 del martes, aunque en el medio haya un cambio de horario de verano y eso sean 23 o 25 horas reales. `movedToDay` lo resuelve con `toCalendarDateTime` + `toZoned`, no sumando milisegundos.
+
+**Optimista, con recarga en el fallo.** La grilla se actualiza antes de que conteste el servidor: soltar tiene que sentirse instantáneo o el gesto pierde lo que lo hacía valer. Pero revertir a la copia local **no alcanza**: reprogramar es, del lado del servidor, cancelar el post viejo en el proveedor y crear uno nuevo (ADR-009), así que si lo segundo falla la card **no vuelve sola a donde estaba** — `CardsService` la deja en `draft` (rechazo explícito) o en `failed` (fallo ambiguo). Se revierte para que el hueco no dure el viaje de ida y vuelta, y enseguida se recarga para quedarse con la verdad.
+
+**El click después del gesto.** El navegador dispara un `click` de compatibilidad al terminar cualquier gesto de puntero, y `stopPropagation` en el `pointerdown` no lo evita: son eventos distintos. Sin marcarlo, soltar una publicación abría además su vista. `justDragged()` (ventana de 250 ms) es lo que consulta quien atiende el click.
+
+De paso quedó implementada una regla de la spec que faltaba: **click en un post abre SU vista; click en la celda abre el panel del día** — "intención específica vs intención general" (§3). Cada píldora corta la propagación hacia su celda.
+
+**Soltar un borrador no programa.** Abre el drawer con la fecha puesta: el Calendario decide el DÍA y el Chat decide la hora, cada módulo con su responsabilidad.
+
 ## Regiones de scroll: la ruta declara que se hace cargo
 
 Ver el addendum de [ADR-014](./adr-014-estrategia-de-animacion.md). En resumen: la ruta pone `handle: { ownScroll: true }` y `ProtectedLayout` apaga su contenedor genérico. Declarativo en la ruta, no un contexto nuevo: es información estática de la pantalla, y `useMatches()` ya la propaga.

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { PublicationCardDto } from "@presencia/shared";
-import { type CalendarFilters, fetchCardsInRange } from "../lib/cards-api.js";
+import { type CalendarFilters, fetchCardsInRange, fetchDraftCards } from "../lib/cards-api.js";
 
 // Store del Calendario (F7). Deliberadamente separado de cards-store.ts:
 // aquel indexa por chatId (`byChatId`), que es la pregunta del Chat. Acá la
@@ -10,11 +10,19 @@ import { type CalendarFilters, fetchCardsInRange } from "../lib/cards-api.js";
 
 interface CalendarState {
   cards: PublicationCardDto[];
+  /**
+   * Borradores sin fecha (F7 PR3). Van aparte de `cards` y no mezclados: no
+   * pertenecen a ningún día, no entran en ningún rango y su ciclo de recarga
+   * es otro — un borrador se vuelve programado y cruza de una lista a la
+   * otra, así que tenerlas separadas hace ese cruce explícito.
+   */
+  drafts: PublicationCardDto[];
   loading: boolean;
   /** Mensaje listo para mostrar, o null. Solo se llena si la carga falló de verdad. */
   error: string | null;
   load: (from: Date, to: Date, filters?: CalendarFilters) => Promise<void>;
-  /** Reemplaza (o agrega) una card tras una mutación — base del optimismo de PR2/PR3. */
+  loadDrafts: () => Promise<void>;
+  /** Reemplaza (o agrega) una card tras una mutación — base del optimismo. */
   upsert: (card: PublicationCardDto) => void;
   reset: () => void;
 }
@@ -27,6 +35,7 @@ let inFlight: AbortController | null = null;
 
 export const useCalendarStore = create<CalendarState>((set) => ({
   cards: [],
+  drafts: [],
   loading: false,
   error: null,
 
@@ -55,6 +64,16 @@ export const useCalendarStore = create<CalendarState>((set) => ({
     }
   },
 
+  loadDrafts: async () => {
+    try {
+      set({ drafts: await fetchDraftCards() });
+    } catch {
+      // En silencio: que la bandeja de borradores no cargue no debe tumbar
+      // la grilla, que es lo que el usuario vino a ver. Mismo criterio que
+      // cards-store.refresh.
+    }
+  },
+
   upsert: (card) =>
     set((state) => {
       const index = state.cards.findIndex((existing) => existing.id === card.id);
@@ -68,6 +87,6 @@ export const useCalendarStore = create<CalendarState>((set) => ({
     inFlight?.abort();
     inFlight = null;
     requestToken += 1;
-    set({ cards: [], loading: false, error: null });
+    set({ cards: [], drafts: [], loading: false, error: null });
   },
 }));
