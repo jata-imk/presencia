@@ -74,14 +74,28 @@ export function verdictFor(
   cards: PublicationCardDto[],
   timeZone: string,
   now: Date = new Date(),
+  /**
+   * Instante destino ya calculado. En vista mes sale de `movedToDay` (se
+   * conserva la hora de pared); en semana y día la posición vertical ES la
+   * hora, así que quien llama ya lo resolvió y pasarlo evita recalcular algo
+   * distinto de lo que el usuario está viendo.
+   */
+  precomputed?: ZonedDateTime | null,
 ): DropVerdict {
-  const target = movedToDay(card, day, timeZone);
+  const target = precomputed !== undefined ? precomputed : movedToDay(card, day, timeZone);
   if (!target) {
-    // Borrador: basta con que el día no haya terminado.
+    // Borrador sin hora de destino (vista mes): basta con que el día no haya
+    // terminado. La hora la elige después el drawer, y ahí se revalida.
     const endOfDay = day.add({ days: 1 }).toDate(timeZone).getTime() - 1;
     return endOfDay < now.getTime() + MIN_LEAD_MS ? "past" : "valid";
   }
   if (target.toDate().getTime() < now.getTime() + MIN_LEAD_MS) return "past";
+  // Un borrador NO puede estar en conflicto, ni siquiera en vista semana
+  // donde el gesto sí apunta a una hora: soltar un borrador abre el drawer en
+  // vez de programar, así que marcar la columna en ámbar prometería un
+  // diálogo de conflicto que nunca va a aparecer. El drawer valida al
+  // confirmar, que es cuando la hora se vuelve real.
+  if (!card.scheduledAt) return "valid";
   return findConflict(cards, {
     id: card.id,
     network: card.network,

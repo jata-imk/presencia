@@ -17,20 +17,43 @@ import type { PublicationCardDto } from "@presencia/shared";
 /** Píxeles a recorrer antes de considerar que esto es un arrastre y no un click. */
 const DRAG_THRESHOLD = 6;
 
+/**
+ * Los destinos con eje horario declaran en `data-drop-time` cuántos píxeles
+ * mide un paso de su imantado. El render se hace cuando cambia el PASO, no
+ * cada N píxeles sueltos: con un umbral en píxeles crudos el preview y el
+ * resultado podían discrepar —la franja anunciando 01:45 mientras la card
+ * caía a las 02:00— porque el drop usa el offset exacto y el preview usaba
+ * uno redondeado por otro criterio. Midiendo en pasos, los dos coinciden
+ * siempre por construcción.
+ */
+const DEFAULT_STEP_PX = 8;
+
 export interface DragState {
   card: PublicationCardDto;
   /** Clave `YYYY-MM-DD` del día bajo el cursor, o null si no hay ninguno. */
   overDay: string | null;
+  /**
+   * Píxeles desde el borde superior del destino. En vista mes no significa
+   * nada (una celda es un día entero); en semana y día el eje vertical ES la
+   * hora, así que de acá sale el horario al que va a caer.
+   *
+   * Se mide contra el elemento completo, no contra su parte visible: la
+   * columna mide las 24 h y vive dentro de un contenedor con scroll, así que
+   * su `rect.top` puede ser negativo. Justamente por eso la cuenta da bien.
+   */
+  overOffsetY: number;
 }
 
 interface UseDragScheduleOptions {
-  /** Se llama al soltar sobre un día válido. */
-  onDrop: (card: PublicationCardDto, dayKey: string) => void;
+  /** Se llama al soltar sobre un destino válido. */
+  onDrop: (card: PublicationCardDto, dayKey: string, offsetY: number) => void;
   /**
-   * Un día sobre el que no se puede soltar. Se consulta en cada cambio de
-   * celda para decidir el cursor y para no invocar onDrop al final.
+   * Un destino sobre el que no se puede soltar. Se consulta en cada cambio
+   * para decidir el cursor y para no invocar onDrop al final. Recibe el
+   * offset porque en vista semana la validez depende de la HORA, no solo del
+   * día: hoy a las 08:00 ya pasó, hoy a las 22:00 no.
    */
-  isBlocked: (card: PublicationCardDto, dayKey: string) => boolean;
+  isBlocked: (card: PublicationCardDto, dayKey: string, offsetY: number) => boolean;
 }
 
 export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
@@ -43,7 +66,13 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
   // El estado vivo del gesto vive en un ref y no en el state: los handlers de
   // pointermove se registran una sola vez y no deben re-crearse por cada
   // cambio de celda.
-  const gesture = useRef<{ card: PublicationCardDto; overDay: string | null } | null>(null);
+  const gesture = useRef<{
+    card: PublicationCardDto;
+    overDay: string | null;
+    overOffsetY: number;
+    /** Último offset que llegó a provocar un render, para no hacer uno por píxel. */
+    renderedOffsetY: number;
+  } | null>(null);
 
   const moveGhost = useCallback((x: number, y: number) => {
     const ghost = ghostRef.current;
@@ -75,9 +104,9 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
           // temblor de mano al hacer click iniciaría un gesto.
           started = true;
           el.setPointerCapture(pointerId);
-          gesture.current = { card, overDay: null };
+          gesture.current = { card, overDay: null, overOffsetY: 0, renderedOffsetY: 0 };
           document.body.dataset.dragging = "true";
-          setDrag({ card, overDay: null });
+          setDrag({ card, overDay: null, overOffsetY: 0 });
         }
 
         moveGhost(ev.clientX, ev.clientY);
@@ -88,9 +117,24 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
         const under = document.elementFromPoint(ev.clientX, ev.clientY);
         const cell = under?.closest<HTMLElement>("[data-drop-day]");
         const next = cell?.dataset.dropDay ?? null;
-        if (gesture.current && gesture.current.overDay !== next) {
+        const offsetY = cell ? ev.clientY - cell.getBoundingClientRect().top : 0;
+        if (!gesture.current) return;
+        // El offset SIEMPRE se guarda en el ref —al soltar hace falta el
+        // exacto— pero solo provoca render cuando cambia algo que se ve.
+        // El umbral se compara contra el último offset RENDERIZADO, no
+        // contra el estado de React: `drag` acá sería la clausura del render
+        // en que empezó el gesto, o sea null, y el umbral nunca cortaría
+        // nada — un render por píxel, justo lo que este motor evita.
+        gesture.current.overOffsetY = offsetY;
+        const step = Number(cell?.dataset.dropTime) || DEFAULT_STEP_PX;
+        const timed = cell?.dataset.dropTime !== undefined;
+        const movedEnough =
+          timed &&
+          Math.round(offsetY / step) !== Math.round(gesture.current.renderedOffsetY / step);
+        if (gesture.current.overDay !== next || movedEnough) {
           gesture.current.overDay = next;
-          setDrag({ card, overDay: next });
+          gesture.current.renderedOffsetY = offsetY;
+          setDrag({ card, overDay: next, overOffsetY: offsetY });
         }
       };
 
@@ -99,6 +143,7 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
         el.removeEventListener("pointerup", finish);
         el.removeEventListener("pointercancel", cancel);
         el.removeEventListener("lostpointercapture", cancel);
+        document.removeEventListener("scroll", onScroll, { capture: true });
         if (!started) return;
         // El navegador dispara un `click` de compatibilidad después de todo
         // gesto de puntero, y `stopPropagation` en el pointerdown no lo
@@ -109,12 +154,13 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
         endedAt.current = Date.now();
         delete document.body.dataset.dragging;
         const target = gesture.current?.overDay ?? null;
+        const offsetY = gesture.current?.overOffsetY ?? 0;
         gesture.current = null;
         setDrag(null);
-        // Escape ya canceló, o se soltó fuera de la grilla, o sobre un día
-        // que no acepta: el fantasma desaparece y no pasa nada más.
-        if (!target || isBlocked(card, target)) return;
-        onDrop(card, target);
+        // Escape ya canceló, o se soltó fuera de la grilla, o sobre un
+        // destino que no acepta: el fantasma desaparece y no pasa nada más.
+        if (!target || isBlocked(card, target, offsetY)) return;
+        onDrop(card, target, offsetY);
         void ev;
       };
 
@@ -123,6 +169,7 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
         el.removeEventListener("pointerup", finish);
         el.removeEventListener("pointercancel", cancel);
         el.removeEventListener("lostpointercapture", cancel);
+        document.removeEventListener("scroll", onScroll, { capture: true });
         if (!started) return;
         endedAt.current = Date.now();
         delete document.body.dataset.dragging;
@@ -130,10 +177,32 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
         setDrag(null);
       };
 
+      // El eje horario muestra ~10 de las 24 horas, así que para soltar en una
+      // hora que no se ve HAY que scrollear a mitad del gesto. Una rueda de
+      // mouse mueve el contenido pero no dispara pointermove: sin esto, el
+      // offset guardado seguía siendo el de antes del scroll y la card caía
+      // en la hora que estaba bajo el cursor ANTES de mover la rueda, con la
+      // franja de preview mintiendo igual.
+      const onScroll = () => {
+        const point = lastPoint.current;
+        if (!started || !gesture.current || !point) return;
+        const under = document.elementFromPoint(point.x, point.y);
+        const cell = under?.closest<HTMLElement>("[data-drop-day]");
+        const day = cell?.dataset.dropDay ?? null;
+        const offset = cell ? point.y - cell.getBoundingClientRect().top : 0;
+        gesture.current.overDay = day;
+        gesture.current.overOffsetY = offset;
+        gesture.current.renderedOffsetY = offset;
+        setDrag({ card, overDay: day, overOffsetY: offset });
+      };
+
       el.addEventListener("pointermove", onMove);
       el.addEventListener("pointerup", finish);
       el.addEventListener("pointercancel", cancel);
       el.addEventListener("lostpointercapture", cancel);
+      // En captura y sobre document: el scroll ocurre en un contenedor
+      // cualquiera del árbol y no burbujea.
+      document.addEventListener("scroll", onScroll, { capture: true, passive: true });
     },
     [isBlocked, moveGhost, onDrop],
   );

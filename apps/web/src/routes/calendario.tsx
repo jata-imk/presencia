@@ -3,34 +3,36 @@ import { useNavigate, useSearchParams } from "react-router";
 import { AnimatePresence } from "motion/react";
 import {
   CalendarDate,
-  Time,
   parseDate,
   startOfMonth,
   toCalendarDate,
-  toCalendarDateTime,
-  toZoned,
+  type ZonedDateTime,
 } from "@internationalized/date";
 import type { PublicationCardDto } from "@presencia/shared";
 import { CadenceBar } from "../components/calendar/CadenceBar.js";
 import { ConflictDialog } from "../components/calendar/ConflictDialog.js";
 import { DragGhost } from "../components/calendar/DragGhost.js";
+import { DayTimeline } from "../components/calendar/DayTimeline.js";
 import { DraftsPanel } from "../components/calendar/DraftsPanel.js";
 import { CalendarToolbar } from "../components/calendar/CalendarToolbar.js";
 import { CardModal } from "../components/calendar/CardModal.js";
 import { DayPanel } from "../components/calendar/DayPanel.js";
 import type { DayCardActions } from "../components/calendar/DayPanelCard.js";
 import { MonthGrid } from "../components/calendar/MonthGrid.js";
+import { WeekGrid } from "../components/calendar/WeekGrid.js";
 import { ApiError } from "../lib/api.js";
 import { cancelCardSchedule, rescheduleCard } from "../lib/cards-api.js";
 import { groupByDay } from "../lib/calendar/group.js";
 import {
   conflictDays as conflictDaysOf,
+  existingConflicts,
   movedToDay,
   suggestLater,
   verdictFor,
 } from "../lib/calendar/schedule-move.js";
+import { instantAt, minutesFromOffset } from "../lib/calendar/timeline.js";
 import { useDragSchedule } from "../lib/calendar/use-drag-schedule.js";
-import { monthWeeks, rangeForDays } from "../lib/calendar/grid.js";
+import { monthWeeks, rangeForDays, weekDays } from "../lib/calendar/grid.js";
 import {
   dayKey,
   formatDayLong,
@@ -76,6 +78,18 @@ export function CalendarioPage() {
   const monthKey = dayKey(startOfMonth(focusedDay));
   const month = useMemo(() => parseDate(monthKey), [monthKey]);
 
+  const periodLabel = useMemo(() => {
+    if (view === "mes") return formatMonthLabel(month);
+    if (view === "dia") return formatDayLong(focusedDay);
+    // Semana: "24 – 30 de agosto", y con los dos meses cuando la cruza.
+    const days = weekDays(focusedDay);
+    const first = days[0]!;
+    const last = days[6]!;
+    return first.month === last.month
+      ? `${String(first.day)} – ${String(last.day)} de ${monthNameOf(last)}`
+      : `${String(first.day)} de ${monthNameOf(first)} – ${String(last.day)} de ${monthNameOf(last)}`;
+  }, [focusedDay, month, view]);
+
   const { cards, drafts, loading, error, load, loadDrafts, upsert } = useCalendarStore();
   const navigate = useNavigate();
   const openDrawer = useScheduleDrawerStore((s) => s.open);
@@ -88,9 +102,14 @@ export function CalendarioPage() {
   const [modalCardIds, setModalCardIds] = useState<string[] | null>(null);
   const [draftsCollapsed, setDraftsCollapsed] = useState(false);
   const [flashDay, setFlashDay] = useState<string | null>(null);
-  const [conflict, setConflict] = useState<{ card: PublicationCardDto; day: CalendarDate } | null>(
-    null,
-  );
+  // Solo el instante, no el día: en semana el destino sale del punto exacto
+  // donde se soltó, y el día de aterrizaje se deriva de la SUGERENCIA (+30
+  // min puede cruzar la medianoche). Guardar el día además sería un dato que
+  // nadie lee y que el próximo lector creería autoritativo.
+  const [conflict, setConflict] = useState<{
+    card: PublicationCardDto;
+    at: ZonedDateTime;
+  } | null>(null);
 
   // Deep-link "Ver en calendario" desde una card de Chat: abre el panel de
   // ese día y resalta la publicación. El parámetro se consume una sola vez y
@@ -125,9 +144,14 @@ export function CalendarioPage() {
     return () => window.clearTimeout(timer);
   }, [highlightedCardId]);
 
-  // Los días REALMENTE visibles, no el mes natural: la primera y la última
-  // fila traen días del mes vecino, y si no se piden salen siempre vacíos.
-  const visibleDays = useMemo(() => monthWeeks(month).flat(), [month]);
+  // Los días REALMENTE visibles según la vista. En mes son las 5-6 semanas
+  // completas (la primera y la última fila traen días del mes vecino, y si no
+  // se piden salen siempre vacíos); en semana son 7; en día, uno.
+  const visibleDays = useMemo(() => {
+    if (view === "semana") return weekDays(focusedDay);
+    if (view === "dia") return [focusedDay];
+    return monthWeeks(month).flat();
+  }, [focusedDay, month, view]);
   const range = useMemo(() => rangeForDays(visibleDays, timeZone), [visibleDays, timeZone]);
   const todayIsVisible = useMemo(
     () => visibleDays.some((day) => day.compare(today) === 0),
@@ -162,10 +186,30 @@ export function CalendarioPage() {
 
   // ── Arrastrar para reprogramar ─────────────────────────────────────
   const conflictDays = useMemo(() => conflictDaysOf(cards, timeZone), [cards, timeZone]);
+  // Los mismos choques, por id: la vista mes los marca por DÍA (la celda no
+  // sabe de horas), el eje horario los marca en el bloque concreto.
+  const conflictCardIds = useMemo(() => existingConflicts(cards), [cards]);
+
+  /**
+   * A qué instante iría la card si se soltara acá. En mes se conserva la hora
+   * de pared (la celda es un día entero y no dice nada de horarios); en
+   * semana y día la posición vertical ES la hora, así que sale del offset
+   * imantado al cuarto. Es la misma diferencia que hace que arrastrar en
+   * semana cambie la hora y en mes no.
+   */
+  const targetFor = useCallback(
+    (card: PublicationCardDto, key: string, offsetY: number) => {
+      const day = parseDate(key);
+      if (view === "mes") return movedToDay(card, day, timeZone);
+      return instantAt(day, minutesFromOffset(offsetY), timeZone);
+    },
+    [timeZone, view],
+  );
 
   const verdictOf = useCallback(
-    (card: PublicationCardDto, key: string) => verdictFor(card, parseDate(key), cards, timeZone),
-    [cards, timeZone],
+    (card: PublicationCardDto, key: string, offsetY = 0) =>
+      verdictFor(card, parseDate(key), cards, timeZone, undefined, targetFor(card, key, offsetY)),
+    [cards, targetFor, timeZone],
   );
 
   /**
@@ -248,33 +292,37 @@ export function CalendarioPage() {
   const canDrag = useMediaQuery("(pointer: fine)");
 
   const { drag, startDrag, ghostRef, justDragged } = useDragSchedule({
-    isBlocked: (card, key) => verdictOf(card, key) === "past",
-    onDrop: (card, key) => {
+    isBlocked: (card, key, offsetY) => verdictOf(card, key, offsetY) === "past",
+    onDrop: (card, key, offsetY) => {
       const day = parseDate(key);
       // Un borrador no trae hora: el Calendario decide el DÍA y el drawer la
-      // hora, cada módulo con su responsabilidad (§3). Por eso no se
-      // programa al soltar, se abre el formulario con la fecha puesta.
+      // hora, cada módulo con su responsabilidad (§3). Por eso no se programa
+      // al soltar, se abre el formulario con la fecha puesta.
+      //
+      // En mes son las 10:00 por default. En semana y día el usuario SÍ
+      // apuntó a una hora con el gesto, y descartarla para volver a las 10:00
+      // sería tirar información que acaba de dar.
+      //
+      // Las 10:00 en la zona del USUARIO: `day.toDate(tz)` + setHours(10)
+      // parecía equivalente y no lo es — setHours trabaja en la zona del
+      // navegador, y con las dos zonas distintas el drawer abría en otro día.
       if (!card.scheduledAt) {
-        // Las 10:00 EN LA ZONA DEL USUARIO. `day.toDate(tz)` + setHours(10)
-        // parecía equivalente y no lo es: setHours trabaja en la zona del
-        // NAVEGADOR, así que con las dos zonas distintas el drawer se abría
-        // en otro día — exactamente el error que este módulo existe para no
-        // cometer.
-        const preset = toZoned(toCalendarDateTime(day, new Time(10)), timeZone).toDate();
+        const minutes = view === "mes" ? 10 * 60 : minutesFromOffset(offsetY);
+        const preset = instantAt(day, minutes, timeZone).toDate();
         openDrawer([card], { presetDate: preset, onDone: () => void reload() });
         return;
       }
-      if (verdictOf(card, key) === "conflict") {
-        setConflict({ card, day });
+      const target = targetFor(card, key, offsetY);
+      if (!target) return;
+      if (verdictOf(card, key, offsetY) === "conflict") {
+        setConflict({ card, at: target });
         return;
       }
-      const target = movedToDay(card, day, timeZone);
-      if (!target) return;
       const at = target.toDate().toISOString();
-      // Soltar en el mismo día donde ya estaba no es un cambio. Sin este
-      // corte se dispararía una reprogramación completa —que del lado del
-      // servidor es cancelar en el proveedor y volver a crear (ADR-009)—
-      // más un toast de "Reprogramado", por un empujón que no movió nada.
+      // Soltar donde ya estaba no es un cambio. Sin este corte se dispararía
+      // una reprogramación completa —que del lado del servidor es cancelar en
+      // el proveedor y volver a crear (ADR-009)— más un toast de
+      // "Reprogramado", por un empujón que no movió nada.
       if (at === card.scheduledAt) return;
       void moveCard(card, at, key);
     },
@@ -283,10 +331,12 @@ export function CalendarioPage() {
   const dragInfo = useMemo(() => {
     if (!drag) return null;
     const verdictByDay = new Map(
-      visibleDays.map((day) => [dayKey(day), verdictFor(drag.card, day, cards, timeZone)] as const),
+      visibleDays.map(
+        (day) => [dayKey(day), verdictOf(drag.card, dayKey(day), drag.overOffsetY)] as const,
+      ),
     );
-    return { overDay: drag.overDay, verdictByDay };
-  }, [cards, drag, timeZone, visibleDays]);
+    return { overDay: drag.overDay, overOffsetY: drag.overOffsetY, verdictByDay };
+  }, [drag, verdictOf, visibleDays]);
 
   // El destello se apaga solo. Va acá y no en CSS con animationend porque el
   // día que destella es estado de React: la clase tiene que salir del DOM.
@@ -335,6 +385,26 @@ export function CalendarioPage() {
       },
     }),
     [cards, navigate, openDrawer, reload, toast],
+  );
+
+  const startDragCard = useCallback(
+    (event: React.PointerEvent, cardId: string) => {
+      const card = cards.find((item) => item.id === cardId);
+      if (card) startDrag(event, card);
+    },
+    [cards, startDrag],
+  );
+
+  const openCard = useCallback(
+    (cardId: string) => {
+      // El navegador dispara un click de compatibilidad al terminar cualquier
+      // gesto de puntero: sin esta guarda, soltar una publicación abría
+      // además su modal, como si le hubieran hecho click.
+      if (justDragged()) return;
+      const card = cards.find((item) => item.id === cardId);
+      if (card) actions.onView(card);
+    },
+    [actions, cards, justDragged],
   );
 
   // Un solo escritor de la URL: cambiar de día puede implicar cambiar de mes
@@ -419,14 +489,14 @@ export function CalendarioPage() {
     <div className="relative flex h-full min-h-0 flex-col bg-surface">
       <CalendarToolbar
         view={view}
-        periodLabel={formatMonthLabel(month)}
+        periodLabel={periodLabel}
         onChangeView={setView}
-        // Anclado al MES, no al día enfocado: `focusedDay.add({months:1})`
+        // En mes se ancla al MES y no al día enfocado: `focusedDay.add({months:1})`
         // recorta el día al último del mes destino y el recorte no es
-        // reversible — desde el 31 de agosto, ◀ ◀ ▶ devuelve el 30 de julio,
-        // no el 31. El día iba derivando solo mientras el usuario navegaba.
-        onPrev={() => setFocusedDay(month.subtract({ months: 1 }))}
-        onNext={() => setFocusedDay(month.add({ months: 1 }))}
+        // reversible — desde el 31 de agosto, ◀ ◀ ▶ devuelve el 30 de julio.
+        // En semana y día el salto es exacto y no hay nada que recortar.
+        onPrev={() => setFocusedDay(stepPeriod(view, focusedDay, month, -1))}
+        onNext={() => setFocusedDay(stepPeriod(view, focusedDay, month, 1))}
         onToday={() => setFocusedDay(today)}
       />
 
@@ -470,23 +540,8 @@ export function CalendarioPage() {
             conflictDays={conflictDays}
             flashDay={flashDay}
             draggingCardId={drag?.card.id ?? null}
-            onStartDragCard={
-              canDrag
-                ? (event, cardId) => {
-                    const card = cards.find((item) => item.id === cardId);
-                    if (card) startDrag(event, card);
-                  }
-                : undefined
-            }
-            onOpenCard={(cardId) => {
-              // El navegador dispara un click de compatibilidad al terminar
-              // cualquier gesto de puntero: sin esta guarda, soltar una
-              // publicación abría además su modal, como si le hubieran
-              // hecho click.
-              if (justDragged()) return;
-              const card = cards.find((item) => item.id === cardId);
-              if (card) actions.onView(card);
-            }}
+            onStartDragCard={canDrag ? startDragCard : undefined}
+            onOpenCard={openCard}
             onFocusDay={setFocusedDay}
             onSelectDay={(day) => {
               setFocusedDay(day);
@@ -495,14 +550,43 @@ export function CalendarioPage() {
           />
         </div>
       ) : (
-        // Semana y Día llegan en PR4. La vista se puede seleccionar desde ya
-        // porque el segmented control y el estado en la URL son de PR1: es
-        // más honesto mostrar el hueco que deshabilitar dos pestañas y tener
-        // que volver a tocar la toolbar después.
-        <div className="flex min-h-0 flex-1 items-center justify-center px-8">
-          <p className="text-center text-[13px] text-fg-muted">
-            La vista {view === "semana" ? "semana" : "día"} llega en el siguiente avance del módulo.
-          </p>
+        <div className="flex min-h-0 flex-1">
+          <DraftsPanel
+            drafts={drafts}
+            collapsed={draftsCollapsed}
+            onToggle={() => setDraftsCollapsed((value) => !value)}
+            onStartDrag={canDrag ? startDrag : undefined}
+            draggingId={drag?.card.id ?? null}
+          />
+          {view === "semana" ? (
+            <WeekGrid
+              anchor={focusedDay}
+              today={today}
+              entriesByDay={entriesByDay}
+              timeZone={timeZone}
+              drag={dragInfo}
+              conflictCardIds={conflictCardIds}
+              draggingCardId={drag?.card.id ?? null}
+              onStartDragCard={canDrag ? startDragCard : undefined}
+              onOpenCard={openCard}
+              onSelectDay={(day) => {
+                setFocusedDay(day);
+                setView("dia");
+              }}
+            />
+          ) : (
+            <DayTimeline
+              day={focusedDay}
+              today={today}
+              entriesByDay={entriesByDay}
+              timeZone={timeZone}
+              drag={dragInfo}
+              conflictCardIds={conflictCardIds}
+              draggingCardId={drag?.card.id ?? null}
+              onStartDragCard={canDrag ? startDragCard : undefined}
+              onOpenCard={openCard}
+            />
+          )}
         </div>
       )}
 
@@ -537,8 +621,7 @@ export function CalendarioPage() {
 
       {conflict &&
         (() => {
-          const target = movedToDay(conflict.card, conflict.day, timeZone);
-          if (!target) return null;
+          const target = conflict.at;
           const suggestion = suggestLater(target);
           // El día de aterrizaje sale de la SUGERENCIA, no del día donde se
           // soltó: +30 minutos sobre las 23:45 cae en el día siguiente, y
@@ -671,4 +754,26 @@ async function cancelMany(
           }
         : undefined,
   });
+}
+
+/** El nombre del mes en minúscula, para componer el rango de la vista semana. */
+function monthNameOf(date: CalendarDate): string {
+  return formatMonthLabel(date).split(" ")[0]!.toLowerCase();
+}
+
+/**
+ * Un paso de periodo hacia adelante o atrás. En mes se ancla al MES y no al
+ * día enfocado: sumarle un mes al día 31 lo recorta al último del mes destino,
+ * y ese recorte no es reversible — desde el 31 de agosto, ◀ ◀ ▶ devolvía el
+ * 30 de julio. En semana y día el salto es exacto y no hay nada que recortar.
+ */
+function stepPeriod(
+  view: CalendarView,
+  focusedDay: CalendarDate,
+  month: CalendarDate,
+  direction: 1 | -1,
+): CalendarDate {
+  if (view === "mes") return month.add({ months: direction });
+  if (view === "semana") return focusedDay.add({ weeks: direction });
+  return focusedDay.add({ days: direction });
 }
