@@ -232,3 +232,47 @@ body[data-resizing] {
 body[data-resizing] nav[aria-label="Navegación principal"] {
   transition: none;
 }
+
+/* Mientras se arrastra una publicación en el Calendario (F7 PR3). Mismo
+   patrón y mismo motivo que body[data-resizing] de arriba: el pointer
+   capture manda los eventos al elemento agarrado, pero el puntero físico
+   pasa por encima de todo lo demás, así que el cursor y la selección de
+   texto se controlan desde <body>. */
+body[data-dragging] {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* Confirmación al soltar: la celda destino destella y se apaga sola. Es lo
+   que cierra la acción — sin esto el usuario suelta y se queda dudando de
+   si pasó algo (presencia-calendario.md §3). Va en CSS y no en motion
+   porque es una animación de una sola pasada sobre un elemento que ya
+   existe, no una entrada/salida del DOM.
+
+   Se pinta en un ::after y NO sobre la celda: animar su background-color la
+   dejaba SIN fondo al terminar (el keyframe cerraba en transparent con
+   `forwards`, así que se veía el fondo de la app por debajo hasta que la
+   clase salía del DOM), y animar su box-shadow pisaba el inset-ring de HOY,
+   que desaparecía durante todo el destello justo cuando el día que recibe
+   la publicación es hoy. Una capa aparte no compite con ninguno de los dos. */
+@keyframes cal-flash {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.cal-flash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background-color: var(--cal-drop-target);
+  box-shadow:
+    inset 0 0 0 2px var(--color-pink-orchid),
+    0 0 0 3px color-mix(in srgb, var(--color-pink-orchid) 45%, transparent);
+  animation: cal-flash 900ms var(--ease-out) forwards;
+}

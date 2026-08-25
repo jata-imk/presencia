@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
+import { AlertTriangle } from "lucide-react";
 import { type CalendarDate, isSameMonth } from "@internationalized/date";
 import { capEntries, type EntriesByDay } from "../../lib/calendar/group.js";
 import { monthWeeks } from "../../lib/calendar/grid.js";
 import { dayKey, formatDayLong, formatWeekdayShort, weekStart } from "../../lib/calendar/tz.js";
 import { CalendarEntryPill } from "./CalendarEntryPill.js";
+import type { DropVerdict } from "../../lib/calendar/schedule-move.js";
 
 // Grilla del mes (F7 PR1).
 //
@@ -18,15 +20,65 @@ import { CalendarEntryPill } from "./CalendarEntryPill.js";
 // filas usan `display: contents` para existir en el árbol de accesibilidad
 // sin romper la grilla CSS de 7 columnas.
 
+export interface MonthGridDrag {
+  /** Día bajo el cursor ahora mismo, o null. */
+  overDay: string | null;
+  /** Veredicto por día. Se calcula una vez al empezar el gesto, no por frame. */
+  verdictByDay: Map<string, DropVerdict>;
+}
+
 interface MonthGridProps {
   month: CalendarDate;
   today: CalendarDate;
   focusedDay: CalendarDate;
   entriesByDay: EntriesByDay;
   timeZone: string;
+  /** Activo solo mientras se arrastra algo. */
+  drag: MonthGridDrag | null;
+  /** Días con dos publicaciones de la misma red a la misma hora. */
+  conflictDays: Set<string>;
+  /** Día que acaba de recibir una publicación: destella y se apaga. */
+  flashDay: string | null;
+  draggingCardId: string | null;
+  /** Ausente en pantallas táctiles: ahí no hay arrastre (ver calendario.tsx). */
+  onStartDragCard?: (event: React.PointerEvent, cardId: string) => void;
+  /** Click en un post: abre su vista, no la del día. */
+  onOpenCard: (cardId: string) => void;
   onFocusDay: (day: CalendarDate) => void;
   onSelectDay: (day: CalendarDate) => void;
 }
+
+// Clases del destino durante el arrastre. El día bajo el cursor se marca más
+// fuerte que los demás válidos: hay que poder ver DÓNDE va a caer, no solo
+// que se puede soltar en algún lado.
+const DROP_CLASS: Record<DropVerdict, { idle: string; over: string }> = {
+  valid: {
+    idle: "border-dashed border-ai bg-cal-drop-valid",
+    over: "bg-cal-drop-target inset-ring-2 inset-ring-ai",
+  },
+  conflict: {
+    idle: "border-dashed border-warning bg-cal-drop-conflict",
+    over: "bg-cal-drop-conflict inset-ring-2 inset-ring-warning",
+  },
+  // El pasado no cambia de fondo: lo cubre el velo, que es una capa aparte.
+  past: { idle: "cursor-not-allowed", over: "cursor-not-allowed" },
+};
+
+/**
+ * ¿Este veredicto pinta la celda? Si sí, su fondo, su borde y su anillo
+ * SUSTITUYEN a los de la celda en vez de apilarse.
+ *
+ * Vale para las tres propiedades por el mismo motivo, que ya mordió dos
+ * veces: entre dos utilities que tocan lo mismo gana la que Tailwind emite
+ * última, no la que esté después en el atributo `class`. En el CSS generado
+ * `.border-transparent` sale después de `.border-ai` (así que el borde
+ * punteado del destino válido era invisible) pero antes de `.border-warning`
+ * (así que el del conflicto sí se veía) — dos estados hermanos con
+ * comportamiento distinto sin que nadie lo decidiera. Igual con
+ * `.inset-ring-primary`, que sale después de `.inset-ring-ai`: en la celda
+ * de HOY, la única donde no se podía ver dónde iba a caer la card.
+ */
+const OVERRIDES_CELL: Record<DropVerdict, boolean> = { valid: true, conflict: true, past: false };
 
 export function MonthGrid({
   month,
@@ -34,6 +86,12 @@ export function MonthGrid({
   focusedDay,
   entriesByDay,
   timeZone,
+  drag,
+  conflictDays,
+  flashDay,
+  draggingCardId,
+  onStartDragCard,
+  onOpenCard,
   onFocusDay,
   onSelectDay,
 }: MonthGridProps) {
@@ -114,11 +172,24 @@ export function MonthGrid({
               const outside = !isSameMonth(day, month);
               const isToday = day.compare(today) === 0;
               const { visible, hidden } = capEntries(entriesByDay.get(key) ?? []);
+              const verdict = drag ? drag.verdictByDay.get(key) : undefined;
+              const dropClass =
+                drag && verdict ? DROP_CLASS[verdict][drag.overDay === key ? "over" : "idle"] : "";
+              // El fondo del destino SUSTITUYE al de la celda en vez de
+              // apilarse: dos utilities de background-color compiten en la
+              // cascada y gana la que Tailwind emita última, no la del final
+              // del atributo class. Apilándolas, el tinte no se veía.
+              const painted = verdict ? OVERRIDES_CELL[verdict] : false;
+              const bgClass = painted ? "" : outside ? "bg-cal-day-out" : "bg-card";
+              // El borde base solo se pone si el veredicto no trae el suyo.
+              const borderClass = painted ? "" : "border-transparent";
+              const todayRing = isToday && !painted ? "inset-ring-2 inset-ring-primary" : "";
               return (
                 <div
                   key={key}
                   role="gridcell"
                   data-day={key}
+                  data-drop-day={key}
                   tabIndex={key === focusedKey ? 0 : -1}
                   aria-selected={key === focusedKey}
                   aria-label={formatDayLong(day)}
@@ -126,10 +197,27 @@ export function MonthGrid({
                     onFocusDay(day);
                     onSelectDay(day);
                   }}
-                  className={`flex min-w-0 cursor-pointer flex-col gap-[3px] border-r border-b border-line p-1.5 outline-none nth-[7n]:border-r-0 ${
-                    outside ? "bg-cal-day-out" : "bg-card"
-                  } ${isToday ? "inset-ring-2 inset-ring-primary" : ""} focus-visible:inset-ring-2 focus-visible:inset-ring-line-focus`}
+                  className={`relative flex min-w-0 cursor-pointer flex-col gap-[3px] overflow-hidden border border-r-line border-b-line p-1.5 outline-none nth-[7n]:border-r-0 ${borderClass} ${bgClass} ${todayRing} ${
+                    key === flashDay ? "cal-flash" : ""
+                  } ${dropClass} focus-visible:inset-ring-2 focus-visible:inset-ring-line-focus`}
                 >
+                  {/* El velo del pasado va como capa y no como opacidad sobre
+                      la celda: bajarle la opacidad al contenedor apagaría
+                      también el resaltado de destino de las celdas vecinas. */}
+                  {verdict === "past" && (
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 z-[1] bg-cal-drop-past"
+                    />
+                  )}
+                  {conflictDays.has(key) && !drag && (
+                    <span
+                      title="Dos publicaciones de la misma red a la misma hora"
+                      className="absolute top-1.5 right-1.5 z-[2] flex size-4 items-center justify-center rounded-full bg-warning text-[10px] font-bold text-card"
+                    >
+                      <AlertTriangle size={10} strokeWidth={2.5} />
+                    </span>
+                  )}
                   <span
                     className={`flex h-[22px] items-center px-0.5 font-display text-[12.5px] font-semibold ${
                       outside ? "text-fg-muted" : "text-fg"
@@ -144,16 +232,28 @@ export function MonthGrid({
                     )}
                   </span>
 
-                  <div className="flex min-h-0 flex-col gap-[3px]">
+                  {/* La lista se recorta y el chip "+N más" no: en una
+                      ventana baja la celda no da para tres píldoras, y lo
+                      último que puede desaparecer es justamente el aviso de
+                      que hay más. Por eso el chip va fuera del contenedor
+                      que recorta, con shrink-0. */}
+                  <div className="flex min-h-0 flex-col gap-[3px] overflow-hidden">
                     {visible.map((entry) => (
-                      <CalendarEntryPill key={entry.key} entry={entry} timeZone={timeZone} />
+                      <CalendarEntryPill
+                        key={entry.key}
+                        entry={entry}
+                        timeZone={timeZone}
+                        draggingCardId={draggingCardId}
+                        onStartDragCard={onStartDragCard}
+                        onOpenCard={onOpenCard}
+                      />
                     ))}
-                    {hidden > 0 && (
-                      <span className="self-start rounded px-1.5 font-display text-[10.5px] font-semibold text-accent">
-                        +{hidden} más
-                      </span>
-                    )}
                   </div>
+                  {hidden > 0 && (
+                    <span className="shrink-0 self-start rounded px-1.5 font-display text-[10.5px] font-semibold text-accent">
+                      +{hidden} más
+                    </span>
+                  )}
                 </div>
               );
             })}

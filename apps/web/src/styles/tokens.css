@@ -212,6 +212,23 @@
   --cal-day-out-bg: #fcfbfd;
   --cal-group-bg: color-mix(in srgb, var(--color-pink-orchid) 12%, transparent);
 
+  /* Estados del destino durante un arrastre (F7 PR3). Se derivan por
+     color-mix de tokens que YA voltean con el tema, así que no necesitan
+     override en oscuro y no pueden quedar desincronizados de --status-ai
+     ni de --status-warning si esos cambian.
+     Se mezclan contra --bg-card y NO contra transparent: la celda ya trae
+     su propio bg-card, y entre dos utilities de background-color gana la que
+     Tailwind emita última, no la que esté después en el atributo class. Un
+     tinte translúcido quedaba tapado y el destino no se veía — el bug no
+     salía revisando las clases aplicadas, solo el color computado.
+     El velo del pasado usa --bg-app justamente porque se invierte solo: en
+     claro aclara la celda hacia el fondo de la app, en oscuro la oscurece.
+     En los dos casos el efecto que se lee es "esto se aleja, no lo toques". */
+  --cal-drop-valid: color-mix(in srgb, var(--status-ai) 14%, var(--bg-card));
+  --cal-drop-target: color-mix(in srgb, var(--status-ai) 32%, var(--bg-card));
+  --cal-drop-conflict: color-mix(in srgb, var(--status-warning) 18%, var(--bg-card));
+  --cal-drop-past-veil: color-mix(in srgb, var(--bg-app) 55%, transparent);
+
   /* Layout. --sidebar-width es el DEFAULT, no la ley: desde F6.5 el
      usuario puede arrastrar el borde del sidebar y el valor elegido se
      escribe inline sobre <html> (origen inline gana a :root sin pelear
@@ -353,6 +370,10 @@
   --color-cal-draft-fg: var(--cal-draft-fg);
   --color-cal-day-out: var(--cal-day-out-bg);
   --color-cal-group: var(--cal-group-bg);
+  --color-cal-drop-valid: var(--cal-drop-valid);
+  --color-cal-drop-target: var(--cal-drop-target);
+  --color-cal-drop-conflict: var(--cal-drop-conflict);
+  --color-cal-drop-past: var(--cal-drop-past-veil);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);

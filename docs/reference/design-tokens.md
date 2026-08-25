@@ -88,7 +88,33 @@ Utilities: `text-cal-scheduled-fg`, `text-cal-published-fg`, `text-cal-draft-fg`
 
 El día de otro mes se **hunde** un escalón por debajo de `--bg-card` en los dos temas (`#FCFBFD` bajo el blanco, `#120B16` bajo el `#1A0F20`). El sentido es el mismo y solo cambia el valor: alejarse del primer plano es lo que se lee como "este día no es de este mes", y hacia dónde queda ese alejamiento depende del tema.
 
-Los tokens del drag (destino válido / objetivo / conflicto / pasado) todavía no existen: llegan en el PR que los pinta. Escribirlos antes repetiría la lección de F6.5 — dark mode escrito desde F1 y jamás ejecutado, con cuatro bugs reales esperando adentro.
+Los del arrastre llegaron con el PR que los pinta:
+
+| Token                  | Cómo se calcula                          | Para qué                       |
+| ---------------------- | ---------------------------------------- | ------------------------------ |
+| `--cal-drop-valid`     | `--status-ai` 14% sobre `--bg-card`      | Día donde sí se puede soltar   |
+| `--cal-drop-target`    | `--status-ai` 32% sobre `--bg-card`      | El día bajo el cursor          |
+| `--cal-drop-conflict`  | `--status-warning` 18% sobre `--bg-card` | Choque de horario en ese día   |
+| `--cal-drop-past-veil` | `--bg-app` 55% sobre transparente        | Capa sobre los días ya pasados |
+
+Ninguno necesita override en oscuro: se derivan de tokens que **ya** voltean, así que no pueden quedar desincronizados si `--status-ai` o `--bg-card` cambian. El velo usa `--bg-app` porque se invierte solo — en claro acerca la celda al fondo de la app, en oscuro la hunde; el efecto que se lee ("esto se aleja") es el mismo en los dos.
+
+### Tercera trampa: dos utilities sobre la misma propiedad
+
+Entre dos utilities que tocan lo mismo gana **la que Tailwind emite última**, no la que esté después en el atributo `class`. La celda del calendario trae su `bg-card`, su `border-transparent` y —si es hoy— su `inset-ring-primary`; el estado de destino quiere pisar los tres. Los offsets reales en el CSS generado:
+
+| Utility              | Offset | Contra                        | Resultado si se apilan         |
+| -------------------- | ------ | ----------------------------- | ------------------------------ |
+| `border-ai`          | 16 766 | `border-transparent` (17 420) | el borde punteado **no se ve** |
+| `border-warning`     | 17 459 | `border-transparent` (17 420) | sí se ve                       |
+| `inset-ring-ai`      | 28 163 | `inset-ring-primary` (28 282) | en HOY el anillo **no se ve**  |
+| `inset-ring-warning` | 28 351 | `inset-ring-primary` (28 282) | sí se ve                       |
+
+Dos estados hermanos con comportamiento distinto sin que nadie lo decidiera, y el caso perdido siempre es el mismo: el día de hoy, justo donde más importa ver dónde va a caer la publicación.
+
+**La salida no es pelear la cascada, es no apilar.** Cuando el veredicto de arrastre pinta la celda, sus clases base (`bg-*`, `border-transparent`, `inset-ring-primary`) directamente no se emiten — ver `OVERRIDES_CELL` en `MonthGrid.tsx`. Lo mismo con `--cal-drop-*`, que se mezclan contra `--bg-card` en vez de contra `transparent` para no depender de qué haya debajo.
+
+Ninguno de estos tres bugs aparecía revisando qué clases estaban aplicadas: estaban todas. Solo salen midiendo el estilo computado o leyendo el CSS generado.
 
 ## Movimiento (ADR-014)
 

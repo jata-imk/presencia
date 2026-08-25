@@ -50,9 +50,53 @@ function Row({
   );
 }
 
-export function CalendarEntryPill({ entry, timeZone }: { entry: CalendarEntry; timeZone: string }) {
+export function CalendarEntryPill({
+  entry,
+  timeZone,
+  draggingCardId,
+  onStartDragCard,
+  onOpenCard,
+}: {
+  entry: CalendarEntry;
+  timeZone: string;
+  draggingCardId?: string | null;
+  onStartDragCard?: (event: React.PointerEvent, cardId: string) => void;
+  /**
+   * Click en un post concreto abre SU vista, no la del día
+   * (presencia-calendario.md §3: "intención específica vs intención
+   * general"). La celda entera sigue abriendo el panel del día; por eso
+   * cada píldora corta la propagación.
+   */
+  onOpenCard?: (cardId: string) => void;
+}) {
   const first = entry.cards[0];
   if (!first) return null;
+
+  // Solo lo programado (o lo que falló y se puede reintentar) se arrastra.
+  // Lo publicado ya salió: moverlo no significa nada, y ofrecer el gesto
+  // sería prometer algo que el backend rechaza — CardsService solo acepta
+  // draft, scheduled y failed.
+  const interactive = (card: PublicationCardDto) => {
+    const movable = onStartDragCard && (card.status === "scheduled" || card.status === "failed");
+    return {
+      onPointerDown: movable
+        ? (event: React.PointerEvent) => {
+            event.stopPropagation();
+            onStartDragCard(event, card.id);
+          }
+        : undefined,
+      onClick: onOpenCard
+        ? (event: React.MouseEvent) => {
+            // La celda de atrás abre el panel del día; este click es sobre
+            // un post concreto y no debe llegar hasta ella.
+            event.stopPropagation();
+            onOpenCard(card.id);
+          }
+        : undefined,
+      style: movable ? { touchAction: "none" as const } : undefined,
+      className: movable ? "cursor-grab active:cursor-grabbing" : "",
+    };
+  };
 
   // Grupo multi-red: las N redes van como filas separadas unidas por un
   // border-left Pink Orchid continuo (§4). El border es lo que comunica
@@ -64,22 +108,33 @@ export function CalendarEntryPill({ entry, timeZone }: { entry: CalendarEntry; t
         className="flex flex-col overflow-hidden rounded-md border-l-[3px] border-l-ai bg-cal-group"
         title={`Publicación multi-red · ${entry.cards.length} redes`}
       >
-        {entry.cards.map((card) => (
-          <span key={card.id} className="flex min-w-0 items-center gap-1 px-1.5 py-0.5">
-            <Link2 size={9} className="shrink-0 text-accent" aria-hidden />
-            <Row card={card} timeZone={timeZone} compact />
-          </span>
-        ))}
+        {entry.cards.map((card) => {
+          const handlers = interactive(card);
+          return (
+            <span
+              key={card.id}
+              {...handlers}
+              className={`flex min-w-0 items-center gap-1 px-1.5 py-0.5 ${handlers.className} ${
+                card.id === draggingCardId ? "opacity-40" : ""
+              }`}
+            >
+              <Link2 size={9} className="shrink-0 text-accent" aria-hidden />
+              <Row card={card} timeZone={timeZone} compact />
+            </span>
+          );
+        })}
       </div>
     );
   }
 
   const tone = toneFor(first.status);
+  const handlers = interactive(first);
   return (
     <div
-      className={`rounded-md border px-1.5 py-0.5 ${tone.box} ${
+      {...handlers}
+      className={`rounded-md border px-1.5 py-0.5 ${tone.box} ${handlers.className} ${
         first.status === "published" ? "opacity-85" : ""
-      }`}
+      } ${first.id === draggingCardId ? "opacity-40" : ""}`}
     >
       <Row card={first} timeZone={timeZone} compact={false} />
     </div>
