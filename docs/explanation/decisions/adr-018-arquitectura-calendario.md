@@ -65,6 +65,20 @@ De paso quedó implementada una regla de la spec que faltaba: **click en un post
 
 **Soltar un borrador no programa.** Abre el drawer con la fecha puesta: el Calendario decide el DÍA y el Chat decide la hora, cada módulo con su responsabilidad.
 
+## Las vistas Semana y Día (F7 PR4)
+
+`lib/calendar/timeline.ts` es toda la geometría: minutos desde medianoche ↔ píxeles, imantado, carriles. Cuatro decisiones que el diseño no cerraba.
+
+**El eje son 24 horas, no 6:00–23:00.** La spec dibujaba la franja útil, pero recortar significa que una publicación de las 02:00 existe en vista mes y **no existe** en semana — la misma card visible o no según dónde la mires. En vez de recortar, la vista abre desplazada a unas dos horas antes de ahora (`initialScrollTop`), que deja lo inmediato arriba sin esconder lo que acaba de pasar.
+
+**Arrastrar en semana cambia día Y hora; en mes solo el día.** No es una inconsistencia: en mes la celda es un día entero y no dice nada de horarios, así que mover conserva la hora de pared. En semana la posición vertical **es** la hora, y soltar a la altura de las 14:00 tiene que programar a las 14:00 — cualquier otra cosa contradice lo que el usuario está viendo. El imantado es de 15 minutos: alcanzable con el mouse y suficientemente fino para dejar algo a las 14:15.
+
+Eso obligó a que el motor del arrastre reporte **dónde** dentro del destino se soltó, no solo cuál era. `use-drag-schedule` expone `overOffsetY` y el destino se marca con `data-drop-time` cuando ese offset significa algo; la semántica la pone quien llama, el motor sigue sin saber de calendarios.
+
+**Los solapes se reparten en carriles.** Dos publicaciones a las 18:00 y 18:15 ocupan la misma franja; `layoutDay` las parte en media columna cada una, como cualquier calendario. La alternativa —dejarlas superpuestas— hace que la de atrás sea ilegible y casi imposible de agarrar para arrastrarla. Un "racimo" es una cadena de entradas que se pisan entre sí, y todas comparten el mismo número de carriles para no quedar de anchos distintos sin motivo visible; un carril se reusa en cuanto su último bloque terminó. Como los posts no tienen duración, "se pisan" es que disten menos de `BLOCK_MINUTES` (una hora), que es el alto que ocupa un bloque.
+
+**La vista Día no tiene banda lateral.** La spec la llenaba con horarios óptimos del Ritmo (F9). Mismo criterio que con las metas de la barra de cadencia: no se construye una superficie vacía esperando datos que no existen. Lo que la vista gana con todo el ancho son bloques más ricos, que es su razón de ser frente a semana.
+
 ## Regiones de scroll: la ruta declara que se hace cargo
 
 Ver el addendum de [ADR-014](./adr-014-estrategia-de-animacion.md). En resumen: la ruta pone `handle: { ownScroll: true }` y `ProtectedLayout` apaga su contenedor genérico. Declarativo en la ruta, no un contexto nuevo: es información estática de la pantalla, y `useMatches()` ya la propaga.
