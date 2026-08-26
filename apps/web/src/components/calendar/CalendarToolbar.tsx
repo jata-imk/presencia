@@ -1,5 +1,8 @@
-import { ChevronLeft, ChevronRight, Plus, SlidersHorizontal } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Plus } from "lucide-react";
 import { Link } from "react-router";
+import type { FolderDto } from "@presencia/shared";
+import type { CalendarFilters } from "../../lib/cards-api.js";
+import { FiltersMenu } from "./FiltersMenu.js";
 import type { CalendarView } from "../../lib/calendar/view.js";
 
 // Toolbar del módulo (presencia-calendario.md §3), de izquierda a derecha:
@@ -11,9 +14,8 @@ import type { CalendarView } from "../../lib/calendar/view.js";
 // el Chat decide la hora, cada módulo con su responsabilidad
 // (presencia-calendario.md §3).
 //
-// Filtros sigue deshabilitado con el mismo criterio que los módulos "Pronto"
-// del sidebar: el layout ya lo reserva, y fingir que la toolbar es más chica
-// de lo que va a ser sería mentira que hay que deshacer después.
+// Filtros abre un popover y no un panel fijo: la mayor parte del tiempo nadie
+// filtra, y un panel permanente sería ancho gastado (§3).
 
 const VIEWS: { value: CalendarView; label: string; hint: string }[] = [
   { value: "mes", label: "Mes", hint: "Vista mes (M)" },
@@ -28,6 +30,17 @@ interface CalendarToolbarProps {
   onPrev: () => void;
   onNext: () => void;
   onToday: () => void;
+  filters: CalendarFilters;
+  activeFilterCount: number;
+  folders: FolderDto[];
+  onChangeFilters: (next: CalendarFilters) => void;
+  /**
+   * Solo abajo de 768px: ahí la bandeja de borradores no cabe como columna
+   * y se abre desde acá como hoja inferior. En escritorio va como `undefined`
+   * y el botón no se renderiza — la bandeja ya está a la vista.
+   */
+  onOpenDrafts?: () => void;
+  draftCount?: number;
 }
 
 export function CalendarToolbar({
@@ -37,6 +50,12 @@ export function CalendarToolbar({
   onPrev,
   onNext,
   onToday,
+  filters,
+  activeFilterCount,
+  folders,
+  onChangeFilters,
+  onOpenDrafts,
+  draftCount = 0,
 }: CalendarToolbarProps) {
   // overflow-x + shrink-0 en cada control: la toolbar tiene un ancho mínimo
   // real (~715px) y abajo de eso el contenido se recortaba sin forma de
@@ -113,15 +132,28 @@ export function CalendarToolbar({
 
       <div className="w-3 flex-1" />
 
-      <button
-        type="button"
-        disabled
-        title="Filtros — próximamente"
-        className="inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-lg border-[1.5px] border-line bg-card px-3.5 py-1.5 font-display text-[13px] font-semibold text-fg-muted opacity-60"
-      >
-        <SlidersHorizontal size={14} strokeWidth={1.75} />
-        Filtros
-      </button>
+      {onOpenDrafts && (
+        <button
+          type="button"
+          onClick={onOpenDrafts}
+          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border-[1.5px] border-line bg-card px-3 font-display text-[13px] font-semibold text-fg-secondary transition-colors hover:border-line-focus hover:text-brand"
+        >
+          <FileText size={15} strokeWidth={1.75} />
+          Borradores
+          {draftCount > 0 && (
+            <span className="rounded-full bg-accent-cta px-1.5 font-display text-[10px] font-bold text-accent-cta-fg">
+              {draftCount}
+            </span>
+          )}
+        </button>
+      )}
+
+      <FiltersMenu
+        filters={filters}
+        activeCount={activeFilterCount}
+        folders={folders}
+        onChange={onChangeFilters}
+      />
       <Link
         to="/chats"
         className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 py-2 font-display text-[13px] font-semibold text-primary-fg shadow-sm transition-colors hover:bg-primary-hover"

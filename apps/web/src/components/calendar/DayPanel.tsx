@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import type { CalendarDate } from "@internationalized/date";
 import { useInspector } from "../../lib/floating/use-inspector.js";
 import { sheetRight } from "../../lib/motion.js";
+import { BottomSheet } from "./BottomSheet.js";
 import type { CalendarEntry } from "../../lib/calendar/group.js";
 import { formatDayLong, formatRelativeDay } from "../../lib/calendar/tz.js";
 import { DayPanelCard, type DayCardActions } from "./DayPanelCard.js";
@@ -30,6 +31,15 @@ interface DayPanelProps {
   actions: DayCardActions;
   /** Card a la que llegó un deep-link "Ver en calendario" desde Chat. */
   highlightedCardId?: string | null;
+  /**
+   * Abajo de 768px el panel deja de ser un inspector lateral y pasa a ser
+   * una hoja inferior MODAL, con backdrop y trampa de foco. No es una
+   * variante estética: en desktop el panel no bloquea porque la grilla al
+   * lado sigue siendo útil; en un teléfono el panel ocupa la pantalla, así
+   * que fingir que el fondo está vivo sería mentir. Mismo trato que el
+   * bottom-sheet del ScheduleDrawer (ADR-014).
+   */
+  asSheet?: boolean;
   onClose: () => void;
   onCreate: () => void;
 }
@@ -41,10 +51,15 @@ export function DayPanel({
   timeZone,
   actions,
   highlightedCardId,
+  asSheet = false,
   onClose,
   onCreate,
 }: DayPanelProps) {
   const { refs, getFloatingProps } = useInspector({
+    // Apagado en la variante hoja: ahí el dismiss lo pone BottomSheet, y un
+    // useDismiss sin floating element montado toma cualquier mousedown como
+    // click de afuera.
+    enabled: !asSheet,
     onClose,
     ignoreOutsidePress: (target) =>
       target.closest('[role="grid"], [data-schedule-drawer], [data-toast-viewport]') !== null,
@@ -66,18 +81,8 @@ export function DayPanel({
     .flatMap((entry) => entry.cards)
     .filter((card) => card.status === "published").length;
 
-  return (
-    <motion.aside
-      ref={refs.setFloating}
-      {...getFloatingProps()}
-      variants={sheetRight}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-      role="region"
-      aria-label={`Publicaciones del ${formatDayLong(day)}`}
-      className="absolute inset-y-0 right-0 z-20 flex w-[420px] max-w-full flex-col border-l border-line bg-card shadow-xl"
-    >
+  const body = (
+    <>
       <div className="shrink-0 border-b border-line px-5 pt-4 pb-3">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
@@ -157,6 +162,30 @@ export function DayPanel({
           </p>
         </div>
       )}
+    </>
+  );
+
+  if (asSheet) {
+    return (
+      <BottomSheet label={`Publicaciones del ${formatDayLong(day)}`} onClose={onClose}>
+        {body}
+      </BottomSheet>
+    );
+  }
+
+  return (
+    <motion.aside
+      ref={refs.setFloating}
+      {...getFloatingProps()}
+      variants={sheetRight}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      role="region"
+      aria-label={`Publicaciones del ${formatDayLong(day)}`}
+      className="absolute inset-y-0 right-0 z-20 flex w-[420px] max-w-full flex-col border-l border-line bg-card shadow-xl"
+    >
+      {body}
     </motion.aside>
   );
 }

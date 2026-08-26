@@ -37,6 +37,18 @@
 
 **Regla práctica:** antes de usar un modificador de opacidad sobre cualquier color que no sea un color crudo de Tailwind (`white`, `black`) o de la capa 1 declarada directo en `@theme` con un hex literal (`pink-orchid`, `blush-pop`, etc. — aun así, **verificado que tampoco funciona** para esos: ver arriba), da por hecho que no va a compilar y define el token específico. Verificar generación real: `grep "nombre-clase" dist/assets/index-*.css` tras un build — si no aparece, no se generó.
 
+## Texto sobre el acento: `--color-accent-cta-fg` (F7 PR5)
+
+`--interactive-accent` (Blush Pop) es de los pocos tokens que **no** se invierten en oscuro: el acento es el mismo rosa en los dos temas. `--fg-brand`, en cambio, sí voltea. Poner `text-brand` sobre `bg-accent-cta` funciona en claro (plum sobre rosa) y se rompe en oscuro (lavanda clara sobre rosa, 1.3:1 — el número del badge de borradores era invisible, F7 PR5).
+
+Por eso el par tiene su propio foreground:
+
+| Token                   | Claro      | Oscuro     | Para qué                           |
+| ----------------------- | ---------- | ---------- | ---------------------------------- |
+| `--color-accent-cta-fg` | `plum-800` | `plum-800` | Texto/íconos sobre `bg-accent-cta` |
+
+Regla general que deja: **un fondo que no invierte necesita un foreground que tampoco invierta**. Si el fondo es constante entre temas, su texto no puede salir de la familia `--fg-*`.
+
 ## Trampa hermana: valores de `@theme` que Tailwind inlinea (sombras)
 
 Misma familia que la de arriba, distinto mecanismo, encontrada en el code review de F6.5.

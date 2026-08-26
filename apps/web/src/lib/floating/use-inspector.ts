@@ -14,8 +14,18 @@ import { useDismiss, useFloating, useInteractions } from "@floating-ui/react";
 export function useInspector({
   onClose,
   ignoreOutsidePress,
+  enabled = true,
 }: {
   onClose: () => void;
+  /**
+   * `false` deja el hook montado pero inerte. Existe por las reglas de los
+   * hooks: el panel del día abajo de 768px se renderiza como hoja modal
+   * —que trae su propio dismiss— pero no puede *dejar de llamar* a este
+   * hook. Sin apagarlo, useDismiss se queda con un floating element que
+   * nunca se montó y trata CUALQUIER mousedown como click de afuera: tocar
+   * una card adentro de la hoja la cerraba antes de que llegara el click.
+   */
+  enabled?: boolean;
   /**
    * Zonas cuyo click NO cierra el panel. Dos casos reales: clickear otro día
    * de la grilla debe CAMBIAR de día (sin esto el mousedown cierra y el
@@ -28,7 +38,7 @@ export function useInspector({
   ignoreOutsidePress?: (target: Element) => boolean;
 }) {
   const { refs, context } = useFloating({
-    open: true,
+    open: enabled,
     onOpenChange: (open) => {
       if (!open) onClose();
     },
@@ -36,6 +46,7 @@ export function useInspector({
 
   const { getFloatingProps } = useInteractions([
     useDismiss(context, {
+      enabled,
       // Escape lo decide QUIEN monta el panel, no esta primitiva. useDismiss
       // pone su listener en `document`, igual que el del Modal, y
       // stopPropagation entre hermanos del mismo nodo no sirve: con un
