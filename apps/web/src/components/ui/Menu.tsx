@@ -114,6 +114,8 @@ function MenuItem({
   disabled,
   className,
   title,
+  checked,
+  keepOpen,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -124,6 +126,14 @@ function MenuItem({
   disabled?: boolean;
   className?: string;
   title?: string;
+  /**
+   * Convierte el item en `menuitemcheckbox`. Los filtros del Calendario son
+   * casillas: marcar una no es "elegir y salir", y el menú tiene que seguir
+   * abierto para marcar la siguiente y ver la grilla cambiar detrás.
+   */
+  checked?: boolean;
+  /** No cerrar el menú al activar. Implícito cuando hay `checked`. */
+  keepOpen?: boolean;
 }) {
   const { listRef, activeIndex, setActiveIndex, getItemProps, setOpen } = useMenuContext();
   const indexRef = useRef(-1);
@@ -145,8 +155,12 @@ function MenuItem({
     [listRef],
   );
 
+  const isCheckbox = checked !== undefined;
+  const staysOpen = keepOpen ?? isCheckbox;
+
   const sharedProps = {
-    role: "menuitem" as const,
+    role: isCheckbox ? ("menuitemcheckbox" as const) : ("menuitem" as const),
+    "aria-checked": isCheckbox ? checked : undefined,
     title,
     tabIndex: activeIndex === index ? 0 : -1,
     "data-active": activeIndex === index ? "" : undefined,
@@ -155,7 +169,7 @@ function MenuItem({
       onClick: () => {
         if (disabled) return;
         onClick?.();
-        setOpen(false);
+        if (!staysOpen) setOpen(false);
       },
       onFocus: () => setActiveIndex(index),
     }),

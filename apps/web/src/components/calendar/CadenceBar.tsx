@@ -22,6 +22,7 @@ export function CadenceBar({
   weekOf,
   today,
   timeZone,
+  filtered = false,
 }: {
   cards: PublicationCardDto[];
   /**
@@ -34,6 +35,13 @@ export function CadenceBar({
   weekOf: CalendarDate;
   today: CalendarDate;
   timeZone: string;
+  /**
+   * Hay filtros activos. Los conteos son siempre de lo que se ve —si no,
+   * dirían una cosa y la grilla otra— pero el mensaje de "no hay nada"
+   * tiene que decir la verdad: con un filtro puesto, vacío no significa
+   * "no programaste nada", significa "nada pasó el filtro".
+   */
+  filtered?: boolean;
 }) {
   const start = weekStart(weekOf);
   const end = start.add({ days: 6 });
@@ -60,7 +68,9 @@ export function CadenceBar({
       </span>
       {counts.size === 0 ? (
         <span className="shrink-0 text-[11px] text-fg-muted">
-          Nada programado para {isCurrentWeek ? "esta semana" : "esa semana"}.
+          {filtered
+            ? `Nada coincide con los filtros ${isCurrentWeek ? "esta semana" : "esa semana"}.`
+            : `Nada programado para ${isCurrentWeek ? "esta semana" : "esa semana"}.`}
         </span>
       ) : (
         [...counts.entries()].map(([network, count]) => {
@@ -78,7 +88,10 @@ export function CadenceBar({
           );
         })
       )}
-      <span className="shrink-0 text-[11px] text-fg-muted">· {label}</span>
+      {/* El sufijo solo acompaña a los conteos: el mensaje de vacío ya
+          nombra la semana, y ponerlo igual daba "Nada programado para esta
+          semana. · esta semana". */}
+      {counts.size > 0 && <span className="shrink-0 text-[11px] text-fg-muted">· {label}</span>}
     </div>
   );
 }

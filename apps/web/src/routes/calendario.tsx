@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { AnimatePresence } from "motion/react";
 import {
@@ -14,6 +14,14 @@ import { ConflictDialog } from "../components/calendar/ConflictDialog.js";
 import { DragGhost } from "../components/calendar/DragGhost.js";
 import { DayTimeline } from "../components/calendar/DayTimeline.js";
 import { DraftsPanel } from "../components/calendar/DraftsPanel.js";
+import {
+  CalendarSkeleton,
+  EmptyByFiltersState,
+  EmptyPeriodState,
+  FirstTimeState,
+  DisconnectedChannelsBanner,
+  OfflineBanner,
+} from "../components/calendar/CalendarStates.js";
 import { CalendarToolbar } from "../components/calendar/CalendarToolbar.js";
 import { CardModal } from "../components/calendar/CardModal.js";
 import { DayPanel } from "../components/calendar/DayPanel.js";
@@ -21,7 +29,8 @@ import type { DayCardActions } from "../components/calendar/DayPanelCard.js";
 import { MonthGrid } from "../components/calendar/MonthGrid.js";
 import { WeekGrid } from "../components/calendar/WeekGrid.js";
 import { ApiError } from "../lib/api.js";
-import { cancelCardSchedule, rescheduleCard } from "../lib/cards-api.js";
+import { type CalendarFilters, cancelCardSchedule, rescheduleCard } from "../lib/cards-api.js";
+import { filterDrafts, parseFilters, writeFilters } from "../lib/calendar/filters.js";
 import { groupByDay } from "../lib/calendar/group.js";
 import {
   conflictDays as conflictDaysOf,
@@ -43,8 +52,11 @@ import {
 } from "../lib/calendar/tz.js";
 import { useTimezone } from "../lib/calendar/use-timezone.js";
 import { parseView, type CalendarView } from "../lib/calendar/view.js";
+import { useChannels } from "../lib/use-channels.js";
 import { useMediaQuery } from "../lib/use-media-query.js";
 import { useCalendarStore } from "../stores/calendar-store.js";
+import { useFoldersStore } from "../stores/folders-store.js";
+import { useChatsStore } from "../stores/chats-store.js";
 import { useScheduleDrawerStore } from "../stores/schedule-drawer-store.js";
 import { useToastStore } from "../stores/toast-store.js";
 
@@ -61,6 +73,10 @@ export function CalendarioPage() {
   const [params, setParams] = useSearchParams();
 
   const view = parseView(params.get("v"));
+  const { activeCount, ...filters } = parseFilters(params);
+  // Clave estable de los filtros: el objeto es nuevo en cada render y las
+  // dependencias de efecto lo compararían por referencia, recargando en bucle.
+  const filtersKey = `${filters.status?.join(",") ?? ""}|${filters.network?.join(",") ?? ""}|${filters.folderId ?? ""}`;
 
   // Los CalendarDate son inmutables pero NO estables: cada render produce un
   // objeto nuevo, así que cualquier useMemo o dependencia de efecto que los
@@ -93,14 +109,34 @@ export function CalendarioPage() {
   const { cards, drafts, loading, error, load, loadDrafts, upsert } = useCalendarStore();
   const navigate = useNavigate();
   const openDrawer = useScheduleDrawerStore((s) => s.open);
+  const { disconnectedChannels, refreshDisconnected } = useChannels();
+  // Solo para distinguir "cuenta nueva" de "periodo vacío" (ver emptyState).
+  // El sidebar ya lo carga en cada pantalla autenticada, así que acá no se
+  // pide nada: se lee el store que ya existe.
+  const chats = useChatsStore((state) => state.chats);
+
+  // El fetch de desconectadas es perezoso en useChannels (no se pide en cada
+  // montaje). El Calendario sí lo necesita: es donde se ve lo que está por
+  // publicarse.
+  useEffect(() => {
+    refreshDisconnected();
+  }, [refreshDisconnected]);
   const toast = useToastStore((s) => s.show);
 
   // Qué está abierto encima de la grilla. El día seleccionado NO es lo mismo
   // que el día enfocado: el foco lo mueven las flechas sin abrir nada, y el
   // panel solo aparece al elegir un día a propósito (click o Enter).
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // Abajo de 768px la bandeja de borradores se abre como hoja desde la
+  // toolbar en vez de vivir como columna (ver DraftsPanel).
+  const [draftsSheetOpen, setDraftsSheetOpen] = useState(false);
   const [modalCardIds, setModalCardIds] = useState<string[] | null>(null);
-  const [draftsCollapsed, setDraftsCollapsed] = useState(false);
+  // Igual que el sidebar del shell (sidebar-store.ts): lo que se guarda es
+  // la decisión del usuario, no el estado efectivo. `null` = "no elegí" →
+  // manda el viewport, y entre 768 y 1023px la bandeja arranca como rail:
+  // con 300px fijos las celdas del mes bajan de ~66px de ancho y las pills
+  // dejan de leerse.
+  const [userDraftsCollapsed, setUserDraftsCollapsed] = useState<boolean | null>(null);
   const [flashDay, setFlashDay] = useState<string | null>(null);
   // Solo el instante, no el día: en semana el destino sale del punto exacto
   // donde se soltó, y el día de aterrizaje se deriva de la SUGERENCIA (+30
@@ -159,8 +195,11 @@ export function CalendarioPage() {
   );
 
   useEffect(() => {
-    void load(range.from, range.to);
-  }, [load, range.from, range.to]);
+    void load(range.from, range.to, filters);
+    // Depende de filtersKey y no de `filters`: el objeto es nuevo en cada
+    // render y compararlo por referencia recargaría en bucle. La clave cambia
+    // exactamente cuando cambia algún filtro.
+  }, [load, range.from, range.to, filtersKey]);
 
   // Los borradores no dependen del rango visible (no tienen fecha), así que
   // se piden una sola vez al entrar y se refrescan cuando uno cruza a
@@ -170,6 +209,28 @@ export function CalendarioPage() {
   }, [loadDrafts]);
 
   const entriesByDay = useMemo(() => groupByDay(cards, timeZone), [cards, timeZone]);
+
+  // Redes con posts programados en el periodo visible pero sin cuenta activa
+  // en Configuración. Se calcula contra las cuentas activas (GET /channels ya
+  // excluye las desconectadas) y no contra la lista de desconectadas: una red
+  // que nunca se conectó falla igual de feo cuando llegue la hora, y ese caso
+  // no aparecería en /channels/disconnected.
+  // Se pregunta por las CUENTAS desconectadas y no por las cards del rango:
+  // `cards` viene filtrado del servidor, así que marcar el filtro "Borrador"
+  // —o entrar por un link ya filtrado— hacía desaparecer el aviso aunque el
+  // problema siguiera igual de roto. Además una red que nunca se conectó no
+  // puede tener nada programado (programar exige `social_account_id`), así
+  // que la lista de desconectadas es la pregunta correcta y completa.
+  const disconnectedNetworks = useMemo(
+    () => [...new Set((disconnectedChannels ?? []).map((account) => account.network))],
+    [disconnectedChannels],
+  );
+
+  // Los borradores se filtran en el cliente: no tienen fecha, así que el
+  // endpoint de rango no los devuelve, y son pocos por definición. El filtro
+  // de carpeta no aplica —el DTO trae el chat, no la carpeta— y se ignora en
+  // vez de vaciar la bandeja en falso.
+  const visibleDrafts = useMemo(() => filterDrafts(drafts, filters), [drafts, filtersKey]);
 
   const selectedDay = useMemo(() => parseDayParam(selectedKey), [selectedKey]);
   // Las cards del modal se releen del store por id en cada render, no se
@@ -181,8 +242,20 @@ export function CalendarioPage() {
   );
 
   const reload = useCallback(async () => {
-    await Promise.all([load(range.from, range.to), loadDrafts()]);
-  }, [load, loadDrafts, range.from, range.to]);
+    await Promise.all([load(range.from, range.to, filters), loadDrafts()]);
+  }, [load, loadDrafts, range.from, range.to, filtersKey]);
+
+  // Sin `replace`: cada cambio de filtro empuja una entrada de historial,
+  // que es lo que hace que el back del navegador deshaga UN filtro en vez de
+  // sacarte del módulo. Es la única parte del estado de la URL que se
+  // comporta así — vista y día se reemplazan, porque ahí el back tiene que
+  // devolverte a la pantalla anterior, no a la celda anterior.
+  const setFilters = useCallback(
+    (next: CalendarFilters) => {
+      setParams((previous) => writeFilters(new URLSearchParams(previous), next));
+    },
+    [setParams],
+  );
 
   // ── Arrastrar para reprogramar ─────────────────────────────────────
   const conflictDays = useMemo(() => conflictDaysOf(cards, timeZone), [cards, timeZone]);
@@ -290,6 +363,50 @@ export function CalendarioPage() {
   // cualquier deslizamiento vertical se interpretaría como arrastre. La
   // alternativa en táctil es el menú ⋮ → Reprogramar, que ya existe.
   const canDrag = useMediaQuery("(pointer: fine)");
+  // Abajo de 768px: celdas con puntos en vez de píldoras, panel del día como
+  // hoja inferior modal y bandeja de borradores oculta (sin arrastre no tiene
+  // para qué ocupar ancho — los borradores siguen alcanzables desde Chat).
+  const isMobile = !useMediaQuery("(min-width: 768px)");
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const draftsCollapsed = userDraftsCollapsed ?? !isDesktop;
+
+  const folders = useFoldersStore((state) => state.folders);
+  const refreshFolders = useFoldersStore((state) => state.refresh);
+  useEffect(() => {
+    if (folders === null) void refreshFolders();
+  }, [folders, refreshFolders]);
+
+  // Solo la PRIMERA carga muestra esqueleto. Al cambiar de mes la grilla
+  // conserva lo anterior (calendar-store no lo limpia), que se lee mejor que
+  // parpadear a vacío y volver.
+  //
+  // Hace falta el ref: el store arranca en `loading: false`, así que un
+  // efecto que solo mire `!loading` marca "ya cargó" en el primer render,
+  // antes de que exista una respuesta — el esqueleto quedaba muerto y la
+  // primera carga mostraba la grilla vacía. Solo cuenta un ciclo completo:
+  // se vio `loading: true` y después volvió a `false`.
+  const [everLoaded, setEverLoaded] = useState(false);
+  const loadStartedRef = useRef(false);
+  useEffect(() => {
+    if (loading) loadStartedRef.current = true;
+    else if (loadStartedRef.current) setEverLoaded(true);
+  }, [loading]);
+
+  // navigator.onLine miente hacia el lado optimista (un wifi sin salida sigue
+  // diciendo true), así que sirve para avisar cuando SÍ está caído, no para
+  // garantizar lo contrario. Con eso alcanza: el aviso es informativo.
+  const [offline, setOffline] = useState(
+    () => typeof navigator !== "undefined" && !navigator.onLine,
+  );
+  useEffect(() => {
+    const update = () => setOffline(!navigator.onLine);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
 
   const { drag, startDrag, ghostRef, justDragged } = useDragSchedule({
     isBlocked: (card, key, offsetY) => verdictOf(card, key, offsetY) === "past",
@@ -386,6 +503,28 @@ export function CalendarioPage() {
     }),
     [cards, navigate, openDrawer, reload, toast],
   );
+
+  /**
+   * Qué aviso va sobre la grilla cuando no hay nada que mostrar. El orden
+   * importa: primero se descarta que sea culpa de los filtros (tiene arreglo
+   * de un click), después que la cuenta esté vacía de verdad, y recién al
+   * final el caso aburrido de un periodo sin nada.
+   */
+  const emptyState = useMemo(() => {
+    if (loading || cards.length > 0) return null;
+    if (activeCount > 0) return <EmptyByFiltersState onClear={() => setFilters({})} />;
+    // "Primera vez" es una afirmación sobre la CUENTA, no sobre el periodo
+    // que se está mirando: `cards` es solo el rango visible, así que un
+    // usuario con meses de historial que avanza tres meses vería el
+    // onboarding. La señal de cuenta son los chats — toda publicación nace
+    // en Chat, así que cero chats es cero publicaciones posibles. Mientras
+    // no hayan cargado (`null`) se muestra el estado de periodo, que nunca
+    // miente.
+    const cuentaVacia = chats !== null && chats.length === 0 && drafts.length === 0;
+    if (cuentaVacia) return <FirstTimeState />;
+    const period = view === "mes" ? "este mes" : view === "semana" ? "esta semana" : "este día";
+    return <EmptyPeriodState period={period} />;
+  }, [activeCount, cards.length, chats, drafts.length, loading, setFilters, view]);
 
   const startDragCard = useCallback(
     (event: React.PointerEvent, cardId: string) => {
@@ -498,7 +637,18 @@ export function CalendarioPage() {
         onPrev={() => setFocusedDay(stepPeriod(view, focusedDay, month, -1))}
         onNext={() => setFocusedDay(stepPeriod(view, focusedDay, month, 1))}
         onToday={() => setFocusedDay(today)}
+        filters={filters}
+        activeFilterCount={activeCount}
+        folders={folders ?? []}
+        onChangeFilters={setFilters}
+        onOpenDrafts={isMobile ? () => setDraftsSheetOpen(true) : undefined}
+        draftCount={visibleDrafts.length}
       />
+
+      {offline && <OfflineBanner />}
+      {disconnectedNetworks.length > 0 && (
+        <DisconnectedChannelsBanner networks={disconnectedNetworks} />
+      )}
 
       {error && (
         <p role="alert" className="shrink-0 bg-error-bg px-5 py-2 text-[13px] text-error">
@@ -518,18 +668,26 @@ export function CalendarioPage() {
           weekOf={view === "mes" ? (todayIsVisible ? today : month) : focusedDay}
           today={today}
           timeZone={timeZone}
+          filtered={activeCount > 0}
         />
       )}
 
-      {view === "mes" ? (
-        <div className="flex min-h-0 flex-1">
-          <DraftsPanel
-            drafts={drafts}
-            collapsed={draftsCollapsed}
-            onToggle={() => setDraftsCollapsed((value) => !value)}
-            onStartDrag={canDrag ? startDrag : undefined}
-            draggingId={drag?.card.id ?? null}
-          />
+      {!everLoaded && loading ? (
+        <CalendarSkeleton />
+      ) : view === "mes" ? (
+        <div className="relative flex min-h-0 flex-1">
+          {/* En mobile la bandeja no vive acá: no hay ancho para una columna
+              fija ni gesto de arrastre. Se abre como hoja desde la toolbar,
+              con un botón "Programar" por borrador. */}
+          {!isMobile && (
+            <DraftsPanel
+              drafts={visibleDrafts}
+              collapsed={draftsCollapsed}
+              onToggle={() => setUserDraftsCollapsed(!draftsCollapsed)}
+              onStartDrag={canDrag ? startDrag : undefined}
+              draggingId={drag?.card.id ?? null}
+            />
+          )}
           <MonthGrid
             month={month}
             today={today}
@@ -540,24 +698,28 @@ export function CalendarioPage() {
             conflictDays={conflictDays}
             flashDay={flashDay}
             draggingCardId={drag?.card.id ?? null}
-            onStartDragCard={canDrag ? startDragCard : undefined}
+            onStartDragCard={canDrag && !isMobile ? startDragCard : undefined}
             onOpenCard={openCard}
+            compact={isMobile}
             onFocusDay={setFocusedDay}
             onSelectDay={(day) => {
               setFocusedDay(day);
               setSelectedKey(dayKey(day));
             }}
           />
+          {emptyState}
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1">
-          <DraftsPanel
-            drafts={drafts}
-            collapsed={draftsCollapsed}
-            onToggle={() => setDraftsCollapsed((value) => !value)}
-            onStartDrag={canDrag ? startDrag : undefined}
-            draggingId={drag?.card.id ?? null}
-          />
+        <div className="relative flex min-h-0 flex-1">
+          {!isMobile && (
+            <DraftsPanel
+              drafts={visibleDrafts}
+              collapsed={draftsCollapsed}
+              onToggle={() => setUserDraftsCollapsed(!draftsCollapsed)}
+              onStartDrag={canDrag ? startDrag : undefined}
+              draggingId={drag?.card.id ?? null}
+            />
+          )}
           {view === "semana" ? (
             <WeekGrid
               anchor={focusedDay}
@@ -587,10 +749,26 @@ export function CalendarioPage() {
               onOpenCard={openCard}
             />
           )}
+          {emptyState}
         </div>
       )}
 
       <AnimatePresence>
+        {isMobile && draftsSheetOpen && (
+          <DraftsPanel
+            key="drafts-sheet"
+            drafts={visibleDrafts}
+            collapsed={false}
+            asSheet
+            onToggle={() => setDraftsSheetOpen(false)}
+            onSchedule={(card) => {
+              setDraftsSheetOpen(false);
+              openDrawer([card], { presetDate: null, onDone: () => void reload() });
+            }}
+            draggingId={null}
+          />
+        )}
+
         {selectedDay && (
           <DayPanel
             key={selectedKey}
@@ -600,6 +778,7 @@ export function CalendarioPage() {
             timeZone={timeZone}
             actions={actions}
             highlightedCardId={highlightedCardId}
+            asSheet={isMobile}
             onClose={() => setSelectedKey(null)}
             onCreate={() => void navigate(`/chats?fecha=${dayKey(selectedDay)}`)}
           />

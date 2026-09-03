@@ -260,7 +260,7 @@ soltar, aparece un modal pequeño inline cerca del jueves:
 
 > ⚠️ **Conflicto de horario**
 >
-> Ya tenés un post de LinkedIn a las 12:00 este día.
+> Ya tienes un post de LinkedIn a las 12:00 este día.
 >
 > ¿Programar a las 12:30 en su lugar?
 >
@@ -431,7 +431,7 @@ del App Shell.
 - Botón Filtros con contador de filtros activos
 - Botón "+ Crear" prominente
   **Por qué el selector de vista es segmented control:** las
-  tres vistas son mutuamente excluyentes (no podés estar en
+  tres vistas son mutuamente excluyentes (no puedes estar en
   mes y día al mismo tiempo). Segmented control es el patrón
   estándar para esta interacción y comunica claramente que
   hay 3 opciones, no 12.
@@ -536,8 +536,8 @@ número del día, en el espacio vacío entre posts, en el chip
 
 **Por qué click en un post específico abre el modal "Ver"
 en lugar del panel del día:** intención específica vs
-intención general. Si hacés click en un post concreto,
-querés ver ESE post. Si hacés click en la celda, querés ver
+intención general. Si haces click en un post concreto,
+quieres ver ESE post. Si haces click en la celda, quieres ver
 el día. Son dos intenciones distintas y la app las distingue.
 
 ### El panel de detalle del día
@@ -581,7 +581,7 @@ mini-card del panel del día).
 
 **Por qué existe (en lugar de hacer que todo abra "Editar
 en Chat"):** porque inspeccionar un post y editar un post
-son dos intenciones distintas. A veces solo querés revisar
+son dos intenciones distintas. A veces solo quieres revisar
 que el post esté bien sin abrir el chat entero de 15
 mensajes donde lo creaste. El modal "Ver" satisface esa
 intención sin contexto conversacional.
@@ -706,7 +706,7 @@ Esto es problemático por dos razones:
 ### La solución: agrupación visual sin pérdida de atomicidad
 
 Las 3 publicaciones siguen siendo independientes técnicamente
-(podés cancelar solo una, reprogramar solo una, ver solo
+(puedes cancelar solo una, reprogramar solo una, ver solo
 una), pero visualmente se agrupan para comunicar la
 relación.
 
@@ -884,7 +884,7 @@ ya pasado.
 diferencias:
 
 - Botón "+ Crear para este día" desactivado con tooltip
-  _"No podés crear publicaciones en el pasado"_
+  _"No puedes crear publicaciones en el pasado"_
 - Los posts aparecen en estado publicado (con su lenguaje
   visual de border verde + opacidad reducida)
 - Menú contextual reducido: solo "Ver post" y "Ver
@@ -909,7 +909,7 @@ _"Tenés 2 posts de LinkedIn a las 18:00"_.
 **Por qué este diseño:** el conflicto puede aparecer por
 cualquier motivo (creaste dos posts en chats diferentes y
 los programaste a la misma hora sin darte cuenta). La app
-te lo señala para que actúes si querés, pero no te bloquea.
+te lo señala para que actúes si quieres, pero no te bloquea.
 
 ### Programación fallida (durante drag, conflicto, ya
 
@@ -926,8 +926,8 @@ proactiva de hora alternativa.
 
 Discutimos esto a fondo. La vista mes da el sentido de
 **pipeline editorial** mejor que la vista semana. En mes
-ves de un vistazo cómo viene el mes entero. En semana hacés
-zoom-in al detalle operativo. En día hacés zoom-in extremo.
+ves de un vistazo cómo viene el mes entero. En semana haces
+zoom-in al detalle operativo. En día haces zoom-in extremo.
 
 Default mes también facilita la consistencia mental entre
 desktop, tablet y mobile: el usuario aprende UNA vista

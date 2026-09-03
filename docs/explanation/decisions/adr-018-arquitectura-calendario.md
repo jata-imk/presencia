@@ -83,9 +83,46 @@ Eso obligó a que el motor del arrastre reporte **dónde** dentro del destino se
 
 Ver el addendum de [ADR-014](./adr-014-estrategia-de-animacion.md). En resumen: la ruta pone `handle: { ownScroll: true }` y `ProtectedLayout` apaga su contenedor genérico. Declarativo en la ruta, no un contexto nuevo: es información estática de la pantalla, y `useMatches()` ya la propaga.
 
+## Responsive: tres bandas, no dos (F7 PR5)
+
+El módulo tiene tres regiones que compiten por ancho (bandeja de borradores, grilla, panel del día) y no aguantan el mismo trato en todos los tamaños:
+
+| Banda    | Borradores          | Celdas del mes     | Panel del día       | Arrastre |
+| -------- | ------------------- | ------------------ | ------------------- | -------- |
+| ≥1024    | columna de 300px    | píldoras con texto | inspector lateral   | sí       |
+| 768–1023 | rail de 56px        | píldoras con texto | inspector lateral   | sí       |
+| <768     | hoja inferior modal | puntos por estado  | hoja inferior modal | no       |
+
+El corte de 1024 no es cosmético: con la bandeja abierta a 820px las celdas caen a ~66px de ancho y una píldora deja de leerse; como rail suben a ~101px. El estado se maneja igual que el sidebar del shell (`sidebar-store.ts`): lo que se guarda es **la decisión del usuario** (`userDraftsCollapsed: boolean | null`) y `null` significa "manda el viewport" (`userDraftsCollapsed ?? !isDesktop`). Así un colapso explícito sobrevive un resize y el default sigue siendo el correcto para cada banda.
+
+Abajo de 768 el arrastre no existe (no hay puntero fino) y con él se va la única forma de mandar un borrador a una fecha. La reemplaza un botón **"Programar"** por borrador dentro de la hoja, que abre el `ScheduleDrawer` sin fecha precargada — el mismo drawer del drop, sin el gesto.
+
+Las hojas inferiores del módulo comparten `components/calendar/BottomSheet.tsx` (backdrop + `FloatingFocusManager modal` + `lockScroll` + `sheetUp`). Son **modales**, a diferencia del inspector de escritorio: en un teléfono la hoja ocupa la pantalla, así que fingir que el fondo sigue vivo sería mentir. En la banda de 768–1023 conviven un panel del día NO modal y un `ScheduleDrawer` que ya es hoja modal; por eso el drawer marca su raíz con `data-schedule-drawer` en **las dos** ramas — sin esa marca, el primer click adentro del drawer cerraba el panel que lo abrió.
+
+## Los filtros viven en la URL y se aplican en dos lugares distintos
+
+`?carpeta=&red=&estado=` (`lib/calendar/filters.ts`), y a diferencia del resto del estado de la URL se escriben **sin** `replace`: cada cambio empuja una entrada de historial, que es lo que hace que el back deshaga un filtro en vez de sacarte del módulo. Los tres valores se validan antes de pedir —`carpeta` como uuid— porque un valor inventado se iba derecho al endpoint y volvía un 400 que el usuario veía como un banner de error sin causa visible. Red y estado son listas repetibles, carpeta es una sola. La grilla los aplica en el **servidor** (van como query al endpoint de rango) y la bandeja de borradores en el **cliente**: un borrador no tiene `scheduled_at`, así que nunca entra en una consulta por rango, y son pocos por definición. El filtro de carpeta no se aplica a los borradores —el DTO trae el chat, no la carpeta— y se ignora en vez de vaciar la bandeja en falso.
+
+`canceled` no está entre los estados filtrables: cancelar la programación devuelve la card a `draft`, así que un filtro "Cancelado" no encontraría nunca nada.
+
+Detalle de implementación que cuesta caro olvidar: los memos y efectos que dependen de los filtros se anclan a una **clave string** (`filtersKey`), no al objeto. El objeto es nuevo en cada render y compararlo por referencia recarga en bucle (mismo bug que las `CalendarDate` en el PR1).
+
+## Estados especiales
+
+Cuatro tienen dueño claro y uno se decidió acá:
+
+- **Primera vez** (sin posts y sin borradores), **periodo vacío** y **nada coincide con los filtros** son avisos flotantes que NO bloquean la grilla: el usuario tiene que poder seguir explorando y navegando meses.
+- **Sin conexión** y **canal desconectado** van como banda ámbar arriba de la grilla, no como overlay: lo que ya se cargó sigue siendo útil.
+- **Canal desconectado** sale de `GET /api/channels/disconnected` y **no** se cruza con las cards del periodo. Cruzarlo fue el primer intento y estaba mal: `cards` viene filtrado del servidor, así que marcar el filtro "Borrador" —o entrar por un link ya filtrado— hacía desaparecer el aviso con el problema intacto. El cruce tampoco agregaba nada: programar exige `social_account_id`, así que una red sin cuenta no puede tener nada programado. El fetch de desconectadas es perezoso en `use-channels.ts`; el Calendario lo pide explícitamente al montar porque es la pantalla donde eso importa.
+
+El esqueleto se muestra **solo en la primera carga** del módulo (`everLoaded`): al cambiar de mes la grilla conserva lo anterior, que se lee mejor que parpadear a vacío y volver. `everLoaded` exige haber visto un ciclo completo (`loading` en true y de vuelta en false): el store arranca en `loading: false`, así que un efecto que solo mire `!loading` lo marca en el primer render y deja el esqueleto muerto.
+
+"Primera vez" es una afirmación sobre la **cuenta**, no sobre el periodo: se decide con los chats (toda publicación nace en Chat, así que cero chats es cero publicaciones posibles) más cero borradores. Con `cards` —que es solo el rango visible— un usuario con meses de historial que avanzaba tres meses veía el onboarding.
+
 ## Descartado
 
 - **Reutilizar `cards-store.ts`.** Indexa por `chatId` (`byChatId`), que es la pregunta del Chat. La del Calendario cruza chats, incluye cards huérfanas y cambia con los filtros. Compartir store obligaría a inventar una clave que sirva para las dos preguntas.
 - **`date-fns` + `date-fns-tz`.** Más conocida, pero su soporte de zona es un add-on que convierte a `Date` local por dentro: más fácil equivocarse justo en el borde de DST, que es el único motivo por el que se trae una librería de fechas.
+- **Un breakpoint único de 768.** Dejaba la banda de tablet con la bandeja de 300px comiéndose la grilla, o sin bandeja teniendo ancho de sobra. El rail resuelve las dos.
 - **Guardar la preferencia de vista en el perfil.** El usuario que abre un link de semana quiere ver esa semana, no su default. La URL gana.
 - **Grilla de 6 filas fijas.** Rellenar siempre a 6 deja una fila entera de días de otro mes en la mitad de los meses y, con filas `1fr`, le roba alto a los días que sí importan. Se renderizan las semanas que el mes realmente ocupa (5 o 6).

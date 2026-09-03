@@ -541,6 +541,11 @@ function ScheduleDrawerInner({
           role="dialog"
           aria-modal="true"
           aria-labelledby="schedule-drawer-title"
+          // Mismo motivo que en la rama de escritorio: entre 768 y 1023px el
+          // panel del día del Calendario todavía es un inspector (no una
+          // hoja) y el drawer ya es hoja modal — sin esta marca, el primer
+          // click adentro del drawer cerraba el panel que lo abrió.
+          data-schedule-drawer
           tabIndex={-1}
           initial="hidden"
           animate="visible"

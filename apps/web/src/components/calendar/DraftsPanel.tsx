@@ -1,7 +1,8 @@
-import { PanelLeftClose, PanelLeftOpen, Sparkles } from "lucide-react";
+import { CalendarPlus, PanelLeftClose, PanelLeftOpen, Sparkles, X } from "lucide-react";
 import type { PublicationCardDto } from "@presencia/shared";
 import { cardPreviewText } from "../cards/card-text.js";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
+import { BottomSheet } from "./BottomSheet.js";
 
 // Bandeja de borradores (presencia-calendario.md §3): lo que se creó en Chat
 // y todavía no tiene fecha.
@@ -12,22 +13,32 @@ import { NETWORK_META } from "../cards/NetworkLogos.js";
 //
 // Es una región hermana de la grilla, con su propio scroll — permitido por el
 // addendum de ADR-014 ("un eje vertical por región", no por pantalla).
+//
+// Abajo de 768px no hay ancho para una columna fija ni gesto de arrastre, así
+// que la misma lista se sirve como hoja inferior (`asSheet`) que se abre
+// desde la toolbar, y cada borrador gana un botón "Programar" — el arrastre
+// era su única forma de llegar a una fecha.
 
 export function DraftsPanel({
   drafts,
   collapsed,
   onToggle,
   onStartDrag,
+  onSchedule,
   draggingId,
+  asSheet = false,
 }: {
   drafts: PublicationCardDto[];
   collapsed: boolean;
   onToggle: () => void;
   /** Ausente en pantallas táctiles: ahí no hay arrastre (ver calendario.tsx). */
   onStartDrag?: (event: React.PointerEvent, card: PublicationCardDto) => void;
+  /** Solo en la hoja mobile: reemplaza al arrastre para poner fecha. */
+  onSchedule?: (card: PublicationCardDto) => void;
   draggingId: string | null;
+  asSheet?: boolean;
 }) {
-  if (collapsed) {
+  if (collapsed && !asSheet) {
     return (
       <aside className="flex w-14 shrink-0 flex-col items-center gap-3 border-r border-line bg-card py-3">
         <button
@@ -40,7 +51,7 @@ export function DraftsPanel({
           <PanelLeftOpen size={17} strokeWidth={1.75} />
         </button>
         {drafts.length > 0 && (
-          <span className="rounded-full bg-accent-cta px-1.5 py-0.5 font-display text-[10px] font-bold text-brand">
+          <span className="rounded-full bg-accent-cta px-1.5 py-0.5 font-display text-[10px] font-bold text-accent-cta-fg">
             {drafts.length}
           </span>
         )}
@@ -55,8 +66,8 @@ export function DraftsPanel({
     );
   }
 
-  return (
-    <aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-card">
+  const body = (
+    <>
       <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
         <h2 className="flex-1 font-display text-sm font-bold text-fg">
           Borradores <span className="text-accent">({drafts.length})</span>
@@ -64,21 +75,23 @@ export function DraftsPanel({
         <button
           type="button"
           onClick={onToggle}
-          aria-label="Ocultar los borradores"
-          aria-expanded
+          aria-label={asSheet ? "Cerrar los borradores" : "Ocultar los borradores"}
+          aria-expanded={asSheet ? undefined : true}
           className="flex size-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-secondary hover:text-brand"
         >
-          <PanelLeftClose size={16} strokeWidth={1.75} />
+          {asSheet ? (
+            <X size={17} strokeWidth={2} />
+          ) : (
+            <PanelLeftClose size={16} strokeWidth={1.75} />
+          )}
         </button>
       </div>
 
       <p className="flex shrink-0 items-center gap-1.5 px-4 py-2 text-[11px] text-fg-muted">
         <Sparkles size={12} strokeWidth={1.75} className="shrink-0 text-ai" />
-        {drafts.length === 0
-          ? "Creados en Chat, sin fecha programada"
-          : onStartDrag
-            ? "Arrastra uno a un día para programarlo"
-            : "Creados en Chat, sin fecha programada"}
+        {drafts.length > 0 && onStartDrag
+          ? "Arrastra uno a un día para programarlo"
+          : "Creados en Chat, sin fecha programada"}
       </p>
 
       {drafts.length === 0 ? (
@@ -120,11 +133,33 @@ export function DraftsPanel({
                 <p className="line-clamp-2 text-[12px] leading-relaxed text-cal-draft-fg">
                   {cardPreviewText(card.content)}
                 </p>
+                {onSchedule && (
+                  <button
+                    type="button"
+                    onClick={() => onSchedule(card)}
+                    className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg border-[1.5px] border-line bg-card px-3 font-display text-[12px] font-semibold text-fg-secondary transition-colors hover:border-line-focus hover:text-brand"
+                  >
+                    <CalendarPlus size={14} strokeWidth={1.75} />
+                    Programar
+                  </button>
+                )}
               </article>
             );
           })}
         </div>
       )}
-    </aside>
+    </>
+  );
+
+  if (asSheet) {
+    return (
+      <BottomSheet label="Borradores sin fecha" onClose={onToggle}>
+        {body}
+      </BottomSheet>
+    );
+  }
+
+  return (
+    <aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-card">{body}</aside>
   );
 }

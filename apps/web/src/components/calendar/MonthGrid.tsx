@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle } from "lucide-react";
 import { type CalendarDate, isSameMonth } from "@internationalized/date";
-import { capEntries, type EntriesByDay } from "../../lib/calendar/group.js";
+import { capEntries, type CalendarEntry, type EntriesByDay } from "../../lib/calendar/group.js";
 import { monthWeeks } from "../../lib/calendar/grid.js";
 import { dayKey, formatDayLong, formatWeekdayShort, weekStart } from "../../lib/calendar/tz.js";
 import { CalendarEntryPill } from "./CalendarEntryPill.js";
@@ -42,6 +42,13 @@ interface MonthGridProps {
   draggingCardId: string | null;
   /** Ausente en pantallas táctiles: ahí no hay arrastre (ver calendario.tsx). */
   onStartDragCard?: (event: React.PointerEvent, cardId: string) => void;
+  /**
+   * Abajo de 768px las píldoras con texto no entran: la celda pasa a puntos
+   * de color, uno por publicación. Es lo que hace el mockup de mobile, y la
+   * alternativa —píldoras truncadas a dos caracteres— no comunica nada que
+   * el punto no comunique.
+   */
+  compact?: boolean;
   /** Click en un post: abre su vista, no la del día. */
   onOpenCard: (cardId: string) => void;
   onFocusDay: (day: CalendarDate) => void;
@@ -92,6 +99,7 @@ export function MonthGrid({
   draggingCardId,
   onStartDragCard,
   onOpenCard,
+  compact = false,
   onFocusDay,
   onSelectDay,
 }: MonthGridProps) {
@@ -197,7 +205,11 @@ export function MonthGrid({
                     onFocusDay(day);
                     onSelectDay(day);
                   }}
-                  className={`relative flex min-w-0 cursor-pointer flex-col gap-[3px] overflow-hidden border border-r-line border-b-line p-1.5 outline-none nth-[7n]:border-r-0 ${borderClass} ${bgClass} ${todayRing} ${
+                  className={`relative flex min-w-0 cursor-pointer flex-col overflow-hidden border border-r-line border-b-line outline-none nth-[7n]:border-r-0 ${
+                    // 44px es el mínimo táctil; con gap chico y centrado el
+                    // número y los puntos entran sin apretarse.
+                    compact ? "min-h-11 items-center gap-1 p-1" : "gap-[3px] p-1.5"
+                  } ${borderClass} ${bgClass} ${todayRing} ${
                     key === flashDay ? "cal-flash" : ""
                   } ${dropClass} focus-visible:inset-ring-2 focus-visible:inset-ring-line-focus`}
                 >
@@ -219,9 +231,9 @@ export function MonthGrid({
                     </span>
                   )}
                   <span
-                    className={`flex h-[22px] items-center px-0.5 font-display text-[12.5px] font-semibold ${
-                      outside ? "text-fg-muted" : "text-fg"
-                    }`}
+                    className={`flex h-[22px] items-center px-0.5 font-display font-semibold ${
+                      compact ? "text-[12px]" : "text-[12.5px]"
+                    } ${outside ? "text-fg-muted" : "text-fg"}`}
                   >
                     {isToday ? (
                       <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-primary text-primary-fg">
@@ -237,22 +249,28 @@ export function MonthGrid({
                       último que puede desaparecer es justamente el aviso de
                       que hay más. Por eso el chip va fuera del contenedor
                       que recorta, con shrink-0. */}
-                  <div className="flex min-h-0 flex-col gap-[3px] overflow-hidden">
-                    {visible.map((entry) => (
-                      <CalendarEntryPill
-                        key={entry.key}
-                        entry={entry}
-                        timeZone={timeZone}
-                        draggingCardId={draggingCardId}
-                        onStartDragCard={onStartDragCard}
-                        onOpenCard={onOpenCard}
-                      />
-                    ))}
-                  </div>
-                  {hidden > 0 && (
-                    <span className="shrink-0 self-start rounded px-1.5 font-display text-[10.5px] font-semibold text-accent">
-                      +{hidden} más
-                    </span>
+                  {compact ? (
+                    <DayDots entries={entriesByDay.get(key) ?? []} />
+                  ) : (
+                    <>
+                      <div className="flex min-h-0 flex-col gap-[3px] overflow-hidden">
+                        {visible.map((entry) => (
+                          <CalendarEntryPill
+                            key={entry.key}
+                            entry={entry}
+                            timeZone={timeZone}
+                            draggingCardId={draggingCardId}
+                            onStartDragCard={onStartDragCard}
+                            onOpenCard={onOpenCard}
+                          />
+                        ))}
+                      </div>
+                      {hidden > 0 && (
+                        <span className="shrink-0 self-start rounded px-1.5 font-display text-[10.5px] font-semibold text-accent">
+                          +{hidden} más
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               );
@@ -263,3 +281,40 @@ export function MonthGrid({
     </div>
   );
 }
+
+/**
+ * La celda en mobile: un punto por publicación, con el color de su estado.
+ * Hasta cuatro; a partir de ahí, un "+N" chiquito. Sin texto — a este ancho
+ * un título truncado a dos caracteres no dice nada que el punto no diga, y
+ * el mockup de mobile ya lo resolvía así.
+ */
+function DayDots({ entries }: { entries: CalendarEntry[] }) {
+  const cards = entries.flatMap((entry) => entry.cards);
+  const visible = cards.slice(0, 4);
+  const hidden = cards.length - visible.length;
+  if (cards.length === 0) return null;
+
+  return (
+    <span className="flex max-w-[38px] flex-wrap justify-center gap-[3px]">
+      {visible.map((card) => (
+        <span
+          key={card.id}
+          className={`size-1.5 rounded-full ${DOT_TONE[card.status] ?? "bg-ai"}`}
+        />
+      ))}
+      {hidden > 0 && (
+        <span className="font-display text-[8px] leading-[6px] font-bold text-accent">
+          +{hidden}
+        </span>
+      )}
+    </span>
+  );
+}
+
+const DOT_TONE: Record<string, string> = {
+  scheduled: "bg-info",
+  published: "bg-success",
+  draft: "bg-ai",
+  failed: "bg-error",
+  canceled: "bg-fg-muted",
+};
