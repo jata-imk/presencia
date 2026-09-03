@@ -4,6 +4,7 @@ import type { PublicationCardDto } from "@presencia/shared";
 import { PublicationCardView } from "../cards/PublicationCardView.js";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
 import { Modal } from "../ui/Modal.js";
+import { Tooltip } from "../ui/Tooltip.js";
 import type { DayCardActions } from "./DayPanelCard.js";
 
 // Modal "Ver" (presencia-calendario.md §3). Foco temporal sobre UNA
@@ -112,40 +113,45 @@ export function CardModal({
               Reprogramar
             </button>
           )}
-          <button
-            type="button"
-            onClick={act(() => actions.onEditInChat(active))}
-            disabled={active.chatId === null}
-            title={active.chatId === null ? "El chat que la originó ya no existe" : undefined}
-            className={`${FOOTER_BUTTON} border-[1.5px] border-line bg-card text-fg-secondary hover:border-line-focus hover:bg-secondary hover:text-brand disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-line disabled:hover:bg-card disabled:hover:text-fg-secondary`}
+          <Tooltip
+            label={active.chatId === null ? "El chat que la originó ya no existe" : undefined}
           >
-            <MessageSquare size={15} strokeWidth={1.9} />
-            Editar en Chat
-          </button>
+            <button
+              type="button"
+              onClick={act(() => actions.onEditInChat(active))}
+              disabled={active.chatId === null}
+              className={`${FOOTER_BUTTON} border-[1.5px] border-line bg-card text-fg-secondary hover:border-line-focus hover:bg-secondary hover:text-brand disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-line disabled:hover:bg-card disabled:hover:text-fg-secondary`}
+            >
+              <MessageSquare size={15} strokeWidth={1.9} />
+              Editar en Chat
+            </button>
+          </Tooltip>
           {active.status === "published" && (
             <>
-              <button
-                type="button"
-                disabled
-                title="Analíticas llega en una fase posterior"
-                className={`${FOOTER_BUTTON} cursor-not-allowed border-[1.5px] border-line bg-card text-fg-muted opacity-60`}
-              >
-                <BarChart2 size={15} strokeWidth={1.9} />
-                Ver estadísticas
-              </button>
+              <Tooltip label="Analíticas llega en una fase posterior">
+                <button
+                  type="button"
+                  disabled
+                  className={`${FOOTER_BUTTON} cursor-not-allowed border-[1.5px] border-line bg-card text-fg-muted opacity-60`}
+                >
+                  <BarChart2 size={15} strokeWidth={1.9} />
+                  Ver estadísticas
+                </button>
+              </Tooltip>
               {/* Deshabilitado por una razón concreta, no por diseño: F6 no
                   persiste el id del post en la red (reconcileDueCards y
                   markPublished solo guardan publishedAt), así que no hay a
                   dónde llevar al usuario. Deuda de F6. */}
-              <button
-                type="button"
-                disabled
-                title="Todavía no guardamos el enlace al post publicado"
-                className={`${FOOTER_BUTTON} cursor-not-allowed border-[1.5px] border-line bg-card text-fg-muted opacity-60`}
-              >
-                <ExternalLink size={15} strokeWidth={1.9} />
-                Ver en la red
-              </button>
+              <Tooltip label="Todavía no guardamos el enlace al post publicado">
+                <button
+                  type="button"
+                  disabled
+                  className={`${FOOTER_BUTTON} cursor-not-allowed border-[1.5px] border-line bg-card text-fg-muted opacity-60`}
+                >
+                  <ExternalLink size={15} strokeWidth={1.9} />
+                  Ver en la red
+                </button>
+              </Tooltip>
             </>
           )}
           <div className="flex-1" />

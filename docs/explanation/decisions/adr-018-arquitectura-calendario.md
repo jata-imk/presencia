@@ -119,6 +119,14 @@ El esqueleto se muestra **solo en la primera carga** del módulo (`everLoaded`):
 
 "Primera vez" es una afirmación sobre la **cuenta**, no sobre el periodo: se decide con los chats (toda publicación nace en Chat, así que cero chats es cero publicaciones posibles) más cero borradores. Con `cards` —que es solo el rango visible— un usuario con meses de historial que avanzaba tres meses veía el onboarding.
 
+## Correcciones del QA manual (F7.1)
+
+**La semana empieza en domingo.** F7 arrancó en lunes tomando la spec al pie de la letra ("7 columnas, Lun a Dom"), pero esa frase describía una grilla, no una convención regional: el CLDR de es-MX empieza en domingo y es lo que espera un usuario mexicano. `WEEK_START` en `tz.ts` es la única fuente; el resto pasa por `weekStart()`. El único sitio que asumía lunes por su cuenta era el resaltado de fin de semana (columnas 5 y 6 → ahora 0 y 6). Queda una inconsistencia anotada: `components/schedule/date-utils.ts` tiene su propio `startOfWeekMonday`, usado por el `WeekStrip` del drawer, que no lee `WEEK_START`.
+
+**El "+N más" se mide, ya no se asume.** `capEntries` usaba un tope fijo de 3 filas. Como la celda es `overflow-hidden`, en una pantalla más baja que ancha (1680×1050) las píldoras que no cabían se recortaban **sin sumarse al contador**: decía la verdad sobre el cap, no sobre lo que se ve. Ahora `MonthGrid` mide el alto real de una fila con un `ResizeObserver` y calcula el cupo; a 1050px de alto entran 4 y a 600px entra 1, y en los dos casos el número coincide con lo que falta.
+
+**El esqueleto reserva el ancho de la bandeja.** Antes pintaba solo la grilla, así que al resolver la carga aparecía de golpe la columna de 300px y el calendario se encogía. Ahora recibe `withDrafts`/`draftsCollapsed` y la grilla arranca y termina en la misma caja.
+
 ## Descartado
 
 - **Reutilizar `cards-store.ts`.** Indexa por `chatId` (`byChatId`), que es la pregunta del Chat. La del Calendario cruza chats, incluye cards huérfanas y cambia con los filtros. Compartir store obligaría a inventar una clave que sirva para las dos preguntas.

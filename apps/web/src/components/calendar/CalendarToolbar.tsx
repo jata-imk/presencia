@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import type { FolderDto } from "@presencia/shared";
 import type { CalendarFilters } from "../../lib/cards-api.js";
 import { FiltersMenu } from "./FiltersMenu.js";
+import { Tooltip } from "../ui/Tooltip.js";
 import type { CalendarView } from "../../lib/calendar/view.js";
 
 // Toolbar del módulo (presencia-calendario.md §3), de izquierda a derecha:
@@ -74,21 +75,21 @@ export function CalendarToolbar({
         {VIEWS.map((option) => {
           const active = option.value === view;
           return (
-            <button
-              key={option.value}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              title={option.hint}
-              onClick={() => onChangeView(option.value)}
-              className={`shrink-0 rounded-md px-4 py-1.5 font-display text-[13px] transition-colors ${
-                active
-                  ? "bg-card font-semibold text-brand shadow-xs"
-                  : "font-medium text-fg-secondary hover:text-brand"
-              }`}
-            >
-              {option.label}
-            </button>
+            <Tooltip key={option.value} label={option.hint}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => onChangeView(option.value)}
+                className={`shrink-0 rounded-md px-4 py-1.5 font-display text-[13px] transition-colors ${
+                  active
+                    ? "bg-card font-semibold text-brand shadow-xs"
+                    : "font-medium text-fg-secondary hover:text-brand"
+                }`}
+              >
+                {option.label}
+              </button>
+            </Tooltip>
           );
         })}
       </div>
@@ -121,14 +122,15 @@ export function CalendarToolbar({
         </button>
       </div>
 
-      <button
-        type="button"
-        onClick={onToday}
-        title="Ir a hoy (T)"
-        className="shrink-0 rounded-lg border-[1.5px] border-line bg-card px-3.5 py-1.5 font-display text-[13px] font-semibold text-fg-secondary transition-colors hover:border-line-focus hover:bg-secondary hover:text-brand"
-      >
-        Hoy
-      </button>
+      <Tooltip label="Ir a hoy (T)">
+        <button
+          type="button"
+          onClick={onToday}
+          className="shrink-0 rounded-lg border-[1.5px] border-line bg-card px-3.5 py-1.5 font-display text-[13px] font-semibold text-fg-secondary transition-colors hover:border-line-focus hover:bg-secondary hover:text-brand"
+        >
+          Hoy
+        </button>
+      </Tooltip>
 
       <div className="w-3 flex-1" />
 

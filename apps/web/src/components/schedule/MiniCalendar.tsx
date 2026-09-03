@@ -22,7 +22,11 @@ export function MiniCalendar({
   const year = viewMonth.getFullYear();
   const month = viewMonth.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const offset = (new Date(year, month, 1).getDay() + 6) % 7; // 0=lunes
+  // Cuántas celdas vacías van antes del día 1. getDay() ya devuelve
+  // 0=domingo, que es donde arranca la semana (WEEK_START en
+  // lib/calendar/tz.ts): el `+6 % 7` compensaba el arranque en lunes y
+  // ahora correría el mes un día.
+  const offset = new Date(year, month, 1).getDay();
   const today = startOfDay(new Date());
 
   return (

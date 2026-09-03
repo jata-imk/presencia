@@ -673,7 +673,7 @@ export function CalendarioPage() {
       )}
 
       {!everLoaded && loading ? (
-        <CalendarSkeleton />
+        <CalendarSkeleton withDrafts={!isMobile} draftsCollapsed={draftsCollapsed} />
       ) : view === "mes" ? (
         <div className="relative flex min-h-0 flex-1">
           {/* En mobile la bandeja no vive acá: no hay ancho para una columna

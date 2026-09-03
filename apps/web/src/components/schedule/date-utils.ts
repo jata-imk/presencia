@@ -1,7 +1,7 @@
 // Utilidades de fecha compartidas por MiniCalendar/WeekStrip/ScheduleDrawer.
 // Semana empieza en lunes (convención ya usada en el mockup de Claude Design).
 
-export const WEEKDAY_LABELS = ["L", "M", "M", "J", "V", "S", "D"];
+export const WEEKDAY_LABELS = ["D", "L", "M", "M", "J", "V", "S"];
 
 export const MONTH_LABELS = [
   "enero",
@@ -30,10 +30,19 @@ export function startOfDay(date: Date): Date {
   return d;
 }
 
-export function startOfWeekMonday(date: Date): Date {
+/**
+ * Domingo de la semana que contiene a `date`. Alineado con `WEEK_START` del
+ * Calendario (lib/calendar/tz.ts): el usuario programa desde el drawer y
+ * vuelve a la grilla en el mismo flujo, así que ver una tira que empieza en
+ * lunes y un mes que empieza en domingo se lee como un error.
+ *
+ * Sigue con `Date` nativo en vez de @internationalized/date porque todo este
+ * módulo trabaja en hora local del navegador (deuda anotada desde F6); el
+ * único cambio acá es el día en que arranca.
+ */
+export function startOfCalendarWeek(date: Date): Date {
   const d = startOfDay(date);
-  const day = (d.getDay() + 6) % 7;
-  d.setDate(d.getDate() - day);
+  d.setDate(d.getDate() - d.getDay());
   return d;
 }
 

@@ -135,17 +135,44 @@ export function DisconnectedChannelsBanner({ networks }: { networks: SocialNetwo
  * Esqueleto de carga. Solo en la primera carga del módulo: al cambiar de mes
  * la grilla conserva el contenido anterior (calendar-store no lo limpia), que
  * es mejor que parpadear a vacío y volver.
+ *
+ * Reserva el ancho de la bandeja de borradores. Sin eso el esqueleto ocupaba
+ * la pantalla entera y, al resolver la carga, la columna de 300px (o el rail
+ * de 56px) aparecía de golpe y encogía el calendario: un salto que se lee
+ * como un error aunque no lo sea.
  */
-export function CalendarSkeleton() {
+export function CalendarSkeleton({
+  withDrafts,
+  draftsCollapsed,
+}: {
+  withDrafts: boolean;
+  draftsCollapsed: boolean;
+}) {
   return (
-    <div aria-hidden className="grid min-h-0 flex-1 grid-cols-7 grid-rows-5 border-t border-line">
-      {Array.from({ length: 35 }, (_, index) => (
-        <div key={index} className="border-r border-b border-line bg-card p-1.5">
-          <div className="h-[22px] w-6 rounded bg-secondary" />
-          {index % 3 === 0 && <div className="mt-1.5 h-4 rounded-md bg-secondary" />}
-          {index % 5 === 0 && <div className="mt-1 h-4 rounded-md bg-secondary" />}
+    <div aria-hidden className="flex min-h-0 flex-1">
+      {withDrafts && (
+        <div
+          className={`shrink-0 border-r border-line bg-card ${draftsCollapsed ? "w-14" : "w-[300px]"}`}
+        >
+          <div className="mx-4 mt-4 h-4 w-24 rounded bg-secondary" />
+          {!draftsCollapsed && (
+            <div className="mt-4 flex flex-col gap-2 px-3">
+              {Array.from({ length: 3 }, (_, index) => (
+                <div key={index} className="h-16 rounded-xl bg-secondary" />
+              ))}
+            </div>
+          )}
         </div>
-      ))}
+      )}
+      <div className="grid min-h-0 flex-1 grid-cols-7 grid-rows-5 border-t border-line">
+        {Array.from({ length: 35 }, (_, index) => (
+          <div key={index} className="border-r border-b border-line bg-card p-1.5">
+            <div className="h-[22px] w-6 rounded bg-secondary" />
+            {index % 3 === 0 && <div className="mt-1.5 h-4 rounded-md bg-secondary" />}
+            {index % 5 === 0 && <div className="mt-1 h-4 rounded-md bg-secondary" />}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

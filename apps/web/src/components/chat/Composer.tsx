@@ -1,5 +1,6 @@
 import { Mic, Paperclip, Palette, Send, Square } from "lucide-react";
 import { useEffect, useRef, type KeyboardEvent } from "react";
+import { Tooltip } from "../ui/Tooltip.js";
 
 const MAX_HEIGHT_PX = 220;
 
@@ -88,15 +89,16 @@ export function Composer({
               { icon: Mic, label: "Transcribir audio" },
               { icon: Palette, label: "Estilo de respuesta" },
             ].map(({ icon: Icon, label }) => (
-              <button
-                key={label}
-                type="button"
-                disabled
-                title={`${label} — próximamente`}
-                className="flex size-7 items-center justify-center rounded-md text-fg-muted opacity-50"
-              >
-                <Icon size={14} strokeWidth={1.5} />
-              </button>
+              <Tooltip key={label} label={`${label} — próximamente`}>
+                <button
+                  type="button"
+                  disabled
+                  aria-label={label}
+                  className="flex size-7 items-center justify-center rounded-md text-fg-muted opacity-50"
+                >
+                  <Icon size={14} strokeWidth={1.5} />
+                </button>
+              </Tooltip>
             ))}
           </div>
           <div className="flex-1" />

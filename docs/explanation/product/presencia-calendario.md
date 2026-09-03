@@ -353,7 +353,7 @@ Click en el selector de vista, elige **Semana**.
 
 **La vista cambia:**
 
-- 7 columnas (Lun a Dom)
+- 7 columnas (Dom a Sáb)
 - Eje vertical de horas (6:00 a 23:00 visibles)
 - Posts representados como bloques posicionados según su
   hora exacta

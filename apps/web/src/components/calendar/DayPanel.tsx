@@ -8,6 +8,7 @@ import { BottomSheet } from "./BottomSheet.js";
 import type { CalendarEntry } from "../../lib/calendar/group.js";
 import { formatDayLong, formatRelativeDay } from "../../lib/calendar/tz.js";
 import { DayPanelCard, type DayCardActions } from "./DayPanelCard.js";
+import { Tooltip } from "../ui/Tooltip.js";
 
 // Panel de detalle del día. Overlay NO modal y sin backdrop: flota sobre el
 // borde derecho de la grilla con sombra, se cierra con Escape o con un click
@@ -104,20 +105,21 @@ export function DayPanel({
         {/* Siempre visible, tenga el día 0 o 10 publicaciones — no hay regla
             escondida sobre cuándo aparece. En el pasado se deshabilita con el
             motivo a la vista en vez de desaparecer. */}
-        <button
-          type="button"
-          onClick={onCreate}
-          disabled={isPast}
-          title={isPast ? "No puedes crear publicaciones en el pasado" : undefined}
-          className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 font-display text-[13px] font-semibold ${
-            isPast
-              ? "cursor-not-allowed bg-secondary text-fg-muted"
-              : "bg-primary text-primary-fg shadow-sm transition-colors hover:bg-primary-hover"
-          }`}
-        >
-          <Plus size={16} strokeWidth={2.5} />
-          Crear para este día
-        </button>
+        <Tooltip label={isPast ? "No puedes crear publicaciones en el pasado" : undefined}>
+          <button
+            type="button"
+            onClick={onCreate}
+            disabled={isPast}
+            className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 font-display text-[13px] font-semibold ${
+              isPast
+                ? "cursor-not-allowed bg-secondary text-fg-muted"
+                : "bg-primary text-primary-fg shadow-sm transition-colors hover:bg-primary-hover"
+            }`}
+          >
+            <Plus size={16} strokeWidth={2.5} />
+            Crear para este día
+          </button>
+        </Tooltip>
       </div>
 
       {total > 0 ? (

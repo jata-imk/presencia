@@ -1,5 +1,5 @@
 import { AlertTriangle } from "lucide-react";
-import { dateKey, startOfWeekMonday, WEEKDAY_LABELS } from "./date-utils.js";
+import { dateKey, startOfCalendarWeek, WEEKDAY_LABELS } from "./date-utils.js";
 
 // Portado de WeekStrip (Chat Part 3.html). La semana se calcula alrededor
 // de `selectedDate`; los marcadores y el conflicto vienen de datos reales
@@ -15,7 +15,7 @@ export function WeekStrip({
   markers: Record<string, number>;
   hasConflict: boolean;
 }) {
-  const weekStart = startOfWeekMonday(selectedDate);
+  const weekStart = startOfCalendarWeek(selectedDate);
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart);
     d.setDate(d.getDate() + i);
@@ -42,8 +42,12 @@ export function WeekStrip({
                 : "border-line bg-card"
             }`}
           >
+            {/* getDay() ya devuelve 0=domingo, que es el orden en que está
+                WEEKDAY_LABELS desde que la semana arranca en domingo. El
+                `+6 % 7` de antes compensaba el arranque en lunes y ahora
+                desfasaría las letras un día. */}
             <span className="text-[9px] font-bold text-fg-muted">
-              {WEEKDAY_LABELS[(day.getDay() + 6) % 7]}
+              {WEEKDAY_LABELS[day.getDay()]}
             </span>
             <span className={`text-sm font-bold ${active ? "text-brand" : "text-fg"}`}>
               {day.getDate()}
