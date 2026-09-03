@@ -72,6 +72,8 @@ interface SidebarState extends Persisted {
   expandedFolderId: string | null;
   /** `effective` es el estado que se está viendo ahora, no el guardado. */
   toggleCollapsed: (effective: boolean) => void;
+  /** Vuelve al default por viewport sin borrar lo persistido. */
+  clearUserCollapsed: () => void;
   setWidth: (px: number) => void;
   openMobile: () => void;
   closeMobile: () => void;
@@ -82,6 +84,13 @@ export const useSidebarStore = create<SidebarState>((set, get) => ({
   ...readPersisted(),
   mobileOpen: false,
   expandedFolderId: null,
+
+  // Devuelve el mando al viewport. Lo llama Sidebar al cruzar por debajo de
+  // 1024px: la preferencia guardada solo se respeta donde hay ancho para
+  // honrarla, si no una elección hecha en escritorio dejaba el sidebar
+  // abierto en tablet comiéndose la pantalla. No se persiste el null: la
+  // decisión del usuario se conserva para cuando vuelva a haber ancho.
+  clearUserCollapsed: () => set({ userCollapsed: null }),
 
   toggleCollapsed: (effective) => {
     const userCollapsed = !effective;

@@ -27,6 +27,7 @@ export function DraftsPanel({
   onSchedule,
   draggingId,
   asSheet = false,
+  dropTarget,
 }: {
   drafts: PublicationCardDto[];
   collapsed: boolean;
@@ -37,10 +38,29 @@ export function DraftsPanel({
   onSchedule?: (card: PublicationCardDto) => void;
   draggingId: string | null;
   asSheet?: boolean;
+  /**
+   * Hay un arrastre en curso que se puede soltar acá (una publicación
+   * programada volviendo a borrador). Solo cambia el aspecto: el destino lo
+   * detecta el motor del gesto por `data-drop-drafts`.
+   */
+  dropTarget?: "idle" | "over";
 }) {
+  // Marca de destino: punteado cuando hay algo arrastrándose que puede caer
+  // acá, relleno cuando el puntero está encima. Mismo lenguaje que las celdas
+  // de la grilla, para que soltar en un lado o en el otro se lea igual.
+  const dropClass =
+    dropTarget === "over"
+      ? "border-r-2 border-r-ai bg-cal-drop-target"
+      : dropTarget === "idle"
+        ? "border-r-2 border-dashed border-r-ai bg-cal-drop-valid"
+        : "";
+
   if (collapsed && !asSheet) {
     return (
-      <aside className="flex w-14 shrink-0 flex-col items-center gap-3 border-r border-line bg-card py-3">
+      <aside
+        data-drop-drafts
+        className={`flex w-14 shrink-0 flex-col items-center gap-3 border-r border-line bg-card py-3 ${dropClass}`}
+      >
         <button
           type="button"
           onClick={onToggle}
@@ -89,9 +109,11 @@ export function DraftsPanel({
 
       <p className="flex shrink-0 items-center gap-1.5 px-4 py-2 text-[11px] text-fg-muted">
         <Sparkles size={12} strokeWidth={1.75} className="shrink-0 text-ai" />
-        {drafts.length > 0 && onStartDrag
-          ? "Arrastra uno a un día para programarlo"
-          : "Creados en Chat, sin fecha programada"}
+        {dropTarget
+          ? "Suelta acá para devolverlo a borrador"
+          : drafts.length > 0 && onStartDrag
+            ? "Arrastra uno a un día para programarlo"
+            : "Creados en Chat, sin fecha programada"}
       </p>
 
       {drafts.length === 0 ? (
@@ -99,7 +121,7 @@ export function DraftsPanel({
           No tienes borradores sin fecha. Los que crees en Chat y no programes van a aparecer aquí.
         </p>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pt-1 pb-4">
+        <div className="flex min-h-0 flex-1 touch-pan-y flex-col gap-2 overflow-y-auto overscroll-contain px-3 pt-1 pb-4">
           {drafts.map((card) => {
             const meta = NETWORK_META[card.network];
             const lifted = card.id === draggingId;
@@ -160,6 +182,11 @@ export function DraftsPanel({
   }
 
   return (
-    <aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-card">{body}</aside>
+    <aside
+      data-drop-drafts
+      className={`flex w-[300px] shrink-0 flex-col border-r border-line bg-card ${dropClass}`}
+    >
+      {body}
+    </aside>
   );
 }
