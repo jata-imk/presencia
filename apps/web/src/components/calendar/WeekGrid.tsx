@@ -41,8 +41,8 @@ interface WeekGridProps {
   drag: TimelineDrag | null;
   /** Cards que chocan con otra de la misma red a la misma hora exacta. */
   conflictCardIds: Set<string>;
-  draggingCardId: string | null;
-  onStartDragCard?: (event: React.PointerEvent, cardId: string) => void;
+  draggingCardIds: ReadonlySet<string>;
+  onStartDragCard?: (event: React.PointerEvent, cardIds: string[]) => void;
   onOpenCard: (cardId: string) => void;
   onSelectDay: (day: CalendarDate) => void;
 }
@@ -60,7 +60,7 @@ export function WeekGrid({
   timeZone,
   drag,
   conflictCardIds,
-  draggingCardId,
+  draggingCardIds,
   onStartDragCard,
   onOpenCard,
   onSelectDay,
@@ -161,7 +161,7 @@ export function WeekGrid({
                     timeZone={timeZone}
                     compact
                     conflictCardIds={conflictCardIds}
-                    draggingCardId={draggingCardId}
+                    draggingCardIds={draggingCardIds}
                     onStartDragCard={onStartDragCard}
                     onOpenCard={onOpenCard}
                   />

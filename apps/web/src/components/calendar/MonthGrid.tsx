@@ -40,9 +40,9 @@ interface MonthGridProps {
   conflictDays: Set<string>;
   /** Día que acaba de recibir una publicación: destella y se apaga. */
   flashDay: string | null;
-  draggingCardId: string | null;
+  draggingCardIds: ReadonlySet<string>;
   /** Ausente en pantallas táctiles: ahí no hay arrastre (ver calendario.tsx). */
-  onStartDragCard?: (event: React.PointerEvent, cardId: string) => void;
+  onStartDragCard?: (event: React.PointerEvent, cardIds: string[]) => void;
   /**
    * Abajo de 768px las píldoras con texto no entran: la celda pasa a puntos
    * de color, uno por publicación. Es lo que hace el mockup de mobile, y la
@@ -97,7 +97,7 @@ export function MonthGrid({
   drag,
   conflictDays,
   flashDay,
-  draggingCardId,
+  draggingCardIds,
   onStartDragCard,
   onOpenCard,
   compact = false,
@@ -269,7 +269,7 @@ export function MonthGrid({
                             key={entry.key}
                             entry={entry}
                             timeZone={timeZone}
-                            draggingCardId={draggingCardId}
+                            draggingCardIds={draggingCardIds}
                             onStartDragCard={onStartDragCard}
                             onOpenCard={onOpenCard}
                           />

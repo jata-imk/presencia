@@ -29,7 +29,7 @@ export function DayTimeline({
   timeZone,
   drag,
   conflictCardIds,
-  draggingCardId,
+  draggingCardIds,
   onStartDragCard,
   onOpenCard,
 }: {
@@ -39,8 +39,8 @@ export function DayTimeline({
   timeZone: string;
   drag: TimelineDrag | null;
   conflictCardIds: Set<string>;
-  draggingCardId: string | null;
-  onStartDragCard?: (event: React.PointerEvent, cardId: string) => void;
+  draggingCardIds: ReadonlySet<string>;
+  onStartDragCard?: (event: React.PointerEvent, cardIds: string[]) => void;
   onOpenCard: (cardId: string) => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -108,7 +108,7 @@ export function DayTimeline({
                 timeZone={timeZone}
                 compact={false}
                 conflictCardIds={conflictCardIds}
-                draggingCardId={draggingCardId}
+                draggingCardIds={draggingCardIds}
                 onStartDragCard={onStartDragCard}
                 onOpenCard={onOpenCard}
               />

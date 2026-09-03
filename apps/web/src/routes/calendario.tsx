@@ -143,7 +143,9 @@ export function CalendarioPage() {
   // min puede cruzar la medianoche). Guardar el día además sería un dato que
   // nadie lee y que el próximo lector creería autoritativo.
   const [conflict, setConflict] = useState<{
-    card: PublicationCardDto;
+    cards: PublicationCardDto[];
+    /** La red del grupo que choca, que no siempre es la primera. */
+    network: PublicationCardDto["network"];
     at: ZonedDateTime;
   } | null>(null);
 
@@ -286,28 +288,63 @@ export function CalendarioPage() {
   );
 
   /**
-   * Mueve una card a un instante nuevo, optimista. La grilla se actualiza
-   * antes de que responda el servidor: soltar tiene que sentirse instantáneo
-   * o el gesto pierde todo lo que lo hacía valer. Si falla, se revierte y se
-   * dice por qué.
+   * Mueve una o varias cards al mismo instante, optimista. La grilla se
+   * actualiza antes de que responda el servidor: soltar tiene que sentirse
+   * instantáneo o el gesto pierde todo lo que lo hacía valer. Si falla, se
+   * revierte y se dice por qué.
+   *
+   * Recibe una lista porque un grupo multi-red se mueve entero: las N redes
+   * comparten instante y tienen que seguir compartiéndolo en el destino, o el
+   * grupo se rompe (la agrupación es derivada de `groupId` + `scheduledAt`).
+   * Un solo aviso para todas: tres toasts por un gesto son ruido.
    */
-  const moveCard = useCallback(
-    async (card: PublicationCardDto, at: string, landingDay: string) => {
-      if (!card.socialAccountId) {
+  /**
+   * El veredicto del conjunto es el PEOR de sus redes. `past` gana sobre
+   * `conflict` porque bloquea; `conflict` sobre `valid` porque avisa. Con
+   * una sola card es idéntico a `verdictOf`.
+   */
+  const worstVerdict = useCallback(
+    (group: PublicationCardDto[], key: string, offsetY: number) => {
+      const verdicts = group.map((card) => verdictOf(card, key, offsetY));
+      if (verdicts.includes("past")) return "past" as const;
+      if (verdicts.includes("conflict")) return "conflict" as const;
+      return "valid" as const;
+    },
+    [verdictOf],
+  );
+
+  const moveCards = useCallback(
+    async (moving: PublicationCardDto[], at: string, landingDay: string) => {
+      const conCuenta = moving.filter((card) => card.socialAccountId !== null);
+      if (conCuenta.length === 0) {
         toast({ title: "Esta publicación no tiene una cuenta conectada." });
         return;
       }
-      const previous = { socialAccountId: card.socialAccountId, scheduledAt: card.scheduledAt };
-      upsert({ ...card, scheduledAt: at });
+      // Un grupo con alguna red sin cuenta se movería a medias, y como la
+      // agrupación se deriva del instante compartido, se partiría en dos sin
+      // que nada lo explique. Se avisa antes de mover.
+      if (conCuenta.length !== moving.length) {
+        toast({
+          title: "Una red del grupo no tiene cuenta conectada.",
+          description: "Se movieron las demás; esa se queda donde estaba.",
+        });
+      }
+      const previous = conCuenta.map((card) => ({
+        id: card.id,
+        socialAccountId: card.socialAccountId!,
+        scheduledAt: card.scheduledAt,
+        card,
+      }));
+      for (const card of conCuenta) upsert({ ...card, scheduledAt: at });
       setFlashDay(landingDay);
 
       try {
-        upsert(
-          await rescheduleCard(card.id, {
-            socialAccountId: previous.socialAccountId,
-            scheduledAt: at,
-          }),
+        const movidas = await Promise.all(
+          previous.map((p) =>
+            rescheduleCard(p.id, { socialAccountId: p.socialAccountId, scheduledAt: at }),
+          ),
         );
+        for (const card of movidas) upsert(card);
       } catch (error) {
         // Revertir a la copia local NO alcanza. Reprogramar es, del lado del
         // servidor, cancelar el post viejo en el proveedor y crear uno nuevo
@@ -316,40 +353,57 @@ export function CalendarioPage() {
         // `failed` (fallo ambiguo). Escribir de vuelta el scheduledAt viejo
         // dejaría la grilla mostrando una programación que ya no existe.
         // Se revierte igual para que el hueco no dure el viaje de ida y
-        // vuelta, y enseguida se recarga para quedarse con la verdad.
-        upsert({ ...card, ...previous });
+        // vuelta, y enseguida se recarga para quedarse con la verdad. Con un
+        // grupo puede haber movidas y no movidas: la recarga las reconcilia.
+        for (const p of previous) upsert({ ...p.card, scheduledAt: p.scheduledAt });
         setFlashDay(null);
         toast({
           title: error instanceof ApiError ? error.message : "No se pudo mover la publicación.",
-          description: "La publicación no se movió. Revisa su estado.",
+          // Con varias redes, `Promise.all` corta en el primer fallo pero las
+          // otras llamadas siguen vivas y pueden haber funcionado: afirmar
+          // que no se movió nada sería mentir. La recarga de abajo deja la
+          // verdad en pantalla.
+          description:
+            conCuenta.length > 1
+              ? "Puede que algunas redes sí se hayan movido. Revisa su estado."
+              : "La publicación no se movió. Revisa su estado.",
         });
         await reload();
         return;
       }
 
+      const restaurables = previous.filter((p) => p.scheduledAt !== null);
       toast({
         title: `Reprogramado para el ${formatDayLong(parseDate(landingDay)).toLowerCase()}`,
-        description: `A las ${formatTime(zonedFromIso(at, timeZone))}`,
-        onUndo: previous.scheduledAt
-          ? () => {
-              rescheduleCard(card.id, {
-                socialAccountId: previous.socialAccountId,
-                scheduledAt: previous.scheduledAt!,
-              })
-                .then((restored) => {
-                  upsert(restored);
-                })
-                .catch((error: unknown) => {
-                  toast({
-                    title:
-                      error instanceof ApiError
-                        ? error.message
-                        : "No se pudo deshacer — ese horario ya no es válido.",
+        description:
+          conCuenta.length > 1
+            ? `${String(conCuenta.length)} redes a las ${formatTime(zonedFromIso(at, timeZone))}`
+            : `A las ${formatTime(zonedFromIso(at, timeZone))}`,
+        onUndo:
+          restaurables.length > 0
+            ? () => {
+                Promise.all(
+                  restaurables.map((p) =>
+                    rescheduleCard(p.id, {
+                      socialAccountId: p.socialAccountId,
+                      scheduledAt: p.scheduledAt!,
+                    }),
+                  ),
+                )
+                  .then((restored) => {
+                    for (const card of restored) upsert(card);
+                  })
+                  .catch((error: unknown) => {
+                    toast({
+                      title:
+                        error instanceof ApiError
+                          ? error.message
+                          : "No se pudo deshacer — ese horario ya no es válido.",
+                    });
+                    return reload();
                   });
-                  return reload();
-                });
-            }
-          : undefined,
+              }
+            : undefined,
       });
     },
     [reload, timeZone, toast, upsert],
@@ -368,7 +422,13 @@ export function CalendarioPage() {
   // para qué ocupar ancho — los borradores siguen alcanzables desde Chat).
   const isMobile = !useMediaQuery("(min-width: 768px)");
   const isDesktop = useMediaQuery("(min-width: 1024px)");
-  const draftsCollapsed = userDraftsCollapsed ?? !isDesktop;
+  // Abajo de 1024 la bandeja va colapsada SIEMPRE, sin mirar la preferencia:
+  // con 300px fijos las celdas del mes caen a ~66px de ancho y las píldoras
+  // dejan de leerse. La preferencia no se borra —se ignora mientras no haya
+  // ancho— así que al volver a escritorio se aplica otra vez. Un efecto que
+  // la pusiera en `null` la habría perdido de verdad: acá no persiste en
+  // ningún lado, a diferencia del sidebar del shell.
+  const draftsCollapsed = isDesktop ? (userDraftsCollapsed ?? false) : true;
 
   const folders = useFoldersStore((state) => state.folders);
   const refreshFolders = useFoldersStore((state) => state.refresh);
@@ -409,8 +469,20 @@ export function CalendarioPage() {
   }, []);
 
   const { drag, startDrag, ghostRef, justDragged } = useDragSchedule({
-    isBlocked: (card, key, offsetY) => verdictOf(card, key, offsetY) === "past",
-    onDrop: (card, key, offsetY) => {
+    // "past" sí lo decide el líder —todas comparten instante por definición
+    // del grupo— pero el CONFLICTO no: `findConflict` es por red, así que un
+    // grupo de Instagram+LinkedIn que cae sobre un LinkedIn ya programado a
+    // esa hora solo choca en una de sus redes. Ver `worstVerdict`.
+    isBlocked: (dragged, key, offsetY) => worstVerdict(dragged, key, offsetY) === "past",
+    // Soltar sobre la bandeja devuelve a borrador: el camino inverso al de
+    // programar, con la misma confirmación y el mismo Deshacer que el menú.
+    onDropDrafts: (dragged) => {
+      const programadas = dragged.filter((c) => c.scheduledAt !== null);
+      if (programadas.length === 0) return;
+      void cancelMany(programadas, { reload, toast });
+    },
+    onDrop: (dragged, key, offsetY) => {
+      const card = dragged[0]!;
       const day = parseDate(key);
       // Un borrador no trae hora: el Calendario decide el DÍA y el drawer la
       // hora, cada módulo con su responsabilidad (§3). Por eso no se programa
@@ -426,13 +498,14 @@ export function CalendarioPage() {
       if (!card.scheduledAt) {
         const minutes = view === "mes" ? 10 * 60 : minutesFromOffset(offsetY);
         const preset = instantAt(day, minutes, timeZone).toDate();
-        openDrawer([card], { presetDate: preset, onDone: () => void reload() });
+        openDrawer(dragged, { presetDate: preset, onDone: () => void reload() });
         return;
       }
       const target = targetFor(card, key, offsetY);
       if (!target) return;
-      if (verdictOf(card, key, offsetY) === "conflict") {
-        setConflict({ card, at: target });
+      if (worstVerdict(dragged, key, offsetY) === "conflict") {
+        const choca = dragged.find((c) => verdictOf(c, key, offsetY) === "conflict") ?? card;
+        setConflict({ cards: dragged, network: choca.network, at: target });
         return;
       }
       const at = target.toDate().toISOString();
@@ -441,15 +514,27 @@ export function CalendarioPage() {
       // el proveedor y volver a crear (ADR-009)— más un toast de
       // "Reprogramado", por un empujón que no movió nada.
       if (at === card.scheduledAt) return;
-      void moveCard(card, at, key);
+      void moveCards(dragged, at, key);
     },
   });
+
+  const draggingIds = useMemo(() => new Set((drag?.cards ?? []).map((card) => card.id)), [drag]);
+
+  // La bandeja solo se ofrece como destino cuando lo que viaja YA está
+  // programado: arrastrar un borrador hacia ella no significa nada.
+  const draftsDropTarget: "idle" | "over" | undefined = !drag
+    ? undefined
+    : drag.cards.some((card) => card.scheduledAt !== null)
+      ? drag.overDrafts
+        ? "over"
+        : "idle"
+      : undefined;
 
   const dragInfo = useMemo(() => {
     if (!drag) return null;
     const verdictByDay = new Map(
       visibleDays.map(
-        (day) => [dayKey(day), verdictOf(drag.card, dayKey(day), drag.overOffsetY)] as const,
+        (day) => [dayKey(day), worstVerdict(drag.cards, dayKey(day), drag.overOffsetY)] as const,
       ),
     );
     return { overDay: drag.overDay, overOffsetY: drag.overOffsetY, verdictByDay };
@@ -527,9 +612,11 @@ export function CalendarioPage() {
   }, [activeCount, cards.length, chats, drafts.length, loading, setFilters, view]);
 
   const startDragCard = useCallback(
-    (event: React.PointerEvent, cardId: string) => {
-      const card = cards.find((item) => item.id === cardId);
-      if (card) startDrag(event, card);
+    (event: React.PointerEvent, cardIds: string[]) => {
+      const dragged = cardIds
+        .map((id) => cards.find((item) => item.id === id))
+        .filter((card): card is PublicationCardDto => card !== undefined);
+      if (dragged.length > 0) startDrag(event, dragged);
     },
     [cards, startDrag],
   );
@@ -684,8 +771,9 @@ export function CalendarioPage() {
               drafts={visibleDrafts}
               collapsed={draftsCollapsed}
               onToggle={() => setUserDraftsCollapsed(!draftsCollapsed)}
-              onStartDrag={canDrag ? startDrag : undefined}
-              draggingId={drag?.card.id ?? null}
+              onStartDrag={canDrag ? (event, card) => startDrag(event, [card]) : undefined}
+              draggingId={draggingIds.size > 0 ? [...draggingIds][0]! : null}
+              dropTarget={draftsDropTarget}
             />
           )}
           <MonthGrid
@@ -697,7 +785,7 @@ export function CalendarioPage() {
             drag={dragInfo}
             conflictDays={conflictDays}
             flashDay={flashDay}
-            draggingCardId={drag?.card.id ?? null}
+            draggingCardIds={draggingIds}
             onStartDragCard={canDrag && !isMobile ? startDragCard : undefined}
             onOpenCard={openCard}
             compact={isMobile}
@@ -716,8 +804,9 @@ export function CalendarioPage() {
               drafts={visibleDrafts}
               collapsed={draftsCollapsed}
               onToggle={() => setUserDraftsCollapsed(!draftsCollapsed)}
-              onStartDrag={canDrag ? startDrag : undefined}
-              draggingId={drag?.card.id ?? null}
+              onStartDrag={canDrag ? (event, card) => startDrag(event, [card]) : undefined}
+              draggingId={draggingIds.size > 0 ? [...draggingIds][0]! : null}
+              dropTarget={draftsDropTarget}
             />
           )}
           {view === "semana" ? (
@@ -728,7 +817,7 @@ export function CalendarioPage() {
               timeZone={timeZone}
               drag={dragInfo}
               conflictCardIds={conflictCardIds}
-              draggingCardId={drag?.card.id ?? null}
+              draggingCardIds={draggingIds}
               onStartDragCard={canDrag ? startDragCard : undefined}
               onOpenCard={openCard}
               onSelectDay={(day) => {
@@ -744,7 +833,7 @@ export function CalendarioPage() {
               timeZone={timeZone}
               drag={dragInfo}
               conflictCardIds={conflictCardIds}
-              draggingCardId={drag?.card.id ?? null}
+              draggingCardIds={draggingIds}
               onStartDragCard={canDrag ? startDragCard : undefined}
               onOpenCard={openCard}
             />
@@ -791,7 +880,7 @@ export function CalendarioPage() {
 
       {drag && (
         <DragGhost
-          card={drag.card}
+          cards={drag.cards}
           ghostRef={ghostRef}
           timeZone={timeZone}
           blocked={drag.overDay !== null && dragInfo?.verdictByDay.get(drag.overDay) !== "valid"}
@@ -809,18 +898,33 @@ export function CalendarioPage() {
           const landing = dayKey(toCalendarDate(suggestion));
           return (
             <ConflictDialog
-              card={conflict.card}
+              cards={conflict.cards}
+              network={conflict.network}
               target={target}
               suggestion={suggestion}
               onAccept={() => {
-                const card = conflict.card;
+                const moving = conflict.cards;
                 setConflict(null);
-                void moveCard(card, suggestion.toDate().toISOString(), landing);
+                void moveCards(moving, suggestion.toDate().toISOString(), landing);
+              }}
+              // "Programar de todas formas": la spec dice que un conflicto
+              // informa y NUNCA bloquea (§4). Sin esta salida, dejar dos
+              // publicaciones de la misma red a la misma hora —que a veces es
+              // justo lo que se quiere— obligaba a rendirse y repetir la hora
+              // a mano en el drawer.
+              onForce={() => {
+                const moving = conflict.cards;
+                setConflict(null);
+                void moveCards(
+                  moving,
+                  target.toDate().toISOString(),
+                  dayKey(toCalendarDate(target)),
+                );
               }}
               onPickAnother={() => {
-                const card = conflict.card;
+                const moving = conflict.cards;
                 setConflict(null);
-                openDrawer([card], {
+                openDrawer(moving, {
                   presetDate: target.toDate(),
                   onDone: () => void reload(),
                 });

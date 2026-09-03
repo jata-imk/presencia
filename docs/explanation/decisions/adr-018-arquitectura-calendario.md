@@ -138,6 +138,26 @@ El esqueleto se muestra **solo en la primera carga** del módulo (`everLoaded`):
 
 La previsualización en sí sigue variando **por arquetipo** (`visual_first` / `video_script` / `text_first`) y no por red: lo único que cambia entre redes es logo, color y límite de caracteres. Hacerla fiel a cada feed es su propia tarea, anotada en el backlog de Notion — este PR solo le da el marco correcto.
 
+## Interacción, tras el QA manual (F7.1)
+
+**El arrastre es multi-card.** `DragState.cards` es una lista y no una card. Un grupo multi-red se ve como un bloque unido por un borde, así que arrastrar una sola de sus redes lo rompía en silencio — y la agrupación es derivada (`groupId` + `scheduledAt` idéntico), de modo que basta con que una cambie de instante. Ahora el gesto nace del **contenedor** del grupo y viaja con las N redes; el click sigue siendo por fila, que es lo que abre la publicación tocada. El líder (`cards[0]`) manda para el veredicto: todas comparten instante por definición.
+
+**La bandeja de borradores es un destino de drop.** `data-drop-drafts` en el `<aside>`, detectado por el mismo `elementFromPoint` que ya resolvía las celdas. Soltar ahí una publicación programada la devuelve a borrador — el camino inverso al de programar, con la misma confirmación y el mismo Deshacer que "Cancelar programación" del menú. Solo se ofrece como destino cuando lo que viaja ya tiene fecha: arrastrar un borrador hacia la bandeja no significa nada.
+
+**El conflicto se comprueba también al confirmar en el drawer**, y con el criterio duro (misma red, mismo instante exacto), no con la ventana blanda de ±30 minutos que el drawer ya usaba para avisar mientras se elige. Los dos conviven a propósito: el aviso informa durante la edición, el diálogo aparece al confirmar. Es el mismo `ConflictDialog` del arrastre, para que el mismo problema se vea igual sin importar por dónde se llegue.
+
+**"Programar de todas formas"** es la cuarta salida del diálogo, con la jerarquía visual más baja. La spec dice que un conflicto informa y **nunca** bloquea; sin esa salida, quien de verdad quería dos publicaciones de la misma red a la misma hora tenía que rendirse y repetir la hora a mano.
+
+**Los racimos de la vista Semana se miden en píxeles, no en minutos.** `layoutDay` cerraba racimo comparando `minutes >= clusterEnd` con `BLOCK_MINUTES` fijo, pero el bloque declara `minHeight` y crece con su contenido: un grupo de tres redes mide ~66px, o sea más de una hora de eje, e invadía el bloque de la hora siguiente — que, al no "pisarse" según los minutos, se dibujaba a ancho completo y quedaba encimado. Ahora `spanOf(entry)` convierte el alto real a minutos de eje y el reparto de carriles se hace sobre eso.
+
+**Abajo de 1024px manda el ancho, no la preferencia.** Tanto la bandeja (`userDraftsCollapsed`) como el sidebar del shell (`userCollapsed`, que además persiste en `localStorage`) vuelven a `null` al cruzar el breakpoint hacia abajo. La decisión no se borra: se suspende, y al volver a escritorio se aplica de nuevo.
+
+**Táctil.** Tres causas encadenadas, en orden de importancia:
+
+1. La hoja del `ScheduleDrawer` usaba `h-full` en su contenido, y en la rama móvil el contenedor es `max-h-[85vh]` sin altura definida — `h-full` no aplica, el contenido crecía por contenido y el `overflow-hidden` de la hoja recortaba el pie. Los botones de confirmar quedaban **fuera de la pantalla** (medido: y=927 con viewport de 844) y el cuerpo tampoco desplazaba, porque nada lo obligaba a desbordar. `min-h-0 flex-1` junto al `h-full` arregla las dos ramas.
+2. Esa misma rama no usaba `FloatingOverlay lockScroll`, a diferencia de `Modal` y `BottomSheet`: el documento de atrás seguía siendo la zona de scroll.
+3. Los contenedores desplazables no declaraban `touch-action: pan-y` ni `overscroll-behavior: contain`, así que el gesto se encadenaba al padre.
+
 ## Descartado
 
 - **Reutilizar `cards-store.ts`.** Indexa por `chatId` (`byChatId`), que es la pregunta del Chat. La del Calendario cruza chats, incluye cards huérfanas y cambia con los filtros. Compartir store obligaría a inventar una clave que sirva para las dos preguntas.

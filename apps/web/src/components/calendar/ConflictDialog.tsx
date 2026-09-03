@@ -22,21 +22,33 @@ import { toCalendarDate } from "@internationalized/date";
 // con todas las letras.
 
 export function ConflictDialog({
-  card,
+  cards,
+  network,
   target,
   suggestion,
   onAccept,
+  onForce,
   onPickAnother,
   onCancel,
 }: {
-  card: PublicationCardDto;
+  /** Lo que se está programando: un grupo multi-red viaja entero. */
+  cards: PublicationCardDto[];
+  /**
+   * La red que de verdad choca. En un grupo puede no ser la primera: un
+   * grupo de LinkedIn+Instagram que cae sobre un Instagram ya programado
+   * choca en Instagram, y nombrar al líder sería decirle al usuario que
+   * revise la red equivocada.
+   */
+  network?: PublicationCardDto["network"];
   target: ZonedDateTime;
   suggestion: ZonedDateTime;
   onAccept: () => void;
+  /** Programar en la hora original, aceptando el choque. */
+  onForce: () => void;
   onPickAnother: () => void;
   onCancel: () => void;
 }) {
-  const meta = NETWORK_META[card.network];
+  const meta = NETWORK_META[network ?? cards[0]!.network];
   const day = formatDayLong(toCalendarDate(target)).toLowerCase();
 
   return (
@@ -83,6 +95,18 @@ export function ConflictDialog({
               Cancelar
             </button>
           </div>
+          {/* Cuarta salida, con la jerarquía más baja de las cuatro: un
+              conflicto informa y nunca bloquea (§4), pero dejar dos posts de
+              la misma red a la misma hora es lo excepcional, no lo esperado.
+              Sin esto, quien de verdad quería el choque tenía que rendirse y
+              repetir la hora a mano en el drawer. */}
+          <button
+            type="button"
+            onClick={onForce}
+            className="rounded-lg px-3 py-1.5 text-center font-display text-[12px] font-medium text-fg-muted underline underline-offset-2 transition-colors hover:text-brand"
+          >
+            Programar de todas formas a las {formatTime(target)}
+          </button>
         </div>
       </div>
     </Modal>

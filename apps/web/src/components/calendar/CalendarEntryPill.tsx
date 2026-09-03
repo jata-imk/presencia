@@ -57,14 +57,14 @@ function Row({
 export function CalendarEntryPill({
   entry,
   timeZone,
-  draggingCardId,
+  draggingCardIds,
   onStartDragCard,
   onOpenCard,
 }: {
   entry: CalendarEntry;
   timeZone: string;
-  draggingCardId?: string | null;
-  onStartDragCard?: (event: React.PointerEvent, cardId: string) => void;
+  draggingCardIds?: ReadonlySet<string>;
+  onStartDragCard?: (event: React.PointerEvent, cardIds: string[]) => void;
   /**
    * Click en un post concreto abre SU vista, no la del día
    * (presencia-calendario.md §3: "intención específica vs intención
@@ -80,13 +80,20 @@ export function CalendarEntryPill({
   // Lo publicado ya salió: moverlo no significa nada, y ofrecer el gesto
   // sería prometer algo que el backend rechaza — CardsService solo acepta
   // draft, scheduled y failed.
-  const interactive = (card: PublicationCardDto) => {
-    const movable = onStartDragCard && (card.status === "scheduled" || card.status === "failed");
+  // `dragCards` es lo que viaja al soltar; `card` es de quién es el click.
+  // En un grupo son distintos a propósito: se arrastra el bloque entero pero
+  // el click sigue abriendo la publicación que se tocó.
+  const interactive = (card: PublicationCardDto, dragCards: PublicationCardDto[] = [card]) => {
+    const movables = dragCards.filter((c) => c.status === "scheduled" || c.status === "failed");
+    const movable = onStartDragCard && movables.length > 0;
     return {
       onPointerDown: movable
         ? (event: React.PointerEvent) => {
             event.stopPropagation();
-            onStartDragCard(event, card.id);
+            onStartDragCard(
+              event,
+              movables.map((c) => c.id),
+            );
           }
         : undefined,
       onClick: onOpenCard
@@ -107,17 +114,25 @@ export function CalendarEntryPill({
   // "estas van juntas"; cada fila conserva su estado propio, por eso el
   // contenedor no pinta un tinte de estado.
   if (entry.isGroup) {
+    // El arrastre nace del CONTENEDOR y lleva las N redes: mover una sola
+    // rompía el grupo en silencio, que es lo contrario de lo que se ve (un
+    // bloque unido por un borde). El click sigue siendo por fila.
+    const groupDrag = interactive(entry.cards[0]!, entry.cards);
     return (
       <Tooltip label={`Publicación multi-red · ${String(entry.cards.length)} redes`}>
-        <div className="flex flex-col overflow-hidden rounded-md border-l-[3px] border-l-ai bg-cal-group select-none">
+        <div
+          onPointerDown={groupDrag.onPointerDown}
+          style={groupDrag.style}
+          className={`flex flex-col overflow-hidden rounded-md border-l-[3px] border-l-ai bg-cal-group select-none ${groupDrag.className}`}
+        >
           {entry.cards.map((card) => {
             const handlers = interactive(card);
             return (
               <span
                 key={card.id}
-                {...handlers}
-                className={`flex min-w-0 items-center gap-1 px-1.5 py-0.5 ${handlers.className} ${
-                  card.id === draggingCardId ? "opacity-40" : ""
+                onClick={handlers.onClick}
+                className={`flex min-w-0 items-center gap-1 px-1.5 py-0.5 ${
+                  draggingCardIds?.has(card.id) ? "opacity-40" : ""
                 }`}
               >
                 <Link2 size={9} className="shrink-0 text-accent" aria-hidden />
@@ -137,7 +152,7 @@ export function CalendarEntryPill({
       {...handlers}
       className={`rounded-md border px-1.5 py-0.5 select-none ${tone.box} ${handlers.className} ${
         first.status === "published" ? "opacity-85" : ""
-      } ${first.id === draggingCardId ? "opacity-40" : ""}`}
+      } ${draggingCardIds?.has(first.id) ? "opacity-40" : ""}`}
     >
       <Row card={first} timeZone={timeZone} compact={false} />
     </div>

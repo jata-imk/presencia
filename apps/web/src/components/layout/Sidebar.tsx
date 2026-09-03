@@ -26,6 +26,7 @@ export function Sidebar() {
   const width = useSidebarStore((s) => s.width);
   const toggleCollapsed = useSidebarStore((s) => s.toggleCollapsed);
   const closeMobile = useSidebarStore((s) => s.closeMobile);
+  const clearUserCollapsed = useSidebarStore((s) => s.clearUserCollapsed);
 
   const collapsed = userCollapsed ?? !isDesktop;
 
@@ -34,6 +35,14 @@ export function Sidebar() {
   useEffect(() => {
     applySidebarWidth(width);
   }, [width]);
+
+  // Abajo de 1024 manda el ancho, no la preferencia: la elección se guarda en
+  // localStorage y sobrevivía al cambio de tamaño, así que un sidebar abierto
+  // en escritorio seguía abierto en tablet. La decisión no se borra, solo se
+  // suspende — al volver a escritorio, vuelve a aplicarse.
+  useEffect(() => {
+    if (!isDesktop) clearUserCollapsed();
+  }, [isDesktop, clearUserCollapsed]);
 
   // Al cruzar a ≥768 el drawer tiene que morir: si no, queda un
   // role="dialog" montado atrapando el foco sobre el layout de escritorio.
