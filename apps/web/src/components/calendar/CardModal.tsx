@@ -45,8 +45,12 @@ export function CardModal({
   };
 
   return (
-    <Modal onClose={onClose} labelledBy="card-modal-title" maxWidth="max-w-[680px]">
-      <div className="-m-6 flex max-h-[85vh] flex-col">
+    // 440px y no 680: la previsualización se lee como se va a ver de verdad,
+    // que es en un teléfono. El alto es FIJO y no `max-h`: con `max-h` el
+    // modal cambiaba de tamaño entre una publicación de dos líneas y una de
+    // veinte, y al navegar las redes de un grupo saltaba en cada pestaña.
+    <Modal onClose={onClose} labelledBy="card-modal-title" maxWidth="max-w-[440px]">
+      <div className="-m-6 flex h-[85dvh] flex-col">
         <div className="flex shrink-0 items-center gap-2 border-b border-line px-5 py-3.5">
           <Eye size={15} strokeWidth={1.75} className="text-fg-muted" />
           <h2 id="card-modal-title" className="font-display text-sm font-bold text-fg">
@@ -86,6 +90,14 @@ export function CardModal({
           </div>
         )}
 
+        {/* Bloque, NO flex. Un contenedor flex-col vuelve encogible a la
+            card (`min-height:auto` resuelve a 0 en un flex item con
+            overflow distinto de visible), y como la card ya es
+            `overflow-hidden`, se comprimía al alto disponible y se recortaba
+            sin que el scroller llegara a desbordar: el texto largo quedaba
+            inalcanzable. Como bloque, la card mide lo que mide y esta capa
+            desplaza. La previsualización ya queda anclada arriba por el
+            flujo normal del documento. */}
         <div className="min-h-0 flex-1 overflow-y-auto bg-app p-4">
           <PublicationCardView
             content={active.content}
