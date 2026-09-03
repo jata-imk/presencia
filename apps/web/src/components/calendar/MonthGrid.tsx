@@ -1,10 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { type CalendarDate, isSameMonth } from "@internationalized/date";
 import { capEntries, type CalendarEntry, type EntriesByDay } from "../../lib/calendar/group.js";
 import { monthWeeks } from "../../lib/calendar/grid.js";
 import { dayKey, formatDayLong, formatWeekdayShort, weekStart } from "../../lib/calendar/tz.js";
 import { CalendarEntryPill } from "./CalendarEntryPill.js";
+import { Tooltip } from "../ui/Tooltip.js";
 import type { DropVerdict } from "../../lib/calendar/schedule-move.js";
 
 // Grilla del mes (F7 PR1).
@@ -106,6 +107,7 @@ export function MonthGrid({
   const gridRef = useRef<HTMLDivElement>(null);
   const weeks = monthWeeks(month);
   const focusedKey = dayKey(focusedDay);
+  const maxRows = useRowsThatFit(gridRef, weeks.length, compact);
 
   // Mover el foco del DOM detrás del estado, pero SOLO si el movimiento salió
   // del teclado dentro de la grilla: si no, entrar a la página le robaría el
@@ -156,8 +158,10 @@ export function MonthGrid({
         {weeks[0]?.map((day, index) => (
           <div
             key={day.toString()}
+            // Columnas 0 y 6 con la semana arrancando en domingo (WEEK_START):
+            // el fin de semana ya no son las dos últimas, son los extremos.
             className={`px-3 py-2 font-display text-[11px] font-semibold tracking-wide uppercase ${
-              index >= 5 ? "text-plum-200" : "text-fg-muted"
+              index === 0 || index === 6 ? "text-plum-200" : "text-fg-muted"
             }`}
           >
             {formatWeekdayShort(day)}
@@ -179,7 +183,7 @@ export function MonthGrid({
               const key = dayKey(day);
               const outside = !isSameMonth(day, month);
               const isToday = day.compare(today) === 0;
-              const { visible, hidden } = capEntries(entriesByDay.get(key) ?? []);
+              const { visible, hidden } = capEntries(entriesByDay.get(key) ?? [], maxRows);
               const verdict = drag ? drag.verdictByDay.get(key) : undefined;
               const dropClass =
                 drag && verdict ? DROP_CLASS[verdict][drag.overDay === key ? "over" : "idle"] : "";
@@ -205,7 +209,7 @@ export function MonthGrid({
                     onFocusDay(day);
                     onSelectDay(day);
                   }}
-                  className={`relative flex min-w-0 cursor-pointer flex-col overflow-hidden border border-r-line border-b-line outline-none nth-[7n]:border-r-0 ${
+                  className={`relative flex min-w-0 cursor-pointer flex-col overflow-hidden border border-r-line border-b-line outline-none select-none nth-[7n]:border-r-0 ${
                     // 44px es el mínimo táctil; con gap chico y centrado el
                     // número y los puntos entran sin apretarse.
                     compact ? "min-h-11 items-center gap-1 p-1" : "gap-[3px] p-1.5"
@@ -223,12 +227,18 @@ export function MonthGrid({
                     />
                   )}
                   {conflictDays.has(key) && !drag && (
-                    <span
-                      title="Dos publicaciones de la misma red a la misma hora"
-                      className="absolute top-1.5 right-1.5 z-[2] flex size-4 items-center justify-center rounded-full bg-warning text-[10px] font-bold text-card"
-                    >
-                      <AlertTriangle size={10} strokeWidth={2.5} />
-                    </span>
+                    <Tooltip label="Dos publicaciones de la misma red a la misma hora">
+                      {/* role="img": ARIA no permite nombrar un `role=generic`,
+                          así que sin esto el lector de pantalla se comía el
+                          aviso en vez de leerlo. */}
+                      <span
+                        role="img"
+                        aria-label="Dos publicaciones de la misma red a la misma hora"
+                        className="absolute top-1.5 right-1.5 z-[2] flex size-4 items-center justify-center rounded-full bg-warning text-[10px] font-bold text-card"
+                      >
+                        <AlertTriangle size={10} strokeWidth={2.5} />
+                      </span>
+                    </Tooltip>
                   )}
                   <span
                     className={`flex h-[22px] items-center px-0.5 font-display font-semibold ${
@@ -318,3 +328,51 @@ const DOT_TONE: Record<string, string> = {
   failed: "bg-error",
   canceled: "bg-fg-muted",
 };
+
+// Cuántas píldoras entran de verdad en una celda. Antes era 3 fijo, y en una
+// pantalla más baja que ancha (1680×1050, donde lo cazó el QA) las que no
+// cabían se recortaban contra el `overflow-hidden` SIN sumarse al "+N más":
+// el contador decía la verdad sobre el cap, no sobre lo que se ve.
+//
+// Se mide la altura real de una fila de la grilla y se descuenta lo que
+// siempre ocupa espacio: el número del día, el chip "+N más" y los paddings.
+// Un ResizeObserver sobre la grilla entera alcanza — las filas son `1fr`, así
+// que todas miden lo mismo y cambian a la vez.
+const DAY_NUMBER_HEIGHT = 22;
+const MORE_CHIP_HEIGHT = 16;
+const CELL_PADDING = 12; // p-1.5 arriba y abajo
+const PILL_HEIGHT = 24; // borde + py-0.5 + línea de 11px
+const PILL_GAP = 3;
+
+function useRowsThatFit(
+  ref: React.RefObject<HTMLDivElement | null>,
+  weekCount: number,
+  compact: boolean,
+): number {
+  const [rows, setRows] = useState(3);
+
+  useEffect(() => {
+    // En compacto manda DayDots, que tiene su propio tope; no hay nada que medir.
+    if (compact) return;
+    const node = ref.current;
+    if (!node) return;
+
+    const measure = () => {
+      const cellHeight = node.getBoundingClientRect().height / weekCount;
+      const usable = cellHeight - DAY_NUMBER_HEIGHT - MORE_CHIP_HEIGHT - CELL_PADDING;
+      const fit = Math.floor((usable + PILL_GAP) / (PILL_HEIGHT + PILL_GAP));
+      // Nunca menos de una: una celda que no muestre NADA y solo diga "+3 más"
+      // es peor que una apretada.
+      setRows(Math.max(1, fit));
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+  }, [ref, weekCount, compact]);
+
+  return rows;
+}

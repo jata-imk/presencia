@@ -1,6 +1,7 @@
 import { Clapperboard, Video } from "lucide-react";
 import type { CardContent } from "@presencia/shared";
 import { Hashtags } from "./Hashtags.js";
+import { Tooltip } from "../ui/Tooltip.js";
 
 type VideoScriptContent = Extract<CardContent, { archetype: "video_script" }>;
 
@@ -31,14 +32,15 @@ export function VideoCardBody({
               Graba el video siguiendo el guion y súbelo para programar.
             </p>
           </div>
-          <button
-            type="button"
-            disabled
-            title="Próximamente"
-            className="shrink-0 cursor-not-allowed rounded-md border border-warning-border bg-card px-2.5 py-1.5 text-xs font-semibold text-warning opacity-70"
-          >
-            Subir video
-          </button>
+          <Tooltip label="Próximamente">
+            <button
+              type="button"
+              disabled
+              className="shrink-0 cursor-not-allowed rounded-md border border-warning-border bg-card px-2.5 py-1.5 text-xs font-semibold text-warning opacity-70"
+            >
+              Subir video
+            </button>
+          </Tooltip>
         </div>
       )}
 

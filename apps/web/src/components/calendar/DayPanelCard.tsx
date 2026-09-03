@@ -5,6 +5,7 @@ import { badgeKindFor } from "../cards/PublicationCardView.js";
 import { cardPreviewText } from "../cards/card-text.js";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
 import { MENU_ITEM_CLASS, Menu } from "../ui/Menu.js";
+import { Tooltip } from "../ui/Tooltip.js";
 import { formatTime, zonedFromIso } from "../../lib/calendar/tz.js";
 import { summarizeGroupStatuses, type CalendarEntry } from "../../lib/calendar/group.js";
 
@@ -81,6 +82,11 @@ function CardRow({
           {/* Un día pasado no se edita ni se reprograma: lo que ya salió, ya
               salió. El menú se recorta en vez de mostrar acciones que fallan
               (presencia-calendario.md §5, "Día pasado seleccionado"). */}
+          {/* Los Menu.Item conservan el `title` nativo a propósito: el item
+              ya usa su ref para registrarse en el listRef de use-menu (de ahí
+              salen las flechas), y envolverlo en <Tooltip> le robaría ese
+              anclaje. Un globito dentro de un menú flotante tampoco aporta:
+              el menú ya está abierto y encima del contenido. */}
           {!isPast && (
             <>
               <Menu.Item
@@ -165,24 +171,26 @@ export function DayPanelCard({
         </div>
         {!isPast && reschedulable.length > 0 && (
           <div className="flex shrink-0 gap-1">
-            <button
-              type="button"
-              title="Reprogramar todas"
-              aria-label="Reprogramar todas las redes del grupo"
-              onClick={() => actions.onReschedule(reschedulable)}
-              className="flex size-7 items-center justify-center rounded-md text-accent transition-colors hover:bg-card"
-            >
-              <Clock size={14} strokeWidth={1.75} />
-            </button>
-            <button
-              type="button"
-              title="Cancelar todas"
-              aria-label="Cancelar la programación de todas las redes del grupo"
-              onClick={() => actions.onCancel(reschedulable)}
-              className="flex size-7 items-center justify-center rounded-md text-error transition-colors hover:bg-card"
-            >
-              <XCircle size={14} strokeWidth={1.75} />
-            </button>
+            <Tooltip label="Reprogramar todas">
+              <button
+                type="button"
+                aria-label="Reprogramar todas las redes del grupo"
+                onClick={() => actions.onReschedule(reschedulable)}
+                className="flex size-7 items-center justify-center rounded-md text-accent transition-colors hover:bg-card"
+              >
+                <Clock size={14} strokeWidth={1.75} />
+              </button>
+            </Tooltip>
+            <Tooltip label="Cancelar todas">
+              <button
+                type="button"
+                aria-label="Cancelar la programación de todas las redes del grupo"
+                onClick={() => actions.onCancel(reschedulable)}
+                className="flex size-7 items-center justify-center rounded-md text-error transition-colors hover:bg-card"
+              >
+                <XCircle size={14} strokeWidth={1.75} />
+              </button>
+            </Tooltip>
           </div>
         )}
       </div>

@@ -19,6 +19,7 @@ import { ChatListItem } from "./ChatListItem.js";
 import { SidebarFolderItem } from "./SidebarFolderItem.js";
 import { ModalNewFolder } from "../folders/ModalNewFolder.js";
 import { BrandMark } from "../ui/BrandMark.js";
+import { Tooltip } from "../ui/Tooltip.js";
 import { authClient } from "../../lib/auth-client.js";
 import { useQuota } from "../../lib/use-quota.js";
 import { useChatsStore } from "../../stores/chats-store.js";
@@ -157,19 +158,20 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
           <BrandMark withWordmark={!collapsed} />
         </Link>
         {onToggleCollapsed && (
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            aria-label={collapsed ? "Expandir menú" : "Colapsar menú"}
-            title={collapsed ? "Expandir menú" : "Colapsar menú"}
-            className="shrink-0 rounded-md p-1.5 text-fg-muted transition-colors hover:bg-secondary-hover hover:text-fg"
-          >
-            {collapsed ? (
-              <PanelLeftOpen size={15} strokeWidth={1.75} />
-            ) : (
-              <PanelLeftClose size={15} strokeWidth={1.75} />
-            )}
-          </button>
+          <Tooltip label={collapsed ? "Expandir menú" : "Colapsar menú"} placement="right">
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-label={collapsed ? "Expandir menú" : "Colapsar menú"}
+              className="shrink-0 rounded-md p-1.5 text-fg-muted transition-colors hover:bg-secondary-hover hover:text-fg"
+            >
+              {collapsed ? (
+                <PanelLeftOpen size={15} strokeWidth={1.75} />
+              ) : (
+                <PanelLeftClose size={15} strokeWidth={1.75} />
+              )}
+            </button>
+          </Tooltip>
         )}
       </div>
 
@@ -178,16 +180,17 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
             crear el chat de una vez — un chat solo debe existir cuando el
             usuario mandó un mensaje real. Antes esto llamaba createChat()
             acá mismo y dejaba filas vacías en la DB con cada click. */}
-        <Link
-          to="/chats"
-          onClick={onNavigate}
-          aria-label="Nuevo chat"
-          title="Nuevo chat"
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-fg transition-colors hover:bg-primary-hover active:bg-primary-press"
-        >
-          <Plus size={15} strokeWidth={2} className="shrink-0" />
-          {!collapsed && <span>Nuevo chat</span>}
-        </Link>
+        <Tooltip label={collapsed ? "Nuevo chat" : undefined} placement="right">
+          <Link
+            to="/chats"
+            onClick={onNavigate}
+            aria-label="Nuevo chat"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-fg transition-colors hover:bg-primary-hover active:bg-primary-press"
+          >
+            <Plus size={15} strokeWidth={2} className="shrink-0" />
+            {!collapsed && <span>Nuevo chat</span>}
+          </Link>
+        </Tooltip>
       </div>
 
       <ul className={`mt-4 flex shrink-0 flex-col gap-0.5 ${collapsed ? "px-2" : "px-3"}`}>
@@ -196,38 +199,42 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
           if (!mod.to) {
             return (
               <li key={mod.label}>
-                <div
-                  title={`${mod.label} — próximamente`}
-                  className={`flex cursor-not-allowed items-center gap-2.5 rounded-md py-2 text-sm text-fg-muted opacity-60 ${
-                    collapsed ? "justify-center px-2" : "px-2.5"
-                  }`}
-                >
-                  <mod.icon size={15} strokeWidth={1.75} className="shrink-0" />
-                  {!collapsed && (
-                    <>
-                      <span className="flex-1">{mod.label}</span>
-                      <span className="rounded-full bg-tint-plum px-1.5 py-0.5 text-[9px] font-semibold text-accent">
-                        Pronto
-                      </span>
-                    </>
-                  )}
-                </div>
+                <Tooltip label={`${mod.label} — próximamente`} placement="right">
+                  <div
+                    role="img"
+                    aria-label={`${mod.label} — próximamente`}
+                    className={`flex cursor-not-allowed items-center gap-2.5 rounded-md py-2 text-sm text-fg-muted opacity-60 ${
+                      collapsed ? "justify-center px-2" : "px-2.5"
+                    }`}
+                  >
+                    <mod.icon size={15} strokeWidth={1.75} className="shrink-0" />
+                    {!collapsed && (
+                      <>
+                        <span className="flex-1">{mod.label}</span>
+                        <span className="rounded-full bg-tint-plum px-1.5 py-0.5 text-[9px] font-semibold text-accent">
+                          Pronto
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </Tooltip>
               </li>
             );
           }
           return (
             <li key={mod.label}>
-              <Link
-                to={mod.to}
-                onClick={onNavigate}
-                title={mod.label}
-                className={`flex items-center gap-2.5 rounded-md py-2 text-sm font-medium transition-colors ${
-                  collapsed ? "justify-center px-2" : "px-2.5"
-                } ${active ? "bg-tint-plum text-brand" : "text-fg-secondary hover:bg-secondary-hover"}`}
-              >
-                <mod.icon size={15} strokeWidth={1.75} className="shrink-0" />
-                {!collapsed && <span>{mod.label}</span>}
-              </Link>
+              <Tooltip label={collapsed ? mod.label : undefined} placement="right">
+                <Link
+                  to={mod.to}
+                  onClick={onNavigate}
+                  className={`flex items-center gap-2.5 rounded-md py-2 text-sm font-medium transition-colors ${
+                    collapsed ? "justify-center px-2" : "px-2.5"
+                  } ${active ? "bg-tint-plum text-brand" : "text-fg-secondary hover:bg-secondary-hover"}`}
+                >
+                  <mod.icon size={15} strokeWidth={1.75} className="shrink-0" />
+                  {!collapsed && <span>{mod.label}</span>}
+                </Link>
+              </Tooltip>
             </li>
           );
         })}
@@ -349,37 +356,38 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
       {collapsed && <div className="flex-1" />}
 
       <div className={`shrink-0 border-t border-line py-3 ${collapsed ? "px-2" : "px-3"}`}>
-        <Link
-          to="/chats/archivados"
-          onClick={onNavigate}
-          title="Archivados"
-          className={`mb-1 flex items-center gap-2.5 rounded-md py-2 text-sm text-fg-secondary transition-colors hover:bg-secondary-hover ${
-            collapsed ? "justify-center px-2" : "px-2.5"
-          }`}
-        >
-          <Archive size={15} strokeWidth={1.75} className="shrink-0" />
-          {!collapsed && <span>Archivados</span>}
-        </Link>
-        <Link
-          to="/configuracion"
-          onClick={onNavigate}
-          title="Configuración"
-          className={`mb-1 flex items-center gap-2.5 rounded-md py-2 text-sm text-fg-secondary transition-colors hover:bg-secondary-hover ${
-            collapsed ? "justify-center px-2" : "px-2.5"
-          }`}
-        >
-          <Settings size={15} strokeWidth={1.75} className="shrink-0" />
-          {!collapsed && <span>Configuración</span>}
-        </Link>
+        <Tooltip label={collapsed ? "Archivados" : undefined} placement="right">
+          <Link
+            to="/chats/archivados"
+            onClick={onNavigate}
+            className={`mb-1 flex items-center gap-2.5 rounded-md py-2 text-sm text-fg-secondary transition-colors hover:bg-secondary-hover ${
+              collapsed ? "justify-center px-2" : "px-2.5"
+            }`}
+          >
+            <Archive size={15} strokeWidth={1.75} className="shrink-0" />
+            {!collapsed && <span>Archivados</span>}
+          </Link>
+        </Tooltip>
+        <Tooltip label={collapsed ? "Configuración" : undefined} placement="right">
+          <Link
+            to="/configuracion"
+            onClick={onNavigate}
+            className={`mb-1 flex items-center gap-2.5 rounded-md py-2 text-sm text-fg-secondary transition-colors hover:bg-secondary-hover ${
+              collapsed ? "justify-center px-2" : "px-2.5"
+            }`}
+          >
+            <Settings size={15} strokeWidth={1.75} className="shrink-0" />
+            {!collapsed && <span>Configuración</span>}
+          </Link>
+        </Tooltip>
         <div
           className={`flex items-center gap-2.5 py-1.5 ${collapsed ? "justify-center px-2" : "px-2.5"}`}
         >
-          <div
-            title={name || "Tu cuenta"}
-            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-tint-plum text-[10px] font-bold text-brand"
-          >
-            {initials}
-          </div>
+          <Tooltip label={name || "Tu cuenta"} placement="right">
+            <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-tint-plum text-[10px] font-bold text-brand">
+              {initials}
+            </div>
+          </Tooltip>
           {!collapsed && (
             <>
               <div className="min-w-0 flex-1">

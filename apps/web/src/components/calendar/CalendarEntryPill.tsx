@@ -1,5 +1,6 @@
 import type { PublicationCardDto } from "@presencia/shared";
 import { Link2 } from "lucide-react";
+import { Tooltip } from "../ui/Tooltip.js";
 import { cardPreviewText } from "../cards/card-text.js";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
 import type { CalendarEntry } from "../../lib/calendar/group.js";
@@ -38,16 +39,19 @@ function Row({
   const summary = cardPreviewText(card.content);
   const tone = toneFor(card.status);
 
-  return (
-    <span
-      className={`flex min-w-0 items-center gap-1.5 ${tone.text}`}
-      title={`${time} · ${meta.label} — ${summary}`}
-    >
-      <meta.Logo size={11} />
+  const row = (
+    <span className={`flex min-w-0 items-center gap-1.5 ${tone.text}`}>
+      <meta.Logo size={13} />
       <span className="shrink-0 font-display text-[10px] font-bold tabular-nums">{time}</span>
       <span className={`truncate text-[11px] ${compact ? "opacity-90" : ""}`}>{summary}</span>
     </span>
   );
+
+  // Dentro de un grupo (compact) la fila NO lleva su propio globito: el
+  // contenedor ya tiene el suyo y los dos anclas se activarían con el mismo
+  // hover, abriendo dos globitos encimados a pocos píxeles. Con `title`
+  // nativo el navegador mostraba solo el de adentro y no se notaba.
+  return compact ? row : <Tooltip label={`${time} · ${meta.label} — ${summary}`}>{row}</Tooltip>;
 }
 
 export function CalendarEntryPill({
@@ -104,26 +108,25 @@ export function CalendarEntryPill({
   // contenedor no pinta un tinte de estado.
   if (entry.isGroup) {
     return (
-      <div
-        className="flex flex-col overflow-hidden rounded-md border-l-[3px] border-l-ai bg-cal-group"
-        title={`Publicación multi-red · ${entry.cards.length} redes`}
-      >
-        {entry.cards.map((card) => {
-          const handlers = interactive(card);
-          return (
-            <span
-              key={card.id}
-              {...handlers}
-              className={`flex min-w-0 items-center gap-1 px-1.5 py-0.5 ${handlers.className} ${
-                card.id === draggingCardId ? "opacity-40" : ""
-              }`}
-            >
-              <Link2 size={9} className="shrink-0 text-accent" aria-hidden />
-              <Row card={card} timeZone={timeZone} compact />
-            </span>
-          );
-        })}
-      </div>
+      <Tooltip label={`Publicación multi-red · ${String(entry.cards.length)} redes`}>
+        <div className="flex flex-col overflow-hidden rounded-md border-l-[3px] border-l-ai bg-cal-group select-none">
+          {entry.cards.map((card) => {
+            const handlers = interactive(card);
+            return (
+              <span
+                key={card.id}
+                {...handlers}
+                className={`flex min-w-0 items-center gap-1 px-1.5 py-0.5 ${handlers.className} ${
+                  card.id === draggingCardId ? "opacity-40" : ""
+                }`}
+              >
+                <Link2 size={9} className="shrink-0 text-accent" aria-hidden />
+                <Row card={card} timeZone={timeZone} compact />
+              </span>
+            );
+          })}
+        </div>
+      </Tooltip>
     );
   }
 
@@ -132,7 +135,7 @@ export function CalendarEntryPill({
   return (
     <div
       {...handlers}
-      className={`rounded-md border px-1.5 py-0.5 ${tone.box} ${handlers.className} ${
+      className={`rounded-md border px-1.5 py-0.5 select-none ${tone.box} ${handlers.className} ${
         first.status === "published" ? "opacity-85" : ""
       } ${first.id === draggingCardId ? "opacity-40" : ""}`}
     >

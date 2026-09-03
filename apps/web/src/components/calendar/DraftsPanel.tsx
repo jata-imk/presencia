@@ -114,7 +114,7 @@ export function DraftsPanel({
                 // que empiece sobre una tarjeta se lo comería el gesto.
                 style={onStartDrag ? { touchAction: "none" } : undefined}
                 onPointerDown={onStartDrag ? (event) => onStartDrag(event, card) : undefined}
-                className={`rounded-xl border border-ai-border bg-ai-bg px-3 py-2.5 transition-opacity ${
+                className={`rounded-xl border border-ai-border bg-ai-bg px-3 py-2.5 transition-opacity select-none ${
                   onStartDrag ? "cursor-grab active:cursor-grabbing" : ""
                 } ${lifted ? "opacity-40" : ""}`}
               >

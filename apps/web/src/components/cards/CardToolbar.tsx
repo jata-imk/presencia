@@ -11,6 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { CardStatus } from "@presencia/shared";
+import { Tooltip } from "../ui/Tooltip.js";
 
 // Portado de Toolbar/TBtn (arquetipos.jsx). Editar/Adaptar/Regenerar/
 // Expandir/Ver estadísticas/Ver post/Adaptar a otra red no existen todavía
@@ -31,22 +32,23 @@ interface ToolbarAction {
 function ToolbarButton({ action }: { action: ToolbarAction }) {
   const { Icon, label, primary, danger, onClick, disabled } = action;
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      title={disabled ? "Próximamente" : undefined}
-      onClick={onClick}
-      className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 ${
-        primary
-          ? "bg-primary font-semibold text-primary-fg"
-          : danger
-            ? "border border-error-border bg-card font-medium text-error"
-            : "border border-line bg-card font-medium text-fg-secondary"
-      }`}
-    >
-      <Icon size={13} strokeWidth={primary ? 2 : 1.75} />
-      {label}
-    </button>
+    <Tooltip label={disabled ? "Próximamente" : undefined}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 ${
+          primary
+            ? "bg-primary font-semibold text-primary-fg"
+            : danger
+              ? "border border-error-border bg-card font-medium text-error"
+              : "border border-line bg-card font-medium text-fg-secondary"
+        }`}
+      >
+        <Icon size={13} strokeWidth={primary ? 2 : 1.75} />
+        {label}
+      </button>
+    </Tooltip>
   );
 }
 

@@ -6,7 +6,7 @@ import { absoluteRange, weekStart } from "./tz.js";
 // que hablarle a la API, y para eso está `absoluteRange`.
 
 /**
- * Semanas completas que cubren el mes, de lunes a domingo. Son 5 o 6 según
+ * Semanas completas que cubren el mes, de domingo a sábado. Son 5 o 6 según
  * dónde caiga el 1 (presencia-calendario.md: "7 columnas × 5-6 filas"), no
  * 6 fijas: rellenar siempre a 6 dejaría una fila entera de días de otro mes
  * en la mitad de los meses, y con filas `1fr` eso le roba alto a los días
@@ -29,7 +29,7 @@ export function monthWeeks(month: CalendarDate): CalendarDate[][] {
   return weeks;
 }
 
-/** Los 7 días (Lun→Dom) de la semana que contiene a `date`. */
+/** Los 7 días (Dom→Sáb) de la semana que contiene a `date`. */
 export function weekDays(date: CalendarDate): CalendarDate[] {
   const first = weekStart(date);
   return Array.from({ length: 7 }, (_, index) => first.add({ days: index }));

@@ -2,6 +2,7 @@ import { AlertTriangle, Link2 } from "lucide-react";
 import type { PublicationCardDto } from "@presencia/shared";
 import { cardPreviewText } from "../cards/card-text.js";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
+import { Tooltip } from "../ui/Tooltip.js";
 import {
   BLOCK_MINUTES,
   HOUR_HEIGHT,
@@ -87,44 +88,45 @@ export function TimelineBlock({
 
   if (entry.isGroup) {
     return (
-      <div
-        className="absolute z-[2] overflow-hidden rounded-lg border-l-[3px] border-l-ai bg-cal-group shadow-xs"
-        style={position(first)}
-        title={`Publicación multi-red · ${entry.cards.length} redes`}
-      >
-        <div className="flex items-center gap-1 px-1.5 pt-1 pb-0.5">
-          <Link2 size={9} className="shrink-0 text-accent" aria-hidden />
-          <span className="font-display text-[8.5px] font-bold tracking-wide text-accent uppercase">
-            Multi-red · {entry.cards.length}
-          </span>
-        </div>
-        {entry.cards.map((card) => {
-          const meta = NETWORK_META[card.network];
-          return (
-            <span
-              key={card.id}
-              {...handlers(card)}
-              style={onStartDragCard && isMovable(card) ? { touchAction: "none" } : undefined}
-              className={`flex min-w-0 items-center gap-1 px-1.5 py-0.5 ${
-                onStartDragCard && isMovable(card) ? "cursor-grab active:cursor-grabbing" : ""
-              } ${card.id === draggingCardId ? "opacity-40" : ""}`}
-            >
-              <meta.Logo size={10} />
-              <span className="truncate text-[9.5px] text-fg">
-                {compact ? meta.label : cardPreviewText(card.content)}
-              </span>
-              {conflictCardIds?.has(card.id) && (
-                <AlertTriangle
-                  size={10}
-                  strokeWidth={2.5}
-                  className="ml-auto shrink-0 text-warning"
-                  aria-label="Conflicto de horario"
-                />
-              )}
+      <Tooltip label={`Publicación multi-red · ${String(entry.cards.length)} redes`}>
+        <div
+          className="absolute z-[2] overflow-hidden rounded-lg border-l-[3px] border-l-ai bg-cal-group shadow-xs select-none"
+          style={position(first)}
+        >
+          <div className="flex items-center gap-1 px-1.5 pt-1 pb-0.5">
+            <Link2 size={10} className="shrink-0 text-accent" aria-hidden />
+            <span className="font-display text-[8.5px] font-bold tracking-wide text-accent uppercase">
+              Multi-red · {entry.cards.length}
             </span>
-          );
-        })}
-      </div>
+          </div>
+          {entry.cards.map((card) => {
+            const meta = NETWORK_META[card.network];
+            return (
+              <span
+                key={card.id}
+                {...handlers(card)}
+                style={onStartDragCard && isMovable(card) ? { touchAction: "none" } : undefined}
+                className={`flex min-w-0 items-center gap-1 px-1.5 py-0.5 ${
+                  onStartDragCard && isMovable(card) ? "cursor-grab active:cursor-grabbing" : ""
+                } ${card.id === draggingCardId ? "opacity-40" : ""}`}
+              >
+                <meta.Logo size={12} />
+                <span className="truncate text-[9.5px] text-fg">
+                  {compact ? meta.label : cardPreviewText(card.content)}
+                </span>
+                {conflictCardIds?.has(card.id) && (
+                  <AlertTriangle
+                    size={10}
+                    strokeWidth={2.5}
+                    className="ml-auto shrink-0 text-warning"
+                    aria-label="Conflicto de horario"
+                  />
+                )}
+              </span>
+            );
+          })}
+        </div>
+      </Tooltip>
     );
   }
 
@@ -133,31 +135,34 @@ export function TimelineBlock({
   const movable = onStartDragCard && isMovable(first);
 
   return (
-    <div
-      {...handlers(first)}
-      className={`absolute z-[2] flex flex-col gap-0.5 overflow-hidden rounded-lg border px-1.5 py-1 shadow-xs ${tone} ${
-        movable ? "cursor-grab active:cursor-grabbing" : ""
-      } ${first.id === draggingCardId ? "opacity-40" : ""}`}
-      style={position(first)}
-      title={`${formatTime(zonedFromIso(entry.scheduledAt, timeZone))} · ${meta.label} — ${cardPreviewText(first.content)}`}
+    <Tooltip
+      label={`${formatTime(zonedFromIso(entry.scheduledAt, timeZone))} · ${meta.label} — ${cardPreviewText(first.content)}`}
     >
-      <span className="flex items-center gap-1">
-        <meta.Logo size={11} />
-        <span className="font-display text-[10px] font-bold tabular-nums">
-          {formatTime(zonedFromIso(entry.scheduledAt, timeZone))}
+      <div
+        {...handlers(first)}
+        className={`absolute z-[2] flex flex-col gap-0.5 overflow-hidden rounded-lg border px-1.5 py-1 shadow-xs select-none ${tone} ${
+          movable ? "cursor-grab active:cursor-grabbing" : ""
+        } ${first.id === draggingCardId ? "opacity-40" : ""}`}
+        style={position(first)}
+      >
+        <span className="flex items-center gap-1">
+          <meta.Logo size={13} />
+          <span className="font-display text-[10px] font-bold tabular-nums">
+            {formatTime(zonedFromIso(entry.scheduledAt, timeZone))}
+          </span>
+          {conflictCardIds?.has(first.id) && (
+            <AlertTriangle
+              size={11}
+              strokeWidth={2.5}
+              className="ml-auto shrink-0 text-warning"
+              aria-label="Conflicto de horario"
+            />
+          )}
         </span>
-        {conflictCardIds?.has(first.id) && (
-          <AlertTriangle
-            size={11}
-            strokeWidth={2.5}
-            className="ml-auto shrink-0 text-warning"
-            aria-label="Conflicto de horario"
-          />
-        )}
-      </span>
-      <span className={`text-[10px] leading-snug ${compact ? "truncate" : "line-clamp-3"}`}>
-        {cardPreviewText(first.content)}
-      </span>
-    </div>
+        <span className={`text-[10px] leading-snug ${compact ? "truncate" : "line-clamp-3"}`}>
+          {cardPreviewText(first.content)}
+        </span>
+      </div>
+    </Tooltip>
   );
 }

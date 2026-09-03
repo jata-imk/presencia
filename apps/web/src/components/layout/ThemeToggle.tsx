@@ -1,6 +1,7 @@
 import { Moon, Sun } from "lucide-react";
 import { useResolvedTheme } from "../../lib/use-theme.js";
 import { useThemeStore } from "../../stores/theme-store.js";
+import { Tooltip } from "../ui/Tooltip.js";
 
 // Atajo de tema del Topbar (overview §5: "Toggle modo claro/oscuro, icono
 // sun/moon"). La home canónica de la preferencia es Configuración >
@@ -14,19 +15,22 @@ export function ThemeToggle() {
   const setPreference = useThemeStore((s) => s.setPreference);
   const next = resolved === "dark" ? "light" : "dark";
 
+  const label = next === "dark" ? "Cambiar a modo oscuro" : "Cambiar a modo claro";
+
   return (
-    <button
-      type="button"
-      onClick={() => setPreference(next)}
-      aria-label={next === "dark" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
-      title={next === "dark" ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
-      className="flex size-7 shrink-0 items-center justify-center rounded-md text-fg-secondary transition-colors hover:bg-secondary-hover"
-    >
-      {resolved === "dark" ? (
-        <Moon size={15} strokeWidth={1.75} />
-      ) : (
-        <Sun size={15} strokeWidth={1.75} />
-      )}
-    </button>
+    <Tooltip label={label}>
+      <button
+        type="button"
+        onClick={() => setPreference(next)}
+        aria-label={label}
+        className="flex size-7 shrink-0 items-center justify-center rounded-md text-fg-secondary transition-colors hover:bg-secondary-hover"
+      >
+        {resolved === "dark" ? (
+          <Moon size={15} strokeWidth={1.75} />
+        ) : (
+          <Sun size={15} strokeWidth={1.75} />
+        )}
+      </button>
+    </Tooltip>
   );
 }

@@ -28,11 +28,17 @@ import {
 export const CALENDAR_LOCALE = "es-MX";
 
 /**
- * La semana empieza en lunes (presencia-calendario.md: "7 columnas, Lun a
- * Dom"). Hay que decirlo explícito: en CLDR la semana de es-MX empieza en
- * domingo, así que `startOfWeek(date, "es-MX")` devolvería el domingo.
+ * La semana empieza en DOMINGO, que es lo que dice el CLDR de es-MX y lo
+ * que espera un usuario mexicano al abrir un calendario. F7 arrancó en
+ * lunes tomando la spec al pie de la letra ("7 columnas, Lun a Dom") y el
+ * QA manual lo corrigió: la spec describía una grilla, no una convención
+ * regional.
+ *
+ * Se sigue pasando explícito aunque coincida con el default del locale:
+ * deja el valor a la vista de quien lea el módulo y no depende de qué
+ * decida CLDR en una versión futura.
  */
-export const WEEK_START = "mon" as const;
+export const WEEK_START = "sun" as const;
 
 /** ISO UTC (como viaja `scheduledAt`) → instante ubicado en la zona del usuario. */
 export function zonedFromIso(iso: string, timeZone: string): ZonedDateTime {
@@ -49,7 +55,7 @@ export function todayIn(timeZone: string): CalendarDate {
   return today(timeZone);
 }
 
-/** Lunes de la semana que contiene a `date`. */
+/** Domingo de la semana que contiene a `date` (ver WEEK_START). */
 export function weekStart(date: CalendarDate): CalendarDate {
   return startOfWeek(date, CALENDAR_LOCALE, WEEK_START);
 }

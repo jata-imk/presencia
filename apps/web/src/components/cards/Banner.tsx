@@ -1,5 +1,6 @@
 import { ArrowRight, BarChart2, CalendarCheck2, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router";
+import { Tooltip } from "../ui/Tooltip.js";
 import { dayKey, formatScheduleDateTime, zonedFromIso } from "../../lib/calendar/tz.js";
 import { useTimezone } from "../../lib/calendar/use-timezone.js";
 
@@ -59,13 +60,12 @@ export function PublishedBanner({ publishedAt }: { publishedAt: string }) {
       <p className="flex-1 text-xs font-semibold text-success">
         Publicado el {formatScheduleDateTime(publishedAt, timeZone)}
       </p>
-      <div
-        title="Próximamente"
-        className="flex shrink-0 cursor-not-allowed items-center gap-1 rounded-md bg-card px-2 py-1 opacity-60"
-      >
-        <BarChart2 size={11} className="text-success" strokeWidth={2} />
-        <span className="text-[11px] font-semibold text-success">Ver estadísticas</span>
-      </div>
+      <Tooltip label="Próximamente">
+        <div className="flex shrink-0 cursor-not-allowed items-center gap-1 rounded-md bg-card px-2 py-1 opacity-60">
+          <BarChart2 size={11} className="text-success" strokeWidth={2} />
+          <span className="text-[11px] font-semibold text-success">Ver estadísticas</span>
+        </div>
+      </Tooltip>
     </div>
   );
 }
