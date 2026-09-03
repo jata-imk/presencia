@@ -34,6 +34,13 @@ export function useTooltip({ placement = "top" }: { placement?: Placement } = {}
     open,
     onOpenChange: setOpen,
     placement,
+    // transform:false -> floatingStyles posiciona con `top`/`left` reales en
+    // vez de un `transform: translate(x, y)`. Es obligatorio aca porque el
+    // globito entra con una animacion de motion, y motion escribe SU propio
+    // transform sobre el mismo nodo: pisaba el de floating-ui y el tooltip
+    // aparecia pegado en 0,0 en vez de junto a su ancla. Menu no lo necesita
+    // porque no anima nada.
+    transform: false,
     // Mismo trío que use-menu, con menos separación: un tooltip se lee como
     // parte del elemento, no como una superficie aparte.
     middleware: useMemo(() => [offset(6), flip(), shift({ padding: 8 })], []),
