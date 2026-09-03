@@ -127,6 +127,17 @@ El esqueleto se muestra **solo en la primera carga** del módulo (`everLoaded`):
 
 **El esqueleto reserva el ancho de la bandeja.** Antes pintaba solo la grilla, así que al resolver la carga aparecía de golpe la columna de 300px y el calendario se encogía. Ahora recibe `withDrafts`/`draftsCollapsed` y la grilla arranca y termina en la misma caja.
 
+## El modal "Ver" tiene tamaño fijo (F7.1)
+
+440px de ancho y alto fijo de `85dvh`, no `max-h`. Dos motivos distintos:
+
+- **El ancho** se acerca al de un teléfono, que es donde la publicación se va a ver de verdad. A 680px la previsualización se leía como un documento, no como un post.
+- **El alto fijo** existe porque `max-h` hacía que el modal cambiara de tamaño entre una publicación de dos líneas y una de veinte, y peor: al navegar las redes de un grupo multi-red, saltaba en cada pestaña. Con alto fijo el encabezado y el pie quedan clavados, la previsualización se ancla arriba por el flujo normal del documento y el sobrante queda vacío abajo.
+
+  Trampa que el review cazó: la zona de scroll tiene que ser un **bloque**, no un contenedor flex. En un `flex-col`, `min-height:auto` resuelve a `0` para un hijo cuyo overflow no es `visible` — y la card de previsualización es `overflow-hidden`. El resultado era que la card se comprimía al alto disponible y se recortaba sola, así que el scroller **nunca** desbordaba y no aparecía barra: una publicación de LinkedIn de 3000 caracteres se leía hasta la mitad y no había forma de llegar al resto. Medido: card de 167px con 614px de contenido. Con alto fijo este error es peor que con `max-h`, porque antes el contenedor al menos crecía.
+
+La previsualización en sí sigue variando **por arquetipo** (`visual_first` / `video_script` / `text_first`) y no por red: lo único que cambia entre redes es logo, color y límite de caracteres. Hacerla fiel a cada feed es su propia tarea, anotada en el backlog de Notion — este PR solo le da el marco correcto.
+
 ## Descartado
 
 - **Reutilizar `cards-store.ts`.** Indexa por `chatId` (`byChatId`), que es la pregunta del Chat. La del Calendario cruza chats, incluye cards huérfanas y cambia con los filtros. Compartir store obligaría a inventar una clave que sirva para las dos preguntas.
