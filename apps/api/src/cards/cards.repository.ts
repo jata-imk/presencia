@@ -134,6 +134,46 @@ export class CardsRepository {
     return row;
   }
 
+  /**
+   * Reprogramar una card que YA está programada y conserva su post del otro
+   * lado: solo cambia la hora.
+   *
+   * A diferencia de `markScheduling`, NO pone `provider_ref` en null. Ese
+   * null existe para el caso "puede que la llamada al proveedor no llegue a
+   * crear nada"; acá el post ya existe y el proveedor lo va a mover (o a
+   * recrearlo devolviendo otra ref). Anularlo abriría, sin necesidad, la
+   * misma ventana de card huérfana que el puerto ahora permite evitar
+   * (ver PublishingProvider.reschedule y ADR-009, addendum de F7.5 PR3).
+   */
+  async markRescheduled(
+    tx: Tx,
+    id: string,
+    input: { scheduledAt: Date },
+  ): Promise<CardRow | undefined> {
+    const [row] = await tx
+      .update(publicationCards)
+      .set({
+        scheduledAt: input.scheduledAt,
+        errorDetail: null,
+        updatedAt: new Date(),
+      })
+      // Guardia `status='scheduled'`, misma familia que
+      // attachProviderRefIfScheduled y por el mismo motivo. Este UPDATE
+      // corre dos veces: al empezar a reprogramar y, si el proveedor
+      // rechaza, para devolver la card a su horario viejo. En ese segundo
+      // caso el usuario pudo haberle dado Cancelar mientras la llamada
+      // seguía en vuelo — sin la guardia, la restauración RESUCITARÍA como
+      // "scheduled" una card que él acaba de mandar a draft, y encima sin
+      // cuenta ni provider_ref (cancelSchedule los limpia).
+      //
+      // Tampoco se escribe `status: "scheduled"`: la guardia ya garantiza
+      // que lo era. Así este método no puede cambiar de estado a nadie,
+      // solo mover la hora.
+      .where(and(eq(publicationCards.id, id), eq(publicationCards.status, "scheduled")))
+      .returning();
+    return row;
+  }
+
   async attachProviderRef(tx: Tx, id: string, providerRef: string): Promise<CardRow> {
     const [row] = await tx
       .update(publicationCards)

@@ -404,6 +404,92 @@ describe("UploadPostProvider", () => {
     });
   });
 
+  // La razón de peso para traer este proveedor: PATCH mueve el post en su
+  // lugar en vez de cancelar + recrear.
+  describe("reschedule", () => {
+    it("hace PATCH sobre el mismo job_id y conserva la ref", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          success: true,
+          job_id: "job_123",
+          scheduled_date: "2026-09-12T18:00:00.000Z",
+        }),
+      );
+      const provider = makeProvider();
+
+      const result = await provider.reschedule("job_123", {
+        network: "linkedin",
+        content: TEXT_CONTENT,
+        scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
+        accountProviderRef: `${PROFILE}:linkedin`,
+      });
+
+      expect(result).toEqual({ providerRef: "job_123" });
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe("https://api.upload-post.com/api/uploadposts/schedule/job_123");
+      expect(init.method).toBe("PATCH");
+      const sent = JSON.parse(init.body as string) as { scheduled_date: string; title: string };
+      expect(sent.scheduled_date).toBe("2026-09-12T18:00:00.000Z");
+      // Se manda también el texto: el contenido de la card pudo cambiar
+      // desde que se programó, y sin esto se publicaría el viejo.
+      expect(sent.title).toContain("Cinco hábitos");
+    });
+
+    it("un 200 que dice success:false no es un éxito", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { success: false }));
+      const provider = makeProvider();
+
+      await expect(
+        provider.reschedule("job_123", {
+          network: "linkedin",
+          content: TEXT_CONTENT,
+          scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
+          accountProviderRef: `${PROFILE}:linkedin`,
+        }),
+      ).rejects.toBeInstanceOf(PublishingUnavailableError);
+    });
+
+    // Un 404 significa que el job ya no está en la cola. Devolverlo como
+    // rechazo rompería el contrato del puerto — que promete que un rechazo
+    // deja el post original vivo —, y acá no hay original: se crea uno.
+    it("un 404 (el job ya no existe) crea un post nuevo en vez de rechazar", async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(404, { error: "job not found" }))
+        .mockResolvedValueOnce(jsonResponse(202, { success: true, job_id: "job_nuevo" }));
+      const provider = makeProvider();
+
+      const result = await provider.reschedule("job_gone", {
+        network: "linkedin",
+        content: TEXT_CONTENT,
+        scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
+        accountProviderRef: `${PROFILE}:linkedin`,
+      });
+
+      expect(result).toEqual({ providerRef: "job_nuevo" });
+      const [patchUrl] = fetchMock.mock.calls[0] as [string];
+      expect(patchUrl).toBe("https://api.upload-post.com/api/uploadposts/schedule/job_gone");
+      const [createUrl] = fetchMock.mock.calls[1] as [string];
+      expect(createUrl).toBe("https://api.upload-post.com/api/upload_text");
+    });
+
+    it("otro rechazo del PATCH sí propaga, sin crear nada", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(400, { message: "scheduled_date en el pasado" }),
+      );
+      const provider = makeProvider();
+
+      await expect(
+        provider.reschedule("job_123", {
+          network: "linkedin",
+          content: TEXT_CONTENT,
+          scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
+          accountProviderRef: `${PROFILE}:linkedin`,
+        }),
+      ).rejects.toBeInstanceOf(PublishingRejectedError);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("cancel", () => {
     it("cancelar un job inexistente (404) no lanza — es idempotente", async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "job not found" }));

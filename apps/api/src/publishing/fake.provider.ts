@@ -61,6 +61,24 @@ export class FakePublishingProvider implements PublishingProvider {
     return Promise.resolve({ providerRef });
   }
 
+  /**
+   * Conserva la misma ref, como un proveedor CON endpoint de update
+   * (Upload-Post). Es a propósito, aunque el resto del fake imite a
+   * PostFast: es la forma que el puerto prefiere y la que conviene tener
+   * en dev, porque la emulación cancel+create es la degradada. Los tests
+   * que necesitan ejercitar la emulación usan su propio provider.
+   */
+  reschedule(
+    previousProviderRef: string,
+    req: SchedulePostRequest,
+  ): Promise<{ providerRef: string }> {
+    // Si el post ya no existe del otro lado, reprogramar no puede
+    // "actualizar" nada: se crea uno nuevo, igual que haría el real.
+    if (!this.posts.has(previousProviderRef)) return this.schedule(req);
+    this.posts.set(previousProviderRef, { scheduledAt: req.scheduledAt });
+    return Promise.resolve({ providerRef: previousProviderRef });
+  }
+
   cancel(providerRef: string): Promise<void> {
     // Idempotente por contrato: borrar una ref que ya no existe no es error.
     this.posts.delete(providerRef);

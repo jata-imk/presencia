@@ -77,6 +77,36 @@ export interface PublishingProvider {
     expiresAt: Date;
   }>;
   schedule(req: SchedulePostRequest): Promise<{ providerRef: string }>;
+  /**
+   * Mueve de horario un post que el proveedor YA tiene, conservándolo
+   * cuando puede (Upload-Post: `PATCH`, mismo job_id).
+   *
+   * Recibe el `req` completo y no solo la fecha porque un proveedor sin
+   * endpoint de update tiene que emularlo recreando el post, y para eso
+   * necesita red, contenido y cuenta destino (PostFast: cancel + create).
+   *
+   * Por lo mismo, el `providerRef` que devuelve **puede ser distinto** del
+   * que recibió: el caller tiene que persistir el que vuelve, no asumir que
+   * es el viejo.
+   *
+   * CONTRATO, y el dominio depende de él: si esto lanza un rechazo explícito
+   * (`PublishingRejectedError`), el proveedor **no cambió nada y el post
+   * original sigue vivo en su horario original**. Es lo que le permite a
+   * `CardsService` devolver la card a donde estaba en vez de mandarla a
+   * `draft` — reprogramar y fallar no debe costarte la programación que ya
+   * tenías.
+   *
+   * Cumplirlo es responsabilidad del adapter, y no es gratis para el que
+   * tiene que emular: `PostFastProvider` crea el post nuevo ANTES de
+   * cancelar el viejo justo por esto (al revés, un rechazo del create
+   * dejaría a la card apuntando a un post ya borrado). Un fallo AMBIGUO
+   * (`PublishingUnavailableError`) no promete nada: ahí el caller ya asume
+   * que no sabe qué pasó.
+   */
+  reschedule(
+    previousProviderRef: string,
+    req: SchedulePostRequest,
+  ): Promise<{ providerRef: string }>;
   /** Idempotente: cancelar una publicación que ya no existe no es un error. */
   cancel(providerRef: string): Promise<void>;
   /** Batch de hasta 100 refs (límite del proveedor). El caller trocea si hay más. */

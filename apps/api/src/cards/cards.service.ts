@@ -22,7 +22,11 @@ import {
   PublishingRejectedError,
   PublishingUnavailableError,
 } from "../publishing/errors.js";
-import { PUBLISHING_PROVIDER, type PublishingProvider } from "../publishing/publishing.provider.js";
+import {
+  PUBLISHING_PROVIDER,
+  type PublishingProvider,
+  type SchedulePostRequest,
+} from "../publishing/publishing.provider.js";
 import { CardsRepository, type CalendarFilters, type CardRow } from "./cards.repository.js";
 
 // Ciclo de vida de la card (F6, ADR-009 addendum): programar, reprogramar,
@@ -50,8 +54,28 @@ import { CardsRepository, type CalendarFilters, type CardRow } from "./cards.rep
 //   reconcileDueCards detecta y cierra el hueco equivalente (sin
 //   provider_ref, scheduled vencido) si el proceso muere entre las dos
 //   transacciones — misma lógica, misma reacción (markFailed).
-// - Reprogramar = cancel(providerRef viejo) + schedule(nuevo). PostFast no
-//   tiene un endpoint de update de post.
+//   OJO: esa invariante vale para PROGRAMAR. Reprogramar (abajo) conserva
+//   el provider_ref a propósito, así que su hueco es otro y más chico: si
+//   el proceso muere entre markRescheduled y la llamada al proveedor, la
+//   fila dice el horario NUEVO mientras el proveedor sigue con el VIEJO.
+//   No lo detecta listOrphanedScheduled (hay provider_ref), pero tampoco se
+//   pierde nada: el post existe y se publica, y el primer pase de
+//   reconciliación posterior a esa publicación lo marca published. Lo que
+//   hay entremedio es un calendario que miente un rato, no una card rota.
+// - Reprogramar tiene DOS caminos, y cuál se toma lo decide qué cambió:
+//   si solo cambia la hora (misma cuenta, card ya "scheduled" con un post
+//   vivo del otro lado) va por provider.reschedule(), que en un proveedor
+//   con update de verdad mueve el post y conserva su provider_ref. Cambiar
+//   de cuenta es otro destino, no el mismo post movido: sigue siendo
+//   cancel(viejo) + schedule(nuevo).
+//   Que PostFast no tenga endpoint de update ya no se nota acá: lo emula su
+//   adapter (ver PostFastProvider.reschedule), que es donde vive el hueco
+//   de "puede quedar un post duplicado" — es un rasgo suyo, no del dominio.
+// - La semántica de fallo de reprogramar NO es la de programar, a
+//   propósito: un rechazo explícito devuelve la card a su horario viejo en
+//   vez de mandarla a draft. La card ya estaba válidamente programada;
+//   reprogramar y fallar no debe costarte la programación que tenías. Un
+//   fallo ambiguo sí va a failed, igual que en schedule().
 // - Cancelar programación → draft, no "canceled" (decisión de producto,
 //   presencia-chat.md: el contenido sigue siendo útil). "canceled" del enum
 //   queda para descartar una card en Biblioteca (fuera de F6).
@@ -142,9 +166,8 @@ export class CardsService {
       throw new BadRequestException("Elige un horario al menos 5 minutos en el futuro.");
     }
 
-    const { card, accountProviderRef, previousProviderRef } = await this.dbService.runWithTenant(
-      userId,
-      async (tx) => {
+    const { card, accountProviderRef, previousProviderRef, isReschedule, previousScheduledAt } =
+      await this.dbService.runWithTenant(userId, async (tx) => {
         const existing = await this.repo.findById(tx, cardId);
         if (!existing) throw new NotFoundException("Esa publicación no existe.");
         if (!SCHEDULABLE_STATUSES.has(existing.status)) {
@@ -165,18 +188,62 @@ export class CardsService {
         // nuevo (reprogramar). failed: puede traer un provider_ref viejo de
         // cuando aún estaba scheduled (markFailed no lo limpia, queda de
         // rastro) — cancelarlo también es correcto y, como cancel() es
-        // idempotente, inofensivo si PostFast ya no tiene nada que cancelar.
+        // idempotente, inofensivo si el proveedor ya no tiene nada que
+        // cancelar.
         const previousProviderRef =
           existing.status === "scheduled" || existing.status === "failed"
             ? existing.providerRef
             : null;
-        const card = await this.repo.markScheduling(tx, cardId, {
-          socialAccountId: body.socialAccountId,
-          scheduledAt,
-        });
-        return { card, accountProviderRef: account.providerRef, previousProviderRef };
-      },
-    );
+
+        // Reprogramación pura: la card ya está programada, con un post vivo
+        // del otro lado, y lo ÚNICO que cambia es la hora. Ese caso va por
+        // provider.reschedule(), que en un proveedor con update de verdad
+        // conserva el post (y con él el provider_ref) en vez de destruirlo
+        // y recrearlo. Cambiar de cuenta, en cambio, sigue por el camino
+        // largo: es otro destino, no el mismo post movido.
+        const isReschedule =
+          existing.status === "scheduled" &&
+          existing.providerRef !== null &&
+          existing.scheduledAt !== null &&
+          existing.socialAccountId === body.socialAccountId;
+
+        const card = isReschedule
+          ? // Devuelve undefined si otra transacción sacó la card de
+            // "scheduled" entre el findById de arriba y este UPDATE (READ
+            // COMMITTED no lo impide). Es la misma carrera que cubre
+            // attachProviderRefIfScheduled, y acá se corta antes de tocar
+            // al proveedor.
+            ((await this.repo.markRescheduled(tx, cardId, { scheduledAt })) ??
+            (() => {
+              throw new ConflictException("Esa publicación cambió de estado, vuelve a intentar.");
+            })())
+          : await this.repo.markScheduling(tx, cardId, {
+              socialAccountId: body.socialAccountId,
+              scheduledAt,
+            });
+        return {
+          card,
+          accountProviderRef: account.providerRef,
+          previousProviderRef,
+          isReschedule,
+          previousScheduledAt: existing.scheduledAt,
+        };
+      });
+
+    const req: SchedulePostRequest = {
+      network: card.network,
+      content: card.content as CardContent,
+      scheduledAt,
+      accountProviderRef,
+    };
+
+    if (isReschedule && previousProviderRef && previousScheduledAt) {
+      return this.completeReschedule(userId, cardId, {
+        previousProviderRef,
+        previousScheduledAt,
+        req,
+      });
+    }
 
     // Fuera de la transacción: llamadas de red al proveedor.
     if (previousProviderRef) {
@@ -197,12 +264,7 @@ export class CardsService {
 
     let providerRef: string;
     try {
-      ({ providerRef } = await this.provider.schedule({
-        network: card.network,
-        content: card.content as CardContent,
-        scheduledAt,
-        accountProviderRef,
-      }));
+      ({ providerRef } = await this.provider.schedule(req));
     } catch (error) {
       const failure = classifyScheduleFailure(error);
       const detail = errorDetailFrom(error, failure);
@@ -222,11 +284,74 @@ export class CardsService {
       throw toHttpException(error, failure);
     }
 
-    // Fuera del try/catch de arriba a propósito: el proveedor YA tuvo
-    // éxito acá, lo que sigue es bookkeeping nuestro (race real, code
-    // review 2026-08-20), no un fallo del proveedor — no debe caer en la
-    // clasificación rejected/ambiguous de arriba, que es para errores DE
-    // esa llamada, no para lo que pasa después.
+    return this.persistProviderRef(userId, cardId, providerRef);
+  }
+
+  /**
+   * Reprogramación pura (misma cuenta, post vivo del otro lado). Se separa
+   * de `schedule()` porque su semántica de fallo es DISTINTA, y a propósito:
+   * acá la card ya estaba válidamente programada, así que un rechazo
+   * explícito la devuelve a donde estaba en vez de mandarla a `draft`.
+   * Reprogramar y fallar no debe costarte la programación que ya tenías.
+   */
+  private async completeReschedule(
+    userId: string,
+    cardId: string,
+    input: { previousProviderRef: string; previousScheduledAt: Date; req: SchedulePostRequest },
+  ): Promise<PublicationCardDto> {
+    const { previousProviderRef, previousScheduledAt, req } = input;
+    let providerRef: string;
+    try {
+      ({ providerRef } = await this.provider.reschedule(previousProviderRef, req));
+    } catch (error) {
+      const failure = classifyScheduleFailure(error);
+      const detail = errorDetailFrom(error, failure);
+      console.error(
+        `[cards] reschedule() falló (${failure}) para ${cardId} — post ${previousProviderRef}, ` +
+          `horario nuevo ${req.scheduledAt.toISOString()}:`,
+        JSON.stringify(detail),
+      );
+      await this.dbService.runWithTenant(userId, (tx) =>
+        failure === "rejected"
+          ? // El proveedor rechazó explícitamente. Por contrato del puerto
+            // eso significa que no movió nada y que el post original sigue
+            // vivo, así que la card vuelve a su horario viejo con su
+            // provider_ref intacto.
+            //
+            // markRescheduled trae guardia de `status='scheduled'`: si el
+            // usuario le dio Cancelar mientras la llamada seguía en vuelo,
+            // no hay nada que restaurar y no se le resucita la card.
+            this.repo.markRescheduled(tx, cardId, { scheduledAt: previousScheduledAt })
+          : // Ambiguo: no sabemos si el post se movió, se recreó o se
+            // perdió. Mismo criterio que schedule() — `failed` conservando
+            // horario, cuenta y provider_ref como rastro.
+            this.repo.markFailed(tx, cardId, detail),
+      );
+      throw toHttpException(error, failure);
+    }
+
+    return this.persistProviderRef(userId, cardId, providerRef);
+  }
+
+  /**
+   * Bookkeeping compartido por programar y reprogramar: estampa el
+   * providerRef que devolvió el proveedor, o deshace el post si la card ya
+   * dejó de estar "scheduled".
+   *
+   * Vive fuera del try/catch de la llamada al proveedor a propósito: el
+   * proveedor YA tuvo éxito, lo que sigue es cosa nuestra (race real, code
+   * review 2026-08-20) y no debe caer en la clasificación
+   * rejected/ambiguous, que es para errores DE esa llamada.
+   *
+   * Reprogramar pasa por acá aunque el providerRef no haya cambiado (con un
+   * proveedor que tiene update es el mismo): el UPDATE es inofensivo y la
+   * guardia `status='scheduled'` sigue siendo justo la que hace falta.
+   */
+  private async persistProviderRef(
+    userId: string,
+    cardId: string,
+    providerRef: string,
+  ): Promise<PublicationCardDto> {
     const attached = await this.dbService.runWithTenant(userId, (tx) =>
       this.repo.attachProviderRefIfScheduled(tx, cardId, providerRef),
     );
@@ -234,7 +359,7 @@ export class CardsService {
 
     // La card dejó de estar "scheduled" mientras la llamada al proveedor
     // seguía en vuelo (típicamente: el usuario le dio Cancelar justo en
-    // ese margen — ver attachProviderRefIfScheduled). El post YA se creó
+    // ese margen — ver attachProviderRefIfScheduled). El post YA existe
     // del otro lado; hay que deshacerlo en vez de dejarlo huérfano y sin
     // ninguna card que lo referencie.
     try {
