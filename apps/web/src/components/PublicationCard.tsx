@@ -136,6 +136,7 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
           <CardToolbar
             status={status}
             busy={busy}
+            postUrl={liveCard.postUrl}
             onSchedule={openScheduleDrawer}
             onCancel={() => void handleCancel()}
           />

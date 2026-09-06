@@ -5,7 +5,7 @@ import type { CardContent, SocialNetwork } from "@presencia/shared";
 import { chats, folders, users } from "../db/schema.js";
 import { PublishingRejectedError, PublishingUnavailableError } from "../publishing/errors.js";
 import { FakePublishingProvider } from "../publishing/fake.provider.js";
-import type { SchedulePostRequest } from "../publishing/publishing.provider.js";
+import type { ProviderPostState, SchedulePostRequest } from "../publishing/publishing.provider.js";
 // Imports solo de tipo: los módulos reales se cargan en beforeAll, mismo
 // patrón que credits.service.spec.ts / channels.service.spec.ts.
 import type { DbService as DbServiceType } from "../db/db.service.js";
@@ -123,6 +123,18 @@ class CancelDuringReschedProvider extends FakePublishingProvider {
   override async reschedule(): Promise<{ providerRef: string }> {
     await this.onInFlight();
     throw new PublishingRejectedError("scheduled_date inválida", { status: 400 });
+  }
+}
+
+// Publica bien pero sin URL, como PostFast: `post_url` tiene que quedar null
+// sin que eso rompa nada.
+class NoUrlProvider extends FakePublishingProvider {
+  override getPostStates(refs: string[]): Promise<Map<string, ProviderPostState>> {
+    const states = new Map<string, ProviderPostState>();
+    for (const ref of refs) {
+      states.set(ref, { status: "published", publishedAt: new Date(), postUrl: null });
+    }
+    return Promise.resolve(states);
   }
 }
 
@@ -884,6 +896,41 @@ describe("CardsService", () => {
       ]);
       expect(rowPublished?.status).toBe("published");
       expect(rowOrphaned?.status).toBe("failed");
+      // F7.5: la reconciliación persiste el enlace al post junto con
+      // published_at. El fake devuelve uno con forma de URL justo para que
+      // este camino se pueda ejercitar sin proveedor real.
+      expect(rowPublished?.postUrl).toMatch(/^https:\/\//);
+      expect(rowOrphaned?.postUrl).toBeNull();
+    },
+  );
+
+  // Con un proveedor que no da la URL (PostFast) la card se publica igual y
+  // post_url se queda null — el frontend degrada solo, sin preguntar qué
+  // proveedor está activo.
+  it(
+    "si el proveedor no da la URL, la card se publica igual con post_url null",
+    { timeout: 15_000 },
+    async () => {
+      const provider = new NoUrlProvider();
+      const noUrlService = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, provider);
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+
+      await noUrlService.schedule(userA, card.id, {
+        socialAccountId: account.id,
+        scheduledAt: future(10),
+      });
+      await dbService.runWithTenant(userA, (tx) =>
+        tx.execute(
+          sql`update publication_cards set scheduled_at = now() - interval '5 minutes' where id = ${card.id}`,
+        ),
+      );
+
+      await noUrlService.reconcileDueCards(userA);
+
+      const row = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
+      expect(row?.status).toBe("published");
+      expect(row?.postUrl).toBeNull();
     },
   );
   // ── F7: listados que alimentan el Calendario ──────────────────────────
@@ -959,7 +1006,7 @@ describe("CardsService", () => {
           // mitad de la corrida. Mismo motivo por el que seed-dev.ts los
           // falsea.
           await cardsRepo.attachProviderRef(tx, card.id, `pf_spec_${randomUUID()}`);
-          if (opts.published) await cardsRepo.markPublished(tx, card.id, opts.scheduledAt);
+          if (opts.published) await cardsRepo.markPublished(tx, card.id, opts.scheduledAt, null);
           if (opts.orphan) {
             // insertCard exige chatId; la orfandad real la produce borrar el
             // chat (FK "set null"). Se simula el estado final directamente.

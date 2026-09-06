@@ -27,26 +27,41 @@ interface ToolbarAction {
   danger?: boolean;
   onClick?: () => void;
   disabled?: boolean;
+  /** Si viene, la acción se renderiza como enlace externo en vez de botón. */
+  href?: string;
 }
 
 function ToolbarButton({ action }: { action: ToolbarAction }) {
-  const { Icon, label, primary, danger, onClick, disabled } = action;
+  const { Icon, label, primary, danger, onClick, disabled, href } = action;
+  // Misma clase para el <a> y el <button>: la acción tiene que ocupar
+  // exactamente la misma caja esté encendida o apagada, para que la toolbar
+  // no cambie de layout según haya enlace o no.
+  const className = `flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 ${
+    primary
+      ? "bg-primary font-semibold text-primary-fg"
+      : danger
+        ? "border border-error-border bg-card font-medium text-error"
+        : "border border-line bg-card font-medium text-fg-secondary"
+  }`;
+  const inner = (
+    <>
+      <Icon size={13} strokeWidth={primary ? 2 : 1.75} />
+      {label}
+    </>
+  );
+
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+        {inner}
+      </a>
+    );
+  }
+
   return (
     <Tooltip label={disabled ? "Próximamente" : undefined}>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={onClick}
-        className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 ${
-          primary
-            ? "bg-primary font-semibold text-primary-fg"
-            : danger
-              ? "border border-error-border bg-card font-medium text-error"
-              : "border border-line bg-card font-medium text-fg-secondary"
-        }`}
-      >
-        <Icon size={13} strokeWidth={primary ? 2 : 1.75} />
-        {label}
+      <button type="button" disabled={disabled} onClick={onClick} className={className}>
+        {inner}
       </button>
     </Tooltip>
   );
@@ -59,11 +74,14 @@ function Separator() {
 export function CardToolbar({
   status,
   busy,
+  postUrl,
   onSchedule,
   onCancel,
 }: {
   status: CardStatus;
   busy: boolean;
+  /** Enlace al post en la red. Null si no se publicó, o si el proveedor no lo da. */
+  postUrl: string | null;
   onSchedule: () => void;
   onCancel: () => void;
 }) {
@@ -101,7 +119,12 @@ export function CardToolbar({
         return [
           { Icon: BarChart2, label: "Ver estadísticas", disabled: true },
           { Icon: Repeat2, label: "Adaptar a otra red", disabled: true },
-          { Icon: ExternalLink, label: "Ver post", disabled: true },
+          // F7.5: se enciende solo si de verdad hay a dónde ir. Con un
+          // proveedor que no da la URL (PostFast) sigue apagado con su
+          // tooltip, sin que este componente sepa qué proveedor hay.
+          postUrl
+            ? { Icon: ExternalLink, label: "Ver post", href: postUrl }
+            : { Icon: ExternalLink, label: "Ver post", disabled: true },
           { Icon: Maximize2, label: "Expandir", disabled: true },
         ];
       case "canceled":

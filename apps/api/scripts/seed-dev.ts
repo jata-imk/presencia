@@ -394,6 +394,11 @@ async function seedCalendar(
       publishedAt: semilla.published ? (semilla.scheduledAt ?? null) : null,
       socialAccountId: semilla.scheduledAt ? cuentaDe(semilla.network) : null,
       providerRef: semilla.scheduledAt ? `pf_seed_${crypto.randomUUID()}` : null,
+      // F7.5: enlace falso pero con forma de enlace, solo en las publicadas.
+      // Sin esto, "Ver en la red" no se puede recorrer en dev — con el
+      // provider fake nada llega nunca a publicarse de verdad, y con
+      // PostFast la URL es null por diseño.
+      postUrl: semilla.published ? `https://ejemplo.local/p/${crypto.randomUUID()}` : null,
     })),
   );
 }

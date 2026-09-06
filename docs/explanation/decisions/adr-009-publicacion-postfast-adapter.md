@@ -172,3 +172,17 @@ Un fallo **ambiguo** sigue yendo a `failed` conservando horario, cuenta y `provi
 La restauración lleva guardia `status='scheduled'` (misma familia que `attachProviderRefIfScheduled`, y por el mismo motivo): si el usuario le dio Cancelar mientras la llamada al proveedor seguía en vuelo, no hay nada que restaurar — sin la guardia se le resucitaría como `scheduled` una card que él acababa de mandar a `draft`, y encima sin cuenta ni `provider_ref`.
 
 Un apunte sobre `markRescheduled`, que conserva el `provider_ref` en vez de anularlo: eso cierra la ventana de card huérfana, pero abre otra más chica. Si el proceso muere entre ese UPDATE y la llamada al proveedor, la fila dice el horario **nuevo** mientras el proveedor sigue con el **viejo**, y `listOrphanedScheduled` no lo detecta porque sí hay `provider_ref`. No se pierde nada: el post existe y se publica, y el primer pase de reconciliación posterior lo marca `published`. Lo que hay entremedio es un calendario que miente un rato, no una card rota.
+
+## Addendum (2026-09-06, F7.5 PR4) — `post_url`: se enciende "Ver en la red"
+
+Deuda de F6: la reconciliación solo guardaba `published_at`, así que los botones _"Ver en la red"_ (modal del Calendario) y _"Ver post"_ (toolbar del Chat) estaban apagados por una razón concreta — no había a dónde llevar al usuario.
+
+`ProviderPostState` gana `postUrl: string | null` y la reconciliación lo persiste en `publication_cards.post_url` (migración `0015_cards_post_url`) junto con `published_at`.
+
+**El null no es un caso de borde, es la mitad del diseño.** PostFast no devuelve la URL del post en ninguna de sus respuestas, así que con ese proveedor la columna se queda en null para siempre y los botones siguen apagados con su tooltip. El frontend mira `postUrl`, nunca qué proveedor está activo: **degrada solo, sin bifurcar la UI**. Es la misma disciplina que el resto del puerto — el proveedor no se filtra hacia arriba, ni siquiera como un `if`.
+
+Detalles que valen la pena:
+
+- **Sin backfill.** Las cards publicadas antes de esta migración se quedan sin enlace. Reconstruirlo pediría rastrear el historial del proveedor por un `provider_ref` que puede ya no existir, para una superficie que hasta hoy estaba apagada.
+- **La caja no cambia.** Encendido es un `<a target="_blank" rel="noopener noreferrer">` y apagado un `<button disabled>` + `Tooltip`, con la MISMA clase base. Verificado midiendo geometría, no presencia: 134×37 px en los dos casos, contenido en el footer, sin scroll horizontal en modal ni documento.
+- **`FakePublishingProvider` devuelve una URL falsa** en las cards que "publica", y `seed-dev` la pone en las publicadas. Sin eso, el camino encendido sería irrecorrible en dev: con el fake nada se publica de verdad y con PostFast la URL es null por diseño.

@@ -524,8 +524,16 @@ describe("UploadPostProvider", () => {
 
       const states = await provider.getPostStates(["job_1", "job_2"]);
 
-      expect(states.get("job_1")).toEqual({ status: "scheduled", publishedAt: null });
-      expect(states.get("job_2")).toEqual({ status: "scheduled", publishedAt: null });
+      expect(states.get("job_1")).toEqual({
+        status: "scheduled",
+        publishedAt: null,
+        postUrl: null,
+      });
+      expect(states.get("job_2")).toEqual({
+        status: "scheduled",
+        publishedAt: null,
+        postUrl: null,
+      });
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -556,12 +564,19 @@ describe("UploadPostProvider", () => {
         "job_desconocido",
       ]);
 
-      expect(states.get("job_pend")).toEqual({ status: "scheduled", publishedAt: null });
+      expect(states.get("job_pend")).toEqual({
+        status: "scheduled",
+        publishedAt: null,
+        postUrl: null,
+      });
       expect(states.get("job_ok")).toEqual({
         status: "published",
         publishedAt: new Date("2026-09-10T18:00:05.000Z"),
+        // La URL del post viaja con el estado — es lo que enciende
+        // "Ver en la red" (PR4).
+        postUrl: "https://linkedin.com/posts/abc",
       });
-      expect(states.get("job_bad")).toEqual({ status: "failed", publishedAt: null });
+      expect(states.get("job_bad")).toEqual({ status: "failed", publishedAt: null, postUrl: null });
       // Ausente del Map, no "failed" explícito: el caller ya trata la
       // ausencia como fallo, igual que con PostFast.
       expect(states.has("job_desconocido")).toBe(false);
@@ -586,7 +601,11 @@ describe("UploadPostProvider", () => {
 
       const states = await provider.getPostStates(["job_subiendo"]);
 
-      expect(states.get("job_subiendo")).toEqual({ status: "scheduled", publishedAt: null });
+      expect(states.get("job_subiendo")).toEqual({
+        status: "scheduled",
+        publishedAt: null,
+        postUrl: null,
+      });
     });
 
     it("in_progress también se acepta como array de job_ids sueltos", async () => {
@@ -597,7 +616,11 @@ describe("UploadPostProvider", () => {
 
       const states = await provider.getPostStates(["job_subiendo"]);
 
-      expect(states.get("job_subiendo")).toEqual({ status: "scheduled", publishedAt: null });
+      expect(states.get("job_subiendo")).toEqual({
+        status: "scheduled",
+        publishedAt: null,
+        postUrl: null,
+      });
     });
 
     it("deja de paginar history en cuanto una página viene incompleta", async () => {
@@ -629,7 +652,11 @@ describe("UploadPostProvider", () => {
 
       const states = await provider.getPostStates(["job_viejo"]);
 
-      expect(states.get("job_viejo")).toEqual({ status: "scheduled", publishedAt: null });
+      expect(states.get("job_viejo")).toEqual({
+        status: "scheduled",
+        publishedAt: null,
+        postUrl: null,
+      });
       // 1 de /schedule + 5 páginas de /history (MAX_HISTORY_PAGES).
       expect(fetchMock).toHaveBeenCalledTimes(6);
     });
@@ -664,7 +691,11 @@ describe("UploadPostProvider", () => {
 
       // null y no Invalid Date: el caller cae a "ahora" en vez de mandar una
       // fecha inválida al UPDATE y abortar el batch entero.
-      expect(states.get("job_ok")).toEqual({ status: "published", publishedAt: null });
+      expect(states.get("job_ok")).toEqual({
+        status: "published",
+        publishedAt: null,
+        postUrl: null,
+      });
     });
   });
 

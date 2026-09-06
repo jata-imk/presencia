@@ -218,6 +218,10 @@ export class PostFastProvider implements PublishingProvider {
         result.set(post.id, {
           status: statusFromPostfast(post.status),
           publishedAt: post.publishedAt ? new Date(post.publishedAt) : null,
+          // PostFast no devuelve la URL del post en ninguna de sus
+          // respuestas (verificado contra postfa.st/docs/posts/list): los
+          // botones "Ver en la red" se quedan apagados con este proveedor.
+          postUrl: null,
         });
       }
       if (!body.pageInfo?.hasNextPage) break;

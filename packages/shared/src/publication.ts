@@ -210,6 +210,14 @@ export interface PublicationCardDto {
   scheduledAt: string | null;
   publishedAt: string | null;
   socialAccountId: string | null;
+  /**
+   * Enlace al post ya publicado en la red (F7.5). Null mientras no se haya
+   * publicado — y también DESPUÉS, si el proveedor no da la URL: PostFast no
+   * la devuelve nunca. El frontend trata null como "no hay a dónde llevar al
+   * usuario" y deja el botón apagado con su tooltip, sin preguntar qué
+   * proveedor está activo.
+   */
+  postUrl: string | null;
   /** Mensaje en español, listo para mostrar, cuando status es "failed". Null si no hay. */
   errorMessage: string | null;
 }

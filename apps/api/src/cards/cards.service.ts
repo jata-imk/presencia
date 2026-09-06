@@ -507,13 +507,19 @@ export class CardsService {
       // UPDATE simple), pero al menos las N cards de este batch quedan
       // en UNA transacción, no N.
       const failedIds: string[] = [];
-      const toPublish: { id: string; publishedAt: Date }[] = [];
+      const toPublish: { id: string; publishedAt: Date; postUrl: string | null }[] = [];
       for (const card of batch) {
         const state = states.get(card.providerRef);
         if (!state || state.status === "failed") {
           failedIds.push(card.id);
         } else if (state.status === "published") {
-          toPublish.push({ id: card.id, publishedAt: state.publishedAt ?? new Date() });
+          toPublish.push({
+            id: card.id,
+            publishedAt: state.publishedAt ?? new Date(),
+            // Puede venir null y está bien: no todos los proveedores dan la
+            // URL del post (PostFast no la da nunca).
+            postUrl: state.postUrl,
+          });
         }
         // "scheduled": sigue en cola del lado del proveedor, no-op.
       }
@@ -527,8 +533,8 @@ export class CardsService {
       }
       if (toPublish.length > 0) {
         await this.dbService.runWithTenant(userId, async (tx) => {
-          for (const { id, publishedAt } of toPublish) {
-            await this.repo.markPublished(tx, id, publishedAt);
+          for (const { id, publishedAt, postUrl } of toPublish) {
+            await this.repo.markPublished(tx, id, publishedAt, postUrl);
           }
         });
       }
@@ -548,6 +554,7 @@ function toDto(row: CardRow): PublicationCardDto {
     scheduledAt: row.scheduledAt?.toISOString() ?? null,
     publishedAt: row.publishedAt?.toISOString() ?? null,
     socialAccountId: row.socialAccountId,
+    postUrl: row.postUrl,
     errorMessage: errorMessageFrom(row.errorDetail),
   };
 }

@@ -315,6 +315,11 @@ export const publicationCards = pgTable(
       onDelete: "set null",
     }),
     providerRef: text("provider_ref"),
+    // F7.5: enlace al post ya publicado en la red. Lo llena la
+    // reconciliación junto con published_at, y solo si el proveedor lo da:
+    // PostFast no lo devuelve nunca, así que ahí se queda null y los botones
+    // "Ver en la red" siguen apagados con su tooltip.
+    postUrl: text("post_url"),
     errorDetail: jsonb("error_detail"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

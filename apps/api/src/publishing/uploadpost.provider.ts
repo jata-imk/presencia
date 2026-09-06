@@ -395,7 +395,7 @@ export class UploadPostProvider implements PublishingProvider {
     }>("GET", "/uploadposts/schedule");
     for (const post of scheduled.scheduled_posts ?? []) {
       if (post.job_id && pending.delete(post.job_id)) {
-        result.set(post.job_id, { status: "scheduled", publishedAt: null });
+        result.set(post.job_id, { status: "scheduled", publishedAt: null, postUrl: null });
       }
     }
     if (pending.size === 0) return result;
@@ -419,7 +419,7 @@ export class UploadPostProvider implements PublishingProvider {
       for (const entry of body.in_progress ?? []) {
         const jobId = typeof entry === "string" ? entry : entry?.job_id;
         if (jobId && pending.delete(jobId)) {
-          result.set(jobId, { status: "scheduled", publishedAt: null });
+          result.set(jobId, { status: "scheduled", publishedAt: null, postUrl: null });
         }
       }
 
@@ -431,8 +431,12 @@ export class UploadPostProvider implements PublishingProvider {
         result.set(
           item.job_id,
           item.success
-            ? { status: "published", publishedAt: parseTimestamp(item.upload_timestamp) }
-            : { status: "failed", publishedAt: null },
+            ? {
+                status: "published",
+                publishedAt: parseTimestamp(item.upload_timestamp),
+                postUrl: item.post_url ?? null,
+              }
+            : { status: "failed", publishedAt: null, postUrl: null },
         );
       }
       // Última página: no hay nada más viejo que traer.
@@ -450,7 +454,8 @@ export class UploadPostProvider implements PublishingProvider {
     // reportan como "scheduled": el caller no las toca y el siguiente pase
     // vuelve a preguntar.
     if (pending.size > 0 && historyTotal !== undefined && historyTotal > scannedHistory) {
-      for (const ref of pending) result.set(ref, { status: "scheduled", publishedAt: null });
+      for (const ref of pending)
+        result.set(ref, { status: "scheduled", publishedAt: null, postUrl: null });
     }
     return result;
   }

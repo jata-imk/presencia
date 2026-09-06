@@ -91,7 +91,8 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 | `group_id`                      | uuid nullable    | agrupa cards hermanas de una adaptación multi-red                                                                                          |
 | `scheduled_at` / `published_at` | timestamptz      | `scheduled_at` alimenta el Calendario                                                                                                      |
 | `social_account_id`             | uuid FK nullable | a qué cuenta conectada se publica (F6, migración `0011_cards_social_account`); `SET NULL` — desconectar la cuenta no borra el contenido    |
-| `provider_ref`                  | text nullable    | id del post en PostFast (vía adapter, ADR-009)                                                                                             |
+| `provider_ref`                  | text nullable    | id del post en el proveedor (vía adapter, ADR-009)                                                                                         |
+| `post_url`                      | text nullable    | enlace al post ya publicado (F7.5, migración `0015_cards_post_url`); null si el proveedor no lo da — PostFast nunca lo devuelve            |
 | `error_detail`                  | jsonb nullable   | por qué falló la publicación                                                                                                               |
 
 - El toggle multi-red del drawer de programación opera sobre `group_id`: programar el grupo o dejar redes individuales en borrador.
