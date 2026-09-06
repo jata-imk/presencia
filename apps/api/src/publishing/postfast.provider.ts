@@ -1,9 +1,7 @@
-import type { CardContent, SocialNetwork } from "@presencia/shared";
-import {
-  PublishingRateLimitError,
-  PublishingRejectedError,
-  PublishingUnavailableError,
-} from "./errors.js";
+import type { SocialNetwork } from "@presencia/shared";
+import { PublishingRejectedError, PublishingUnavailableError } from "./errors.js";
+import { isStatus, ProviderHttpClient } from "./http-client.js";
+import { buildPostText } from "./post-text.js";
 import type {
   ProviderAccount,
   ProviderPostState,
@@ -72,10 +70,11 @@ interface PostfastPostSummary {
 }
 
 export class PostFastProvider implements PublishingProvider {
-  constructor(
-    private readonly apiKey: string,
-    private readonly baseUrl: string = BASE_URL_DEFAULT,
-  ) {}
+  private readonly http: ProviderHttpClient;
+
+  constructor(apiKey: string, baseUrl: string = BASE_URL_DEFAULT) {
+    this.http = new ProviderHttpClient("PostFast", baseUrl, { "pf-api-key": apiKey });
+  }
 
   // No hace red: el workspace de PostFast no se crea ni se resuelve por
   // usuario, ya existe y es uno solo (ver cabecera).
@@ -93,7 +92,7 @@ export class PostFastProvider implements PublishingProvider {
   // TODOS los usuarios de Presencia. Quién es dueño de cuál lo resuelve
   // ChannelsService por diff, no este adapter.
   async listAccounts(): Promise<ProviderAccount[]> {
-    const accounts = await this.request<
+    const accounts = await this.http.request<
       Array<{ id: string; platform: string; displayName: string | null; connectionStatus: string }>
     >("GET", "/social-media/my-social-accounts");
     return accounts
@@ -110,9 +109,13 @@ export class PostFastProvider implements PublishingProvider {
     connectUrl: string;
     expiresAt: Date;
   }> {
-    const body = await this.request<{ connectUrl: string }>("POST", "/social-media/connect-link", {
-      expiryDays: CONNECT_LINK_EXPIRY_DAYS,
-    });
+    const body = await this.http.request<{ connectUrl: string }>(
+      "POST",
+      "/social-media/connect-link",
+      {
+        expiryDays: CONNECT_LINK_EXPIRY_DAYS,
+      },
+    );
     // PostFast no devuelve la fecha de expiración, solo respeta la que le
     // mandamos — se reconstruye acá para que el puerto siempre entregue un
     // `expiresAt` concreto y el caller no tenga que saber de días.
@@ -123,7 +126,7 @@ export class PostFastProvider implements PublishingProvider {
   }
 
   async schedule(req: SchedulePostRequest): Promise<{ providerRef: string }> {
-    const body = await this.request<{ postIds?: string[] }>("POST", "/social-posts", {
+    const body = await this.http.request<{ postIds?: string[] }>("POST", "/social-posts", {
       posts: [
         {
           content: buildPostText(req.content),
@@ -150,12 +153,12 @@ export class PostFastProvider implements PublishingProvider {
 
   async cancel(providerRef: string): Promise<void> {
     try {
-      await this.request("DELETE", `/social-posts/${encodeURIComponent(providerRef)}`);
+      await this.http.request("DELETE", `/social-posts/${encodeURIComponent(providerRef)}`);
     } catch (error) {
       // Idempotente por contrato de PublishingProvider: si PostFast ya no
       // tiene el post (404 — se publicó, o alguien más lo borró), cancelar
       // no debe tronar. Cualquier otro código sí es un fallo real.
-      if (error instanceof PublishingRejectedError && isNotFound(error.detail)) return;
+      if (error instanceof PublishingRejectedError && isStatus(error.detail, 404)) return;
       throw error;
     }
   }
@@ -169,7 +172,7 @@ export class PostFastProvider implements PublishingProvider {
     let page = 0;
     const ids = providerRefs.join(",");
     for (;;) {
-      const body = await this.request<{
+      const body = await this.http.request<{
         data: PostfastPostSummary[];
         pageInfo: { hasNextPage: boolean };
       }>("GET", `/social-posts?ids=${encodeURIComponent(ids)}&limit=50&page=${page}`);
@@ -183,42 +186,6 @@ export class PostFastProvider implements PublishingProvider {
       page += 1;
     }
     return result;
-  }
-
-  private async request<T>(method: string, path: string, jsonBody?: unknown): Promise<T> {
-    let res: Response;
-    try {
-      res = await fetch(`${this.baseUrl}${path}`, {
-        method,
-        headers: {
-          "pf-api-key": this.apiKey,
-          ...(jsonBody !== undefined ? { "Content-Type": "application/json" } : {}),
-        },
-        body: jsonBody !== undefined ? JSON.stringify(jsonBody) : undefined,
-      });
-    } catch (error) {
-      throw new PublishingUnavailableError(
-        "No se pudo contactar a PostFast (error de red).",
-        error,
-      );
-    }
-
-    if (res.status === 429) throw new PublishingRateLimitError();
-    if (res.status >= 500) {
-      throw new PublishingUnavailableError(
-        `PostFast respondió ${res.status}.`,
-        await safeJson(res),
-      );
-    }
-    if (!res.ok) {
-      const detail = await safeJson(res);
-      throw new PublishingRejectedError(
-        errorMessageFromBody(detail) ?? `PostFast rechazó la solicitud (${res.status}).`,
-        { status: res.status, body: detail },
-      );
-    }
-    if (res.status === 204) return undefined as T;
-    return (await res.json()) as T;
   }
 }
 
@@ -241,37 +208,4 @@ function statusFromPostfast(status: PostfastPostSummary["status"]): ProviderPost
 function networkFromPlatform(platform: string): SocialNetwork | null {
   const entry = Object.entries(PLATFORM_BY_NETWORK).find(([, p]) => p === platform);
   return (entry?.[0] as SocialNetwork) ?? null;
-}
-
-function buildPostText(content: CardContent): string {
-  const hashtags = content.hashtags.map((tag) => `#${tag}`).join(" ");
-  const body =
-    content.archetype === "visual_first"
-      ? content.caption
-      : content.archetype === "video_script"
-        ? `${content.hook}\n\n${content.script}\n\n${content.caption}`
-        : content.body;
-  return hashtags ? `${body}\n\n${hashtags}` : body;
-}
-
-function isNotFound(detail: unknown): boolean {
-  return (
-    typeof detail === "object" && detail !== null && (detail as { status?: number }).status === 404
-  );
-}
-
-function errorMessageFromBody(body: unknown): string | undefined {
-  if (typeof body === "object" && body !== null && "message" in body) {
-    const message = (body as { message?: unknown }).message;
-    return typeof message === "string" ? message : undefined;
-  }
-  return undefined;
-}
-
-async function safeJson(res: Response): Promise<unknown> {
-  try {
-    return await res.json();
-  } catch {
-    return null;
-  }
 }
