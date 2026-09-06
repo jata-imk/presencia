@@ -9,6 +9,7 @@ import type {
   ProviderPostState,
   PublishingProvider,
   SchedulePostRequest,
+  WorkspaceRef,
 } from "./publishing.provider.js";
 
 // Adapter real contra postfa.st (ADR-009). Verificado contra la referencia
@@ -17,6 +18,13 @@ import type {
 // Presencia, ver ADR-009 addendum), y no expone webhooks: confirmar
 // "publicado" es responsabilidad nuestra vía polling (CardsService,
 // reconciliación perezosa hasta que F8 traiga el job).
+//
+// Ese workspace único es un rasgo de PostFast, no del dominio (F7.5): por
+// eso ensureWorkspace() acá devuelve siempre la misma constante y
+// listAccounts() ignora el WorkspaceRef que recibe. Upload-Post, en cambio,
+// sí tiene un perfil por usuario. La consecuencia de vivir en un workspace
+// compartido es el diff antes/después de ChannelsService — ver el
+// comentario de cabecera de channels.service.ts.
 //
 // El shape de respuesta de POST /social-posts se había inferido consistente
 // con el resto de la API (envelope { data: [...] } con `id` por post, igual
@@ -32,6 +40,15 @@ import type {
 // post por llamada (ver el body de abajo), tomamos postIds[0].
 
 const BASE_URL_DEFAULT = "https://api.postfa.st";
+
+// Un solo workspace global para todos los usuarios de Presencia — el valor
+// es opaco para el resto del backend, solo este adapter lo interpreta.
+const POSTFAST_WORKSPACE: WorkspaceRef = { ref: "postfast:workspace" };
+
+// Vigencia del link de conexión. Vive acá y no en el puerto porque es un
+// parámetro que solo PostFast deja elegir (F7.5): el puerto expone el
+// `expiresAt` resultante, no la política para calcularlo.
+const CONNECT_LINK_EXPIRY_DAYS = 7;
 
 // SocialNetwork (nuestro enum) → platform de PostFast. 1:1, siempre
 // mayúsculas. No mapeamos youtube/threads porque nunca se llama a este
@@ -60,10 +77,21 @@ export class PostFastProvider implements PublishingProvider {
     private readonly baseUrl: string = BASE_URL_DEFAULT,
   ) {}
 
+  // No hace red: el workspace de PostFast no se crea ni se resuelve por
+  // usuario, ya existe y es uno solo (ver cabecera).
+  ensureWorkspace(): Promise<WorkspaceRef> {
+    return Promise.resolve(POSTFAST_WORKSPACE);
+  }
+
   // Array plano, no un envelope {data:[...]} — verificado contra
   // postfa.st/docs/accounts/list (2026-08-19). connectionStatus puede ser
   // "DISABLED" (token revocado, etc) mientras la cuenta SIGUE apareciendo
   // acá — no se omite, solo se marca (ver ProviderAccount.connected).
+  //
+  // Ignora el WorkspaceRef a propósito: la API key ya determina el único
+  // workspace que existe, así que este endpoint devuelve las cuentas de
+  // TODOS los usuarios de Presencia. Quién es dueño de cuál lo resuelve
+  // ChannelsService por diff, no este adapter.
   async listAccounts(): Promise<ProviderAccount[]> {
     const accounts = await this.request<
       Array<{ id: string; platform: string; displayName: string | null; connectionStatus: string }>
@@ -78,11 +106,20 @@ export class PostFastProvider implements PublishingProvider {
       .filter((a): a is ProviderAccount => a.network !== null);
   }
 
-  async createConnectLink(input: { expiryDays: number }): Promise<{ connectUrl: string }> {
+  async createConnectLink(): Promise<{
+    connectUrl: string;
+    expiresAt: Date;
+  }> {
     const body = await this.request<{ connectUrl: string }>("POST", "/social-media/connect-link", {
-      expiryDays: input.expiryDays,
+      expiryDays: CONNECT_LINK_EXPIRY_DAYS,
     });
-    return { connectUrl: body.connectUrl };
+    // PostFast no devuelve la fecha de expiración, solo respeta la que le
+    // mandamos — se reconstruye acá para que el puerto siempre entregue un
+    // `expiresAt` concreto y el caller no tenga que saber de días.
+    return {
+      connectUrl: body.connectUrl,
+      expiresAt: new Date(Date.now() + CONNECT_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+    };
   }
 
   async schedule(req: SchedulePostRequest): Promise<{ providerRef: string }> {

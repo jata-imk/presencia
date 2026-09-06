@@ -36,3 +36,32 @@ Probando F6 con la API key real de Jose salieron dos incidentes que corrigen afi
 - **`ProviderAccount` gana `connected: boolean`** (`PostFastProvider.listAccounts` lo mapea de `connectionStatus === "CONNECTED"`). Corrige el addendum de arriba: `GET /social-media/my-social-accounts` **NO omite** cuentas con token revocado, las sigue listando con `connectionStatus:"DISABLED"` — `reactivateAccount` y el self-heal de `claimConnectIntent` (ver siguiente punto) ahora exigen `connected`, no solo presencia en la lista. Verificado contra `postfa.st/docs/accounts/list`.
 - **"Reconectar una cuenta ya nuestra NO pasa por el diff" (línea de arriba) sigue siendo cierto solo cuando el token sigue vivo.** Si de verdad se revocó (`reactivateAccount` rechaza con 409), el camino de recuperación real SÍ es reautorizar en postfa.st desde "Conectar red" — pero `claimConnectIntent` original asumía que cualquier choque de `providerRef` era "otro tenant ganó la carrera" (línea de arriba sobre el índice único) y lo ignoraba en silencio, incluso cuando el choque era con la PROPIA fila `disconnected` del usuario. Corregido: el catch relee por `providerRef` dentro de la misma tx (RLS decide: visible = mía → reactivar; invisible = de otro tenant → ignorar, comportamiento original intacto). El insert conflictivo corre en un SAVEPOINT (`tx.transaction` anidado) — un `unique_violation` deja la transacción de Postgres "aborted", cualquier query después (incluida la relectura) truena con `25P02` si no se aísla así.
 - **Cuentas desconectadas ya no se mezclan con las activas.** `ChannelsService.listAccounts` excluye `status:"disconnected"` (viven en `listDisconnectedAccounts`, vista aparte en el frontend) — y se agregó borrado permanente real (`deleteAccount`, `DELETE /channels/:id/permanent`), mismo guard que `ChatService.deleteChat`: rechaza si hay una card `scheduled` apuntando a esa cuenta (`CardsRepository.hasScheduledCardsForAccount`).
+
+## Addendum (2026-09-06, F7.5 PR1) — el puerto no tenía scope de usuario
+
+F7.5 conecta un segundo proveedor (Upload-Post) por dos motivos concretos: la cuenta de PostFast de Jose se quedó sin suscripción y devuelve `subscription.required` en cada llamada — no se puede probar publicación real —, y Upload-Post es gratuito. Pero el valor real de la fase es otro: **es la primera vez que esta abstracción se ejercita con un proveedor que no la inspiró**, y no aguantó tal cual.
+
+**Lo que no encajaba.** `listAccounts()` y `createConnectLink({expiryDays})` no recibían a QUIÉN pertenecen las cuentas. Eso no era una omisión: era el workspace único de PostFast filtrándose al puerto. Upload-Post tiene un **perfil por usuario** (`POST /uploadposts/users`), así que `listAccounts` tiene que saber de qué perfil hablamos, y no hay forma de expresarlo con la firma vieja.
+
+**El cambio.** El puerto gana un `WorkspaceRef` opaco y un método para resolverlo:
+
+```ts
+ensureWorkspace(userId: string): Promise<WorkspaceRef>;
+listAccounts(ws: WorkspaceRef): Promise<ProviderAccount[]>;
+createConnectLink(input: { ws: WorkspaceRef }): Promise<{ connectUrl: string; expiresAt: Date }>;
+```
+
+`ensureWorkspace` es idempotente y **puede hacer red** (con Upload-Post crea el perfil si falta), así que `ChannelsService` lo llama siempre fuera de `runWithTenant`. PostFast lo implementa devolviendo una constante sin tocar la red, e ignora el `WorkspaceRef` que recibe: su API key ya determina el único workspace que existe.
+
+**Por qué `schedule`, `cancel` y `getPostStates` NO llevan `WorkspaceRef`.** No es un olvido ni una mitad del refactor: los tres ya llegan con la información que necesitan, y agregarles el scope sería ruido.
+
+- `schedule` recibe `accountProviderRef`, que es el id de la cuenta **dentro** del proveedor. En PostFast es el `socialMediaId`; en Upload-Post es `` `${perfil}:${plataforma}` `` — el adapter lo parsea y saca de ahí tanto el `user` como el `platform[]` del upload. La cuenta ya implica el perfil.
+- `cancel` y `getPostStates` operan sobre ids de post (`job_id` en Upload-Post). Los endpoints que los atienden — `DELETE /uploadposts/schedule/{job_id}`, `GET /uploadposts/schedule`, `GET /uploadposts/history` — están scopeados por la API key y **no aceptan un parámetro de perfil**: el `job_id` ya es único en toda la cuenta.
+
+La regla que sale de esto: el scope se pide solo donde el proveedor lo exige para **descubrir** cosas (qué cuentas hay, a dónde mandar al usuario a conectar). Donde el caller ya trae un identificador emitido por el proveedor, ese identificador es el scope.
+
+**Consecuencia sobre el diff de `social_connect_intents`.** El diff antes/después sigue siendo el mecanismo — funciona con cualquier proveedor — pero deja de ser _la única forma posible_: con un proveedor de perfiles, `listAccounts(ws)` ya devuelve solo las cuentas de ese usuario y el diff pasa a ser correcto-pero-innecesario. Se mantiene un solo camino a propósito (YAGNI): bifurcar `ChannelsService` por capacidad del proveedor sería exactamente el tipo de fuga que este puerto existe para evitar. El límite de atribución cruzada documentado más arriba es, entonces, **un límite de PostFast**, no del dominio.
+
+**`expiryDays` sale del puerto.** El JWT de conexión de Upload-Post dura 48 h fijas: no es un parámetro que todo proveedor deje elegir. El puerto ahora devuelve el `expiresAt` resultante y cada adapter decide su política (PostFast conserva sus 7 días, ahora como constante privada suya). El TTL de 30 min del `connect_intent` es independiente y no cambia: acota cuánto vale el snapshot `known_account_refs`, no la vigencia del link.
+
+**Lo que este PR NO hace:** no agrega el adapter de Upload-Post (PR2), ni `reschedule` (PR3), ni `post_url` (PR4). Es solo el puerto, para que el adapter nuevo se lea después como "un adapter más" y no como "un adapter más un refactor del puerto".

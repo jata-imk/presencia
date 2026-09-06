@@ -4,7 +4,11 @@ import type {
   ProviderPostState,
   PublishingProvider,
   SchedulePostRequest,
+  WorkspaceRef,
 } from "./publishing.provider.js";
+
+const FAKE_WORKSPACE: WorkspaceRef = { ref: "fake:workspace" };
+const FAKE_CONNECT_LINK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Provider de dev y de todos los tests (PUBLISHING_PROVIDER=fake, default sin
 // POSTFAST_API_KEY) — no es andamio temporal: es el provider permanente
@@ -28,12 +32,26 @@ export class FakePublishingProvider implements PublishingProvider {
     this.accounts.push({ ...account, connected: account.connected ?? true });
   }
 
+  // Un solo workspace, como PostFast: el fake emula la forma del proveedor
+  // que inspiró el puerto, que es también la que ejercitan los tests de
+  // ChannelsService (el diff antes/después). Hacerlo multi-perfil no
+  // agregaría cobertura y rompería seedAccount, que no sabe de usuarios.
+  ensureWorkspace(): Promise<WorkspaceRef> {
+    return Promise.resolve(FAKE_WORKSPACE);
+  }
+
   listAccounts(): Promise<ProviderAccount[]> {
     return Promise.resolve([...this.accounts]);
   }
 
-  createConnectLink(): Promise<{ connectUrl: string }> {
-    return Promise.resolve({ connectUrl: "https://postfa.st/fake-connect-link" });
+  createConnectLink(): Promise<{
+    connectUrl: string;
+    expiresAt: Date;
+  }> {
+    return Promise.resolve({
+      connectUrl: "https://postfa.st/fake-connect-link",
+      expiresAt: new Date(Date.now() + FAKE_CONNECT_LINK_TTL_MS),
+    });
   }
 
   schedule(req: SchedulePostRequest): Promise<{ providerRef: string }> {
