@@ -38,14 +38,18 @@ const envSchema = z
     ZEPTOMAIL_TOKEN: z.string().min(1),
     MAIL_FROM: z.email(),
     PORT: z.coerce.number().int().positive().default(3000),
-    // Publicación (F6, ADR-009). "fake" es el provider permanente de dev/test
-    // (FakePublishingProvider, in-memory) — "postfast" habla con la API real
-    // y necesita POSTFAST_API_KEY (workspace único y global, ver ADR-009
-    // addendum). Default a "fake": levantar el repo sin la key no debe
-    // tronar el boot.
-    PUBLISHING_PROVIDER: z.enum(["fake", "postfast"]).default("fake"),
+    // Publicación (F6/F7.5, ADR-009). "fake" es el provider permanente de
+    // dev/test (FakePublishingProvider, in-memory); "postfast" y
+    // "upload_post" hablan con su API real y cada uno exige SU key (ver el
+    // superRefine de abajo). Default a "fake": levantar el repo sin ninguna
+    // key no debe tronar el boot.
+    PUBLISHING_PROVIDER: z.enum(["fake", "postfast", "upload_post"]).default("fake"),
     POSTFAST_API_KEY: z.string().min(1).optional(),
     POSTFAST_BASE_URL: z.url().default("https://api.postfa.st"),
+    UPLOAD_POST_API_KEY: z.string().min(1).optional(),
+    // El /api final es parte de la base, no del path: todas las rutas del
+    // openapi.json cuelgan de https://api.upload-post.com/api.
+    UPLOAD_POST_BASE_URL: z.url().default("https://api.upload-post.com/api"),
   })
   .superRefine((value, ctx) => {
     // Fail-fast: toda var de modelo (AI_MODEL + los 3 tiers opcionales) debe
@@ -86,6 +90,13 @@ const envSchema = z
         code: "custom",
         path: ["POSTFAST_API_KEY"],
         message: 'PUBLISHING_PROVIDER="postfast" requiere POSTFAST_API_KEY en el entorno',
+      });
+    }
+    if (value.PUBLISHING_PROVIDER === "upload_post" && !value.UPLOAD_POST_API_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["UPLOAD_POST_API_KEY"],
+        message: 'PUBLISHING_PROVIDER="upload_post" requiere UPLOAD_POST_API_KEY en el entorno',
       });
     }
   });

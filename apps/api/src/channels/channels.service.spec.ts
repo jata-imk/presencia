@@ -104,6 +104,37 @@ describe("ChannelsService", () => {
     },
   );
 
+  // F7.5: el snapshot del intent solo guarda las CONECTADAS. Con Upload-Post
+  // el providerRef es `perfil:plataforma`, así que existe desde que la
+  // plataforma aparece en social_accounts — incluso con la conexión a medias
+  // (el proveedor la representa con string vacío). Si esa ref entrara a la
+  // foto, completar la conexión después no se vería como "nueva" en el diff
+  // y la red quedaría inconectable para siempre: el ref no cambia y, sin
+  // fila local, tampoco hay "Reconectar" que la rescate.
+  it(
+    "una cuenta a medio conectar no entra al snapshot, así que sí se reclama al completarla",
+    { timeout: 15_000 },
+    async () => {
+      const ref = "presencia-user:linkedin";
+      const provider = new FakePublishingProvider();
+      let connected = false;
+      provider.listAccounts = () =>
+        Promise.resolve([
+          { providerRef: ref, network: "linkedin" as const, displayName: "Jose", connected },
+        ]);
+      const service = new ChannelsServiceCtor(dbService, repo, provider, cardsRepo);
+
+      // Primer intento: la cuenta figura en el proveedor pero sin conectar.
+      const intent = await service.createConnectIntent(userA);
+      connected = true;
+
+      const claimed = await service.claimConnectIntent(userA, intent.id);
+
+      expect(claimed).toHaveLength(1);
+      expect(claimed[0]).toMatchObject({ network: "linkedin", displayName: "Jose" });
+    },
+  );
+
   // F7.5: el puerto ahora devuelve el `expiresAt` del link, así que el
   // invariante "el intent nunca sobrevive a su link" se aplica en vez de
   // asumirse. Ningún proveedor real lo activa hoy (PostFast 7 días,

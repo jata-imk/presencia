@@ -89,7 +89,23 @@ export class ChannelsService {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const intent = await this.repo.insertIntent(tx, {
         userId,
-        knownAccountRefs: accounts.map((a) => a.providerRef),
+        // Solo las CONECTADAS entran a la foto. Si entrara una desconectada,
+        // reconectarla nunca se vería como "nueva" en el diff y quedaría
+        // fuera del claim para siempre.
+        //
+        // Con PostFast casi no se notaba: sus providerRef son ids por cuenta
+        // y una cuenta revocada igual conservaba el suyo, así que el caso
+        // caía en el self-heal de claimConnectIntent (el catch que relee por
+        // providerRef). Con Upload-Post es un agujero de verdad: el
+        // providerRef es `perfil:plataforma`, o sea que EXISTE desde que la
+        // plataforma aparece como clave en social_accounts — incluso con la
+        // conexión a medias, que el proveedor representa con string vacío
+        // (visto en la cuenta real: `tiktok: ""`). Sin este filtro, un
+        // usuario que reintenta una conexión que falló a la mitad se
+        // quedaría sin poder conectar esa red nunca: el ref no cambia, el
+        // diff no ve nada nuevo, y como no hay fila local tampoco existe
+        // "Reconectar" para recuperarla.
+        knownAccountRefs: accounts.filter((a) => a.connected).map((a) => a.providerRef),
         expiresAt,
       });
       return { id: intent.id, connectUrl: link.connectUrl, expiresAt: expiresAt.toISOString() };
