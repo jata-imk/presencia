@@ -104,6 +104,35 @@ describe("ChannelsService", () => {
     },
   );
 
+  // F7.5: el puerto ahora devuelve el `expiresAt` del link, así que el
+  // invariante "el intent nunca sobrevive a su link" se aplica en vez de
+  // asumirse. Ningún proveedor real lo activa hoy (PostFast 7 días,
+  // Upload-Post 48 h, ambos > 30 min), pero uno futuro podría.
+  it(
+    "el intent se recorta al vencimiento del link cuando el link dura menos que el TTL",
+    { timeout: 15_000 },
+    async () => {
+      const shortLinkProvider = new FakePublishingProvider();
+      shortLinkProvider.createConnectLink = () =>
+        Promise.resolve({
+          connectUrl: "https://proveedor.test/c/corto",
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+        });
+      const shortLinkService = new ChannelsServiceCtor(
+        dbService,
+        repo,
+        shortLinkProvider,
+        cardsRepo,
+      );
+
+      const intent = await shortLinkService.createConnectIntent(userA);
+
+      const msLeft = new Date(intent.expiresAt).getTime() - Date.now();
+      expect(msLeft).toBeLessThanOrEqual(5 * 60 * 1000);
+      expect(msLeft).toBeGreaterThan(4 * 60 * 1000);
+    },
+  );
+
   it("un intent expirado rechaza el claim", { timeout: 15_000 }, async () => {
     const intent = await service.createConnectIntent(userA);
     // Fuerza la expiración sin esperar el TTL real de 30 min.

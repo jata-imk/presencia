@@ -20,6 +20,14 @@ import { ChannelsRepository, type SocialAccountRow } from "./channels.repository
 // existían (`known_account_refs`); al volver de postfa.st, las cuentas
 // NUEVAS respecto a esa foto son las del usuario que inició ESTA conexión.
 //
+// El diff es el mecanismo que funciona con CUALQUIER proveedor, no el único
+// posible (F7.5): un proveedor con perfiles por usuario, como Upload-Post,
+// devuelve en `listAccounts(ws)` solo las cuentas de ese usuario, y ahí el
+// diff sigue siendo correcto pero deja de ser necesario. Por eso este
+// servicio pide primero un `WorkspaceRef` con `ensureWorkspace(userId)` y se
+// lo pasa al proveedor: quien decide si eso significa "el workspace global"
+// o "el perfil de este usuario" es el adapter, no este código.
+//
 // Límite conocido y documentado (no resuelto en F6): si dos usuarios abren
 // su flujo de conexión casi al mismo tiempo y ambos conectan una cuenta
 // antes de que cualquiera reclame, el diff puede atribuir la cuenta al
@@ -31,8 +39,11 @@ import { ChannelsRepository, type SocialAccountRow } from "./channels.repository
 // y solo-founder, el riesgo real es bajo; el índice único de
 // social_accounts SÍ impide que una cuenta ya reclamada se le robe a su
 // dueño real (ver claimConnectIntent).
+// TTL propio del intent, independiente de cuánto dure el link del proveedor
+// (`createConnectLink` devuelve su `expiresAt`, que puede ser mucho mayor):
+// esto acota la ventana en la que el snapshot `known_account_refs` sigue
+// siendo una foto útil, no la vigencia del link.
 const INTENT_TTL_MS = 30 * 60 * 1000;
-const CONNECT_LINK_EXPIRY_DAYS = 7;
 
 @Injectable()
 export class ChannelsService {
@@ -60,11 +71,21 @@ export class ChannelsService {
   }
 
   async createConnectIntent(userId: string): Promise<ConnectIntentDto> {
+    // Secuencial y no dentro del Promise.all: las dos llamadas de abajo
+    // necesitan el workspace ya resuelto (con Upload-Post, `ensureWorkspace`
+    // crea el perfil si todavía no existe).
+    const ws = await this.provider.ensureWorkspace(userId);
     const [accounts, link] = await Promise.all([
-      this.provider.listAccounts(),
-      this.provider.createConnectLink({ expiryDays: CONNECT_LINK_EXPIRY_DAYS }),
+      this.provider.listAccounts(ws),
+      this.provider.createConnectLink({ ws }),
     ]);
-    const expiresAt = new Date(Date.now() + INTENT_TTL_MS);
+    // El intent nunca puede sobrevivir al link que lo acompaña: si un
+    // proveedor emite uno más corto que nuestros 30 min, el usuario tendría
+    // un intent vivo apuntando a un link ya muerto y el claim fallaría con
+    // un error genérico. Con `expiresAt` en el puerto (F7.5) el invariante
+    // se aplica en vez de asumirse — hoy ninguno de los dos proveedores lo
+    // activa (PostFast 7 días, Upload-Post 48 h), y está bien que así sea.
+    const expiresAt = new Date(Math.min(Date.now() + INTENT_TTL_MS, link.expiresAt.getTime()));
     return this.dbService.runWithTenant(userId, async (tx) => {
       const intent = await this.repo.insertIntent(tx, {
         userId,
@@ -76,6 +97,21 @@ export class ChannelsService {
   }
 
   async claimConnectIntent(userId: string, intentId: string): Promise<ChannelAccountDto[]> {
+    // Fuera de la transacción a propósito: con Upload-Post esto es una
+    // llamada de red. El listAccounts() de más abajo sigue dentro de la tx
+    // como estaba en F6 — moverlo también pediría reordenar el claim entero
+    // (validar el intent → consumirlo → reclamar), y eso no es de este PR.
+    //
+    // Queda antes de validar el intent, así que un claim con un id
+    // inventado, ya consumido o vencido gasta igual este viaje de red (y,
+    // con Upload-Post, crea el perfil). Se acepta: `ensureWorkspace` es
+    // idempotente y memoizado por proceso, el perfil de este usuario ya se
+    // creó en `createConnectIntent` antes de cualquier claim posible, y
+    // validar primero exigiría partir el claim en dos transacciones —
+    // consumir el intent en una y reclamar en otra —, que es justo la
+    // atomicidad que hoy evita perder un claim si algo truena en medio.
+    const ws = await this.provider.ensureWorkspace(userId);
+
     return this.dbService.runWithTenant(userId, async (tx) => {
       const intent = await this.repo.findIntentById(tx, intentId);
       if (!intent) throw new NotFoundException("No encontramos esa conexión.");
@@ -84,7 +120,7 @@ export class ChannelsService {
         throw new BadRequestException("Esa conexión expiró — vuelve a intentar conectar tu red.");
       }
 
-      const accounts = await this.provider.listAccounts();
+      const accounts = await this.provider.listAccounts(ws);
       const known = new Set(intent.knownAccountRefs as string[]);
       const newAccounts = accounts.filter((a) => !known.has(a.providerRef));
 
@@ -208,7 +244,8 @@ export class ChannelsService {
     );
     if (!account) throw new NotFoundException("No encontramos esa cuenta conectada.");
 
-    const providerAccounts = await this.provider.listAccounts();
+    const ws = await this.provider.ensureWorkspace(userId);
+    const providerAccounts = await this.provider.listAccounts(ws);
     // .connected, no solo presencia: PostFast sigue listando una cuenta con
     // token revocado (connectionStatus:"DISABLED"), no la quita — sin este
     // filtro, "Reconectar" habría vuelto a mostrar como activa justo la
