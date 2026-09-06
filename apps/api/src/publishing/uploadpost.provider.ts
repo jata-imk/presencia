@@ -125,7 +125,10 @@ interface UploadPostProfile {
 interface UploadPostHistoryItem {
   job_id?: string | null;
   success?: boolean;
-  post_url?: string | null;
+  // `unknown` a propósito: nada valida la respuesta del proveedor en
+  // runtime (request<T> es un cast), así que declararlo string sería
+  // mentirle al compilador. Lo estrecha parseHttpUrl.
+  post_url?: unknown;
   upload_timestamp?: string | null;
 }
 
@@ -434,7 +437,7 @@ export class UploadPostProvider implements PublishingProvider {
             ? {
                 status: "published",
                 publishedAt: parseTimestamp(item.upload_timestamp),
-                postUrl: item.post_url ?? null,
+                postUrl: parseHttpUrl(item.post_url),
               }
             : { status: "failed", publishedAt: null, postUrl: null },
         );
@@ -468,6 +471,34 @@ export class UploadPostProvider implements PublishingProvider {
  * escribirse. Ante un timestamp que no se entiende, mejor null: el caller
  * cae a "ahora".
  */
+/**
+ * Estrecha la URL del post a algo seguro de guardar y de renderizar.
+ *
+ * Este valor viaja sin escalas hasta un `href` del frontend, así que hay dos
+ * cosas que no pueden pasar:
+ *
+ *  - Un esquema que no sea http(s). Un `javascript:` en un `href` ejecuta
+ *    script en el origen de la app al hacer clic, y `rel="noopener"` no
+ *    protege de eso.
+ *  - Un valor que no sea string. `request<T>()` es un cast, no validación:
+ *    si el proveedor cambia la forma de HistoryItem, un objeto o un número
+ *    llegaría hasta el UPDATE de markPublished y lo haría tronar,
+ *    **abortando el batch entero de reconciliación** — incluidas las cards
+ *    que ya estaban listas. Mismo motivo por el que existe parseTimestamp.
+ *
+ * Ante cualquier duda, null: el frontend ya sabe degradar a botón apagado.
+ */
+function parseHttpUrl(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  return parsed.protocol === "http:" || parsed.protocol === "https:" ? raw : null;
+}
+
 function parseTimestamp(raw: string | null | undefined): Date | null {
   if (!raw) return null;
   const parsed = new Date(raw);

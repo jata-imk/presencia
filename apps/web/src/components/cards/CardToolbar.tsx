@@ -29,10 +29,16 @@ interface ToolbarAction {
   disabled?: boolean;
   /** Si viene, la acción se renderiza como enlace externo en vez de botón. */
   href?: string;
+  /**
+   * Motivo real de estar apagada. Sin esto todo apagado dice "Próximamente",
+   * que para "Ver post" sin enlace sería mentira: está construido, y con un
+   * proveedor que no da la URL no se va a encender nunca.
+   */
+  tooltip?: string;
 }
 
 function ToolbarButton({ action }: { action: ToolbarAction }) {
-  const { Icon, label, primary, danger, onClick, disabled, href } = action;
+  const { Icon, label, primary, danger, onClick, disabled, href, tooltip } = action;
   // Misma clase para el <a> y el <button>: la acción tiene que ocupar
   // exactamente la misma caja esté encendida o apagada, para que la toolbar
   // no cambie de layout según haya enlace o no.
@@ -59,7 +65,7 @@ function ToolbarButton({ action }: { action: ToolbarAction }) {
   }
 
   return (
-    <Tooltip label={disabled ? "Próximamente" : undefined}>
+    <Tooltip label={disabled ? (tooltip ?? "Próximamente") : undefined}>
       <button type="button" disabled={disabled} onClick={onClick} className={className}>
         {inner}
       </button>
@@ -124,7 +130,14 @@ export function CardToolbar({
           // tooltip, sin que este componente sepa qué proveedor hay.
           postUrl
             ? { Icon: ExternalLink, label: "Ver post", href: postUrl }
-            : { Icon: ExternalLink, label: "Ver post", disabled: true },
+            : {
+                Icon: ExternalLink,
+                label: "Ver post",
+                disabled: true,
+                // Mismo copy que el modal del Calendario: el motivo es que
+                // no tenemos el enlace, no que la función falte.
+                tooltip: "Todavía no guardamos el enlace al post publicado",
+              },
           { Icon: Maximize2, label: "Expandir", disabled: true },
         ];
       case "canceled":

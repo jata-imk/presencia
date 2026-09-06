@@ -676,6 +676,46 @@ describe("UploadPostProvider", () => {
       expect(states.has("job_viejo")).toBe(false);
     });
 
+    // El post_url viaja sin escalas hasta un href del frontend. Un
+    // `javascript:` ahí ejecuta script en el origen de la app al hacer clic,
+    // y rel="noopener" no protege de eso.
+    it("un post_url con esquema peligroso se descarta", async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(200, { scheduled_posts: [] }))
+        .mockResolvedValueOnce(
+          jsonResponse(200, {
+            history: [
+              { job_id: "job_ok", success: true, post_url: "javascript:alert(document.cookie)" },
+            ],
+            total: 1,
+          }),
+        );
+      const provider = makeProvider();
+
+      const states = await provider.getPostStates(["job_ok"]);
+
+      expect(states.get("job_ok")).toMatchObject({ status: "published", postUrl: null });
+    });
+
+    // request<T>() es un cast, no validación: si el proveedor cambia la forma
+    // de HistoryItem, un valor que no sea string llegaría hasta el UPDATE de
+    // markPublished y abortaría el batch entero de reconciliación.
+    it("un post_url que no es string se descarta en vez de propagarse", async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(200, { scheduled_posts: [] }))
+        .mockResolvedValueOnce(
+          jsonResponse(200, {
+            history: [{ job_id: "job_ok", success: true, post_url: { url: "https://x.test/1" } }],
+            total: 1,
+          }),
+        );
+      const provider = makeProvider();
+
+      const states = await provider.getPostStates(["job_ok"]);
+
+      expect(states.get("job_ok")).toMatchObject({ status: "published", postUrl: null });
+    });
+
     it("un upload_timestamp corrupto no se convierte en Invalid Date", async () => {
       fetchMock
         .mockResolvedValueOnce(jsonResponse(200, { scheduled_posts: [] }))
