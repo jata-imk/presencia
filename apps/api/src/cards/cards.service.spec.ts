@@ -94,6 +94,38 @@ class AmbiguousProvider extends FakePublishingProvider {
   }
 }
 
+// F7.5: el fallo se simula en reschedule(), no en schedule() — la card
+// tiene que llegar programada para que el segundo schedule() tome el camino
+// corto de reprogramación.
+class ReschedRejectingProvider extends FakePublishingProvider {
+  override reschedule(): Promise<{ providerRef: string }> {
+    return Promise.reject(new PublishingRejectedError("scheduled_date inválida", { status: 400 }));
+  }
+}
+
+class ReschedAmbiguousProvider extends FakePublishingProvider {
+  override reschedule(): Promise<{ providerRef: string }> {
+    return Promise.reject(
+      new PublishingUnavailableError("Upload-Post no confirmó la reprogramación.", {
+        reason: "reschedule_not_confirmed",
+        body: {},
+      }),
+    );
+  }
+}
+
+// Cancela la card MIENTRAS reschedule() está en vuelo, y después rechaza —
+// la carrera exacta que la guardia de markRescheduled tiene que cubrir.
+class CancelDuringReschedProvider extends FakePublishingProvider {
+  constructor(private readonly onInFlight: () => Promise<void>) {
+    super();
+  }
+  override async reschedule(): Promise<{ providerRef: string }> {
+    await this.onInFlight();
+    throw new PublishingRejectedError("scheduled_date inválida", { status: 400 });
+  }
+}
+
 class FlakyProvider extends FakePublishingProvider {
   private failNext = true;
   override schedule(req: SchedulePostRequest): Promise<{ providerRef: string }> {
@@ -328,8 +360,12 @@ describe("CardsService", () => {
     expect(scheduled.status).toBe("scheduled");
   });
 
+  // F7.5: mover solo la hora ya no destruye y recrea el post. Con un
+  // proveedor que tiene update (Upload-Post vía PATCH, y el fake que imita
+  // esa forma) el post sobrevive, y con él su providerRef — que es lo que
+  // hace desaparecer el modo de falla de ADR-009.
   it(
-    "reprogramar cancela el providerRef viejo en el proveedor y programa uno nuevo",
+    "reprogramar a otra hora con la misma cuenta conserva el post y su providerRef",
     { timeout: 15_000 },
     async () => {
       const card = await createCard(TEXT_CONTENT, "linkedin");
@@ -345,15 +381,170 @@ describe("CardsService", () => {
       });
       if (!firstProviderRef) throw new Error("Debió tener providerRef tras programar");
 
+      const newAt = future(20);
       const second = await service.schedule(userA, card.id, {
         socialAccountId: account.id,
+        scheduledAt: newAt,
+      });
+
+      expect(second.status).toBe("scheduled");
+      expect(second.scheduledAt).toBe(newAt);
+      const after = await dbService.runWithTenant(userA, async (tx) => {
+        const row = await cardsRepo.findById(tx, card.id);
+        return row?.providerRef ?? null;
+      });
+      expect(after).toBe(firstProviderRef);
+      // Y el post sigue vivo del lado del proveedor, movido de horario.
+      const states = await provider.getPostStates([firstProviderRef]);
+      expect(states.get(firstProviderRef)).toMatchObject({ status: "scheduled" });
+    },
+  );
+
+  // Cambiar de cuenta NO es "el mismo post movido": es otro destino, así
+  // que sigue por el camino largo de cancel + create.
+  it(
+    "reprogramar cambiando de cuenta sí cancela el post viejo y crea uno nuevo",
+    { timeout: 15_000 },
+    async () => {
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const accountA = await connectAccount(userA, "linkedin");
+      const accountB = await connectAccount(userA, "linkedin");
+
+      const first = await service.schedule(userA, card.id, {
+        socialAccountId: accountA.id,
+        scheduledAt: future(10),
+      });
+      const firstProviderRef = await dbService.runWithTenant(userA, async (tx) => {
+        const row = await cardsRepo.findById(tx, first.id);
+        return row?.providerRef ?? null;
+      });
+      if (!firstProviderRef) throw new Error("Debió tener providerRef tras programar");
+
+      await service.schedule(userA, card.id, {
+        socialAccountId: accountB.id,
         scheduledAt: future(20),
       });
-      expect(second.status).toBe("scheduled");
 
+      const after = await dbService.runWithTenant(userA, async (tx) => {
+        const row = await cardsRepo.findById(tx, card.id);
+        return row?.providerRef ?? null;
+      });
+      expect(after).not.toBe(firstProviderRef);
       // El ref viejo ya no existe del lado del proveedor — cancel() lo borró.
       const states = await provider.getPostStates([firstProviderRef]);
       expect(states.has(firstProviderRef)).toBe(false);
+    },
+  );
+
+  // La diferencia de semántica que justifica separar completeReschedule de
+  // schedule(): acá la card YA estaba válidamente programada, así que un
+  // rechazo explícito no puede costarle su programación.
+  it(
+    "un reschedule rechazado deja la card programada en su horario viejo",
+    { timeout: 15_000 },
+    async () => {
+      const rejecting = new ReschedRejectingProvider();
+      const rejectingService = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, rejecting);
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+
+      const originalAt = future(10);
+      const first = await rejectingService.schedule(userA, card.id, {
+        socialAccountId: account.id,
+        scheduledAt: originalAt,
+      });
+      const refBefore = await dbService.runWithTenant(userA, async (tx) => {
+        const row = await cardsRepo.findById(tx, first.id);
+        return row?.providerRef ?? null;
+      });
+
+      await expect(
+        rejectingService.schedule(userA, card.id, {
+          socialAccountId: account.id,
+          scheduledAt: future(20),
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+
+      const after = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
+      expect(after?.status).toBe("scheduled");
+      expect(after?.scheduledAt?.toISOString()).toBe(originalAt);
+      expect(after?.providerRef).toBe(refBefore);
+    },
+  );
+
+  // Sin la guardia de markRescheduled, la restauración por rechazo
+  // RESUCITABA como "scheduled" una card que el usuario acababa de cancelar
+  // — y encima sin cuenta ni provider_ref, porque cancelSchedule los limpia.
+  it(
+    "si el usuario cancela mientras se reprograma, el rechazo no le resucita la card",
+    { timeout: 15_000 },
+    async () => {
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+
+      // Se cancela por el repo y no por el service: lo que importa es que
+      // la fila deje de estar "scheduled" mientras la llamada al proveedor
+      // sigue en vuelo, que es exactamente lo que hace cancelSchedule.
+      const provider = new CancelDuringReschedProvider(() =>
+        dbService.runWithTenant(userA, async (tx) => {
+          await cardsRepo.cancelSchedule(tx, card.id);
+        }),
+      );
+      const racingService = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, provider);
+
+      await racingService.schedule(userA, card.id, {
+        socialAccountId: account.id,
+        scheduledAt: future(10),
+      });
+
+      await expect(
+        racingService.schedule(userA, card.id, {
+          socialAccountId: account.id,
+          scheduledAt: future(20),
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+
+      const after = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
+      expect(after?.status).toBe("draft");
+      expect(after?.socialAccountId).toBeNull();
+      expect(after?.providerRef).toBeNull();
+    },
+  );
+
+  it(
+    "un reschedule ambiguo deja la card failed conservando horario, cuenta y providerRef",
+    { timeout: 15_000 },
+    async () => {
+      const ambiguous = new ReschedAmbiguousProvider();
+      const ambiguousService = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, ambiguous);
+      const card = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+
+      const first = await ambiguousService.schedule(userA, card.id, {
+        socialAccountId: account.id,
+        scheduledAt: future(10),
+      });
+      const refBefore = await dbService.runWithTenant(userA, async (tx) => {
+        const row = await cardsRepo.findById(tx, first.id);
+        return row?.providerRef ?? null;
+      });
+
+      const newAt = future(20);
+      await expect(
+        ambiguousService.schedule(userA, card.id, {
+          socialAccountId: account.id,
+          scheduledAt: newAt,
+        }),
+      ).rejects.toMatchObject({ status: 503 });
+
+      const after = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
+      expect(after?.status).toBe("failed");
+      // El horario NUEVO y el providerRef sobreviven como rastro: no
+      // sabemos si el post se movió del otro lado, y borrarlos dejaría sin
+      // forma de ubicarlo a mano.
+      expect(after?.scheduledAt?.toISOString()).toBe(newAt);
+      expect(after?.socialAccountId).toBe(account.id);
+      expect(after?.providerRef).toBe(refBefore);
     },
   );
 

@@ -151,6 +151,44 @@ export class PostFastProvider implements PublishingProvider {
     return { providerRef };
   }
 
+  /**
+   * PostFast no tiene endpoint de update de post, así que reprogramar se
+   * emula con cancel + create y devuelve un providerRef NUEVO.
+   *
+   * Esta emulación vivía en `CardsService.schedule()` hasta F7.5. Se movió
+   * acá cuando el puerto ganó `reschedule`: el hueco es un rasgo de este
+   * proveedor, no del dominio — con Upload-Post no existe, porque su PATCH
+   * mueve el post en su lugar.
+   *
+   * Se crea el post nuevo ANTES de cancelar el viejo, y ese orden importa:
+   * es lo que hace cumplir el contrato del puerto de que un rechazo deja
+   * todo como estaba. Al revés (cancelar primero, como se hacía en
+   * CardsService hasta F7.5), un create rechazado dejaba a la card
+   * apuntando a un post que ya se había borrado — "sigue programada" pero
+   * no iba a publicar nunca.
+   *
+   * El cancel queda best-effort, igual que antes: si falla, se sigue con el
+   * horario nuevo porque el objetivo del usuario es reprogramar, no
+   * bloquearse. Hueco conocido y aceptado, el mismo de siempre: PostFast
+   * puede terminar con dos posts (el viejo y el nuevo).
+   */
+  async reschedule(
+    previousProviderRef: string,
+    req: SchedulePostRequest,
+  ): Promise<{ providerRef: string }> {
+    const created = await this.schedule(req);
+    try {
+      await this.cancel(previousProviderRef);
+    } catch (error) {
+      console.error(
+        `[postfast] Se reprogramó a ${created.providerRef} pero no se pudo cancelar el post ` +
+          `viejo ${previousProviderRef} — puede quedar duplicado, revisión manual:`,
+        error,
+      );
+    }
+    return created;
+  }
+
   async cancel(providerRef: string): Promise<void> {
     try {
       await this.http.request("DELETE", `/social-posts/${encodeURIComponent(providerRef)}`);

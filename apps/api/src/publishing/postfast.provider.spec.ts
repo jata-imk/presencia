@@ -187,6 +187,69 @@ describe("PostFastProvider", () => {
     expect(link.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + sevenDays);
   });
 
+  // PostFast no tiene update de post: la emulación cancel+create vivía en
+  // CardsService hasta F7.5 y ahora es del adapter, que es donde de verdad
+  // pertenece — el hueco es un rasgo de este proveedor, no del dominio.
+  it("reschedule crea el post nuevo PRIMERO y después cancela el viejo", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(201, { postIds: ["pf_nuevo"] }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const provider: PublishingProvider = new PostFastProvider("test-key");
+
+    const result = await provider.reschedule("pf_viejo", {
+      network: "linkedin",
+      content: TEXT_CONTENT,
+      scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
+      accountProviderRef: "acc_1",
+    });
+
+    expect(result).toEqual({ providerRef: "pf_nuevo" });
+    const [createUrl] = fetchMock.mock.calls[0] as [string];
+    expect(createUrl).toBe("https://api.postfa.st/social-posts");
+    const [cancelUrl, cancelInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(cancelInit.method).toBe("DELETE");
+    expect(cancelUrl).toBe("https://api.postfa.st/social-posts/pf_viejo");
+  });
+
+  // El orden no es cosmético: es lo que hace cumplir el contrato del puerto
+  // de que un rechazo deja todo como estaba. Cancelando primero, un create
+  // rechazado dejaba a la card apuntando a un post ya borrado — "sigue
+  // programada" y sin nada que publicar.
+  it("si el create es rechazado, el post viejo NO se toca", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(400, { message: "scheduledAt inválido" }));
+    const provider: PublishingProvider = new PostFastProvider("test-key");
+
+    await expect(
+      provider.reschedule("pf_viejo", {
+        network: "linkedin",
+        content: TEXT_CONTENT,
+        scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
+        accountProviderRef: "acc_1",
+      }),
+    ).rejects.toBeInstanceOf(PublishingRejectedError);
+    // Una sola llamada: la de crear. Nunca se intentó el DELETE.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  // Best-effort a propósito: el objetivo del usuario es reprogramar, no
+  // bloquearse. Hueco conocido y aceptado — puede quedar un post duplicado.
+  it("si el cancel del post viejo falla, reschedule igual devuelve la ref nueva", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(201, { postIds: ["pf_nuevo"] }))
+      .mockResolvedValueOnce(jsonResponse(500, { message: "boom" }));
+    const provider: PublishingProvider = new PostFastProvider("test-key");
+
+    const result = await provider.reschedule("pf_viejo", {
+      network: "linkedin",
+      content: TEXT_CONTENT,
+      scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
+      accountProviderRef: "acc_1",
+    });
+
+    expect(result).toEqual({ providerRef: "pf_nuevo" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("cancelar una ref inexistente (404) no lanza — es idempotente", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(404, { statusCode: 404, message: "not found" }));
     const provider: PublishingProvider = new PostFastProvider("test-key");

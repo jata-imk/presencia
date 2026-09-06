@@ -310,6 +310,53 @@ export class UploadPostProvider implements PublishingProvider {
     return { providerRef };
   }
 
+  /**
+   * La razón de peso para traer este proveedor: `PATCH` mueve el post en su
+   * lugar, con el mismo `job_id`. Reprogramar deja de ser cancelar+recrear
+   * y con eso desaparece el modo de falla de ADR-009 (si la recreación
+   * falla, la card queda sin su horario y puede haber post duplicado).
+   *
+   * Se manda también el `title` y no solo la fecha: el contenido de la card
+   * pudo cambiar desde que se programó, y sin esto el proveedor publicaría
+   * el texto viejo.
+   */
+  async reschedule(
+    previousProviderRef: string,
+    req: SchedulePostRequest,
+  ): Promise<{ providerRef: string }> {
+    let body: { success?: boolean; job_id?: string };
+    try {
+      body = await this.http.request<{ success?: boolean; job_id?: string }>(
+        "PATCH",
+        `/uploadposts/schedule/${encodeURIComponent(previousProviderRef)}`,
+        {
+          scheduled_date: req.scheduledAt.toISOString(),
+          title: buildPostText(req.content),
+        },
+      );
+    } catch (error) {
+      // 404 = el job ya no está en la cola (se disparó, o lo borraron por
+      // fuera). No se puede "mover" algo que no existe, y devolverlo como
+      // rechazo rompería el contrato del puerto: éste promete que un
+      // rechazo deja el post original vivo, y acá no hay original. Se crea
+      // uno nuevo, que es lo que el usuario pidió — mover su publicación a
+      // otra hora — y el providerRef nuevo viaja de vuelta al caller.
+      if (error instanceof PublishingRejectedError && isStatus(error.detail, 404)) {
+        return this.schedule(req);
+      }
+      throw error;
+    }
+    // Un 200 que dice `success:false` no es un éxito. Vale la pena el
+    // guard: este proveedor ya sorprendió una vez con un 403 de body vacío.
+    if (body.success === false) {
+      throw new PublishingUnavailableError("Upload-Post no confirmó la reprogramación.", {
+        reason: "reschedule_not_confirmed",
+        body,
+      });
+    }
+    return { providerRef: body.job_id ?? previousProviderRef };
+  }
+
   async cancel(providerRef: string): Promise<void> {
     try {
       await this.http.request("DELETE", `/uploadposts/schedule/${encodeURIComponent(providerRef)}`);

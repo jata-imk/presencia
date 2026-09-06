@@ -128,3 +128,47 @@ El resultado era un callejón sin salida: el usuario tenía sus redes conectadas
 Se conservan los dos casos del POST, ahora con el significado correcto: un `409` es la carrera entre nuestro GET y nuestro POST (éxito), y un `PROFILE_LIMIT_REACHED` sí significa lo que dice — el perfil no existe y no se puede crear —, con un mensaje que lo explica en vez de un "rechazó la solicitud (403)".
 
 **La lección, distinta de la de la spec de máquina.** Acá el openapi no mentía: el 409 existe. Lo que no dice —y ninguna spec suele decir— es **en qué orden se evalúan los errores** cuando dos condiciones aplican a la vez. Un contrato verificado campo por campo puede seguir siendo insuficiente para las precondiciones que no están escritas: eso solo sale ejercitando el camino real, con la cuenta en el estado real.
+
+- **El 409 de "el perfil ya existe" NO se pudo confirmar contra la API real**, precisamente porque el plan estaba lleno y no había forma de crear un perfil para después repetirlo. Viene del openapi. Si el proveedor respondiera otra cosa, `ensureWorkspace` falla ruidosamente en vez de seguir con un perfil que no existe — que es la degradación correcta, pero conviene confirmarlo en la corrida manual de PR5.
+
+## Addendum (2026-09-06, F7.5 PR3) — `reschedule` en el puerto: el modo de falla era de PostFast, no del dominio
+
+Hasta acá, "reprogramar = `cancel(ref viejo)` + `schedule(nuevo)`" figuraba como una regla del ciclo de vida de la card. No lo era: era **PostFast sin endpoint de update** filtrándose al dominio, igual que el workspace único se había filtrado al puerto (PR1). Upload-Post tiene `PATCH /uploadposts/schedule/{job_id}`, que mueve el post en su lugar.
+
+El puerto gana entonces:
+
+```ts
+reschedule(previousProviderRef: string, req: SchedulePostRequest): Promise<{ providerRef: string }>;
+```
+
+Recibe el `req` completo y no solo la fecha porque un proveedor sin update tiene que **emularlo recreando** el post, y para eso necesita red, contenido y cuenta. Por lo mismo el `providerRef` que devuelve **puede ser distinto** del que recibió: el caller persiste el que vuelve, nunca asume que es el viejo.
+
+- **Upload-Post:** `PATCH` real, mismo `job_id`. Se manda también el `title`, no solo la fecha — el contenido de la card pudo cambiar desde que se programó, y sin eso el proveedor publicaría el texto viejo. Un `404` (el job ya salió de la cola) no se devuelve como rechazo: se crea un post nuevo, porque no hay original que preservar.
+- **PostFast:** emula con create + cancel, **en ese orden**. El cancel sigue siendo best-effort y el hueco sigue existiendo (puede quedar un post duplicado), pero ahora **vive en su adapter**, que es donde pertenece.
+- **Fake:** conserva la ref, como un proveedor con update. Es deliberado aunque el resto del fake imite a PostFast: es la forma que el puerto prefiere y la que conviene tener en dev, porque la emulación es la degradada. Los tests que necesitan ejercitar la emulación traen su propio provider.
+
+### Cuál de los dos caminos se toma
+
+`CardsService.schedule()` va por `reschedule()` solo cuando es una **reprogramación pura**: la card ya está `scheduled`, tiene `provider_ref`, y la cuenta destino no cambia. Cambiar de cuenta no es "el mismo post movido" sino otro destino, y sigue por el camino largo de cancel + create.
+
+Ese camino usa `markRescheduled`, que a diferencia de `markScheduling` **no anula `provider_ref`**. Ese null existe para el caso "puede que la llamada no llegue a crear nada"; acá el post ya existe. Anularlo abriría sin necesidad la misma ventana de card huérfana que este cambio permite cerrar.
+
+### El contrato que hace posible todo lo anterior
+
+`reschedule` promete algo, y el dominio depende de ello: **si lanza un rechazo explícito, el proveedor no cambió nada y el post original sigue vivo en su horario original.** Sin esa promesa, "devolver la card a donde estaba" sería una mentira.
+
+Cumplirla no es gratis para el adapter que emula. La primera versión de `PostFastProvider.reschedule` cancelaba el post viejo y después creaba el nuevo — que es literalmente lo que hacía `CardsService` antes. Con eso, un create rechazado dejaba la card restaurada como `scheduled`, apuntando a un `provider_ref` de un post **ya borrado**: el calendario decía "programada" y no iba a publicar nunca, y `reconcileDueCards` recién lo notaba cuando pasara la hora vieja. Peor que el comportamiento anterior a F7.5, que al menos mandaba la card a `draft` y no mentía.
+
+Invertir el orden lo arregla: **crear primero, cancelar después**. Un rechazo del create no llega a tocar el post viejo, y el hueco que queda es el de siempre y el ya aceptado — si el cancel falla, PostFast puede terminar con dos posts.
+
+Un fallo **ambiguo** no promete nada, y está bien: ahí el caller ya asume que no sabe qué pasó.
+
+### La semántica de fallo es distinta, y a propósito
+
+En `schedule()`, un rechazo explícito manda la card a `draft`: nunca se creó nada, y la card no tenía una programación previa que perder. En `reschedule()` **sí la tenía**, así que un rechazo la devuelve exactamente a donde estaba — `scheduled`, en su horario viejo, con su `provider_ref` intacto. Reprogramar y fallar no debe costarte la programación que ya tenías.
+
+Un fallo **ambiguo** sigue yendo a `failed` conservando horario, cuenta y `provider_ref`, por el mismo motivo de siempre: no sabemos si el post se movió del otro lado, y borrar el rastro dejaría sin forma de ubicarlo a mano.
+
+La restauración lleva guardia `status='scheduled'` (misma familia que `attachProviderRefIfScheduled`, y por el mismo motivo): si el usuario le dio Cancelar mientras la llamada al proveedor seguía en vuelo, no hay nada que restaurar — sin la guardia se le resucitaría como `scheduled` una card que él acababa de mandar a `draft`, y encima sin cuenta ni `provider_ref`.
+
+Un apunte sobre `markRescheduled`, que conserva el `provider_ref` en vez de anularlo: eso cierra la ventana de card huérfana, pero abre otra más chica. Si el proceso muere entre ese UPDATE y la llamada al proveedor, la fila dice el horario **nuevo** mientras el proveedor sigue con el **viejo**, y `listOrphanedScheduled` no lo detecta porque sí hay `provider_ref`. No se pierde nada: el post existe y se publica, y el primer pase de reconciliación posterior lo marca `published`. Lo que hay entremedio es un calendario que miente un rato, no una card rota.
