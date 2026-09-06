@@ -45,9 +45,10 @@ import type {
 
 const BASE_URL_DEFAULT = "https://api.upload-post.com/api";
 
-// El perfil se deriva del users.id, no se guarda. `ensureWorkspace` es
-// idempotente contra el 409 del proveedor, así que no hace falta recordar
-// cuáles ya existen más allá de la memoización de proceso de abajo.
+// El perfil se deriva del users.id, no se guarda: el mismo usuario siempre
+// resuelve al mismo nombre, así que `ensureWorkspace` puede preguntar si ya
+// existe en vez de tener que recordarlo (ver su docstring — recordar no
+// alcanza: la memoización vive en memoria del proceso).
 const PROFILE_PREFIX = "presencia-";
 
 // Separa perfil de plataforma dentro de social_accounts.provider_ref. Ni los
@@ -158,34 +159,50 @@ export class UploadPostProvider implements PublishingProvider {
     });
   }
 
+  /**
+   * PREGUNTA antes de crear, y no al revés.
+   *
+   * Parece un viaje de red de más y es justo lo contrario. "Crear y tolerar
+   * el conflicto" depende de que el proveedor sepa distinguir *"ese perfil
+   * ya existe"* de *"no puedes crear más perfiles"*, y Upload-Post **no lo
+   * hace**: evalúa el límite del plan PRIMERO, así que con los perfiles
+   * llenos responde `403 PROFILE_LIMIT_REACHED` aunque el perfil que pides
+   * ya exista y sea tuyo. El `409` que documenta su openapi no llega nunca
+   * en ese caso.
+   *
+   * Eso rompió de verdad (incidente 2026-09-06, F7.5): la memoización de
+   * abajo vive en memoria del proceso, así que se pierde en cada reinicio
+   * del server. Un usuario conectó sus redes, el server se reinició entre
+   * "Conectar red" y "Ya conecté mi cuenta", y el segundo paso volvió a
+   * intentar crear un perfil que YA existía → 403 → claim bloqueado, sin
+   * forma de confirmar sus cuentas. Preguntar primero lo vuelve imposible.
+   */
   async ensureWorkspace(userId: string): Promise<WorkspaceRef> {
     const username = `${PROFILE_PREFIX}${userId}`;
     if (this.ensuredProfiles.has(username)) return { ref: username };
+
+    if (await this.profileExists(username)) {
+      this.ensuredProfiles.add(username);
+      return { ref: username };
+    }
+
     try {
       await this.http.request("POST", "/uploadposts/users", { username });
     } catch (error) {
       if (!(error instanceof PublishingRejectedError)) throw error;
-      // 409 = el perfil ya existe. Es el caso normal en cuanto el proceso se
-      // reinicia, no un fallo: por eso ensureWorkspace es idempotente y el
-      // nombre del perfil se deriva en vez de guardarse.
-      //
-      // Este 409 viene del openapi y NO se pudo confirmar contra la cuenta
-      // real: el plan tenía sus perfiles agotados, así que no había forma de
-      // crear uno para después repetirlo. Si algún día resulta que el
-      // proveedor responde otra cosa, esto falla ruidosamente (el error
-      // propaga) en vez de seguir con un perfil que no existe.
+      // Carrera: alguien creó el perfil entre el GET de arriba y este POST.
+      // Con el plan lleno este 409 no llega (gana el 403), pero cuando hay
+      // cupo sí es la respuesta documentada, y significa éxito.
       if (isStatus(error.detail, 409)) {
         this.ensuredProfiles.add(username);
         return { ref: username };
       }
-      // 403 al crear = el plan llegó a su tope de perfiles. Verificado
-      // contra la cuenta real (2026-09-06): responde 403 con el body VACÍO,
-      // así que sin este caso el usuario vería un "Upload-Post rechazó la
-      // solicitud (403)" que no explica nada. Se dice "puede que" porque un
-      // 403 también podría ser una key sin permisos.
-      if (isStatus(error.detail, 403)) {
+      // Acá el tope del plan SÍ es lo que dice: el perfil no existe y no se
+      // puede crear. El proveedor manda `error_code: PROFILE_LIMIT_REACHED`
+      // en el body, aunque en algunas rutas el 403 viene con el body vacío.
+      if (isProfileLimitReached(error.detail)) {
         throw new PublishingRejectedError(
-          "No se pudo crear tu perfil en Upload-Post. Puede que la cuenta haya llegado al límite de perfiles de su plan.",
+          "Tu cuenta de Upload-Post llegó al límite de perfiles de su plan, así que no se pudo crear el tuyo.",
           error.detail,
         );
       }
@@ -193,6 +210,17 @@ export class UploadPostProvider implements PublishingProvider {
     }
     this.ensuredProfiles.add(username);
     return { ref: username };
+  }
+
+  /** 200 = existe, 404 = no. Cualquier otra cosa es un fallo de verdad. */
+  private async profileExists(username: string): Promise<boolean> {
+    try {
+      await this.http.request("GET", `/uploadposts/users/${encodeURIComponent(username)}`);
+      return true;
+    } catch (error) {
+      if (error instanceof PublishingRejectedError && isStatus(error.detail, 404)) return false;
+      throw error;
+    }
   }
 
   // `social_accounts` viene KEYED POR PLATAFORMA, no como array: un perfil
@@ -392,6 +420,19 @@ function parseTimestamp(raw: string | null | undefined): Date | null {
   if (!raw) return null;
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * El tope de perfiles del plan. Se mira el `error_code` del body porque es
+ * la señal precisa; el 403 a secas queda de respaldo, porque el proveedor no
+ * siempre manda body (visto vacío en una de sus rutas).
+ */
+function isProfileLimitReached(detail: unknown): boolean {
+  if (typeof detail === "object" && detail !== null) {
+    const body = (detail as { body?: { error_code?: unknown } | null }).body;
+    if (body && body.error_code === "PROFILE_LIMIT_REACHED") return true;
+  }
+  return isStatus(detail, 403);
 }
 
 /** `presencia-<uuid>:linkedin` → perfil y plataforma. */

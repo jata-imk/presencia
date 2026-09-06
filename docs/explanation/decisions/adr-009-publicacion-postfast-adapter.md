@@ -70,7 +70,7 @@ La regla que sale de esto: el scope se pide solo donde el proveedor lo exige par
 
 Segundo adapter detrás del mismo puerto. `PUBLISHING_PROVIDER` ahora acepta `fake | postfast | upload_post`, cada uno con su propia key exigida al boot por el `superRefine` de `env.ts`. Base `https://api.upload-post.com/api` (el `/api` es parte de la base: todas las rutas cuelgan de ahí), auth `Authorization: Apikey <KEY>` — **no** Bearer.
 
-**El mapeo, método por método.** `ensureWorkspace` → `POST /uploadposts/users` con el **409 tolerado** (el perfil ya existe); `listAccounts` → `GET /uploadposts/users/{username}`; `createConnectLink` → `POST /uploadposts/users/generate-jwt` (48 h fijas, `language:"es"` forzado por la regla dura #1); `schedule` → `POST /upload_text` multipart; `cancel` → `DELETE /uploadposts/schedule/{job_id}`; `getPostStates` → `GET /uploadposts/schedule` + `GET /uploadposts/history`.
+**El mapeo, método por método.** `ensureWorkspace` → `GET /uploadposts/users/{username}` y, solo si da 404, `POST /uploadposts/users` (ver más abajo por qué en ese orden); `listAccounts` → `GET /uploadposts/users/{username}`; `createConnectLink` → `POST /uploadposts/users/generate-jwt` (48 h fijas, `language:"es"` forzado por la regla dura #1); `schedule` → `POST /upload_text` multipart; `cancel` → `DELETE /uploadposts/schedule/{job_id}`; `getPostStates` → `GET /uploadposts/schedule` + `GET /uploadposts/history`.
 
 **El perfil se deriva, no se persiste.** `username = presencia-<users.id>`. Sin columna nueva ni migración: el mismo usuario siempre resuelve al mismo perfil, y `ensureWorkspace` es idempotente contra el 409. `social_accounts.provider_ref` guarda `` `${perfil}:${plataforma}` ``, que es globalmente único (el índice único global sigue válido) y le da a `schedule()` el `user` y el `platform[]` sin necesitar un parámetro nuevo en el puerto.
 
@@ -99,4 +99,32 @@ La regla que sale, tercera cara de la lección de PostFast: el `.md` combinado n
 - **Facebook con más de una página conectada.** `POST /upload_text` documenta `facebook_page_id` como requerido cuando la plataforma incluye facebook, y lo auto-detecta solo si hay **una** página. El puerto no tiene por dónde pasar una, así que un usuario con dos o más páginas verá rechazado cada programado a Facebook (→ `resetToDraft`). Falla ruidosamente, no en silencio, pero es un caso sin resolver.
 - **`getPostStates` pagina `/history` hasta 5 páginas de 100.** No hay filtro por `job_id`; se pagina de más reciente a más viejo. Los dos endpoints están scopeados por API key y no por perfil, así que devuelven jobs de todos los usuarios — no hay fuga (solo se mira lo que matchea con los refs que el caller ya trae de sus propias cards), pero sí un riesgo: como el orden es por recencia **global**, con varios usuarios activos el item de una card puede quedar más allá del tope. Por eso, si al agotar las páginas quedan refs sin resolver **y** el `total` dice que el historial se cortó antes del final, esos refs se reportan como `scheduled` en vez de omitirse: "no lo vi" no es "no existe", y omitirlos haría que `reconcileDueCards` marcara como fallida una publicación real. El siguiente pase vuelve a preguntar.
 - **El plan gratis da 2 perfiles**, y un perfil por usuario de Presencia significa 2 usuarios. Sirve para validar, no para producción. Con el tope alcanzado, `POST /uploadposts/users` responde **403 con el body vacío** (verificado contra la cuenta real): sin traducirlo, el segundo usuario que intentara conectar vería un `Upload-Post rechazó la solicitud (403)` que no explica nada, así que `ensureWorkspace` lo convierte en un mensaje que se entiende.
-- **El 409 de "el perfil ya existe" NO se pudo confirmar contra la API real**, precisamente porque el plan estaba lleno y no había forma de crear un perfil para después repetirlo. Viene del openapi. Si el proveedor respondiera otra cosa, `ensureWorkspace` falla ruidosamente en vez de seguir con un perfil que no existe — que es la degradación correcta, pero conviene confirmarlo en la corrida manual de PR5.
+- **El 409 de "el perfil ya existe" resultó ser una suposición equivocada**, y costó un incidente. Ver el addendum de PR2.1.
+
+## Addendum (2026-09-06, F7.5 PR2.1) — incidente: preguntar antes de crear el perfil
+
+`ensureWorkspace` creaba el perfil de entrada y toleraba el `409` que, según el openapi de Upload-Post, significa "ya existe". PR2 dejó anotado que ese 409 **no se había podido confirmar** contra la API real. Se confirmó a las pocas horas, y resultó falso.
+
+**Qué pasó.** Jose conectó LinkedIn y Facebook: dio "Conectar red" (el perfil se creó bien), reinició el server, y al volver y dar "Ya conecté mi cuenta" recibió un 500. En los logs:
+
+```
+PublishingRejectedError: No se pudo crear tu perfil en Upload-Post...
+  at UploadPostProvider.ensureWorkspace
+  at async ChannelsService.claimConnectIntent
+detail: { status: 403, body: { error_code: 'PROFILE_LIMIT_REACHED',
+                               current_profiles: 2, profile_limit: 2 } }
+```
+
+**Por qué.** Tres cosas se alinearon:
+
+1. La memoización de `ensuredProfiles` vive **en memoria del proceso**, así que el reinicio la borró.
+2. Sin memo, el segundo paso del flujo de conexión volvió a intentar crear un perfil que **ya existía**.
+3. **Upload-Post evalúa el límite del plan ANTES de "ya existe"**: con los perfiles llenos responde `403 PROFILE_LIMIT_REACHED` aunque el perfil que pides sea tuyo y exista. El `409` nunca llega en ese caso.
+
+El resultado era un callejón sin salida: el usuario tenía sus redes conectadas del lado del proveedor y ninguna forma de confirmarlas del nuestro.
+
+**El arreglo: `ensureWorkspace` PREGUNTA antes de crear.** `GET /uploadposts/users/{username}` (200 = existe, 404 = no) y solo se crea cuando de verdad falta. Parece un viaje de red de más y es lo contrario: "crear y tolerar el conflicto" depende de que el proveedor distinga _"ese perfil ya existe"_ de _"no puedes crear más"_, y este no lo hace. Preguntar primero no depende de esa distinción.
+
+Se conservan los dos casos del POST, ahora con el significado correcto: un `409` es la carrera entre nuestro GET y nuestro POST (éxito), y un `PROFILE_LIMIT_REACHED` sí significa lo que dice — el perfil no existe y no se puede crear —, con un mensaje que lo explica en vez de un "rechazó la solicitud (403)".
+
+**La lección, distinta de la de la spec de máquina.** Acá el openapi no mentía: el 409 existe. Lo que no dice —y ninguna spec suele decir— es **en qué orden se evalúan los errores** cuando dos condiciones aplican a la vez. Un contrato verificado campo por campo puede seguir siendo insuficiente para las precondiciones que no están escritas: eso solo sale ejercitando el camino real, con la cuenta en el estado real.
