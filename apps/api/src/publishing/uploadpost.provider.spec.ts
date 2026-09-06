@@ -43,43 +43,88 @@ describe("UploadPostProvider", () => {
   });
 
   describe("ensureWorkspace", () => {
-    it("crea el perfil derivado del userId y manda la API key como Apikey", async () => {
-      fetchMock.mockResolvedValueOnce(jsonResponse(201, { success: true }));
+    const missingProfile = () => new Response("", { status: 404 });
+    const existingProfile = () =>
+      jsonResponse(200, { success: true, profile: { username: PROFILE } });
+
+    it("crea el perfil derivado del userId cuando no existe, y manda la API key como Apikey", async () => {
+      fetchMock
+        .mockResolvedValueOnce(missingProfile())
+        .mockResolvedValueOnce(jsonResponse(201, { success: true }));
       const provider = makeProvider();
 
       const ws = await provider.ensureWorkspace(USER_ID);
 
       expect(ws).toEqual({ ref: PROFILE });
-      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-      expect(url).toBe("https://api.upload-post.com/api/uploadposts/users");
-      expect(init.method).toBe("POST");
-      expect(init.headers).toMatchObject({ Authorization: "Apikey test-key" });
-      expect(JSON.parse(init.body as string)).toEqual({ username: PROFILE });
+      const [getUrl, getInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(getUrl).toBe(`https://api.upload-post.com/api/uploadposts/users/${PROFILE}`);
+      expect(getInit.method).toBe("GET");
+      const [postUrl, postInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+      expect(postUrl).toBe("https://api.upload-post.com/api/uploadposts/users");
+      expect(postInit.method).toBe("POST");
+      expect(postInit.headers).toMatchObject({ Authorization: "Apikey test-key" });
+      expect(JSON.parse(postInit.body as string)).toEqual({ username: PROFILE });
     });
 
-    // El 409 es el camino normal en cuanto el proceso se reinicia: el perfil
-    // se deriva del users.id y no se persiste de nuestro lado.
-    it("un 409 (el perfil ya existe) no es un error", async () => {
-      fetchMock.mockResolvedValueOnce(
-        jsonResponse(409, { success: false, message: "Profile already exists" }),
+    it("si el perfil ya existe no intenta crearlo", async () => {
+      fetchMock.mockResolvedValueOnce(existingProfile());
+      const provider = makeProvider();
+
+      await expect(provider.ensureWorkspace(USER_ID)).resolves.toEqual({ ref: PROFILE });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    // REGRESIÓN del incidente 2026-09-06. Upload-Post evalúa el límite del
+    // plan ANTES de "ya existe", así que con los perfiles llenos devuelve
+    // 403 PROFILE_LIMIT_REACHED incluso para un perfil que ya es tuyo. Con
+    // el POST por delante, un reinicio del server (que borra la memoización)
+    // dejaba al usuario sin poder confirmar sus cuentas conectadas.
+    it("un perfil que ya existe funciona aunque el plan esté lleno", async () => {
+      fetchMock.mockResolvedValueOnce(existingProfile()).mockResolvedValueOnce(
+        jsonResponse(403, {
+          success: false,
+          message: "You have reached the limit of 2 profiles for your current plan (default).",
+          error_code: "PROFILE_LIMIT_REACHED",
+        }),
       );
       const provider = makeProvider();
 
       await expect(provider.ensureWorkspace(USER_ID)).resolves.toEqual({ ref: PROFILE });
+      // Ni siquiera se intentó el POST: el GET ya dijo que existe.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    // Verificado contra la cuenta real (2026-09-06): con los perfiles del
-    // plan agotados, el POST responde 403 con el body VACÍO. Sin traducirlo,
-    // el usuario vería un "rechazó la solicitud (403)" que no explica nada.
-    it("un 403 (tope de perfiles del plan) se traduce a un mensaje que se entiende", async () => {
-      fetchMock.mockResolvedValueOnce(new Response("", { status: 403 }));
+    it("el tope del plan sobre un perfil que NO existe sí es un error, con mensaje claro", async () => {
+      fetchMock.mockResolvedValueOnce(missingProfile()).mockResolvedValueOnce(
+        jsonResponse(403, {
+          success: false,
+          error_code: "PROFILE_LIMIT_REACHED",
+          current_profiles: 2,
+          profile_limit: 2,
+        }),
+      );
       const provider = makeProvider();
 
       await expect(provider.ensureWorkspace(USER_ID)).rejects.toThrow(/límite de perfiles/);
     });
 
+    // Con cupo en el plan, el 409 sí llega y significa que alguien lo creó
+    // entre nuestro GET y nuestro POST.
+    it("un 409 en la carrera entre el GET y el POST cuenta como éxito", async () => {
+      fetchMock
+        .mockResolvedValueOnce(missingProfile())
+        .mockResolvedValueOnce(
+          jsonResponse(409, { success: false, message: "Profile already exists" }),
+        );
+      const provider = makeProvider();
+
+      await expect(provider.ensureWorkspace(USER_ID)).resolves.toEqual({ ref: PROFILE });
+    });
+
     it("cualquier otro rechazo sí propaga", async () => {
-      fetchMock.mockResolvedValueOnce(jsonResponse(400, { message: "username inválido" }));
+      fetchMock
+        .mockResolvedValueOnce(missingProfile())
+        .mockResolvedValueOnce(jsonResponse(400, { message: "username inválido" }));
       const provider = makeProvider();
 
       await expect(provider.ensureWorkspace(USER_ID)).rejects.toBeInstanceOf(
@@ -87,8 +132,18 @@ describe("UploadPostProvider", () => {
       );
     });
 
+    it("un fallo del GET que no sea 404 propaga, no se asume que falta el perfil", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: "boom" }));
+      const provider = makeProvider();
+
+      await expect(provider.ensureWorkspace(USER_ID)).rejects.toBeInstanceOf(
+        PublishingUnavailableError,
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
     it("memoiza: el segundo ensureWorkspace del mismo usuario no vuelve a llamar", async () => {
-      fetchMock.mockResolvedValueOnce(jsonResponse(201, { success: true }));
+      fetchMock.mockResolvedValueOnce(existingProfile());
       const provider = makeProvider();
 
       await provider.ensureWorkspace(USER_ID);
