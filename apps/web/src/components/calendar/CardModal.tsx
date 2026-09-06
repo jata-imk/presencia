@@ -150,20 +150,33 @@ export function CardModal({
                   Ver estadísticas
                 </button>
               </Tooltip>
-              {/* Deshabilitado por una razón concreta, no por diseño: F6 no
-                  persiste el id del post en la red (reconcileDueCards y
-                  markPublished solo guardan publishedAt), así que no hay a
-                  dónde llevar al usuario. Deuda de F6. */}
-              <Tooltip label="Todavía no guardamos el enlace al post publicado">
-                <button
-                  type="button"
-                  disabled
-                  className={`${FOOTER_BUTTON} cursor-not-allowed border-[1.5px] border-line bg-card text-fg-muted opacity-60`}
+              {/* F7.5: se enciende solo si la reconciliación guardó el
+                  enlace. Sigue apagado cuando el proveedor activo no lo da
+                  (PostFast no lo devuelve nunca) — el componente no sabe
+                  cuál es, solo mira si hay URL. Misma clase base en las dos
+                  ramas para que la caja no cambie de tamaño al encenderse. */}
+              {active.postUrl ? (
+                <a
+                  href={active.postUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`${FOOTER_BUTTON} border-[1.5px] border-line bg-card text-fg-secondary hover:border-line-focus hover:bg-secondary hover:text-brand`}
                 >
                   <ExternalLink size={15} strokeWidth={1.9} />
                   Ver en la red
-                </button>
-              </Tooltip>
+                </a>
+              ) : (
+                <Tooltip label="Todavía no guardamos el enlace al post publicado">
+                  <button
+                    type="button"
+                    disabled
+                    className={`${FOOTER_BUTTON} cursor-not-allowed border-[1.5px] border-line bg-card text-fg-muted opacity-60`}
+                  >
+                    <ExternalLink size={15} strokeWidth={1.9} />
+                    Ver en la red
+                  </button>
+                </Tooltip>
+              )}
             </>
           )}
           <div className="flex-1" />

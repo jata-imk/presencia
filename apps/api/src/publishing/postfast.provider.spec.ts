@@ -318,8 +318,11 @@ describe("PostFastProvider", () => {
     expect(states.get("pf_1")).toEqual({
       status: "published",
       publishedAt: new Date("2026-09-01T18:02:00.000Z"),
+      // PostFast no devuelve la URL del post en ninguna de sus respuestas:
+      // acá siempre es null, y el frontend deja "Ver en la red" apagado.
+      postUrl: null,
     });
-    expect(states.get("pf_2")).toEqual({ status: "failed", publishedAt: null });
+    expect(states.get("pf_2")).toEqual({ status: "failed", publishedAt: null, postUrl: null });
   });
 
   it("getPostStates con lista vacía no llama a fetch", async () => {

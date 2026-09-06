@@ -1,0 +1,25 @@
+-- F7.5 PR4: el enlace al post publicado en la red.
+--
+-- Cierra la deuda de F6 que tenía "Ver en la red" apagado en el Calendario y
+-- "Ver post" apagado en el Chat: la reconciliación solo guardaba
+-- `published_at`, así que no había a dónde llevar al usuario.
+--
+-- Nullable y sin default a propósito: no todos los proveedores lo dan.
+-- PostFast no devuelve la URL del post en ninguna de sus respuestas, así que
+-- ahí se queda en NULL para siempre y los botones siguen apagados con su
+-- tooltip — degradación limpia, sin bifurcar la UI por proveedor. Upload-Post
+-- sí la trae, en `GET /uploadposts/history` (NO en su endpoint de estado, ver
+-- ADR-009 addendum de F7.5 PR2).
+--
+-- Se llena en la reconciliación, junto con `published_at`, y por eso no hay
+-- backfill: las cards ya publicadas antes de esta migración se quedan sin
+-- enlace. Reconstruirlo pediría rastrear el historial del proveedor por un
+-- provider_ref que puede ya no existir, para una superficie que hasta hoy
+-- estaba apagada.
+--
+-- SIN ÍNDICE: nunca se filtra ni se ordena por esta columna, solo se lee la
+-- fila que ya se seleccionó por otro criterio.
+--
+-- RLS: `publication_cards` ya tiene ENABLE + FORCE + POLICY tenant_isolation
+-- desde 0001_rls_roles_policies.sql. Agregar una columna no toca policies.
+ALTER TABLE "publication_cards" ADD COLUMN "post_url" text;

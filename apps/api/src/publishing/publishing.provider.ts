@@ -55,6 +55,13 @@ export type ProviderPostStatus = "scheduled" | "published" | "failed";
 export interface ProviderPostState {
   status: ProviderPostStatus;
   publishedAt: Date | null;
+  /**
+   * Enlace al post en la red, cuando el proveedor lo da y el post ya se
+   * publicó. `null` es un valor legítimo y frecuente, no un error: PostFast
+   * no devuelve la URL en ninguna de sus respuestas. El frontend degrada
+   * solo (botón apagado con tooltip) en vez de bifurcar por proveedor.
+   */
+  postUrl: string | null;
 }
 
 export interface PublishingProvider {

@@ -93,9 +93,13 @@ export class FakePublishingProvider implements PublishingProvider {
       // Ausente (nunca existió, o cancel() ya la borró): el caller lo trata
       // como "failed" — mismo contrato que el adapter real de PostFast.
       if (!post) continue;
+      const published = post.scheduledAt <= now;
       result.set(ref, {
-        status: post.scheduledAt <= now ? "published" : "scheduled",
-        publishedAt: post.scheduledAt <= now ? post.scheduledAt : null,
+        status: published ? "published" : "scheduled",
+        publishedAt: published ? post.scheduledAt : null,
+        // Enlace falso pero con forma de enlace: así el camino de "Ver en la
+        // red" se puede recorrer en dev sin proveedor real.
+        postUrl: published ? `https://fake.local/p/${encodeURIComponent(ref)}` : null,
       });
     }
     return Promise.resolve(result);
