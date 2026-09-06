@@ -132,7 +132,7 @@ export function DayPanel({
           </div>
           <div
             ref={listRef}
-            className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 pt-1 pb-5"
+            className="flex min-h-0 flex-1 touch-pan-y flex-col gap-2 overflow-y-auto overscroll-contain px-4 pt-1 pb-5"
           >
             {entries.map((entry) => (
               <DayPanelCard
@@ -147,7 +147,7 @@ export function DayPanel({
           </div>
         </>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col items-start overflow-y-auto px-5 pt-5">
+        <div className="flex min-h-0 flex-1 touch-pan-y flex-col items-start overflow-y-auto overscroll-contain px-5 pt-5">
           <div className="flex size-14 items-center justify-center rounded-2xl bg-secondary">
             <CalendarPlus size={26} strokeWidth={1.5} className="text-ai" />
           </div>

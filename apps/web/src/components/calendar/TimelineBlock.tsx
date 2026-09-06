@@ -30,7 +30,7 @@ export function TimelineBlock({
   timeZone,
   compact,
   conflictCardIds,
-  draggingCardId,
+  draggingCardIds,
   onStartDragCard,
   onOpenCard,
 }: {
@@ -45,8 +45,8 @@ export function TimelineBlock({
    * horario sería al revés de lo razonable.
    */
   conflictCardIds?: Set<string>;
-  draggingCardId?: string | null;
-  onStartDragCard?: (event: React.PointerEvent, cardId: string) => void;
+  draggingCardIds: ReadonlySet<string>;
+  onStartDragCard?: (event: React.PointerEvent, cardIds: string[]) => void;
   onOpenCard?: (cardId: string) => void;
 }) {
   const { entry, minutes, lane, lanes } = positioned;
@@ -58,12 +58,18 @@ export function TimelineBlock({
   const width = `calc(${String(100 / lanes)}% - 6px)`;
   const left = `calc(${String((100 / lanes) * lane)}% + 3px)`;
 
-  const handlers = (card: PublicationCardDto) => ({
+  // `dragCards` es lo que viaja al soltar; `card` es de quién es el click. En
+  // un grupo son distintos: se arrastra el bloque entero y el click abre la
+  // publicación tocada.
+  const handlers = (card: PublicationCardDto, dragCards: PublicationCardDto[] = [card]) => ({
     onPointerDown:
-      onStartDragCard && isMovable(card)
+      onStartDragCard && dragCards.some(isMovable)
         ? (event: React.PointerEvent) => {
             event.stopPropagation();
-            onStartDragCard(event, card.id);
+            onStartDragCard(
+              event,
+              dragCards.filter(isMovable).map((c) => c.id),
+            );
           }
         : undefined,
     onClick: onOpenCard
@@ -78,20 +84,33 @@ export function TimelineBlock({
   // `style={...}` explícito después de un spread pisa el style del spread
   // entero, así que `touch-action: none` se perdía y en una pantalla táctil
   // el gesto se lo comía el scroll del eje.
-  const position = (card: PublicationCardDto) => ({
+  const position = (card: PublicationCardDto, dragCards: PublicationCardDto[] = [card]) => ({
     top: topFor(minutes),
+    // minHeight y no height: el bloque crece con su contenido. `layoutDay`
+    // lo sabe y reparte carriles midiendo ese alto — si cambian los paddings
+    // o el tamaño de fuente de acá, hay que revisar GROUP_HEADER_PX y
+    // GROUP_ROW_PX en lib/calendar/timeline.ts o los grupos vuelven a
+    // encimarse con la hora siguiente.
     minHeight: (BLOCK_MINUTES / 60) * HOUR_HEIGHT - 4,
     width,
     left,
-    ...(onStartDragCard && isMovable(card) ? { touchAction: "none" as const } : {}),
+    // El MISMO predicado que decide si hay arrastre: con `isMovable(card)` a
+    // secas, un grupo cuya primera red ya está publicada quedaba con handler
+    // de arrastre pero sin touch-action, y en táctil el scroll del eje se
+    // comía el gesto.
+    ...(onStartDragCard && dragCards.some(isMovable) ? { touchAction: "none" as const } : {}),
   });
 
   if (entry.isGroup) {
+    const groupDrag = handlers(first, entry.cards);
     return (
       <Tooltip label={`Publicación multi-red · ${String(entry.cards.length)} redes`}>
         <div
-          className="absolute z-[2] overflow-hidden rounded-lg border-l-[3px] border-l-ai bg-cal-group shadow-xs select-none"
-          style={position(first)}
+          onPointerDown={groupDrag.onPointerDown}
+          className={`absolute z-[2] overflow-hidden rounded-lg border-l-[3px] border-l-ai bg-cal-group shadow-xs select-none ${
+            groupDrag.onPointerDown ? "cursor-grab active:cursor-grabbing" : ""
+          }`}
+          style={position(first, entry.cards)}
         >
           <div className="flex items-center gap-1 px-1.5 pt-1 pb-0.5">
             <Link2 size={10} className="shrink-0 text-accent" aria-hidden />
@@ -104,11 +123,10 @@ export function TimelineBlock({
             return (
               <span
                 key={card.id}
-                {...handlers(card)}
-                style={onStartDragCard && isMovable(card) ? { touchAction: "none" } : undefined}
+                onClick={handlers(card).onClick}
                 className={`flex min-w-0 items-center gap-1 px-1.5 py-0.5 ${
-                  onStartDragCard && isMovable(card) ? "cursor-grab active:cursor-grabbing" : ""
-                } ${card.id === draggingCardId ? "opacity-40" : ""}`}
+                  draggingCardIds.has(card.id) ? "opacity-40" : ""
+                }`}
               >
                 <meta.Logo size={12} />
                 <span className="truncate text-[9.5px] text-fg">
@@ -142,7 +160,7 @@ export function TimelineBlock({
         {...handlers(first)}
         className={`absolute z-[2] flex flex-col gap-0.5 overflow-hidden rounded-lg border px-1.5 py-1 shadow-xs select-none ${tone} ${
           movable ? "cursor-grab active:cursor-grabbing" : ""
-        } ${first.id === draggingCardId ? "opacity-40" : ""}`}
+        } ${draggingCardIds.has(first.id) ? "opacity-40" : ""}`}
         style={position(first)}
       >
         <span className="flex items-center gap-1">

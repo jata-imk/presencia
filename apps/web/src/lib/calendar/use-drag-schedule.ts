@@ -29,7 +29,14 @@ const DRAG_THRESHOLD = 6;
 const DEFAULT_STEP_PX = 8;
 
 export interface DragState {
-  card: PublicationCardDto;
+  /**
+   * Lo que se está arrastrando. Es una lista porque un grupo multi-red se
+   * mueve entero: arrastrar una sola de sus redes lo rompía en silencio, que
+   * es justo lo contrario de lo que el usuario ve (un bloque con tres redes
+   * unidas por un borde). Todas comparten `scheduledAt` por definición del
+   * grupo, así que la primera manda para calcular veredictos.
+   */
+  cards: PublicationCardDto[];
   /** Clave `YYYY-MM-DD` del día bajo el cursor, o null si no hay ninguno. */
   overDay: string | null;
   /**
@@ -42,22 +49,38 @@ export interface DragState {
    * su `rect.top` puede ser negativo. Justamente por eso la cuenta da bien.
    */
   overOffsetY: number;
+  /** El puntero está sobre la bandeja de borradores (ver `onDropDrafts`). */
+  overDrafts: boolean;
 }
 
 interface UseDragScheduleOptions {
   /** Se llama al soltar sobre un destino válido. */
-  onDrop: (card: PublicationCardDto, dayKey: string, offsetY: number) => void;
+  onDrop: (cards: PublicationCardDto[], dayKey: string, offsetY: number) => void;
+  /**
+   * Soltar sobre la bandeja de borradores: el camino inverso al de programar.
+   * Devuelve la publicación a borrador, igual que "Cancelar programación" del
+   * menú. Ausente para lo que ya es borrador (no hay nada que deshacer).
+   */
+  onDropDrafts?: (cards: PublicationCardDto[]) => void;
   /**
    * Un destino sobre el que no se puede soltar. Se consulta en cada cambio
    * para decidir el cursor y para no invocar onDrop al final. Recibe el
    * offset porque en vista semana la validez depende de la HORA, no solo del
    * día: hoy a las 08:00 ya pasó, hoy a las 22:00 no.
    */
-  isBlocked: (card: PublicationCardDto, dayKey: string, offsetY: number) => boolean;
+  isBlocked: (cards: PublicationCardDto[], dayKey: string, offsetY: number) => boolean;
 }
 
-export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
+export function useDragSchedule({ onDrop, onDropDrafts, isBlocked }: UseDragScheduleOptions) {
   const [drag, setDrag] = useState<DragState | null>(null);
+  // Los callbacks viven en un ref y no en las deps de `start`. El caller los
+  // define inline —dependen de `cards`, que cambia en cada carga— así que
+  // listarlos en deps le daba identidad nueva a `startDrag` en cada render, y
+  // de ahí a `onStartDragCard` de las tres vistas: la grilla entera se
+  // repintaba por cualquier cambio de estado de la página. El gesto los lee
+  // al soltar, no al registrarse, así que un ref es correcto acá.
+  const handlers = useRef({ onDrop, onDropDrafts, isBlocked });
+  handlers.current = { onDrop, onDropDrafts, isBlocked };
   const ghostRef = useRef<HTMLDivElement | null>(null);
   /** Última posición conocida del puntero, para colocar el fantasma al montarlo. */
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
@@ -67,9 +90,10 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
   // pointermove se registran una sola vez y no deben re-crearse por cada
   // cambio de celda.
   const gesture = useRef<{
-    card: PublicationCardDto;
+    cards: PublicationCardDto[];
     overDay: string | null;
     overOffsetY: number;
+    overDrafts: boolean;
     /** Último offset que llegó a provocar un render, para no hacer uno por píxel. */
     renderedOffsetY: number;
   } | null>(null);
@@ -83,7 +107,8 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
   }, []);
 
   const start = useCallback(
-    (event: React.PointerEvent, card: PublicationCardDto) => {
+    (event: React.PointerEvent, cards: PublicationCardDto[]) => {
+      if (cards.length === 0) return;
       // Solo botón principal. El secundario abre el menú contextual del
       // navegador y no debe empezar un arrastre.
       if (event.button !== 0) return;
@@ -104,9 +129,15 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
           // temblor de mano al hacer click iniciaría un gesto.
           started = true;
           el.setPointerCapture(pointerId);
-          gesture.current = { card, overDay: null, overOffsetY: 0, renderedOffsetY: 0 };
+          gesture.current = {
+            cards,
+            overDay: null,
+            overOffsetY: 0,
+            overDrafts: false,
+            renderedOffsetY: 0,
+          };
           document.body.dataset.dragging = "true";
-          setDrag({ card, overDay: null, overOffsetY: 0 });
+          setDrag({ cards, overDay: null, overOffsetY: 0, overDrafts: false });
         }
 
         moveGhost(ev.clientX, ev.clientY);
@@ -117,6 +148,8 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
         const under = document.elementFromPoint(ev.clientX, ev.clientY);
         const cell = under?.closest<HTMLElement>("[data-drop-day]");
         const next = cell?.dataset.dropDay ?? null;
+        const draftsZone = under?.closest("[data-drop-drafts]") ?? null;
+        const overDrafts = handlers.current.onDropDrafts !== undefined && draftsZone !== null;
         const offsetY = cell ? ev.clientY - cell.getBoundingClientRect().top : 0;
         if (!gesture.current) return;
         // El offset SIEMPRE se guarda en el ref —al soltar hace falta el
@@ -131,10 +164,15 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
         const movedEnough =
           timed &&
           Math.round(offsetY / step) !== Math.round(gesture.current.renderedOffsetY / step);
-        if (gesture.current.overDay !== next || movedEnough) {
+        if (
+          gesture.current.overDay !== next ||
+          gesture.current.overDrafts !== overDrafts ||
+          movedEnough
+        ) {
           gesture.current.overDay = next;
+          gesture.current.overDrafts = overDrafts;
           gesture.current.renderedOffsetY = offsetY;
-          setDrag({ card, overDay: next, overOffsetY: offsetY });
+          setDrag({ cards, overDay: next, overOffsetY: offsetY, overDrafts });
         }
       };
 
@@ -155,12 +193,17 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
         delete document.body.dataset.dragging;
         const target = gesture.current?.overDay ?? null;
         const offsetY = gesture.current?.overOffsetY ?? 0;
+        const toDrafts = gesture.current?.overDrafts ?? false;
         gesture.current = null;
         setDrag(null);
+        if (toDrafts) {
+          handlers.current.onDropDrafts?.(cards);
+          return;
+        }
         // Escape ya canceló, o se soltó fuera de la grilla, o sobre un
         // destino que no acepta: el fantasma desaparece y no pasa nada más.
-        if (!target || isBlocked(card, target, offsetY)) return;
-        onDrop(card, target, offsetY);
+        if (!target || handlers.current.isBlocked(cards, target, offsetY)) return;
+        handlers.current.onDrop(cards, target, offsetY);
         void ev;
       };
 
@@ -190,10 +233,11 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
         const cell = under?.closest<HTMLElement>("[data-drop-day]");
         const day = cell?.dataset.dropDay ?? null;
         const offset = cell ? point.y - cell.getBoundingClientRect().top : 0;
+        const overDrafts = gesture.current.overDrafts;
         gesture.current.overDay = day;
         gesture.current.overOffsetY = offset;
         gesture.current.renderedOffsetY = offset;
-        setDrag({ card, overDay: day, overOffsetY: offset });
+        setDrag({ cards, overDay: day, overOffsetY: offset, overDrafts });
       };
 
       el.addEventListener("pointermove", onMove);
@@ -204,7 +248,7 @@ export function useDragSchedule({ onDrop, isBlocked }: UseDragScheduleOptions) {
       // cualquiera del árbol y no burbujea.
       document.addEventListener("scroll", onScroll, { capture: true, passive: true });
     },
-    [isBlocked, moveGhost, onDrop],
+    [moveGhost],
   );
 
   // El fantasma se monta en el render que dispara setDrag, así que en ese

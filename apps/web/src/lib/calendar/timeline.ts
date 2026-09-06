@@ -94,9 +94,31 @@ export interface PositionedEntry {
  * cada uno. La alternativa —dejarlos superpuestos— hace que el de atrás sea
  * imposible de leer y casi imposible de agarrar para arrastrarlo.
  *
- * "Se pisan" es que sus horas disten menos de BLOCK_MINUTES, porque es el alto
- * que ocupa un bloque. No hay duraciones reales que consultar.
+ * "Se pisan" se mide en PÍXELES y no en minutos. Parece lo mismo —un bloque
+ * dura BLOCK_MINUTES— pero no lo es: el bloque declara `minHeight`, no
+ * `height`, así que crece con su contenido. Un grupo multi-red de tres redes
+ * mide ~66px, o sea más de una hora de eje, e invadía el bloque de la hora
+ * siguiente; como los minutos decían que no se pisaban, los dos se dibujaban
+ * a ancho completo y quedaban encimados. Midiendo el alto real de cada
+ * entrada, comparten carriles cuando de verdad chocan.
  */
+
+// Medidos sobre el markup real de TimelineBlock: la cabecera es
+// `px-1.5 pt-1 pb-0.5` con texto de 8.5px, y cada fila `py-0.5` con un logo
+// de 12px. No se derivan de nada, así que si ese markup cambia hay que
+// ajustarlos acá — si se quedan cortos, `spanOf` subestima el alto y los
+// grupos vuelven a encimarse con la hora siguiente, en silencio. Hay una
+// nota recíproca en TimelineBlock.tsx.
+const GROUP_HEADER_PX = 18;
+const GROUP_ROW_PX = 16;
+
+/** Cuántos minutos de eje ocupa una entrada, según lo que mide de verdad. */
+function spanOf(entry: CalendarEntry): number {
+  const px = entry.isGroup
+    ? GROUP_HEADER_PX + GROUP_ROW_PX * entry.cards.length
+    : (BLOCK_MINUTES / 60) * HOUR_HEIGHT;
+  return Math.max(BLOCK_MINUTES, (px / HOUR_HEIGHT) * 60);
+}
 export function layoutDay(entries: CalendarEntry[], timeZone: string): PositionedEntry[] {
   const sorted = entries
     .map((entry) => ({ entry, minutes: minutesOf(zonedFromIso(entry.scheduledAt, timeZone)) }))
@@ -121,12 +143,17 @@ export function layoutDay(entries: CalendarEntry[], timeZone: string): Positione
     if (minutes >= clusterEnd) closeCluster();
     // Primer carril libre: el más a la izquierda cuyo último bloque ya terminó.
     const laneEnds = new Map<number, number>();
-    for (const item of cluster) laneEnds.set(item.lane, item.minutes + BLOCK_MINUTES);
+    for (const item of cluster) {
+      laneEnds.set(
+        item.lane,
+        Math.max(laneEnds.get(item.lane) ?? -Infinity, item.minutes + spanOf(item.entry)),
+      );
+    }
     let lane = 0;
     while ((laneEnds.get(lane) ?? -Infinity) > minutes) lane += 1;
 
     cluster.push({ entry, minutes, lane, lanes: 1 });
-    clusterEnd = Math.max(clusterEnd, minutes + BLOCK_MINUTES);
+    clusterEnd = Math.max(clusterEnd, minutes + spanOf(entry));
   }
   closeCluster();
 

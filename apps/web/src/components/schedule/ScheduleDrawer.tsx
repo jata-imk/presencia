@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { summarizeCardContent, type PublicationCardDto } from "@presencia/shared";
-import { FloatingFocusManager, useFloating } from "@floating-ui/react";
+import { FloatingFocusManager, FloatingOverlay, useFloating } from "@floating-ui/react";
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Link } from "react-router";
@@ -10,7 +10,9 @@ import { MiniCalendar } from "./MiniCalendar.js";
 import { NetworkScheduleRow } from "./NetworkScheduleRow.js";
 import { TimeChips } from "./TimeChips.js";
 import { WeekStrip } from "./WeekStrip.js";
+import { parseAbsolute } from "@internationalized/date";
 import { combineDateAndTime, dateKey, formatTime, startOfDay } from "./date-utils.js";
+import { ConflictDialog } from "../calendar/ConflictDialog.js";
 import { ApiError } from "../../lib/api.js";
 import { fetchScheduleConflicts, scheduleGroup } from "../../lib/cards-api.js";
 import { backdropFade, drawerPush, sheetUp } from "../../lib/motion.js";
@@ -18,6 +20,11 @@ import { useChannels } from "../../lib/use-channels.js";
 import { useMediaQuery } from "../../lib/use-media-query.js";
 import { useCardsStore } from "../../stores/cards-store.js";
 import { useScheduleDrawerStore } from "../../stores/schedule-drawer-store.js";
+
+/** `Date` → "HH:MM" en hora local, que es en la que trabajan las filas. */
+function formatClock(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
 
 const MIN_LEAD_MINUTES = 5;
 const CONFLICT_WINDOW_MINUTES = 30;
@@ -119,6 +126,10 @@ function ScheduleDrawerInner({
   // ciclaba Tab manualmente (F6 PR8 follow-up, arquitectura de portales).
   const { refs, context } = useFloating();
 
+  // Choque duro detectado al confirmar: guarda el instante para que el
+  // diálogo pueda proponer +30 min y para poder reintentar forzando.
+  const [pendingConflict, setPendingConflict] = useState<{ at: Date } | null>(null);
+  const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [rows, setRows] = useState<RowState[]>(() =>
     cards.map((card) => ({
       cardId: card.id,
@@ -196,6 +207,39 @@ function ScheduleDrawerInner({
     return rows.map((r) => ({ ...r, date: leaderRow.date, time: leaderRow.time }));
   }, [rows, sameTime]);
 
+  /**
+   * Choque DURO, distinto del aviso de ±30 min de `checkConflict`: misma red
+   * y el mismo instante exacto, que es el criterio de `findConflict` en el
+   * Calendario. El aviso suave informa mientras se elige; esto se comprueba
+   * al confirmar y abre el mismo diálogo que el arrastre, para que el mismo
+   * problema se vea igual sin importar por dónde se llegue.
+   */
+  async function hardConflict(row: RowState, at: Date): Promise<boolean> {
+    try {
+      const dayStart = startOfDay(row.date).toISOString();
+      const dayEnd = new Date(
+        row.date.getFullYear(),
+        row.date.getMonth(),
+        row.date.getDate(),
+        23,
+        59,
+        59,
+      ).toISOString();
+      const conflicts = await fetchScheduleConflicts(dayStart, dayEnd);
+      const card = cards?.find((c) => c.id === row.cardId);
+      return conflicts.some(
+        (c) =>
+          c.id !== row.cardId &&
+          c.network === card?.network &&
+          c.scheduledAt !== null &&
+          new Date(c.scheduledAt).getTime() === at.getTime(),
+      );
+    } catch {
+      // Igual que el aviso suave: si no se puede preguntar, no se bloquea.
+      return false;
+    }
+  }
+
   async function checkConflict(cardId: string, date: Date, time: string) {
     const combined = combineDateAndTime(date, time);
     if (!combined) return;
@@ -238,7 +282,7 @@ function ScheduleDrawerInner({
     if (row) void checkConflict(cardId, row.date, time);
   }
 
-  async function handleSubmit() {
+  async function handleSubmit({ force = false }: { force?: boolean } = {}) {
     setFormError(null);
     setSubmitErrors([]);
     const targetRows = sameTime && rows.length > 0 ? effectiveRows : rows;
@@ -272,6 +316,18 @@ function ScheduleDrawerInner({
 
     const [firstCard] = cards;
     if (!firstCard) return;
+
+    // El choque se comprueba al confirmar y no antes: hasta acá el usuario
+    // estaba eligiendo, y un diálogo mientras mueve la hora sería un
+    // interrogatorio. Se pregunta por la fila líder — en modo "mismo
+    // horario" todas comparten instante, y si no, la primera es la que
+    // manda el diálogo.
+    const lider = targetRows.find((row) => row.mode !== "draft");
+    const at = lider ? combineDateAndTime(lider.date, lider.time) : null;
+    if (!force && lider && at && (await hardConflict(lider, at))) {
+      setPendingConflict({ at });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -325,7 +381,14 @@ function ScheduleDrawerInner({
   const anyReschedule = cards.some((c) => c.status === "scheduled" || c.status === "failed");
 
   const drawerContent = (
-    <div className="flex h-full flex-col">
+    // `h-full` para la rama de escritorio (su contenedor mide alto fijo) y
+    // `min-h-0 flex-1` para la hoja móvil, cuyo alto es `max-h-[85vh]`: sin
+    // altura definida, `h-full` no aplica y el contenido crecía por contenido
+    // hasta que el `overflow-hidden` de la hoja recortaba el pie. Los botones
+    // de confirmar quedaban fuera de la pantalla y el cuerpo tampoco
+    // desplazaba, porque nada lo obligaba a desbordar. Cada clase se ignora
+    // sola en la rama que no le toca.
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-start justify-between border-b border-line px-5 py-4">
         <div>
           <h2 id="schedule-drawer-title" className="text-lg font-bold text-fg">
@@ -347,7 +410,7 @@ function ScheduleDrawerInner({
 
       {/* Cuerpo — única zona de scroll del drawer, independiente de la del
           chat de al lado (son dos regiones side-by-side, no encimadas). */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 py-4">
         <div className="mb-4 flex flex-col gap-2">
           {cards.map((card) => {
             const meta = NETWORK_META[card.network];
@@ -502,6 +565,43 @@ function ScheduleDrawerInner({
     </div>
   );
 
+  // El mismo diálogo que usa el arrastre: un choque de horario se ve igual
+  // sin importar si se llegó soltando una card o eligiendo la hora a mano.
+  const conflictDialog =
+    pendingConflict && cards ? (
+      <ConflictDialog
+        cards={cards}
+        // Zona del NAVEGADOR y no la del perfil: todo este drawer trabaja en
+        // hora local (deuda anotada desde F6, `date-utils.ts`). Con la zona
+        // del perfil el diálogo decía "a las 15:00" mientras el campo que el
+        // usuario estaba editando marcaba 13:00.
+        target={parseAbsolute(pendingConflict.at.toISOString(), browserZone)}
+        suggestion={parseAbsolute(
+          new Date(pendingConflict.at.getTime() + 30 * 60_000).toISOString(),
+          browserZone,
+        )}
+        onAccept={() => {
+          const suggested = new Date(pendingConflict.at.getTime() + 30 * 60_000);
+          setPendingConflict(null);
+          for (const row of rows) {
+            if (row.mode === "draft") continue;
+            // La FECHA también: +30 min sobre las 23:45 cae al día siguiente,
+            // y cambiando solo la hora la card volvía a las 00:15 de esta
+            // misma madrugada — 23 horas antes de lo que ofrecía el diálogo,
+            // y encima en el pasado.
+            handleDateChange(row.cardId, startOfDay(suggested));
+            handleTimeChange(row.cardId, formatClock(suggested));
+          }
+        }}
+        onForce={() => {
+          setPendingConflict(null);
+          void handleSubmit({ force: true });
+        }}
+        onPickAnother={() => setPendingConflict(null)}
+        onCancel={() => setPendingConflict(null)}
+      />
+    ) : null;
+
   if (isDesktop) {
     return (
       <motion.aside
@@ -519,6 +619,7 @@ function ScheduleDrawerInner({
       >
         <div tabIndex={-1} className="h-full w-[520px] outline-none">
           {drawerContent}
+          {conflictDialog}
         </div>
       </motion.aside>
     );
@@ -535,27 +636,39 @@ function ScheduleDrawerInner({
         variants={backdropFade}
         className="fixed inset-0 z-40 bg-overlay"
       />
-      <FloatingFocusManager context={context}>
-        <motion.div
-          ref={refs.setFloating}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="schedule-drawer-title"
-          // Mismo motivo que en la rama de escritorio: entre 768 y 1023px el
-          // panel del día del Calendario todavía es un inspector (no una
-          // hoja) y el drawer ya es hoja modal — sin esta marca, el primer
-          // click adentro del drawer cerraba el panel que lo abrió.
-          data-schedule-drawer
-          tabIndex={-1}
-          initial="hidden"
-          animate="visible"
-          exit="exit"
-          variants={sheetUp}
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[85vh] flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface shadow-xl outline-none"
-        >
-          {drawerContent}
-        </motion.div>
-      </FloatingFocusManager>
+      {/* lockScroll: sin esto el documento de atrás seguía siendo la zona de
+          scroll en táctil, así que arrastrar el dedo dentro de la hoja movía
+          la página y los botones de confirmación quedaban fuera de alcance.
+          Modal y BottomSheet ya lo hacían; esta rama era la única sin él. */}
+      <FloatingOverlay lockScroll className="z-50">
+        <FloatingFocusManager context={context}>
+          <motion.div
+            ref={refs.setFloating}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="schedule-drawer-title"
+            // Mismo motivo que en la rama de escritorio: entre 768 y 1023px el
+            // panel del día del Calendario todavía es un inspector (no una
+            // hoja) y el drawer ya es hoja modal — sin esta marca, el primer
+            // click adentro del drawer cerraba el panel que lo abrió.
+            data-schedule-drawer
+            tabIndex={-1}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            variants={sheetUp}
+            className="fixed inset-x-0 bottom-0 z-50 flex max-h-[85vh] flex-col overflow-hidden rounded-t-2xl border-t border-line bg-surface shadow-xl outline-none"
+          >
+            {drawerContent}
+          </motion.div>
+        </FloatingFocusManager>
+      </FloatingOverlay>
+      {/* Fuera del FloatingFocusManager de la hoja: `Modal` sale por un portal
+          a <body>, o sea fuera del elemento flotante de la hoja, y las dos
+          trampas de foco son modales. Anidado, la hoja recuperaba el foco en
+          cada focusout del diálogo y sus botones quedaban inalcanzables con
+          teclado. */}
+      {conflictDialog}
     </>
   );
 }

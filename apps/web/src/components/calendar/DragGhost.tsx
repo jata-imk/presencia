@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import { Link2 } from "lucide-react";
 import type { PublicationCardDto } from "@presencia/shared";
 import { cardPreviewText } from "../cards/card-text.js";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
@@ -15,18 +16,21 @@ import { formatTime, zonedFromIso } from "../../lib/calendar/tz.js";
 // propiedad es lo que el addendum de ADR-014 prohíbe.
 
 export function DragGhost({
-  card,
+  cards,
   ghostRef,
   timeZone,
   blocked,
 }: {
-  card: PublicationCardDto;
+  /** Un grupo multi-red viaja entero, así que el fantasma lo dice. */
+  cards: PublicationCardDto[];
   ghostRef: RefObject<HTMLDivElement | null>;
   timeZone: string;
   blocked: boolean;
 }) {
+  const card = cards[0]!;
   const meta = NETWORK_META[card.network];
   const time = card.scheduledAt ? formatTime(zonedFromIso(card.scheduledAt, timeZone)) : null;
+  const grupo = cards.length > 1;
 
   return (
     <div
@@ -37,10 +41,21 @@ export function DragGhost({
       }`}
     >
       <div className="mb-1 flex items-center gap-1.5">
-        <meta.Logo size={13} />
-        <span className="font-display text-[11px] font-semibold" style={{ color: meta.color }}>
-          {meta.label}
-        </span>
+        {grupo ? (
+          <>
+            <Link2 size={13} className="text-accent" aria-hidden />
+            <span className="font-display text-[11px] font-semibold text-accent">
+              {cards.length} redes
+            </span>
+          </>
+        ) : (
+          <>
+            <meta.Logo size={13} />
+            <span className="font-display text-[11px] font-semibold" style={{ color: meta.color }}>
+              {meta.label}
+            </span>
+          </>
+        )}
         <span
           className={`ml-auto rounded-full px-1.5 font-display text-[10px] font-bold ${
             time ? "bg-secondary text-accent" : "bg-ai-bg text-accent"
