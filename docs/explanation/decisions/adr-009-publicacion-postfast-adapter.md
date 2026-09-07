@@ -187,3 +187,28 @@ Detalles que valen la pena:
 - **La caja no cambia.** Encendido es un `<a target="_blank" rel="noopener noreferrer">` y apagado un `<button disabled>` + `Tooltip`, con la MISMA clase base. Verificado midiendo geometría, no presencia: 134×37 px en los dos casos, contenido en el footer, sin scroll horizontal en modal ni documento.
 - **La URL se estrecha en el adapter, no al renderizar.** `post_url` viaja sin escalas desde la respuesta del proveedor hasta un `href`, y `request<T>()` es un cast, no validación. Dos cosas no pueden pasar: un esquema que no sea http(s) — un `javascript:` en un `href` ejecuta script en el origen de la app y `rel="noopener"` no protege de eso —, y un valor que no sea string, que llegaría hasta el `UPDATE` de `markPublished` y **abortaría el batch entero de reconciliación**, incluidas las cards que ya estaban listas. `parseHttpUrl` corta las dos, con el mismo criterio que `parseTimestamp`: ante la duda, `null`, que el frontend ya sabe degradar.
 - **`FakePublishingProvider` devuelve una URL falsa** en las cards que "publica", y `seed-dev` la pone en las publicadas. Sin eso, el camino encendido sería irrecorrible en dev: con el fake nada se publica de verdad y con PostFast la URL es null por diseño.
+
+## Addendum (2026-09-06, F7.5 PR5) — la corrida real, y qué quedó sin cubrir
+
+Cierre de F7.5. El ciclo completo se ejercitó contra la API real de Upload-Post con la cuenta de Jose, y la abstracción aguantó: `CardsService` no cambió una línea entre correr con `fake`, con `postfast` o con `upload_post`.
+
+**Lo que se verificó contra el proveedor real:**
+
+- **Perfil y conexión.** `ensureWorkspace` creó `presencia-<users.id>` desde el botón "Conectar red", el JWT abrió la página de conexión en español, y el claim reclamó LinkedIn y Facebook por diff.
+- **Programar.** `POST /upload_text` devolvió un `job_id` real y el job apareció en `GET /uploadposts/schedule` con el perfil, la fecha y el tipo correctos.
+- **Reprogramar, que era la razón de peso de la fase.** El `PATCH` movió la fecha **conservando el mismo `job_id`** — verificado listando la cola antes y después. Con PostFast eso habría sido un post borrado y otro creado.
+- **Cancelar.** El `DELETE` sacó el job de la cola; la card volvió a `draft`.
+- **Publicar y `post_url`.** Dos publicaciones reales, una en LinkedIn y una en Facebook. `getPostStates` las encontró en `/uploadposts/history`, la reconciliación las pasó a `published` y guardó el enlace, y los botones se encendieron.
+
+**Dos cosas que solo esta corrida podía demostrar:**
+
+1. **El post que se publicó es el que se movió de hora, no uno recreado.** El `job_id` que aparece en el historial de LinkedIn es exactamente el mismo que existía antes del `PATCH`. Con la emulación de PostFast habría sido un id distinto — y un post borrado por el camino.
+2. **El margen de gracia hace lo que promete.** Al consultar 90 s después de la hora programada, la card de Facebook ya estaba `published` y la de LinkedIn seguía `scheduled` a propósito: su `scheduled_at` aún no cumplía los 2 min de `RECONCILE_GRACE_MS`. No se declara publicado nada que el proveedor podría estar procesando todavía. Un minuto después pasó a `published` con su `publishedAt` igual, al milisegundo, al `upload_timestamp` del proveedor.
+
+Y se cerró el hueco que PR4 había dejado anotado: el botón **"Ver post" de la toolbar del Chat**, que no se pudo verificar entonces porque ninguna card publicada del seed colgaba de un chat. Acá la card se creó **desde el Chat**, así que al publicarse el botón quedó ejercitado con datos reales — enlace correcto, misma caja que su hermano, sin desborde.
+
+**Lo que NO cubre esta corrida, y conviene tenerlo escrito:**
+
+- **PostFast no se ejercitó contra su API real en toda la fase.** La suscripción de Jose venció durante F7 — que es justamente lo que motivó traer un segundo proveedor. Así que `PostFastProvider`, incluida la **emulación nueva de `reschedule`** (donde el code-review encontró el fallo alto del orden create/cancel), tiene cobertura de tests unitarios con `fetch` stubeado pero **cero corridas reales desde F6**. No es algo que esta fase pudiera resolver; queda como riesgo conocido para el día que esa cuenta vuelva.
+- **Media.** Instagram, TikTok y YouTube siguen fuera: `/upload_text` no las acepta y subir el archivo al proveedor es trabajo de F10/F11.
+- **Facebook con varias páginas.** La cuenta de prueba tiene una sola, así que la autodetección de `facebook_page_id` funcionó y el hueco documentado en el addendum de PR2 no se pudo ejercitar.
