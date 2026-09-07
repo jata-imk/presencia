@@ -11,6 +11,7 @@ import { CardsRepository } from "../cards/cards.repository.js";
 import { DbService } from "../db/db.service.js";
 import { FakePublishingProvider } from "../publishing/fake.provider.js";
 import { PUBLISHING_PROVIDER, type PublishingProvider } from "../publishing/publishing.provider.js";
+import { toHttpException } from "../publishing/to-http-exception.js";
 import { ChannelsRepository, type SocialAccountRow } from "./channels.repository.js";
 
 // El workspace de PostFast es único y compartido entre todos los usuarios de
@@ -54,6 +55,21 @@ export class ChannelsService {
     @Inject(CardsRepository) private readonly cardsRepo: CardsRepository,
   ) {}
 
+  /**
+   * Toda llamada al proveedor pasa por acá. Sin esto, un rechazo con mensaje
+   * escrito para que el usuario lo entienda —"tu cuenta de Upload-Post llegó
+   * al límite de perfiles de su plan"— salía como un 500 genérico de Nest:
+   * el mensaje existía y no llegaba a nadie. CardsService ya traducía; este
+   * servicio no, y desde F7.5 también llama al puerto.
+   */
+  private async fromProvider<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      throw toHttpException(error);
+    }
+  }
+
   async listAccounts(userId: string): Promise<ChannelAccountDto[]> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const rows = await this.repo.listAccounts(tx);
@@ -74,11 +90,10 @@ export class ChannelsService {
     // Secuencial y no dentro del Promise.all: las dos llamadas de abajo
     // necesitan el workspace ya resuelto (con Upload-Post, `ensureWorkspace`
     // crea el perfil si todavía no existe).
-    const ws = await this.provider.ensureWorkspace(userId);
-    const [accounts, link] = await Promise.all([
-      this.provider.listAccounts(ws),
-      this.provider.createConnectLink({ ws }),
-    ]);
+    const ws = await this.fromProvider(() => this.provider.ensureWorkspace(userId));
+    const [accounts, link] = await this.fromProvider(() =>
+      Promise.all([this.provider.listAccounts(ws), this.provider.createConnectLink({ ws })]),
+    );
     // El intent nunca puede sobrevivir al link que lo acompaña: si un
     // proveedor emite uno más corto que nuestros 30 min, el usuario tendría
     // un intent vivo apuntando a un link ya muerto y el claim fallaría con
@@ -126,7 +141,7 @@ export class ChannelsService {
     // validar primero exigiría partir el claim en dos transacciones —
     // consumir el intent en una y reclamar en otra —, que es justo la
     // atomicidad que hoy evita perder un claim si algo truena en medio.
-    const ws = await this.provider.ensureWorkspace(userId);
+    const ws = await this.fromProvider(() => this.provider.ensureWorkspace(userId));
 
     return this.dbService.runWithTenant(userId, async (tx) => {
       const intent = await this.repo.findIntentById(tx, intentId);
@@ -136,7 +151,7 @@ export class ChannelsService {
         throw new BadRequestException("Esa conexión expiró — vuelve a intentar conectar tu red.");
       }
 
-      const accounts = await this.provider.listAccounts(ws);
+      const accounts = await this.fromProvider(() => this.provider.listAccounts(ws));
       const known = new Set(intent.knownAccountRefs as string[]);
       const newAccounts = accounts.filter((a) => !known.has(a.providerRef));
 
@@ -260,8 +275,8 @@ export class ChannelsService {
     );
     if (!account) throw new NotFoundException("No encontramos esa cuenta conectada.");
 
-    const ws = await this.provider.ensureWorkspace(userId);
-    const providerAccounts = await this.provider.listAccounts(ws);
+    const ws = await this.fromProvider(() => this.provider.ensureWorkspace(userId));
+    const providerAccounts = await this.fromProvider(() => this.provider.listAccounts(ws));
     // .connected, no solo presencia: PostFast sigue listando una cuenta con
     // token revocado (connectionStatus:"DISABLED"), no la quita — sin este
     // filtro, "Reconectar" habría vuelto a mostrar como activa justo la

@@ -67,8 +67,21 @@ export class ProviderHttpClient {
         { status: res.status, body: detail },
       );
     }
-    if (res.status === 204) return undefined as T;
-    return (await res.json()) as T;
+    // Un cuerpo vacío no es solo el 204: `DELETE`/`PATCH` de Upload-Post
+    // pueden responder 200 sin nada. Sin esto, `res.json()` lanzaba un
+    // SyntaxError crudo — ni Rejected ni Unavailable —, así que se escapaba
+    // de classifyScheduleFailure y de la idempotencia del cancel, y salía
+    // como un 500 sin clasificar.
+    const raw = await res.text();
+    if (raw.trim() === "") return undefined as T;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      throw new PublishingUnavailableError(
+        `${this.providerName} respondió ${res.status} con un cuerpo que no es JSON.`,
+        { status: res.status, body: raw.slice(0, 500) },
+      );
+    }
   }
 }
 
