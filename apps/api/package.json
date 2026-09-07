@@ -7,11 +7,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src scripts drizzle.config.ts",
     "dev": "tsx watch --env-file=../../.env src/main.ts",
+    "dev:worker": "tsx watch --env-file=../../.env src/worker.ts",
     "test": "vitest run",
     "seed:dev": "tsx --env-file=../../.env scripts/seed-dev.ts",
     "suite:cultural": "tsx --env-file=../../.env scripts/cultural-suite/run.ts",
     "suite:voz-prohibida": "tsx --env-file=../../.env scripts/cultural-suite/prohibited-word.ts",
     "start": "node dist/main.js",
+    "worker": "node dist/worker.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },
@@ -30,6 +32,7 @@
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
     "pg": "^8.16.0",
+    "pg-boss": "12.25.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "zod": "^4.4.3"

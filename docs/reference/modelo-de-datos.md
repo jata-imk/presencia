@@ -169,7 +169,9 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 ### Jobs
 
-**pg-boss** crea y administra su propio schema `pgboss` (ADR-008). Sin RLS ahí — no es superficie de la API. Regla: los payloads de jobs llevan `user_id` explícito y el worker lo fija en su transacción (ver abajo).
+**pg-boss** administra sus tablas dentro del schema `pgboss` (ADR-008), pero **el schema lo crea la migración `0016_pgboss_schema`**: crear schemas es DDL y la DDL vive en migraciones (ADR-013), así que el runtime corre con `createSchema: false` y `migrate: true`. Esa migración también deja `ALTER DEFAULT PRIVILEGES` en los dos sentidos entre `presencia_app` y `presencia_worker`, porque las tablas quedan a nombre de quien arranque primero (en dev es `presencia_app`: el worker corre dentro del proceso de la API, `WORKER_INLINE`).
+
+Sin RLS ahí — no es superficie de la API. Regla: los payloads de jobs llevan `user_id` explícito y el worker lo fija en su transacción (ver abajo).
 
 ## Dónde muerde el RLS
 

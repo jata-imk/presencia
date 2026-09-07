@@ -38,6 +38,16 @@ const envSchema = z
     ZEPTOMAIL_TOKEN: z.string().min(1),
     MAIL_FROM: z.email(),
     PORT: z.coerce.number().int().positive().default(3000),
+    // Worker de pg-boss (F8, ADR-008). En dev corre DENTRO del proceso de la
+    // API: FakePublishingProvider guarda sus posts en memoria, así que un
+    // worker aparte tendría un Map vacío y la reconciliación marcaría como
+    // fallida toda card programada. En prod el contenedor `app` lo apaga y el
+    // contenedor `worker` corre `worker.ts`. No se usa z.coerce.boolean():
+    // convierte "false" en true.
+    WORKER_INLINE: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
     // Publicación (F6/F7.5, ADR-009). "fake" es el provider permanente de
     // dev/test (FakePublishingProvider, in-memory); "postfast" y
     // "upload_post" hablan con su API real y cada uno exige SU key (ver el

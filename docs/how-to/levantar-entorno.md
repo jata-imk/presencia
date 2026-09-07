@@ -80,6 +80,28 @@ Notas del modo B:
 
    Preferí esta cuenta antes que tus datos reales cuando pruebes algo: es desechable y no hay que restaurarla después. El script se niega a correr si `APP_DATABASE_URL` no apunta a localhost o al túnel.
 
+## Jobs en background (desde F8, ADR-008)
+
+La cola es pg-boss sobre el mismo Postgres, en el schema `pgboss` (lo crea la migración `0016`; las tablas de adentro las administra la librería). No hay servicio nuevo que instalar.
+
+- **En dev el worker corre DENTRO del proceso de la API.** Lo controla `WORKER_INLINE`, que viene en `true` por default: con `pnpm dev` ya tienes la cola andando y no hay nada más que levantar.
+
+  La razón no es comodidad. `FakePublishingProvider` (el provider de dev, `PUBLISHING_PROVIDER=fake`) guarda los posts programados en memoria del proceso. Un worker aparte tendría ese mapa vacío, no reconocería ninguna `provider_ref` y la reconciliación marcaría como **fallida toda card programada**.
+
+- **`pnpm --filter @presencia/api dev:worker`** levanta el worker como proceso aparte, que es la forma que tendrá en prod (ADR-008: misma imagen, distinto entrypoint — `main.ts` vs `worker.ts`). Úsalo solo con un proveedor real y con `WORKER_INLINE=false`, si no vas a tener dos procesos consumiendo la misma cola.
+
+- **Qué mirar cuando algo no corre.** Todo el estado vive en tablas:
+
+  ```sql
+  select name, cron, timezone from pgboss.schedule;                    -- qué está agendado
+  select name, state, created_on, output from pgboss.job
+    order by created_on desc limit 20;                                 -- qué corrió y cómo salió
+  ```
+
+  Un job que falla queda con `state = 'failed'` y el error en `output` — esa es la "visibilidad que un crontab no da" del ADR.
+
+- **En el deploy** (fase pendiente) el contenedor `app` va con `WORKER_INLINE=false` y el contenedor `worker` corre `pnpm --filter @presencia/api worker`. Ahí el worker conectará con el rol `presencia_worker`, que ya existe desde la migración `0001` y necesitará su propio password.
+
 ## IA multi-proveedor (desde F3, ADR-004)
 
 - El modelo activo se elige con `AI_MODEL` (formato `proveedor:modelo`). Proveedores soportados: `google`, `openai`, `anthropic`, `deepseek`, `minimax`, `kimi` (ej. `google:gemini-3.6-flash`, `anthropic:claude-haiku-4-5`, `deepseek:deepseek-v4-flash`). Cambiar de proveedor = editar la variable y reiniciar el proceso (`pnpm dev` en local, reciclar contenedor en prod).

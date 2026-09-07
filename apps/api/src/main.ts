@@ -19,6 +19,19 @@ async function bootstrap() {
   // auth: en Express 5 el stack respeta el orden de registro).
   app.use(express.json());
 
+  // Sin esto, SIGTERM/SIGINT matan el proceso sin pasar por OnModuleDestroy:
+  // ni el pool de la app ni el de pg-boss (WORKER_INLINE) cerrarían limpio.
+  app.enableShutdownHooks();
+
+  // El default de WORKER_INLINE es `true` porque hoy el único entorno que
+  // existe es dev, donde tiene que estarlo (ver env.ts). Pero es el sentido
+  // peligroso para prod: si el contenedor `app` se despliega sin la variable,
+  // termina consumiendo la misma cola que el contenedor `worker`. Que se vea
+  // en los logs de arranque, no solo en el .env.
+  if (env.WORKER_INLINE) {
+    console.info("[api] WORKER_INLINE=true: esta instancia también consume la cola de jobs.");
+  }
+
   await app.listen(env.PORT);
 }
 
