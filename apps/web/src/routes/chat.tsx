@@ -1,7 +1,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isStaticToolUIPart } from "ai";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useLocation, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ConvHeader } from "../components/chat/ConvHeader.js";
 import { Composer } from "../components/chat/Composer.js";
 import { MessageAI } from "../components/chat/MessageAI.js";
@@ -67,16 +67,31 @@ function ChatView({
 
   // routes/chats.tsx crea el chat y navega acá con el prompt de la
   // sugerencia/composer grande en el state de router (no en la URL — no es
-  // dato para compartir ni para persistir). Se manda una sola vez: el
-  // guard de ref sobrevive los re-renders de este mount, y location.state
-  // no sobrevive un refresh duro del navegador, así que no hay riesgo de
-  // reenvío accidental.
+  // dato para compartir ni para persistir).
+  //
+  // Hay que mandarlo UNA sola vez, y eso pide dos guardas distintas porque
+  // hay dos formas de duplicarlo, y la versión anterior solo cubría una:
+  //
+  //  - `sentInitialPrompt` cubre los re-renders y el doble efecto de
+  //    StrictMode, que corren sobre la MISMA instancia y por eso ven el ref.
+  //  - Borrar el state cubre lo otro: volver a entrar a esta URL o recargar.
+  //    El ref no sirve ahí (cada mount estrena el suyo) y el prompt sigue
+  //    disponible, porque `location.state` vive en el `history.state` del
+  //    navegador y SÍ sobrevive a un refresh. Incidente 2026-09-06: una sola
+  //    acción del usuario terminó creando tres pares de borradores, uno por
+  //    cada vez que se volvió a abrir el chat.
+  //
+  // Se consume con `replace` ANTES de mandar: la entrada del historial deja
+  // de tener prompt, así que ya no hay nada que reenviar aunque se recargue
+  // a mitad del stream.
   const location = useLocation();
+  const navigate = useNavigate();
   const initialPrompt = (location.state as { initialPrompt?: string } | null)?.initialPrompt;
   const sentInitialPrompt = useRef(false);
   useEffect(() => {
     if (!initialPrompt || sentInitialPrompt.current) return;
     sentInitialPrompt.current = true;
+    void navigate(location.pathname, { replace: true, state: null });
     void sendMessage({ text: initialPrompt });
   }, []);
 
