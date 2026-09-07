@@ -1,5 +1,12 @@
-# Dev: solo Postgres. Los servicios app/worker/caddy se agregan en F1
-# cuando exista el Dockerfile (staging/prod corren ESTE mismo archivo,
+# Dev: solo Postgres. El desarrollo diario corre con `pnpm dev` en la máquina
+# de Jose contra este Postgres (por túnel SSH al VPS), no en contenedores.
+#
+# Los servicios app/worker/caddy siguen pendientes: se planearon para F1 y no
+# se construyeron, porque nunca hizo falta un Dockerfile para desarrollar. Van
+# con la fase de deploy, junto con el backup diario y el rol presencia_worker
+# — hasta entonces el worker de pg-boss (F8) corre dentro del proceso de la
+# API vía WORKER_INLINE. La forma prevista está en
+# docs/reference/infraestructura.md (staging/prod corren ESTE mismo archivo,
 # solo cambia el .env — regla de dev/prod parity).
 services:
   postgres:

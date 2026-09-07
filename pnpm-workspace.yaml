@@ -3,3 +3,10 @@ packages:
   - "packages/*"
 allowBuilds:
   esbuild: true
+
+# pg 8.23.0 está publicado roto: declara pg-protocol@^1.16.0, que no existe en
+# el registry (el último es 1.15.0). pg-boss lo arrastraría por su rango
+# ^8.22.0. Fijar la versión mantiene un solo pg en el árbol y un install
+# reproducible; se puede quitar cuando el registry tenga pg-protocol 1.16.
+overrides:
+  pg: 8.22.0

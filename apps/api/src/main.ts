@@ -19,6 +19,10 @@ async function bootstrap() {
   // auth: en Express 5 el stack respeta el orden de registro).
   app.use(express.json());
 
+  // Sin esto, SIGTERM/SIGINT matan el proceso sin pasar por OnModuleDestroy:
+  // ni el pool de la app ni el de pg-boss (WORKER_INLINE) cerrarían limpio.
+  app.enableShutdownHooks();
+
   await app.listen(env.PORT);
 }
 
