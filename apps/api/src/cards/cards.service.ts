@@ -27,6 +27,8 @@ import {
   type PublishingProvider,
   type SchedulePostRequest,
 } from "../publishing/publishing.provider.js";
+import { parseHttpUrl } from "../publishing/http-url.js";
+import { toHttpException as toProviderHttpException } from "../publishing/to-http-exception.js";
 import { CardsRepository, type CalendarFilters, type CardRow } from "./cards.repository.js";
 
 // Ciclo de vida de la card (F6, ADR-009 addendum): programar, reprogramar,
@@ -554,7 +556,10 @@ function toDto(row: CardRow): PublicationCardDto {
     scheduledAt: row.scheduledAt?.toISOString() ?? null,
     publishedAt: row.publishedAt?.toISOString() ?? null,
     socialAccountId: row.socialAccountId,
-    postUrl: row.postUrl,
+    // Se estrecha también acá, no solo en el adapter: es donde el valor
+    // se consume (el frontend lo mete en un href) y la columna la puede
+    // llenar un proveedor futuro o un UPDATE a mano.
+    postUrl: parseHttpUrl(row.postUrl),
     errorMessage: errorMessageFrom(row.errorDetail),
   };
 }
@@ -653,12 +658,11 @@ function errorDetailFrom(error: unknown, failure: ScheduleFailure): unknown {
 }
 
 function toHttpException(error: unknown, failure: ScheduleFailure = "rejected"): Error {
+  // El caso ambiguo es propio de programar: el mensaje avisa de revisar el
+  // proveedor antes de reintentar, para no arriesgar un post duplicado. El
+  // resto de la traducción la comparte todo el que llame al puerto.
   if (failure === "ambiguous") {
     return new HttpException(AMBIGUOUS_SCHEDULE_MESSAGE, HttpStatus.SERVICE_UNAVAILABLE);
   }
-  if (error instanceof PublishingRejectedError) return new BadRequestException(error.message);
-  if (error instanceof PublishingRateLimitError || error instanceof PublishingUnavailableError) {
-    return new HttpException(error.message, HttpStatus.SERVICE_UNAVAILABLE);
-  }
-  return error instanceof Error ? error : new Error(String(error));
+  return toProviderHttpException(error);
 }

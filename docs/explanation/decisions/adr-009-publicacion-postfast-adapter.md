@@ -212,3 +212,23 @@ Y se cerró el hueco que PR4 había dejado anotado: el botón **"Ver post" de la
 - **PostFast no se ejercitó contra su API real en toda la fase.** La suscripción de Jose venció durante F7 — que es justamente lo que motivó traer un segundo proveedor. Así que `PostFastProvider`, incluida la **emulación nueva de `reschedule`** (donde el code-review encontró el fallo alto del orden create/cancel), tiene cobertura de tests unitarios con `fetch` stubeado pero **cero corridas reales desde F6**. No es algo que esta fase pudiera resolver; queda como riesgo conocido para el día que esa cuenta vuelva.
 - **Media.** Instagram, TikTok y YouTube siguen fuera: `/upload_text` no las acepta y subir el archivo al proveedor es trabajo de F10/F11.
 - **Facebook con varias páginas.** La cuenta de prueba tiene una sola, así que la autodetección de `facebook_page_id` funcionó y el hueco documentado en el addendum de PR2 no se pudo ejercitar.
+
+## Addendum (2026-09-07, F7.5 seguimiento) — hallazgos del review sobre el rango completo
+
+Al cerrar la fase se corrió `/code-review medium` sobre el diff acumulado de los seis PRs, no solo PR a PR. Encontró siete cosas que los reviews individuales no podían ver, porque solo aparecen al mirar cómo interactúan piezas que llegaron en PRs distintos. Vale la pena la costumbre.
+
+**El fallback de 404 reintroducía por otra puerta el fallo que PR3 arregló.** `UploadPostProvider.reschedule`, ante un `404` del `PATCH`, recrea el post. Si esa recreación se rechazaba, el error subía como `PublishingRejectedError` — y el contrato del puerto dice que un rechazo deja el post original vivo, así que `CardsService` "restauraba" la card como `scheduled` apuntando a un job que el propio 404 acababa de probar inexistente. Ahora ese caso se envuelve en `PublishingUnavailableError`: ambiguo es lo honesto, y la card va a `failed` con su rastro.
+
+**El mensaje del tope de perfiles no llegaba al usuario.** `ensureWorkspace` puede rechazar con una frase escrita para que se entienda, pero `ChannelsService` no traducía errores del proveedor a HTTP — solo `CardsService` lo hacía — y no hay filtro global de excepciones. Salía un 500 genérico. La traducción se extrajo a `publishing/to-http-exception.ts` y ahora la usan los dos.
+
+**Un 403 cualquiera decía "límite de perfiles".** El respaldo por código HTTP convertía una key revocada o degradada —que Upload-Post también responde con 403— en "compra más capacidad". Ahora el tope exige su `error_code` y el resto habla de permisos.
+
+**El guard de esquema de `post_url` vivía en un solo adapter.** El valor termina en un `href`, así que el invariante tiene que valer para la fila, no para el camino por el que llegó: `parseHttpUrl` se compartió y se aplica también en `toDto`, que es donde el valor se consume.
+
+Y dos de robustez: la cola de programados se consume sin paginar aunque devuelve `total`, así que ahora su truncamiento se detecta igual que el del historial; y un `200` con cuerpo vacío —plausible en `DELETE`/`PATCH`— lanzaba un `SyntaxError` crudo que se escapaba de la clasificación de errores y salía como un 500 sin explicar.
+
+### Una ventana que se documenta en vez de cerrarse
+
+`markRescheduled` conserva el `provider_ref` a propósito. Con un proveedor que emula (PostFast: create + cancel), la ref que vuelve es de un post **nuevo** y la vieja ya se borró. Si el proceso muere entre que `reschedule()` retorna y el `UPDATE` que estampa la ref, la fila queda `scheduled` apuntando al post borrado: `listOrphanedScheduled` no la ve —hay `provider_ref`— y la reconciliación la marcará `failed` mientras el post nuevo sí publica.
+
+Se deja **documentada y no resuelta**, con el mismo criterio que el resto de huecos de PostFast. Cerrarla pide un protocolo de dos fases para un caso que solo existe en el proveedor que emula, que hoy además no tiene ninguna cobertura real. Es infra "por si acaso" (regla dura #6) hasta que haya evidencia de que ocurre.

@@ -94,6 +94,18 @@ describe("UploadPostProvider", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // Un 403 sin el error_code no es el tope del plan: es una key revocada o
+    // sin permisos. Decirle al usuario "compra más perfiles" lo mandaría a
+    // pagar capacidad que ya tiene.
+    it("un 403 sin error_code habla de permisos, no del límite de perfiles", async () => {
+      fetchMock
+        .mockResolvedValueOnce(new Response("", { status: 404 }))
+        .mockResolvedValueOnce(new Response("", { status: 403 }));
+      const provider = makeProvider();
+
+      await expect(provider.ensureWorkspace(USER_ID)).rejects.toThrow(/API key siga vigente/);
+    });
+
     it("el tope del plan sobre un perfil que NO existe sí es un error, con mensaje claro", async () => {
       fetchMock.mockResolvedValueOnce(missingProfile()).mockResolvedValueOnce(
         jsonResponse(403, {
@@ -472,6 +484,26 @@ describe("UploadPostProvider", () => {
       expect(createUrl).toBe("https://api.upload-post.com/api/upload_text");
     });
 
+    // Si la recreación TAMBIÉN se rechaza, no puede salir como rechazo: el
+    // contrato del puerto promete que un rechazo deja el post original vivo,
+    // y el 404 ya probó que no lo está. Ambiguo manda la card a `failed` en
+    // vez de "restaurarla" apuntando a un job inexistente.
+    it("si tras el 404 la recreación se rechaza, el error sale como ambiguo", async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(404, { error: "job not found" }))
+        .mockResolvedValueOnce(jsonResponse(400, { message: "scheduled_date inválida" }));
+      const provider = makeProvider();
+
+      await expect(
+        provider.reschedule("job_gone", {
+          network: "linkedin",
+          content: TEXT_CONTENT,
+          scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
+          accountProviderRef: `${PROFILE}:linkedin`,
+        }),
+      ).rejects.toBeInstanceOf(PublishingUnavailableError);
+    });
+
     it("otro rechazo del PATCH sí propaga, sin crear nada", async () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse(400, { message: "scheduled_date en el pasado" }),
@@ -496,6 +528,16 @@ describe("UploadPostProvider", () => {
       const provider = makeProvider();
 
       await expect(provider.cancel("job_gone")).resolves.toBeUndefined();
+    });
+
+    // Un 200 con cuerpo vacío es plausible en DELETE/PATCH. Antes reventaba
+    // con un SyntaxError crudo que no era ni Rejected ni Unavailable, así
+    // que se escapaba de la clasificación y salía como un 500 sin explicar.
+    it("un 200 con cuerpo vacío no revienta", async () => {
+      fetchMock.mockResolvedValueOnce(new Response("", { status: 200 }));
+      const provider = makeProvider();
+
+      await expect(provider.cancel("job_1")).resolves.toBeUndefined();
     });
 
     it("un 500 al cancelar sí propaga", async () => {
@@ -679,6 +721,26 @@ describe("UploadPostProvider", () => {
     // El post_url viaja sin escalas hasta un href del frontend. Un
     // `javascript:` ahí ejecuta script en el origen de la app al hacer clic,
     // y rel="noopener" no protege de eso.
+    // /uploadposts/schedule no toma paginación pero devuelve `total`: si
+    // recorta, un ref que tampoco esté en el historial NO puede darse por
+    // fallido. Mismo criterio que el truncamiento de /history.
+    it("si la cola de programados viene recortada, un ref sin resolver queda scheduled", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse(200, { scheduled_posts: [{ job_id: "otro" }], total: 500 }),
+        )
+        .mockResolvedValueOnce(jsonResponse(200, { history: [], total: 0 }));
+      const provider = makeProvider();
+
+      const states = await provider.getPostStates(["job_lejano"]);
+
+      expect(states.get("job_lejano")).toEqual({
+        status: "scheduled",
+        publishedAt: null,
+        postUrl: null,
+      });
+    });
+
     it("un post_url con esquema peligroso se descarta", async () => {
       fetchMock
         .mockResolvedValueOnce(jsonResponse(200, { scheduled_posts: [] }))

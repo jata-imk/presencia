@@ -1,6 +1,7 @@
 import type { SocialNetwork } from "@presencia/shared";
 import { PublishingRejectedError, PublishingUnavailableError } from "./errors.js";
 import { isStatus, ProviderHttpClient } from "./http-client.js";
+import { parseHttpUrl } from "./http-url.js";
 import { buildPostText } from "./post-text.js";
 import type {
   ProviderAccount,
@@ -201,11 +202,19 @@ export class UploadPostProvider implements PublishingProvider {
         return { ref: username };
       }
       // Acá el tope del plan SÍ es lo que dice: el perfil no existe y no se
-      // puede crear. El proveedor manda `error_code: PROFILE_LIMIT_REACHED`
-      // en el body, aunque en algunas rutas el 403 viene con el body vacío.
+      // puede crear. La señal precisa es el `error_code` del body.
       if (isProfileLimitReached(error.detail)) {
         throw new PublishingRejectedError(
           "Tu cuenta de Upload-Post llegó al límite de perfiles de su plan, así que no se pudo crear el tuyo.",
+          error.detail,
+        );
+      }
+      // Un 403 sin ese código NO es el tope del plan: es una key revocada,
+      // degradada o con permisos que no alcanzan. Mandarlo como "compra más
+      // perfiles" haría que el usuario pague capacidad que ya tiene.
+      if (isStatus(error.detail, 403)) {
+        throw new PublishingRejectedError(
+          "Upload-Post rechazó la solicitud por permisos. Revisa que la API key siga vigente.",
           error.detail,
         );
       }
@@ -345,7 +354,28 @@ export class UploadPostProvider implements PublishingProvider {
       // uno nuevo, que es lo que el usuario pidió — mover su publicación a
       // otra hora — y el providerRef nuevo viaja de vuelta al caller.
       if (error instanceof PublishingRejectedError && isStatus(error.detail, 404)) {
-        return this.schedule(req);
+        try {
+          return await this.schedule(req);
+        } catch (createError) {
+          // Si la recreación también se rechaza, el resultado NO puede
+          // salir como rechazo: el contrato del puerto promete que un
+          // rechazo deja el post original vivo, y el 404 de arriba ya probó
+          // que no lo está. Devolverlo así haría que CardsService
+          // "restaurara" la card como programada apuntando a un job que no
+          // existe — el calendario diría que va a publicar y no publicaría
+          // nada, que es justo el modo de falla que el orden create+cancel
+          // de PostFast existe para evitar.
+          //
+          // Ambiguo es lo honesto: no sabemos en qué estado quedó, y el
+          // caller manda la card a `failed` con su rastro.
+          if (createError instanceof PublishingRejectedError) {
+            throw new PublishingUnavailableError(
+              "El post programado ya no existía y no se pudo recrear al reprogramar.",
+              { reason: "reschedule_recreate_rejected", detail: createError.detail },
+            );
+          }
+          throw createError;
+        }
       }
       throw error;
     }
@@ -395,8 +425,17 @@ export class UploadPostProvider implements PublishingProvider {
     // 1) Los que siguen en cola del lado del proveedor.
     const scheduled = await this.http.request<{
       scheduled_posts?: Array<{ job_id?: string | null }>;
+      total?: number;
     }>("GET", "/uploadposts/schedule");
-    for (const post of scheduled.scheduled_posts ?? []) {
+    const enCola = scheduled.scheduled_posts ?? [];
+    // El endpoint no toma parámetros de paginación pero SÍ devuelve `total`
+    // y `offset`, así que puede estar recortando. Está scopeado por API key
+    // y no por perfil, o sea que contiene la cola de TODOS los usuarios: con
+    // varios activos, un job podría quedar fuera de lo que devuelve. Si eso
+    // pasa, un ref que tampoco aparezca en el historial no se puede dar por
+    // fallido — mismo criterio que el truncamiento de /history.
+    const colaTruncada = typeof scheduled.total === "number" && scheduled.total > enCola.length;
+    for (const post of enCola) {
       if (post.job_id && pending.delete(post.job_id)) {
         result.set(post.job_id, { status: "scheduled", publishedAt: null, postUrl: null });
       }
@@ -456,9 +495,11 @@ export class UploadPostProvider implements PublishingProvider {
     // publicación real — el mismo error que motivó leer `in_progress`. Se
     // reportan como "scheduled": el caller no las toca y el siguiente pase
     // vuelve a preguntar.
-    if (pending.size > 0 && historyTotal !== undefined && historyTotal > scannedHistory) {
-      for (const ref of pending)
+    const historialTruncado = historyTotal !== undefined && historyTotal > scannedHistory;
+    if (pending.size > 0 && (historialTruncado || colaTruncada)) {
+      for (const ref of pending) {
         result.set(ref, { status: "scheduled", publishedAt: null, postUrl: null });
+      }
     }
     return result;
   }
@@ -471,34 +512,6 @@ export class UploadPostProvider implements PublishingProvider {
  * escribirse. Ante un timestamp que no se entiende, mejor null: el caller
  * cae a "ahora".
  */
-/**
- * Estrecha la URL del post a algo seguro de guardar y de renderizar.
- *
- * Este valor viaja sin escalas hasta un `href` del frontend, así que hay dos
- * cosas que no pueden pasar:
- *
- *  - Un esquema que no sea http(s). Un `javascript:` en un `href` ejecuta
- *    script en el origen de la app al hacer clic, y `rel="noopener"` no
- *    protege de eso.
- *  - Un valor que no sea string. `request<T>()` es un cast, no validación:
- *    si el proveedor cambia la forma de HistoryItem, un objeto o un número
- *    llegaría hasta el UPDATE de markPublished y lo haría tronar,
- *    **abortando el batch entero de reconciliación** — incluidas las cards
- *    que ya estaban listas. Mismo motivo por el que existe parseTimestamp.
- *
- * Ante cualquier duda, null: el frontend ya sabe degradar a botón apagado.
- */
-function parseHttpUrl(raw: unknown): string | null {
-  if (typeof raw !== "string" || raw.trim() === "") return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    return null;
-  }
-  return parsed.protocol === "http:" || parsed.protocol === "https:" ? raw : null;
-}
-
 function parseTimestamp(raw: string | null | undefined): Date | null {
   if (!raw) return null;
   const parsed = new Date(raw);
@@ -506,16 +519,16 @@ function parseTimestamp(raw: string | null | undefined): Date | null {
 }
 
 /**
- * El tope de perfiles del plan. Se mira el `error_code` del body porque es
- * la señal precisa; el 403 a secas queda de respaldo, porque el proveedor no
- * siempre manda body (visto vacío en una de sus rutas).
+ * El tope de perfiles del plan, y SOLO eso: se exige el `error_code` del
+ * body. Antes bastaba con un 403, y eso convertía cualquier problema de
+ * permisos —una key revocada o degradada, que Upload-Post también responde
+ * con 403— en "compra más perfiles", mandando al usuario a pagar capacidad
+ * que ya tiene.
  */
 function isProfileLimitReached(detail: unknown): boolean {
-  if (typeof detail === "object" && detail !== null) {
-    const body = (detail as { body?: { error_code?: unknown } | null }).body;
-    if (body && body.error_code === "PROFILE_LIMIT_REACHED") return true;
-  }
-  return isStatus(detail, 403);
+  if (typeof detail !== "object" || detail === null) return false;
+  const body = (detail as { body?: { error_code?: unknown } | null }).body;
+  return Boolean(body) && body?.error_code === "PROFILE_LIMIT_REACHED";
 }
 
 /** `presencia-<uuid>:linkedin` → perfil y plataforma. */
