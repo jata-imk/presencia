@@ -12,10 +12,10 @@ CREATE SCHEMA IF NOT EXISTS pgboss;
 GRANT ALL ON SCHEMA pgboss TO presencia_app, presencia_worker;
 --> statement-breakpoint
 
--- Cuál de los dos roles crea las tablas depende de quién arranque primero:
--- en dev es presencia_app (el worker corre dentro de la API, WORKER_INLINE) y
--- en prod será presencia_worker. Se cubren los dos sentidos para que el otro
--- rol pueda leer y escribir la cola en cualquier caso.
+-- Los dos roles de runtime pueden LEER Y ESCRIBIR la cola sin importar cuál
+-- de los dos creó las tablas: quien las crea es quien arranca primero (en dev
+-- presencia_app, porque el worker corre dentro de la API con WORKER_INLINE; en
+-- prod sería presencia_worker).
 --
 -- OJO en el deploy: ALTER DEFAULT PRIVILEGES FOR ROLE exige que el rol que
 -- corre la migración sea MIEMBRO de ese rol. En dev el owner es el superuser
@@ -32,3 +32,19 @@ ALTER DEFAULT PRIVILEGES FOR ROLE presencia_worker IN SCHEMA pgboss
 --> statement-breakpoint
 ALTER DEFAULT PRIVILEGES FOR ROLE presencia_worker IN SCHEMA pgboss
   GRANT ALL ON SEQUENCES TO presencia_app;
+
+-- LO QUE ESTO **NO** RESUELVE, Y HAY QUE DECIDIR ANTES DEL PRIMER DEPLOY:
+-- privilegios no son propiedad. Las migraciones internas de pg-boss (corren
+-- solas al arrancar, `migrate: true`) hacen DDL de dueño — CREATE OR REPLACE
+-- FUNCTION, ALTER TABLE ... ADD CONSTRAINT, ATTACH PARTITION — y eso exige ser
+-- OWNER del objeto, cosa que ningún GRANT otorga.
+--
+-- Hoy no muerde porque un solo rol (presencia_app) instala y usa la cola. En el
+-- momento en que el contenedor `worker` arranque como presencia_worker contra
+-- estas tablas y una versión más nueva de pg-boss quiera migrarlas, el arranque
+-- va a abortar con `must be owner of table job`. La fase de deploy tiene que
+-- elegir una de dos y dejarla escrita en ADR-008:
+--   a) un rol dueño único para la cola (p.ej. presencia_jobs) con el que se
+--      conecte pg-boss en TODOS los entornos, o
+--   b) `migrate: false` en el runtime y las migraciones de pg-boss vendidas
+--      como migraciones nuestras (PgBoss.getConstructionPlans / getMigrationPlans).

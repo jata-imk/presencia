@@ -13,6 +13,17 @@ const PGBOSS_SCHEMA = "pgboss";
 // concurrencia — un pase de reconciliación por minuto no llena 4 conexiones.
 const PGBOSS_POOL_SIZE = 4;
 
+// `exclusive`: como mucho UN job de esta cola existiendo a la vez, encolado o
+// activo. Es la semántica que quiere un barrido periódico — si el pase de las
+// 10:00 sigue corriendo a las 10:01, el tick de las 10:01 se descarta en vez
+// de esperar turno. Equivale a que un pg_try_advisory_lock no consiga el lock
+// y se salte la corrida.
+//
+// `singleton` NO sirve acá y es la trampa fácil: solo limita los jobs
+// ACTIVOS, así que los ticks se van acumulando en `created` mientras el pase
+// largo corre, y al terminar se ejecutan todos seguidos.
+const RECURRING_QUEUE_POLICY = "exclusive";
+
 export interface RecurringJob {
   /** Nombre de la cola. Convención: `<dominio>.<acción>`, p.ej. `cards.reconcile`. */
   queue: string;
@@ -72,14 +83,28 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
    * proceso no duplica el agendado ni pierde el anterior.
    */
   async registerRecurring(job: RecurringJob): Promise<void> {
-    await this.boss.createQueue(job.queue, {
-      // `singleton`: como mucho un job activo por cola. Con un cron por
-      // minuto y un pase que puede tardar más de un minuto, esto es lo que
-      // evita dos pases pisándose (y sustituye al advisory lock que haría
-      // falta con un setInterval en el proceso web).
-      policy: "singleton",
-      retryLimit: job.retryLimit ?? 0,
-    });
+    const retryLimit = job.retryLimit ?? 0;
+
+    await this.boss.createQueue(job.queue, { policy: RECURRING_QUEUE_POLICY, retryLimit });
+    // createQueue es un INSERT ... ON CONFLICT DO NOTHING: si la cola ya
+    // existe, las opciones de arriba se ignoran EN SILENCIO. Sin este
+    // updateQueue, cambiar `retryLimit` en el código no tendría efecto nunca
+    // en una base donde la cola ya se creó una vez.
+    await this.boss.updateQueue(job.queue, { retryLimit });
+
+    // La policy es lo único que updateQueue NO puede cambiar (su tipo la
+    // excluye), y es justo la que decide si dos pases se pisan. Si diverge,
+    // hay que avisar fuerte: el arreglo es manual (deleteQueue + recrear, o
+    // un UPDATE sobre pgboss.queue), y en silencio se vería como "el cron se
+    // porta raro".
+    const existing = await this.boss.getQueue(job.queue);
+    if (existing && existing.policy !== RECURRING_QUEUE_POLICY) {
+      console.error(
+        `[jobs] ${job.queue} existe con policy "${existing.policy}" y el código pide ` +
+          `"${RECURRING_QUEUE_POLICY}". createQueue no la cambia: hay que recrear la cola.`,
+      );
+    }
+
     await this.boss.work(job.queue, async () => {
       await job.handler();
     });
