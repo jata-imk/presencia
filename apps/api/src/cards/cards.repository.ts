@@ -1,5 +1,18 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, getTableColumns, gte, inArray, isNull, lt, lte } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+} from "drizzle-orm";
 import type { CardContent, CardStatus, SocialNetwork } from "@presencia/shared";
 import { chats, publicationCards } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
@@ -304,6 +317,34 @@ export class CardsRepository {
           eq(publicationCards.status, "scheduled"),
           isNull(publicationCards.providerRef),
           lt(publicationCards.updatedAt, updatedBefore),
+        ),
+      );
+  }
+
+  /**
+   * Las dos ramas de la reconciliación en UNA query (F8): huérfanas —
+   * `scheduled` sin `provider_ref` y sin tocarse desde antes del cutoff — y
+   * debidas — `scheduled` con `provider_ref` cuya hora ya pasó. Es el mismo
+   * criterio que listOrphanedScheduled y listDueScheduled juntos; el service
+   * separa las dos categorías al agrupar por usuario.
+   *
+   * Sirve para los dos caminos sin cambiar de query: dentro de
+   * `runWithTenant` el RLS la acota al usuario del momento, y dentro de
+   * `runWorkerScan` la policy `worker_scan` (migración 0017) la deja ver las
+   * cards `scheduled` de todos los tenants, que es lo que el cron necesita
+   * para saber a quién atender.
+   */
+  async listReconcilable(tx: Tx, cutoff: Date): Promise<CardRow[]> {
+    return tx
+      .select()
+      .from(publicationCards)
+      .where(
+        and(
+          eq(publicationCards.status, "scheduled"),
+          or(
+            and(isNull(publicationCards.providerRef), lt(publicationCards.updatedAt, cutoff)),
+            and(isNotNull(publicationCards.providerRef), lt(publicationCards.scheduledAt, cutoff)),
+          ),
         ),
       );
   }

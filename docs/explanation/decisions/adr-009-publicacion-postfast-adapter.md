@@ -232,3 +232,19 @@ Y dos de robustez: la cola de programados se consume sin paginar aunque devuelve
 `markRescheduled` conserva el `provider_ref` a propósito. Con un proveedor que emula (PostFast: create + cancel), la ref que vuelve es de un post **nuevo** y la vieja ya se borró. Si el proceso muere entre que `reschedule()` retorna y el `UPDATE` que estampa la ref, la fila queda `scheduled` apuntando al post borrado: `listOrphanedScheduled` no la ve —hay `provider_ref`— y la reconciliación la marcará `failed` mientras el post nuevo sí publica.
 
 Se deja **documentada y no resuelta**, con el mismo criterio que el resto de huecos de PostFast. Cerrarla pide un protocolo de dos fases para un caso que solo existe en el proveedor que emula, que hoy además no tiene ninguna cobertura real. Es infra "por si acaso" (regla dura #6) hasta que haya evidencia de que ocurre.
+
+## Addendum (2026-09-08, F8 PR2) — el disparador cambió, y el pase también
+
+El addendum de F6 decía que F8 solo cambiaría el disparador de `reconcileDueCards`, no su lógica. La primera mitad se cumple; la segunda no del todo, y conviene decir por qué en vez de dejar la frase vieja mintiendo.
+
+**Las reglas no cambiaron.** Qué es una huérfana, el margen de gracia de 2 minutos, los lotes de 100 refs, el mapeo `published`/`failed`, el no-op de "sigue en cola", los mensajes de error: idénticos.
+
+**El orden sí.** Antes el pase era por usuario: para cada uno, sus huérfanas, sus vencidas, y una llamada a `getPostStates` con sus refs. Ahora el cron recoge las cards reconciliables de **todos** los tenants en una query, aplana los refs de todos en un solo lote, hace **una** llamada al proveedor y recién ahí separa las escrituras por usuario, cada una en su `runWithTenant`.
+
+**El motivo es que `getPostStates` nunca estuvo scopeado por usuario.** Lo dice el addendum de PR1 de F7.5: `cancel` y `getPostStates` operan sobre ids de post, y sus endpoints están scopeados por la API key, no por perfil. O sea que llamarlo una vez por usuario baja **la misma lista global** tantas veces como usuarios haya. Con diez creators publicando a la misma hora, eso son diez descargas idénticas por minuto contra una API cuyo rate limit no conocemos — el `openapi.json` de Upload-Post documenta un solo límite (100 req / 5 min) y es para los endpoints de analíticas, no para estos.
+
+**Y de regalo corrige un hueco que este mismo ADR ya tenía documentado.** `/uploadposts/history` pagina por recencia **global** con tope de 5 páginas, así que con varios usuarios activos la card de alguien puede quedar fuera del tope; por eso existe la salvaguarda que reporta esos refs como `scheduled` en vez de darlos por fallidos. Llamar por usuario no ayudaba: son las mismas 5 páginas cada vez, gastadas en resolver los refs de uno solo. Una sola consulta resuelve los de todos con esas mismas páginas.
+
+**Lo que se pierde, para que quede escrito:** con un pase por usuario, un fallo del proveedor afectaba solo a ese usuario. Ahora aborta el pase completo. En la práctica cambia poco —una caída del proveedor los afecta a todos de todos modos, y `getPostStates` no falla por ref individual—, y el tick siguiente reintenta 60 segundos después. Las **escrituras** sí conservan aislamiento por usuario: cada `runWithTenant` va en su propio `try/catch`, así que un error escribiendo lo de uno no deja sin reconciliar a los demás.
+
+**El disparador perezoso no se elimina, se degrada a respaldo.** `maybeReconcile` sigue colgado de `listByChat` y `listByRange`, con el cooldown subido de 60s a 5 min: el cron es la fuente primaria y esto solo cubre el hueco de que el worker esté caído. Cuando el worker corre, el usuario que abre el calendario casi nunca dispara nada.

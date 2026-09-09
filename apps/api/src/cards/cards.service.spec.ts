@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
-import { chats, folders, users } from "../db/schema.js";
+import { chats, folders, publicationCards, users } from "../db/schema.js";
 import { PublishingRejectedError, PublishingUnavailableError } from "../publishing/errors.js";
 import { FakePublishingProvider } from "../publishing/fake.provider.js";
 import type { ProviderPostState, SchedulePostRequest } from "../publishing/publishing.provider.js";
@@ -135,6 +135,16 @@ class NoUrlProvider extends FakePublishingProvider {
       states.set(ref, { status: "published", publishedAt: new Date(), postUrl: null });
     }
     return Promise.resolve(states);
+  }
+}
+
+// F8: el pase global tiene que preguntarle al proveedor UNA vez por lote,
+// no una vez por usuario — es la razón de ser del cambio.
+class CountingProvider extends FakePublishingProvider {
+  calls = 0;
+  override getPostStates(refs: string[]): Promise<Map<string, ProviderPostState>> {
+    this.calls += 1;
+    return super.getPostStates(refs);
   }
 }
 
@@ -933,6 +943,100 @@ describe("CardsService", () => {
       expect(row?.postUrl).toBeNull();
     },
   );
+  // ── F8: el pase global del cron ───────────────────────────────────────
+
+  it(
+    "reconcileAll resuelve varios tenants en un solo pase, con UNA llamada al proveedor",
+    { timeout: 15_000 },
+    async () => {
+      const countingProvider = new CountingProvider();
+      const globalService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        countingProvider,
+      );
+
+      // userB necesita su propio chat: hasta acá todas las cards colgaban de A.
+      const chatB = await dbService.runWithTenant(userB, async (tx) => {
+        const [chat] = await tx.insert(chats).values({ userId: userB }).returning({ id: chats.id });
+        if (!chat) throw new Error("No se pudo crear el chat de userB");
+        return chat.id;
+      });
+
+      const pastDate = new Date(Date.now() - 3 * 60_000);
+      const scheduleDue = async (userId: string, chatId: string) => {
+        const account = await connectAccount(userId, "linkedin");
+        const card = await dbService.runWithTenant(userId, (tx) =>
+          cardsRepo.insertCard(tx, {
+            userId,
+            chatId,
+            network: "linkedin",
+            content: TEXT_CONTENT,
+          }),
+        );
+        const { providerRef } = await countingProvider.schedule({
+          network: "linkedin",
+          content: TEXT_CONTENT,
+          scheduledAt: pastDate,
+          accountProviderRef: account.providerRef,
+        });
+        await dbService.runWithTenant(userId, async (tx) => {
+          await cardsRepo.markScheduling(tx, card.id, {
+            socialAccountId: account.id,
+            scheduledAt: pastDate,
+          });
+          await cardsRepo.attachProviderRef(tx, card.id, providerRef);
+        });
+        return card.id;
+      };
+
+      const cardA = await scheduleDue(userA, chatA);
+      const cardB = await scheduleDue(userB, chatB);
+
+      await globalService.reconcileAll();
+
+      const rowA = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, cardA));
+      const rowB = await dbService.runWithTenant(userB, (tx) => cardsRepo.findById(tx, cardB));
+      expect(rowA?.status).toBe("published");
+      expect(rowB?.status).toBe("published");
+      // Lo que de verdad se está probando: dos tenants, una sola consulta al
+      // proveedor. Con un pase por usuario serían dos, y con cien usuarios,
+      // cien descargas de la misma lista global.
+      expect(countingProvider.calls).toBe(1);
+    },
+  );
+
+  it(
+    "el barrido cross-tenant solo ve cards scheduled, nunca draft ni published",
+    { timeout: 15_000 },
+    async () => {
+      const draft = await createCard(TEXT_CONTENT, "linkedin");
+      const account = await connectAccount(userA, "linkedin");
+      const scheduled = await createCard(TEXT_CONTENT, "linkedin");
+      await dbService.runWithTenant(userA, async (tx) => {
+        await cardsRepo.markScheduling(tx, scheduled.id, {
+          socialAccountId: account.id,
+          scheduledAt: new Date(Date.now() - 3 * 60_000),
+        });
+        await cardsRepo.attachProviderRef(tx, scheduled.id, "ref-visible");
+      });
+      const published = await createCard(TEXT_CONTENT, "linkedin");
+      await dbService.runWithTenant(userA, (tx) =>
+        cardsRepo.markPublished(tx, published.id, new Date(), null),
+      );
+
+      const visto = await dbService.runWorkerScan(async (tx) => {
+        const rows = await tx.select().from(publicationCards);
+        return rows.map((r) => r.id);
+      });
+
+      expect(visto).toContain(scheduled.id);
+      expect(visto).not.toContain(draft.id);
+      expect(visto).not.toContain(published.id);
+    },
+  );
+
   // ── F7: listados que alimentan el Calendario ──────────────────────────
   //
   // Se prueban contra Postgres real por lo mismo que el resto del archivo:

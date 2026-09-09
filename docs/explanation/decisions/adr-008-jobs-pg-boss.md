@@ -78,3 +78,13 @@ publiquen.
 
 **Lo que este PR NO hace:** no agrega ningún job. Solo el runtime, para que el primer job se lea
 después como un job y no como "un job más un runtime".
+
+## Addendum (2026-09-08, F8 PR2) — el primer job
+
+`cards.reconcile`, cron `* * * * *`. La lógica vive entera en `CardsService.reconcileAll`; `CardsJobs` solo la agenda — el job es el disparador y nada más (ver el addendum de F8 en ADR-009 por lo que sí cambió del pase).
+
+**Por qué cada minuto y no algo más espaciado:** cuando no hay nada vencido el pase cuesta **una query y cero red** (el proveedor solo se consulta si hay refs que resolver), así que la cadencia la fija la latencia que queremos, no el costo. Una card publicada aparece como tal dentro del minuto siguiente a que se cumpla el margen de gracia de 2 minutos.
+
+**Los jobs se declaran en un solo lugar** (`jobs/scheduled-jobs.module.ts`), que importan los dos entrypoints: `worker.ts` siempre y `main.ts` solo con `WORKER_INLINE`. Tener la lista duplicada era la forma más fácil de terminar con el worker y la API corriendo jobs distintos sin que nadie lo notara.
+
+**El registro va en `OnApplicationBootstrap`, no en `OnModuleInit`:** pg-boss tiene que haber arrancado —lo hace en el `OnModuleInit` de `BossService`— antes de que se pueda crear una cola.

@@ -9,7 +9,7 @@ import { DbModule } from "./db/db.module.js";
 import { env } from "./env.js";
 import { FoldersModule } from "./folders/folders.module.js";
 import { HealthController } from "./health.controller.js";
-import { JobsModule } from "./jobs/jobs.module.js";
+import { ScheduledJobsModule } from "./jobs/scheduled-jobs.module.js";
 import { ProfileModule } from "./profile/profile.module.js";
 import { SearchModule } from "./search/search.module.js";
 
@@ -25,7 +25,7 @@ import { SearchModule } from "./search/search.module.js";
     SearchModule,
     // WORKER_INLINE: en dev la cola vive en este mismo proceso (ADR-008
     // addendum F8). Con el flag apagado, quien la consume es worker.ts.
-    ...(env.WORKER_INLINE ? [JobsModule] : []),
+    ...(env.WORKER_INLINE ? [ScheduledJobsModule] : []),
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: AuthGuard }],

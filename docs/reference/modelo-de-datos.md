@@ -195,6 +195,25 @@ En cada request autenticado, la API abre transacción y ejecuta `SET LOCAL app.u
 | `presencia_worker`   | Worker pg-boss             | Sujeto a RLS; cada job fija `app.user_id` del payload. Jobs agregados cross-user (tendencias de Ritmo) usan tablas sin datos de tenant o una policy adicional explícita — nunca BYPASSRLS por comodidad |
 | `presencia_migrator` | Migraciones (CI/deploy)    | Owner del schema; solo corre DDL, nunca sirve tráfico. Se provisiona por entorno (la migración 0001 solo crea `presencia_app`/`presencia_worker`; en dev el owner es el rol del compose/VPS)            |
 
+### La excepción del worker: `worker_scan` sobre `publication_cards`
+
+El barrido de reconciliación (F8) necesita responder "¿qué cards hay que reconciliar, de quién sea?" **antes** de poder abrir la transacción de cada usuario. Eso es una lectura cross-tenant, y es el caso que esta misma sección ya contemplaba: una policy adicional explícita, nunca `BYPASSRLS`.
+
+```sql
+CREATE POLICY worker_scan ON publication_cards
+  FOR SELECT TO presencia_app, presencia_worker
+  USING (
+    current_setting('app.user_id', true) = '00000000-0000-0000-0000-000000000000'
+    AND status = 'scheduled'
+  );
+```
+
+Es deliberadamente angosta: **solo `SELECT`** (toda escritura sigue pasando por `runWithTenant`), **solo `scheduled`** (una card en `draft`, `published` o `failed` sigue invisible fuera de su tenant), y solo en modo barrido.
+
+**Por qué un UUID centinela y no "cuando `app.user_id` no está fijado"**, que era lo natural: las policies permisivas se combinan con OR, pero Postgres **las evalúa todas**, y `tenant_isolation` lee la variable sin `missing_ok`. Sin fijarla, esa expresión lanza `42704 unrecognized configuration parameter` y tumba la query entera antes de que el OR pueda salvarla — verificado contra la base, no deducido. Con el nil fijado, `tenant_isolation` evalúa a falso limpiamente y la del worker decide.
+
+El centinela además conserva la red de seguridad que da ese error: una query que se **olvide** de fijar tenant sigue fallando ruidosamente en vez de devolver cero filas en silencio. El modo barrido hay que pedirlo a propósito (`DbService.runWorkerScan`). Y escribir ahí es inocuo por construcción: con el nil, `tenant_isolation` no matchea ninguna fila, así que un `UPDATE` en modo barrido toca cero filas.
+
 ### Tablas cubiertas
 
 RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
