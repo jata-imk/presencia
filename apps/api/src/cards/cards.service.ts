@@ -60,7 +60,7 @@ import { CardsRepository, type CalendarFilters, type CardRow } from "./cards.rep
 //   el provider_ref a propósito, así que su hueco es otro y más chico: si
 //   el proceso muere entre markRescheduled y la llamada al proveedor, la
 //   fila dice el horario NUEVO mientras el proveedor sigue con el VIEJO.
-//   No lo detecta listOrphanedScheduled (hay provider_ref), pero tampoco se
+//   No lo detecta el barrido como huérfana (hay provider_ref), pero tampoco se
 //   pierde nada: el post existe y se publica, y el primer pase de
 //   reconciliación posterior a esa publicación lo marca published. Lo que
 //   hay entremedio es un calendario que miente un rato, no una card rota.
@@ -510,6 +510,13 @@ export class CardsService {
    * quien decide qué fila toca cada UPDATE.
    */
   private async applyReconciliation(work: Map<string, ReconcileWork>): Promise<void> {
+    // Los fallos por tenant se cuentan y se relanzan al final (code review F8
+    // PR2). Tragárselos con un console.error dejaba el job de pg-boss siempre
+    // en "completed": un fallo durable de un tenant — una constraint, un
+    // errorDetail que no serializa — se repetiría cada minuto sin más señal
+    // que un log que en el VPS nadie está mirando.
+    const failedTenants = new Set<string>();
+
     for (const [userId, { orphans }] of work) {
       if (orphans.length === 0) continue;
       // Un fallo escribiendo lo de un usuario no debe dejar sin reconciliar a
@@ -519,6 +526,7 @@ export class CardsService {
           this.repo.markManyFailed(tx, orphans, { reason: ORPHANED_REASON }),
         );
       } catch (error) {
+        failedTenants.add(userId);
         console.error(`[cards] No se pudieron cerrar las huérfanas de ${userId}:`, error);
       }
     }
@@ -554,6 +562,7 @@ export class CardsService {
             this.repo.markManyFailed(tx, ids, { reason: UNCONFIRMED_REASON }),
           );
         } catch (error) {
+          failedTenants.add(userId);
           console.error(`[cards] No se pudieron marcar como fallidas las de ${userId}:`, error);
         }
       }
@@ -565,9 +574,19 @@ export class CardsService {
             }
           });
         } catch (error) {
+          failedTenants.add(userId);
           console.error(`[cards] No se pudieron publicar las cards de ${userId}:`, error);
         }
       }
+    }
+
+    // Recién acá: el objetivo del try/catch de arriba es que el fallo de un
+    // tenant no deje sin reconciliar a los demás, no que el pase mienta sobre
+    // cómo le fue.
+    if (failedTenants.size > 0) {
+      throw new Error(
+        `La reconciliación falló para ${failedTenants.size} usuario(s): ${[...failedTenants].join(", ")}`,
+      );
     }
   }
 }

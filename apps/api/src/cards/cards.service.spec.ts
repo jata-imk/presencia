@@ -138,13 +138,25 @@ class NoUrlProvider extends FakePublishingProvider {
   }
 }
 
-// F8: el pase global tiene que preguntarle al proveedor UNA vez por lote,
-// no una vez por usuario — es la razón de ser del cambio.
+// F8: el pase global tiene que preguntarle al proveedor UNA vez por lote, no
+// una vez por usuario — es la razón de ser del cambio. Guarda los lotes para
+// poder afirmarlo.
+//
+// Y reporta como "scheduled" las refs que no conoce en vez de omitirlas, que
+// es lo que hacen los proveedores reales cuando no logran resolver una ref
+// (ADR-009: "no lo vi" no es "no existe"). Acá además es obligatorio: el pase
+// es GLOBAL, así que el lote trae cards de otros specs corriendo en paralelo
+// contra la misma base, y omitirlas las marcaría fallidas.
 class CountingProvider extends FakePublishingProvider {
-  calls = 0;
-  override getPostStates(refs: string[]): Promise<Map<string, ProviderPostState>> {
-    this.calls += 1;
-    return super.getPostStates(refs);
+  readonly batches: string[][] = [];
+  override async getPostStates(refs: string[]): Promise<Map<string, ProviderPostState>> {
+    this.batches.push([...refs]);
+    const states = await super.getPostStates(refs);
+    for (const ref of refs) {
+      if (!states.has(ref))
+        states.set(ref, { status: "scheduled", publishedAt: null, postUrl: null });
+    }
+    return states;
   }
 }
 
@@ -865,7 +877,7 @@ describe("CardsService", () => {
       // Card A: se programa "de verdad" con un scheduledAt ya pasado del
       // lado del proveedor (bypass de la validación de 5 min — se arma el
       // estado directo por repo, como haría schedule() puertas adentro).
-      // Más de RECONCILE_GRACE_MS (2 min) atrás: listDueScheduled solo
+      // Más de RECONCILE_GRACE_MS (2 min) atrás: el barrido solo
       // considera "debidas" las cards que ya pasaron ese margen de gracia.
       const cardPublished = await createCard(TEXT_CONTENT, "linkedin");
       const pastDate = new Date(Date.now() - 3 * 60_000);
@@ -891,7 +903,7 @@ describe("CardsService", () => {
           socialAccountId: account.id,
           scheduledAt: new Date(future(10)),
         });
-        // updated_at debe verse "vieja" para que listOrphanedScheduled la
+        // updated_at debe verse "vieja" para que el barrido la
         // detecte (el cutoff es now - 2min).
         await tx.execute(
           sql`update publication_cards set updated_at = now() - interval '5 minutes' where id = ${cardOrphaned.id}`,
@@ -988,7 +1000,7 @@ describe("CardsService", () => {
           });
           await cardsRepo.attachProviderRef(tx, card.id, providerRef);
         });
-        return card.id;
+        return { id: card.id, providerRef };
       };
 
       const cardA = await scheduleDue(userA, chatA);
@@ -996,14 +1008,18 @@ describe("CardsService", () => {
 
       await globalService.reconcileAll();
 
-      const rowA = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, cardA));
-      const rowB = await dbService.runWithTenant(userB, (tx) => cardsRepo.findById(tx, cardB));
+      const rowA = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, cardA.id));
+      const rowB = await dbService.runWithTenant(userB, (tx) => cardsRepo.findById(tx, cardB.id));
       expect(rowA?.status).toBe("published");
       expect(rowB?.status).toBe("published");
-      // Lo que de verdad se está probando: dos tenants, una sola consulta al
-      // proveedor. Con un pase por usuario serían dos, y con cien usuarios,
-      // cien descargas de la misma lista global.
-      expect(countingProvider.calls).toBe(1);
+      // Lo que de verdad se está probando: las cards de DOS tenants se
+      // resolvieron en la MISMA consulta al proveedor. Con un pase por usuario
+      // serían dos llamadas, y con cien usuarios, cien descargas de la misma
+      // lista global.
+      const juntas = countingProvider.batches.some(
+        (batch) => batch.includes(cardA.providerRef) && batch.includes(cardB.providerRef),
+      );
+      expect(juntas).toBe(true);
     },
   );
 
@@ -1100,7 +1116,7 @@ describe("CardsService", () => {
             scheduledAt: opts.scheduledAt,
           });
           // El ref sintético NO es decorativo: markScheduling deja
-          // provider_ref en null a propósito, y listOrphanedScheduled marca
+          // provider_ref en null a propósito, y el barrido marca
           // `failed` cualquier card `scheduled` sin ref con más de
           // RECONCILE_GRACE_MS (2 min) de antigüedad — sin mirar
           // scheduled_at. listByRange arranca con maybeReconcile y el

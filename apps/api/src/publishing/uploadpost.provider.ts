@@ -66,7 +66,7 @@ const CONNECT_LINK_TTL_MS = 48 * 60 * 60 * 1000;
 // atrás, ordenadas de más reciente a más vieja.
 //
 // Suele alcanzar porque la reconciliación solo pregunta por cards cuya hora
-// ACABA de pasar (CardsService.listDueScheduled). Pero el orden es por
+// ACABA de pasar (CardsRepository.listReconcilable). Pero el orden es por
 // recencia GLOBAL — el historial está scopeado por API key, no por perfil —,
 // así que con varios usuarios activos un item puede caer más allá del tope.
 // Ese caso NO se resuelve mirando más páginas, se detecta: ver el uso de

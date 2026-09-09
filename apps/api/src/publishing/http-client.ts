@@ -20,6 +20,25 @@ import {
  * header propio `pf-api-key`, Upload-Post usa `Authorization: Apikey`) ni
  * los shapes de request/response, que son 100% de cada proveedor.
  */
+
+/**
+ * Corte duro por request. Tiene que ser MENOR que el `RECONCILE_GRACE_MS` de
+ * CardsService (2 min), y ese no es un número cómodo sino la condición que
+ * evita un daño concreto (code review F8 PR2):
+ *
+ * `schedule()` deja la card `scheduled` con `provider_ref` en null mientras la
+ * llamada está en vuelo. Si esa llamada tarda más que el margen de gracia, el
+ * barrido de reconciliación —que desde F8 corre cada minuto, sin depender de
+ * que nadie mire— la ve como huérfana y la marca `failed`. Cuando el proveedor
+ * por fin contesta, `persistProviderRef` encuentra que la card ya no está
+ * `scheduled` y **cancela un post que sí se había creado bien**.
+ *
+ * Con el timeout, la llamada se rinde antes de esa ventana y el fallo entra por
+ * la puerta correcta: `PublishingUnavailableError` (ambiguo) manda la card a
+ * `failed` conservando el rastro y avisándole al usuario que revise en el
+ * proveedor, en vez de borrarle un post real por la espalda.
+ */
+const REQUEST_TIMEOUT_MS = 30_000;
 export class ProviderHttpClient {
   constructor(
     private readonly providerName: string,
@@ -44,10 +63,16 @@ export class ProviderHttpClient {
           ...(body !== undefined && !isForm ? { "Content-Type": "application/json" } : {}),
         },
         body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch (error) {
+      // Un timeout entra por acá igual que un error de red, y es lo correcto:
+      // los dos son ambiguos — no sabemos si el proveedor alcanzó a hacer algo.
+      const timedOut = error instanceof Error && error.name === "TimeoutError";
       throw new PublishingUnavailableError(
-        `No se pudo contactar a ${this.providerName} (error de red).`,
+        timedOut
+          ? `${this.providerName} no respondió en ${REQUEST_TIMEOUT_MS / 1000}s.`
+          : `No se pudo contactar a ${this.providerName} (error de red).`,
         error,
       );
     }
