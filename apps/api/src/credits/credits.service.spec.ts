@@ -23,6 +23,7 @@ let userA: string;
 let userB: string;
 let userC: string;
 let userD: string;
+let userSinVerificar: string;
 
 describe("CreditsService", () => {
   beforeAll(async () => {
@@ -42,30 +43,36 @@ describe("CreditsService", () => {
 
     // users no tiene RLS (la administra Better Auth); el insert directo es
     // válido, igual que en db/rls.spec.ts. planTier default "creator".
-    const [a, b, c, d] = await dbService.db
+    const [a, b, c, d, e] = await dbService.db
       .insert(users)
       .values([
-        { name: "Créditos A", email: `credits-a-${randomUUID()}@test.local` },
-        { name: "Créditos B", email: `credits-b-${randomUUID()}@test.local` },
-        { name: "Créditos C", email: `credits-c-${randomUUID()}@test.local` },
+        { name: "Créditos A", email: `credits-a-${randomUUID()}@test.local`, emailVerified: true },
+        { name: "Créditos B", email: `credits-b-${randomUUID()}@test.local`, emailVerified: true },
+        { name: "Créditos C", email: `credits-c-${randomUUID()}@test.local`, emailVerified: true },
         // Dado de alta hace dos meses y nunca entró: es el caso que el job
         // diario existe para cubrir.
         {
           name: "Créditos D",
           email: `credits-d-${randomUUID()}@test.local`,
+          emailVerified: true,
           createdAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
         },
+        // Sin verificar: el job diario no debe tocarlo.
+        { name: "Créditos E", email: `credits-e-${randomUUID()}@test.local` },
       ])
       .returning({ id: users.id });
-    if (!a || !b || !c || !d) throw new Error("No se pudieron crear los usuarios de prueba");
+    if (!a || !b || !c || !d || !e) throw new Error("No se pudieron crear los usuarios de prueba");
     userA = a.id;
     userB = b.id;
     userC = c.id;
     userD = d.id;
+    userSinVerificar = e.id;
   }, 30_000);
 
   afterAll(async () => {
-    await dbService.db.delete(users).where(inArray(users.id, [userA, userB, userC, userD]));
+    await dbService.db
+      .delete(users)
+      .where(inArray(users.id, [userA, userB, userC, userD, userSinVerificar]));
     await dbService.onModuleDestroy();
   }, 30_000);
 
@@ -284,12 +291,15 @@ describe("CreditsService", () => {
   );
 
   it(
-    "listAllUserIds ve a todos los usuarios sin tenant fijado (users no tiene RLS)",
+    "listVerifiedUserIds ve a los usuarios verificados sin tenant fijado (users no tiene RLS)",
     { timeout: 15_000 },
     async () => {
-      const ids = await dbService.runWorkerScan((tx) => repo.listAllUserIds(tx));
+      const ids = await dbService.runWorkerScan((tx) => repo.listVerifiedUserIds(tx));
       expect(ids).toContain(userA);
       expect(ids).toContain(userD);
+      // El usuario sin verificar no entra: el job no le escribe asientos a una
+      // cuenta que todavía no puede entrar a la app.
+      expect(ids).not.toContain(userSinVerificar);
     },
   );
 });

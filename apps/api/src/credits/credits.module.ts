@@ -6,6 +6,6 @@ import { CreditsService } from "./credits.service.js";
 @Module({
   controllers: [CreditsController],
   providers: [CreditsRepository, CreditsService],
-  exports: [CreditsService, CreditsRepository],
+  exports: [CreditsService],
 })
 export class CreditsModule {}

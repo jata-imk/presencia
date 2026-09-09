@@ -1,7 +1,5 @@
 import { Inject, Injectable, type OnApplicationBootstrap } from "@nestjs/common";
-import { DbService } from "../db/db.service.js";
 import { BossService } from "../jobs/boss.service.js";
-import { CreditsRepository } from "./credits.repository.js";
 import { CreditsService } from "./credits.service.js";
 
 // Diario a las 09:00 UTC (03:00 en Mérida): la hora exacta da igual porque el
@@ -11,8 +9,14 @@ import { CreditsService } from "./credits.service.js";
 // entra antes lo dispara solo por la ruta perezosa.
 const CYCLE_CRON = "0 9 * * *";
 
+// Techo del pase, explícito. Una hora es holgado para un pase serial y sigue
+// siendo una cota de verdad (ver RecurringJob.expireInSeconds por qué NO se
+// puede dejar el default).
+const CYCLE_EXPIRE_SECONDS = 60 * 60;
+
 /**
- * Adelanta el ciclo mensual de crédito de todos los usuarios (F8, ADR-012).
+ * Adelanta el ciclo mensual de crédito (F8, ADR-012). El pase entero vive en
+ * `CreditsService.refreshAllCycles`; esto solo lo agenda.
  *
  * No sustituye a la ruta perezosa: `charge()` y `spend()` siguen llamando a
  * `ensureCurrentCycle` dentro de su transacción, y eso es lo que garantiza que
@@ -24,8 +28,6 @@ const CYCLE_CRON = "0 9 * * *";
 export class CreditsJobs implements OnApplicationBootstrap {
   constructor(
     @Inject(BossService) private readonly boss: BossService,
-    @Inject(DbService) private readonly dbService: DbService,
-    @Inject(CreditsRepository) private readonly repo: CreditsRepository,
     @Inject(CreditsService) private readonly credits: CreditsService,
   ) {}
 
@@ -33,30 +35,8 @@ export class CreditsJobs implements OnApplicationBootstrap {
     await this.boss.registerRecurring({
       queue: "credits.cycle",
       cron: CYCLE_CRON,
-      handler: () => this.refreshAllCycles(),
+      expireInSeconds: CYCLE_EXPIRE_SECONDS,
+      handler: () => this.credits.refreshAllCycles(),
     });
-  }
-
-  async refreshAllCycles(): Promise<void> {
-    const userIds = await this.dbService.runWorkerScan((tx) => this.repo.listAllUserIds(tx));
-
-    // Mismo criterio que el barrido de cards: el fallo de un usuario no debe
-    // dejar sin ciclo a los demás, pero el pase tampoco debe mentir sobre cómo
-    // le fue — si se traga todo, pg-boss registra "completed" y un fallo
-    // durable se repite cada día sin más señal que un log.
-    const failed: string[] = [];
-    for (const userId of userIds) {
-      try {
-        await this.credits.refreshCycle(userId);
-      } catch (error) {
-        failed.push(userId);
-        console.error(`[credits] No se pudo refrescar el ciclo de ${userId}:`, error);
-      }
-    }
-    if (failed.length > 0) {
-      throw new Error(
-        `El ciclo mensual falló para ${failed.length} usuario(s): ${failed.join(", ")}`,
-      );
-    }
   }
 }

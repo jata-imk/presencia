@@ -8,6 +8,11 @@ import { CardsService } from "./cards.service.js";
 // dentro del minuto siguiente a que se cumpla el margen de gracia.
 const RECONCILE_CRON = "* * * * *";
 
+// Techo del pase, explícito. Diez minutos son dos órdenes de magnitud más que
+// un pase normal y siguen siendo una cota real (ver
+// RecurringJob.expireInSeconds por qué el default de pg-boss no sirve).
+const RECONCILE_EXPIRE_SECONDS = 10 * 60;
+
 /**
  * El disparador de la reconciliación (F8, ADR-009: "F8 solo cambia el
  * disparador"). La lógica vive entera en CardsService; esto solo la agenda.
@@ -27,6 +32,7 @@ export class CardsJobs implements OnApplicationBootstrap {
     await this.boss.registerRecurring({
       queue: "cards.reconcile",
       cron: RECONCILE_CRON,
+      expireInSeconds: RECONCILE_EXPIRE_SECONDS,
       handler: () => this.cards.reconcileAll(),
     });
   }

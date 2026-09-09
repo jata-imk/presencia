@@ -40,10 +40,15 @@ export class CreditsRepository {
   }
 
   /**
-   * Todos los usuarios, para el job diario de ciclo (F8). No necesita tenant
-   * fijado: `users` NO tiene RLS —la administra Better Auth—, así que el job
-   * la lee desde `runWorkerScan`, la única puerta del repo para acceso sin
-   * tenant.
+   * Los usuarios con correo verificado, para el job diario de ciclo (F8). No
+   * necesita tenant fijado: `users` NO tiene RLS —la administra Better Auth—,
+   * así que el job la lee desde `runWorkerScan`, la única puerta del repo para
+   * acceso sin tenant.
+   *
+   * El filtro por `email_verified` no es cosmético: sin él, cada cuenta sin
+   * verificar acumularía dos asientos por mes para siempre (el
+   * `cycle_expiration` del ciclo viejo y el `monthly_grant` del nuevo), y el
+   * ledger es append-only por el motor desde la migración 0008.
    *
    * Límite conocido: el job recorre a todos, no solo a quienes les toca
    * renovar hoy. Con el ciclo anclado al aniversario de cada uno, filtrar en
@@ -51,8 +56,8 @@ export class CreditsRepository {
    * regla es peor que un pase de más al día — `ensureCurrentCycle` no escribe
    * nada cuando el ciclo ya está otorgado.
    */
-  async listAllUserIds(tx: Tx): Promise<string[]> {
-    const rows = await tx.select({ id: users.id }).from(users);
+  async listVerifiedUserIds(tx: Tx): Promise<string[]> {
+    const rows = await tx.select({ id: users.id }).from(users).where(eq(users.emailVerified, true));
     return rows.map((row) => row.id);
   }
 

@@ -17,6 +17,7 @@ import type {
 } from "@presencia/shared";
 import { ChannelsRepository } from "../channels/channels.repository.js";
 import { DbService } from "../db/db.service.js";
+import { summarizeFailures } from "../jobs/summarize-failures.js";
 import {
   PublishingRateLimitError,
   PublishingRejectedError,
@@ -584,9 +585,7 @@ export class CardsService {
     // tenant no deje sin reconciliar a los demás, no que el pase mienta sobre
     // cómo le fue.
     if (failedTenants.size > 0) {
-      throw new Error(
-        `La reconciliación falló para ${failedTenants.size} usuario(s): ${[...failedTenants].join(", ")}`,
-      );
+      throw new Error(summarizeFailures("La reconciliación", [...failedTenants]));
     }
   }
 }
