@@ -1,5 +1,18 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, getTableColumns, gte, inArray, isNull, lt, lte } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+} from "drizzle-orm";
 import type { CardContent, CardStatus, SocialNetwork } from "@presencia/shared";
 import { chats, publicationCards } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
@@ -290,33 +303,28 @@ export class CardsRepository {
   }
 
   /**
-   * Cards que llevan más de `cutoff` en "scheduled" sin `provider_ref` —
-   * la llamada al proveedor nunca llegó a confirmarse (el proceso murió
-   * entre markScheduling y attachProviderRef). No importa cuándo estaban
-   * programadas: nunca van a publicarse porque PostFast nunca las recibió.
+   * Las dos ramas de la reconciliación en UNA query (F8): huérfanas —
+   * `scheduled` sin `provider_ref` y sin tocarse desde antes del cutoff — y
+   * debidas — `scheduled` con `provider_ref` cuya hora ya pasó.
+   *
+   * Sirve para los dos caminos sin cambiar de query: dentro de
+   * `runWithTenant` el RLS la acota al usuario del momento, y dentro de
+   * `runWorkerScan` la policy `worker_scan` (migración 0017) la deja ver las
+   * cards `scheduled` de todos los tenants, que es lo que el cron necesita
+   * para saber a quién atender. El service separa las dos categorías al
+   * agrupar por usuario, mirando el `provider_ref`.
    */
-  async listOrphanedScheduled(tx: Tx, updatedBefore: Date): Promise<CardRow[]> {
+  async listReconcilable(tx: Tx, cutoff: Date): Promise<CardRow[]> {
     return tx
       .select()
       .from(publicationCards)
       .where(
         and(
           eq(publicationCards.status, "scheduled"),
-          isNull(publicationCards.providerRef),
-          lt(publicationCards.updatedAt, updatedBefore),
-        ),
-      );
-  }
-
-  /** Cards "scheduled" cuya hora ya pasó y sí tienen provider_ref — hay que preguntarle a PostFast qué pasó. */
-  async listDueScheduled(tx: Tx, scheduledBefore: Date): Promise<CardRow[]> {
-    return tx
-      .select()
-      .from(publicationCards)
-      .where(
-        and(
-          eq(publicationCards.status, "scheduled"),
-          lt(publicationCards.scheduledAt, scheduledBefore),
+          or(
+            and(isNull(publicationCards.providerRef), lt(publicationCards.updatedAt, cutoff)),
+            and(isNotNull(publicationCards.providerRef), lt(publicationCards.scheduledAt, cutoff)),
+          ),
         ),
       );
   }

@@ -9,6 +9,6 @@ import { CardsService } from "./cards.service.js";
   imports: [PublishingModule, ChannelsModule],
   controllers: [CardsController],
   providers: [CardsRepository, CardsService],
-  exports: [CardsRepository],
+  exports: [CardsRepository, CardsService],
 })
 export class CardsModule {}

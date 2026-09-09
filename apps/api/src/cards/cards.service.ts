@@ -60,7 +60,7 @@ import { CardsRepository, type CalendarFilters, type CardRow } from "./cards.rep
 //   el provider_ref a propósito, así que su hueco es otro y más chico: si
 //   el proceso muere entre markRescheduled y la llamada al proveedor, la
 //   fila dice el horario NUEVO mientras el proveedor sigue con el VIEJO.
-//   No lo detecta listOrphanedScheduled (hay provider_ref), pero tampoco se
+//   No lo detecta el barrido como huérfana (hay provider_ref), pero tampoco se
 //   pierde nada: el post existe y se publica, y el primer pase de
 //   reconciliación posterior a esa publicación lo marca published. Lo que
 //   hay entremedio es un calendario que miente un rato, no una card rota.
@@ -84,8 +84,13 @@ import { CardsRepository, type CalendarFilters, type CardRow } from "./cards.rep
 
 const MIN_LEAD_MS = 5 * 60 * 1000;
 const RECONCILE_GRACE_MS = 2 * 60 * 1000;
-const RECONCILE_COOLDOWN_MS = 60 * 1000;
+// El cron corre cada minuto; esto es solo el respaldo para cuando el worker
+// está caído, así que no tiene por qué pisarle los talones.
+const RECONCILE_COOLDOWN_MS = 5 * 60 * 1000;
 const PROVIDER_BATCH_SIZE = 100;
+
+const ORPHANED_REASON = "No se pudo confirmar la programación con el proveedor de publicación.";
+const UNCONFIRMED_REASON = "El proveedor de publicación no confirmó esta publicación.";
 
 const SCHEDULABLE_STATUSES: ReadonlySet<CardRow["status"]> = new Set([
   "draft",
@@ -451,9 +456,9 @@ export class CardsService {
   }
 
   /**
-   * Reemplaza temporalmente al job de pg-boss de F8 (mismo criterio que
-   * CreditsService.ensureCurrentCycle) — F8 solo cambia el disparador (cron
-   * en vez de "alguien listó sus cards"), no esta lógica. Nunca debe tumbar
+   * Respaldo del cron (F8). Antes era el único disparador; ahora el barrido
+   * de pg-boss corre cada minuto y esto solo cubre el hueco de que el worker
+   * esté caído — por eso el cooldown subió de 60s a 5 min. Nunca debe tumbar
    * al caller: un fallo de reconciliación no debe impedir listar cards.
    */
   private async maybeReconcile(userId: string): Promise<void> {
@@ -467,55 +472,80 @@ export class CardsService {
     }
   }
 
+  /**
+   * El pase del cron: recoge las cards reconciliables de TODOS los tenants de
+   * una sola query y las resuelve juntas.
+   *
+   * Por qué global y no un pase por usuario: `getPostStates` no está scopeado
+   * por usuario — los endpoints de Upload-Post y PostFast van por API key, no
+   * por perfil (ADR-009) —, así que llamarlo una vez por usuario baja la MISMA
+   * lista global tantas veces como usuarios haya. Con diez creators publicando
+   * a la misma hora eso serían diez descargas idénticas por minuto contra una
+   * API cuyo rate limit no conocemos.
+   */
+  async reconcileAll(): Promise<void> {
+    const cutoff = new Date(Date.now() - RECONCILE_GRACE_MS);
+    const rows = await this.dbService.runWorkerScan((tx) => this.repo.listReconcilable(tx, cutoff));
+    await this.applyReconciliation(groupByUser(rows));
+  }
+
+  /** El mismo trabajo, acotado a un usuario. Lo usa el respaldo perezoso. */
   async reconcileDueCards(userId: string): Promise<void> {
     const cutoff = new Date(Date.now() - RECONCILE_GRACE_MS);
-
-    // 1) Huérfanas: el proceso murió entre markScheduling y
-    // attachProviderRef — sin provider_ref nunca hay nada que preguntarle
-    // al proveedor, así que se cierran directo como fallidas.
-    const orphaned = await this.dbService.runWithTenant(userId, (tx) =>
-      this.repo.listOrphanedScheduled(tx, cutoff),
+    const rows = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.listReconcilable(tx, cutoff),
     );
-    // Un solo UPDATE (markManyFailed) + una sola transacción para todas
-    // las huérfanas del pase, en vez de una transacción por card (code
-    // review 2026-08-20) — todas comparten el mismo motivo, no hay razón
-    // real para separarlas.
-    if (orphaned.length > 0) {
-      await this.dbService.runWithTenant(userId, (tx) =>
-        this.repo.markManyFailed(
-          tx,
-          orphaned.map((c) => c.id),
-          { reason: "No se pudo confirmar la programación con el proveedor de publicación." },
-        ),
-      );
+    await this.applyReconciliation(groupByUser(rows));
+  }
+
+  /**
+   * Las reglas, que son las mismas desde F6 y no cambian acá: las huérfanas se
+   * cierran sin preguntarle nada al proveedor (no hay `provider_ref`, no hay
+   * nada que preguntar), y las debidas se consultan en lotes de hasta 100 refs
+   * mapeando published/failed; "sigue en cola" es un no-op.
+   *
+   * Lo único que cambió es el orden: los refs de todos los usuarios se aplanan
+   * en un solo lote antes de llamar al proveedor, y las ESCRITURAS vuelven a
+   * separarse por usuario dentro de su `runWithTenant`. El RLS sigue siendo
+   * quien decide qué fila toca cada UPDATE.
+   */
+  private async applyReconciliation(work: Map<string, ReconcileWork>): Promise<void> {
+    // Los fallos por tenant se cuentan y se relanzan al final (code review F8
+    // PR2). Tragárselos con un console.error dejaba el job de pg-boss siempre
+    // en "completed": un fallo durable de un tenant — una constraint, un
+    // errorDetail que no serializa — se repetiría cada minuto sin más señal
+    // que un log que en el VPS nadie está mirando.
+    const failedTenants = new Set<string>();
+
+    for (const [userId, { orphans }] of work) {
+      if (orphans.length === 0) continue;
+      // Un fallo escribiendo lo de un usuario no debe dejar sin reconciliar a
+      // los demás: con un pase global, abortar aquí los afectaría a todos.
+      try {
+        await this.dbService.runWithTenant(userId, (tx) =>
+          this.repo.markManyFailed(tx, orphans, { reason: ORPHANED_REASON }),
+        );
+      } catch (error) {
+        failedTenants.add(userId);
+        console.error(`[cards] No se pudieron cerrar las huérfanas de ${userId}:`, error);
+      }
     }
 
-    // 2) Debidas: su hora ya pasó y sí tienen provider_ref — preguntarle al
-    // proveedor si de verdad se publicaron.
-    const due = await this.dbService.runWithTenant(userId, (tx) =>
-      this.repo.listDueScheduled(tx, cutoff),
+    const due = [...work.entries()].flatMap(([userId, w]) =>
+      w.due.map((card) => ({ ...card, userId })),
     );
-    const withRef = due.filter(
-      (c): c is CardRow & { providerRef: string } => c.providerRef !== null,
-    );
-    for (let i = 0; i < withRef.length; i += PROVIDER_BATCH_SIZE) {
-      const batch = withRef.slice(i, i + PROVIDER_BATCH_SIZE);
+    for (let i = 0; i < due.length; i += PROVIDER_BATCH_SIZE) {
+      const batch = due.slice(i, i + PROVIDER_BATCH_SIZE);
       const states = await this.provider.getPostStates(batch.map((c) => c.providerRef));
 
-      // Bucket por resultado en vez de una transacción por card dentro
-      // del batch (code review 2026-08-20): "failed"/sin confirmar
-      // comparten motivo → un solo markManyFailed; "published" trae un
-      // publishedAt distinto por card (no se puede fusionar en un solo
-      // UPDATE simple), pero al menos las N cards de este batch quedan
-      // en UNA transacción, no N.
-      const failedIds: string[] = [];
-      const toPublish: { id: string; publishedAt: Date; postUrl: string | null }[] = [];
+      const failedByUser = new Map<string, string[]>();
+      const publishedByUser = new Map<string, PublishedUpdate[]>();
       for (const card of batch) {
         const state = states.get(card.providerRef);
         if (!state || state.status === "failed") {
-          failedIds.push(card.id);
+          pushInto(failedByUser, card.userId, card.id);
         } else if (state.status === "published") {
-          toPublish.push({
+          pushInto(publishedByUser, card.userId, {
             id: card.id,
             publishedAt: state.publishedAt ?? new Date(),
             // Puede venir null y está bien: no todos los proveedores dan la
@@ -526,22 +556,77 @@ export class CardsService {
         // "scheduled": sigue en cola del lado del proveedor, no-op.
       }
 
-      if (failedIds.length > 0) {
-        await this.dbService.runWithTenant(userId, (tx) =>
-          this.repo.markManyFailed(tx, failedIds, {
-            reason: "El proveedor de publicación no confirmó esta publicación.",
-          }),
-        );
+      for (const [userId, ids] of failedByUser) {
+        try {
+          await this.dbService.runWithTenant(userId, (tx) =>
+            this.repo.markManyFailed(tx, ids, { reason: UNCONFIRMED_REASON }),
+          );
+        } catch (error) {
+          failedTenants.add(userId);
+          console.error(`[cards] No se pudieron marcar como fallidas las de ${userId}:`, error);
+        }
       }
-      if (toPublish.length > 0) {
-        await this.dbService.runWithTenant(userId, async (tx) => {
-          for (const { id, publishedAt, postUrl } of toPublish) {
-            await this.repo.markPublished(tx, id, publishedAt, postUrl);
-          }
-        });
+      for (const [userId, updates] of publishedByUser) {
+        try {
+          await this.dbService.runWithTenant(userId, async (tx) => {
+            for (const { id, publishedAt, postUrl } of updates) {
+              await this.repo.markPublished(tx, id, publishedAt, postUrl);
+            }
+          });
+        } catch (error) {
+          failedTenants.add(userId);
+          console.error(`[cards] No se pudieron publicar las cards de ${userId}:`, error);
+        }
       }
     }
+
+    // Recién acá: el objetivo del try/catch de arriba es que el fallo de un
+    // tenant no deje sin reconciliar a los demás, no que el pase mienta sobre
+    // cómo le fue.
+    if (failedTenants.size > 0) {
+      throw new Error(
+        `La reconciliación falló para ${failedTenants.size} usuario(s): ${[...failedTenants].join(", ")}`,
+      );
+    }
   }
+}
+
+interface PublishedUpdate {
+  id: string;
+  publishedAt: Date;
+  postUrl: string | null;
+}
+
+/** Trabajo pendiente de un usuario, ya partido en las dos ramas de la reconciliación. */
+interface ReconcileWork {
+  /** `scheduled` sin `provider_ref`: el proceso murió entre las dos transacciones de schedule(). */
+  orphans: string[];
+  /** `scheduled` con `provider_ref` y hora cumplida: hay que preguntarle al proveedor. */
+  due: { id: string; providerRef: string }[];
+}
+
+/**
+ * La query ya aplicó el cutoff de cada rama, así que acá solo hace falta
+ * mirar el `provider_ref` para saber en cuál cae cada card.
+ */
+function groupByUser(rows: CardRow[]): Map<string, ReconcileWork> {
+  const work = new Map<string, ReconcileWork>();
+  for (const row of rows) {
+    let entry = work.get(row.userId);
+    if (!entry) {
+      entry = { orphans: [], due: [] };
+      work.set(row.userId, entry);
+    }
+    if (row.providerRef === null) entry.orphans.push(row.id);
+    else entry.due.push({ id: row.id, providerRef: row.providerRef });
+  }
+  return work;
+}
+
+function pushInto<T>(map: Map<string, T[]>, key: string, value: T): void {
+  const existing = map.get(key);
+  if (existing) existing.push(value);
+  else map.set(key, [value]);
 }
 
 function toDto(row: CardRow): PublicationCardDto {
