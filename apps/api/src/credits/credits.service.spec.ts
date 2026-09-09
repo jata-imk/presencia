@@ -22,6 +22,7 @@ let InsufficientQuotaError: typeof InsufficientQuotaErrorType;
 let userA: string;
 let userB: string;
 let userC: string;
+let userD: string;
 
 describe("CreditsService", () => {
   beforeAll(async () => {
@@ -41,22 +42,30 @@ describe("CreditsService", () => {
 
     // users no tiene RLS (la administra Better Auth); el insert directo es
     // válido, igual que en db/rls.spec.ts. planTier default "creator".
-    const [a, b, c] = await dbService.db
+    const [a, b, c, d] = await dbService.db
       .insert(users)
       .values([
         { name: "Créditos A", email: `credits-a-${randomUUID()}@test.local` },
         { name: "Créditos B", email: `credits-b-${randomUUID()}@test.local` },
         { name: "Créditos C", email: `credits-c-${randomUUID()}@test.local` },
+        // Dado de alta hace dos meses y nunca entró: es el caso que el job
+        // diario existe para cubrir.
+        {
+          name: "Créditos D",
+          email: `credits-d-${randomUUID()}@test.local`,
+          createdAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+        },
       ])
       .returning({ id: users.id });
-    if (!a || !b || !c) throw new Error("No se pudieron crear los usuarios de prueba");
+    if (!a || !b || !c || !d) throw new Error("No se pudieron crear los usuarios de prueba");
     userA = a.id;
     userB = b.id;
     userC = c.id;
+    userD = d.id;
   }, 30_000);
 
   afterAll(async () => {
-    await dbService.db.delete(users).where(inArray(users.id, [userA, userB, userC]));
+    await dbService.db.delete(users).where(inArray(users.id, [userA, userB, userC, userD]));
     await dbService.onModuleDestroy();
   }, 30_000);
 
@@ -239,6 +248,48 @@ describe("CreditsService", () => {
       expect(expirations).toHaveLength(1);
       expect(expirations[0]?.delta).toBe(-5_000);
       expect(entries.filter((e) => e.reason === "monthly_grant")).toHaveLength(2);
+    },
+  );
+
+  // ── F8: el job diario que adelanta el ciclo ───────────────────────────
+  //
+  // Se prueban las dos piezas por separado, y NO `refreshAllCycles()` entero,
+  // a propósito: ese método toma un advisory lock sobre CADA usuario de la
+  // base, y esta suite corre en paralelo con specs que están creando y
+  // borrando usuarios todo el tiempo. Ejercitarlo acá no probaría el job,
+  // probaría la contención — se comió los 20s de timeout la primera vez que
+  // se intentó. Lo que queda sin cubrir por tests es el `for` con su
+  // try/catch, que es justamente la parte sin reglas.
+  it(
+    "refreshCycle otorga el ciclo de un usuario que nunca entró, y no lo duplica",
+    { timeout: 15_000 },
+    async () => {
+      const antes = await dbService.runWithTenant(userD, (tx) =>
+        tx.select().from(creditLedger).where(eq(creditLedger.userId, userD)),
+      );
+      expect(antes).toHaveLength(0);
+
+      await creditsService.refreshCycle(userD);
+      await creditsService.refreshCycle(userD);
+
+      const despues = await dbService.runWithTenant(userD, (tx) =>
+        tx.select().from(creditLedger).where(eq(creditLedger.userId, userD)),
+      );
+      const grants = despues.filter((e) => e.reason === "monthly_grant");
+      expect(grants).toHaveLength(1);
+      expect(grants[0]?.delta).toBe(30_000);
+      // Sin pasar por getQuotaStatus: lo que interesa es que el asiento exista
+      // aunque el usuario nunca haya pedido su saldo, que es el punto del job.
+    },
+  );
+
+  it(
+    "listAllUserIds ve a todos los usuarios sin tenant fijado (users no tiene RLS)",
+    { timeout: 15_000 },
+    async () => {
+      const ids = await dbService.runWorkerScan((tx) => repo.listAllUserIds(tx));
+      expect(ids).toContain(userA);
+      expect(ids).toContain(userD);
     },
   );
 });

@@ -27,3 +27,15 @@ El monto del ledger va en la capa de Asignación, con **rate card versionado**: 
 - **Ciclo mensual perezoso:** hasta que F8 traiga el job de pg-boss, `CreditsService.ensureCurrentCycle` calcula y otorga el ciclo en el primer acceso a la cuota tras el aniversario mensual de `users.created_at`, bajo el mismo advisory lock. Mismo cálculo que usará el job — F8 solo cambia el disparador (cron en vez de "alguien pidió su saldo").
 - **Rate card versionado:** `credits/rate-card.ts`, `credit_ledger.rate_card_version` (migración `0007_credits`). Valores hoy provisionales (ver "Backlog · Calibrar rate card con datos reales de consumo").
 - **Append-only por el motor:** migración `0008_credits_ledger_append_only` revoca `UPDATE`/`DELETE` a `presencia_app`/`presencia_worker` — mismo patrón que `ai_usage_events` (F4.5).
+
+## Addendum (2026-09-08, F8 PR3) — el job diario, y por qué NO reemplaza a la ruta perezosa
+
+`credits.cycle`, cron diario (09:00 UTC). Recorre a todos los usuarios y llama `CreditsService.refreshCycle`, que es `lockUser` + `ensureCurrentCycle` — el mismo cálculo de siempre, con el mismo advisory lock.
+
+**La frase que había que corregir** es la de este ADR y la de `cycle.ts`: decían que F8 cambiaría el disparador, "cron en vez de alguien pidió su saldo". Se agregó el cron, pero el perezoso **no se va**, y no por conservadurismo: `charge()` y `spend()` llaman a `ensureCurrentCycle` dentro de SU transacción y bajo el mismo lock, y eso es lo que garantiza que un cobro nunca ocurra sobre un ciclo sin liquidar. Un cron que corre una vez al día no puede dar esa garantía — entre dos corridas hay 24 horas en las que alguien puede cruzar su aniversario y gastar.
+
+Entonces el job no es la fuente de verdad del ciclo, es un **adelanto**: hace que el `monthly_grant` de alguien que no abre la app en dos meses exista igual. Que las dos rutas puedan convivir sin pisarse es consecuencia de que `ensureCurrentCycle` sea idempotente bajo lock, que ya era su diseño desde F5.
+
+**Por qué recorre a todos y no solo a quienes les toca renovar hoy:** filtrar en SQL exigiría reimplementar en la query el cálculo del aniversario que vive en `cycle.ts`, y duplicar esa regla es peor que un pase de más al día — `ensureCurrentCycle` no escribe nada cuando el ciclo ya está otorgado. El límite conocido es que el pase es serial, una transacción por usuario: con miles de usuarios habrá que agrupar o paginar, y el momento de hacerlo es cuando el pase deje de caber cómodo en su ventana, no antes.
+
+**Lo que los tests cubren y lo que no.** Se prueban `refreshCycle` (otorga el ciclo de un usuario dado de alta hace dos meses que nunca entró, y correrlo dos veces no lo duplica) y `listAllUserIds`. **No** se ejercita `refreshAllCycles()` entero: toma un advisory lock sobre cada usuario de la base, y la suite corre en paralelo con specs que crean y borran usuarios todo el tiempo — probarlo ahí medía la contención, no el job (se comió los 20s de timeout en el primer intento). Queda sin cubrir el `for` con su `try/catch`, que es la parte sin reglas.

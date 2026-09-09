@@ -39,6 +39,23 @@ export class CreditsRepository {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${userId}, 0))`);
   }
 
+  /**
+   * Todos los usuarios, para el job diario de ciclo (F8). No necesita tenant
+   * fijado: `users` NO tiene RLS —la administra Better Auth—, así que el job
+   * la lee desde `runWorkerScan`, la única puerta del repo para acceso sin
+   * tenant.
+   *
+   * Límite conocido: el job recorre a todos, no solo a quienes les toca
+   * renovar hoy. Con el ciclo anclado al aniversario de cada uno, filtrar en
+   * SQL pediría repetir acá el cálculo que vive en `cycle.ts`, y duplicar esa
+   * regla es peor que un pase de más al día — `ensureCurrentCycle` no escribe
+   * nada cuando el ciclo ya está otorgado.
+   */
+  async listAllUserIds(tx: Tx): Promise<string[]> {
+    const rows = await tx.select({ id: users.id }).from(users);
+    return rows.map((row) => row.id);
+  }
+
   async balanceSince(tx: Tx, userId: string, since: Date): Promise<number> {
     const [row] = await tx
       .select({ balance: sql<string>`coalesce(sum(${creditLedger.delta}), 0)` })

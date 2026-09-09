@@ -137,13 +137,30 @@ export class CreditsService {
   }
 
   /**
+   * El disparador del job diario (F8). Adelanta el asiento del ciclo para un
+   * usuario que no ha entrado: sin esto, el `monthly_grant` de alguien que no
+   * abre la app en dos meses no existe hasta que abra.
+   *
+   * NO reemplaza a la ruta perezosa, y la distinción importa: `charge()` y
+   * `spend()` siguen llamando a `ensureCurrentCycle` dentro de SU transacción,
+   * bajo el mismo advisory lock, y eso es lo que garantiza la corrección
+   * contable. El cron solo adelanta trabajo; si llega tarde, el primer cobro
+   * lo hace igual y con el mismo resultado.
+   */
+  async refreshCycle(userId: string): Promise<void> {
+    await this.dbService.runWithTenant(userId, async (tx) => {
+      await this.repo.lockUser(tx, userId);
+      await this.ensureCurrentCycle(tx, userId);
+    });
+  }
+
+  /**
    * Bajo advisory lock (lockUser ya tomado por el caller): si el ciclo
    * vigente todavía no tiene su `monthly_grant`, liquida el anterior
    * (`cycle_expiration` si sobraba saldo, `adjustment` si sobregiró) y
-   * otorga la cuota nueva. Reemplaza temporalmente al job de pg-boss de F8
-   * (modelo-de-datos.md:124) — vive aquí para que el ciclo funcione antes
-   * de que exista el worker; F8 solo cambia el disparador (cron en vez de
-   * "alguien pidió su saldo"), no esta lógica.
+   * otorga la cuota nueva. El disparador puede ser perezoso (alguien pidió su
+   * saldo o gastó) o el cron diario de F8 (`refreshCycle`) — el cálculo es el
+   * mismo y es idempotente, que es lo que permite tener los dos.
    */
   private async ensureCurrentCycle(
     tx: Tx,
