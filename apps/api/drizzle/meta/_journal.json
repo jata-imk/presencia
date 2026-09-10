@@ -134,6 +134,13 @@
       "when": 1787455813028,
       "tag": "0018_cards_reconcilable_index",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787455814028,
+      "tag": "0019_worker_scan_solo_lo_accionable",
+      "breakpoints": true
     }
   ]
 }
