@@ -150,7 +150,10 @@ export class CreditsService {
    */
   async refreshCycle(userId: string): Promise<void> {
     await this.dbService.runWithTenant(userId, async (tx) => {
-      await this.repo.lockUser(tx, userId);
+      // Sin esperar: si el usuario está ocupado en otra transacción, el pase
+      // sigue de largo (ver tryLockUser). Adelantar un asiento no vale trabar
+      // el pase entero detrás de un request.
+      if (!(await this.repo.tryLockUser(tx, userId))) return;
       await this.ensureCurrentCycle(tx, userId);
     });
   }

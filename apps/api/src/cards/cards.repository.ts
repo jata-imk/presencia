@@ -261,21 +261,6 @@ export class CardsRepository {
     return row;
   }
 
-  async markPublished(
-    tx: Tx,
-    id: string,
-    publishedAt: Date,
-    postUrl: string | null,
-  ): Promise<CardRow> {
-    const [row] = await tx
-      .update(publicationCards)
-      .set({ status: "published", publishedAt, postUrl, errorDetail: null, updatedAt: new Date() })
-      .where(eq(publicationCards.id, id))
-      .returning();
-    if (!row) throw new Error("No se pudo marcar la publicación como publicada");
-    return row;
-  }
-
   /** Fallo terminal (proveedor confirmó FAILED, o nunca confirmó nada) — se queda visible, no vuelve a draft solo. */
   async markFailed(tx: Tx, id: string, errorDetail: unknown): Promise<CardRow> {
     const [row] = await tx
@@ -288,18 +273,115 @@ export class CardsRepository {
   }
 
   /**
-   * Igual que markFailed pero para varias cards con el MISMO errorDetail
-   * de una sola vez (code review 2026-08-20) — reconcileDueCards llamaba
-   * markFailed en un for-loop, una transacción por card huérfana/fallida;
-   * cuando todas comparten el mismo motivo (típico: "no confirmó nada"),
-   * es un solo UPDATE ... WHERE id = ANY(...) real, no N transacciones.
+   * Cierra las huérfanas de un pase de reconciliación: varias cards con el
+   * MISMO errorDetail en un solo UPDATE (code review 2026-08-20) en vez de una
+   * transacción por card.
+   *
+   * La guardia es anti-carrera (misma familia que
+   * `attachProviderRefIfScheduled`) y sigue una regla que vale para las tres
+   * escrituras del barrido: **repetir la condición con la que se leyó la fila**.
+   * El pase LEE en una transacción y ESCRIBE en otra, y desde F8 corre cada
+   * minuto sin depender de que nadie mire; todo lo que la fila dejó de cumplir
+   * entremedio significa que ya no es el caso que se decidió atender.
+   *
+   * Acá eso es `scheduled` + sin `provider_ref` + `updated_at` viejo. Sin el
+   * `updated_at`, un usuario que cancela y reprograma en el mismo minuto vuelve
+   * a dejar la card `scheduled` sin ref pero recién tocada, la guardia pasaría,
+   * y el pase mataría un intento que está justo en vuelo — y al contestar el
+   * proveedor, `persistProviderRef` cancelaría un post creado sin problema.
    */
-  async markManyFailed(tx: Tx, ids: string[], errorDetail: unknown): Promise<void> {
+  async markOrphansFailed(
+    tx: Tx,
+    ids: string[],
+    cutoff: Date,
+    errorDetail: unknown,
+  ): Promise<void> {
     if (ids.length === 0) return;
     await tx
       .update(publicationCards)
       .set({ status: "failed", errorDetail, updatedAt: new Date() })
-      .where(inArray(publicationCards.id, ids));
+      .where(
+        and(
+          inArray(publicationCards.id, ids),
+          eq(publicationCards.status, "scheduled"),
+          isNull(publicationCards.providerRef),
+          lt(publicationCards.updatedAt, cutoff),
+        ),
+      );
+  }
+
+  /**
+   * Cierra las vencidas que el proveedor no confirmó. Misma regla: la guardia
+   * repite la condición del read — `scheduled`, el par `(id, provider_ref)`, y
+   * `scheduled_at` todavía vencida.
+   *
+   * El par por sí solo NO alcanza, y es un detalle que se nos pasó primero:
+   * `markRescheduled` conserva el `provider_ref` a propósito, y el `PATCH` de
+   * Upload-Post devuelve el MISMO `job_id`. O sea que una card reprogramada a
+   * la semana que viene puede seguir teniendo el par idéntico — lo único que
+   * cambió es su hora. Sin el `scheduled_at`, el pase la marcaría fallida por
+   * lo que el proveedor dijo del pase anterior.
+   */
+  async markDueFailed(
+    tx: Tx,
+    cards: readonly { id: string; providerRef: string }[],
+    cutoff: Date,
+    errorDetail: unknown,
+  ): Promise<void> {
+    if (cards.length === 0) return;
+    await tx
+      .update(publicationCards)
+      .set({ status: "failed", errorDetail, updatedAt: new Date() })
+      .where(
+        and(
+          eq(publicationCards.status, "scheduled"),
+          lt(publicationCards.scheduledAt, cutoff),
+          matchesAnyRef(cards),
+        ),
+      );
+  }
+
+  /**
+   * Marca publicada solo si la card sigue siendo la que se consultó: misma
+   * guardia que `markDueFailed` y por la misma carrera, agravada porque acá el
+   * pase habla con el proveedor entremedio (hasta 30s). Sin ella, una card
+   * cancelada durante esa llamada se le reportaría al usuario como publicada, y
+   * una reprogramada perdería su horario nuevo — incluso conservando la misma
+   * ref, que es lo que pasa con el `PATCH` de Upload-Post; por eso la guardia
+   * incluye `scheduled_at` y no solo el par.
+   *
+   * Devuelve `undefined` cuando la card se movió — no es un error, es el caso
+   * que la guardia existe para detectar.
+   */
+  async markPublishedIfStillScheduled(
+    tx: Tx,
+    input: {
+      id: string;
+      providerRef: string;
+      cutoff: Date;
+      publishedAt: Date;
+      postUrl: string | null;
+    },
+  ): Promise<CardRow | undefined> {
+    const [row] = await tx
+      .update(publicationCards)
+      .set({
+        status: "published",
+        publishedAt: input.publishedAt,
+        postUrl: input.postUrl,
+        errorDetail: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(publicationCards.id, input.id),
+          eq(publicationCards.providerRef, input.providerRef),
+          eq(publicationCards.status, "scheduled"),
+          lt(publicationCards.scheduledAt, input.cutoff),
+        ),
+      )
+      .returning();
+    return row;
   }
 
   /**
@@ -407,4 +489,13 @@ export class CardsRepository {
       .where(and(eq(publicationCards.status, "draft"), isNull(publicationCards.scheduledAt)))
       .orderBy(desc(publicationCards.createdAt));
   }
+}
+
+/** `(id = a AND provider_ref = x) OR (id = b AND provider_ref = y) OR ...` */
+function matchesAnyRef(cards: readonly { id: string; providerRef: string }[]) {
+  return or(
+    ...cards.map((card) =>
+      and(eq(publicationCards.id, card.id), eq(publicationCards.providerRef, card.providerRef)),
+    ),
+  );
 }

@@ -487,7 +487,7 @@ export class CardsService {
   async reconcileAll(): Promise<void> {
     const cutoff = new Date(Date.now() - RECONCILE_GRACE_MS);
     const rows = await this.dbService.runWorkerScan((tx) => this.repo.listReconcilable(tx, cutoff));
-    await this.applyReconciliation(groupByUser(rows));
+    await this.applyReconciliation(groupByUser(rows), cutoff);
   }
 
   /** El mismo trabajo, acotado a un usuario. Lo usa el respaldo perezoso. */
@@ -496,7 +496,7 @@ export class CardsService {
     const rows = await this.dbService.runWithTenant(userId, (tx) =>
       this.repo.listReconcilable(tx, cutoff),
     );
-    await this.applyReconciliation(groupByUser(rows));
+    await this.applyReconciliation(groupByUser(rows), cutoff);
   }
 
   /**
@@ -510,7 +510,7 @@ export class CardsService {
    * separarse por usuario dentro de su `runWithTenant`. El RLS sigue siendo
    * quien decide qué fila toca cada UPDATE.
    */
-  private async applyReconciliation(work: Map<string, ReconcileWork>): Promise<void> {
+  private async applyReconciliation(work: Map<string, ReconcileWork>, cutoff: Date): Promise<void> {
     // Los fallos por tenant se cuentan y se relanzan al final (code review F8
     // PR2). Tragárselos con un console.error dejaba el job de pg-boss siempre
     // en "completed": un fallo durable de un tenant — una constraint, un
@@ -524,7 +524,7 @@ export class CardsService {
       // los demás: con un pase global, abortar aquí los afectaría a todos.
       try {
         await this.dbService.runWithTenant(userId, (tx) =>
-          this.repo.markManyFailed(tx, orphans, { reason: ORPHANED_REASON }),
+          this.repo.markOrphansFailed(tx, orphans, cutoff, { reason: ORPHANED_REASON }),
         );
       } catch (error) {
         failedTenants.add(userId);
@@ -539,15 +539,16 @@ export class CardsService {
       const batch = due.slice(i, i + PROVIDER_BATCH_SIZE);
       const states = await this.provider.getPostStates(batch.map((c) => c.providerRef));
 
-      const failedByUser = new Map<string, string[]>();
+      const failedByUser = new Map<string, { id: string; providerRef: string }[]>();
       const publishedByUser = new Map<string, PublishedUpdate[]>();
       for (const card of batch) {
         const state = states.get(card.providerRef);
         if (!state || state.status === "failed") {
-          pushInto(failedByUser, card.userId, card.id);
+          pushInto(failedByUser, card.userId, { id: card.id, providerRef: card.providerRef });
         } else if (state.status === "published") {
           pushInto(publishedByUser, card.userId, {
             id: card.id,
+            providerRef: card.providerRef,
             publishedAt: state.publishedAt ?? new Date(),
             // Puede venir null y está bien: no todos los proveedores dan la
             // URL del post (PostFast no la da nunca).
@@ -557,10 +558,10 @@ export class CardsService {
         // "scheduled": sigue en cola del lado del proveedor, no-op.
       }
 
-      for (const [userId, ids] of failedByUser) {
+      for (const [userId, cards] of failedByUser) {
         try {
           await this.dbService.runWithTenant(userId, (tx) =>
-            this.repo.markManyFailed(tx, ids, { reason: UNCONFIRMED_REASON }),
+            this.repo.markDueFailed(tx, cards, cutoff, { reason: UNCONFIRMED_REASON }),
           );
         } catch (error) {
           failedTenants.add(userId);
@@ -570,8 +571,23 @@ export class CardsService {
       for (const [userId, updates] of publishedByUser) {
         try {
           await this.dbService.runWithTenant(userId, async (tx) => {
-            for (const { id, publishedAt, postUrl } of updates) {
-              await this.repo.markPublished(tx, id, publishedAt, postUrl);
+            for (const update of updates) {
+              // `undefined` = la card se movió mientras se le preguntaba al
+              // proveedor (cancelada o reprogramada). No es un error: es lo que
+              // la guardia existe para detectar. Pero sí hay que dejar rastro:
+              // el post está publicado del lado del proveedor y, si la card se
+              // canceló, ninguna fila lo referencia ya — y el barrido solo mira
+              // cards `scheduled`, así que nadie va a volver a verlo.
+              const escrita = await this.repo.markPublishedIfStillScheduled(tx, {
+                ...update,
+                cutoff,
+              });
+              if (!escrita) {
+                console.warn(
+                  `[cards] ${update.id} se movió mientras el proveedor respondía; ` +
+                    `el post ${update.providerRef} quedó publicado sin card que lo refleje.`,
+                );
+              }
             }
           });
         } catch (error) {
@@ -592,6 +608,7 @@ export class CardsService {
 
 interface PublishedUpdate {
   id: string;
+  providerRef: string;
   publishedAt: Date;
   postUrl: string | null;
 }

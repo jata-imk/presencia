@@ -29,6 +29,22 @@ export interface UserCycleAnchor {
 @Injectable()
 export class CreditsRepository {
   /**
+   * Como `lockUser` pero SIN esperar: devuelve `false` si otro lo tiene tomado.
+   * Es para el pase diario (F8), que solo adelanta trabajo: quedarse bloqueado
+   * detrás de un request largo de un usuario atrasa a todos los demás del pase,
+   * y si el pase entero cruza su `expireInSeconds`, pg-boss lo da por muerto y
+   * puede arrancar un segundo pase concurrente. Saltarse a un usuario ocupado
+   * no cuesta nada: el pase de mañana lo agarra, y si entra antes, la ruta
+   * perezosa se lo resuelve en el acto.
+   */
+  async tryLockUser(tx: Tx, userId: string): Promise<boolean> {
+    const result = await tx.execute<{ locked: boolean }>(
+      sql`select pg_try_advisory_xact_lock(hashtextextended(${userId}, 0)) as locked`,
+    );
+    return result.rows[0]?.locked === true;
+  }
+
+  /**
    * Serializa toda lectura-luego-escritura del ledger de un usuario dentro
    * de la transacción actual: dos `spend()`/`ensureCurrentCycle()`
    * concurrentes para el mismo usuario nunca se pisan — el segundo espera

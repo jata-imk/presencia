@@ -1,6 +1,7 @@
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { PgBoss } from "pg-boss";
 import { env } from "../env.js";
+import { enProcesoWorker } from "./process-role.js";
 
 // Schema propio de pg-boss, creado por la migración 0016 (no por pg-boss:
 // crear schemas es DDL y la DDL vive en migraciones, ADR-013). Por eso
@@ -57,6 +58,8 @@ export interface RecurringJob {
 @Injectable()
 export class BossService implements OnModuleInit, OnModuleDestroy {
   private readonly boss: PgBoss;
+  /** Si el arranque falló, no hay cola: registrar o parar no tienen sentido. */
+  private started = false;
 
   constructor() {
     this.boss = new PgBoss({
@@ -77,14 +80,35 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    await this.boss.start();
-    console.info(`[jobs] pg-boss listo (schema ${PGBOSS_SCHEMA})`);
+    try {
+      await this.boss.start();
+      this.started = true;
+      console.info(`[jobs] pg-boss listo (schema ${PGBOSS_SCHEMA})`);
+    } catch (error) {
+      // En el worker esto es fatal: no tiene otra razón de existir, y quedarse
+      // vivo sin cola sería un contenedor que se reporta sano sin hacer nada.
+      if (enProcesoWorker()) throw error;
+      // Inline, no: el módulo de jobs cuelga de AppModule, así que relanzar
+      // abortaría NestFactory.create y la API entera se negaría a levantar. El
+      // caso real es `pnpm dev` con el túnel al VPS todavía abajo. Sin cola, el
+      // disparador perezoso de las cards sigue cubriendo.
+      console.error("[jobs] pg-boss no arrancó. La API sigue, SIN cola:", error);
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
+    // Sin condicionar a `started`: `start()` abre su pool y corre la migración
+    // ANTES de poder fallar, así que un arranque roto a la mitad deja
+    // conexiones y timers vivos. Saltarse el stop ahí hacía que Ctrl+C ya no
+    // cerrara el proceso — justo en el escenario para el que se toleró el
+    // fallo.
     // `graceful` deja terminar el job en vuelo antes de cerrar — un pase de
     // reconciliación a medias dejaría unas cards escritas y otras no.
-    await this.boss.stop({ graceful: true, close: true });
+    try {
+      await this.boss.stop({ graceful: true, close: true });
+    } catch (error) {
+      console.error("[jobs] pg-boss no cerró limpio:", error);
+    }
   }
 
   /**
@@ -93,6 +117,10 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
    * proceso no duplica el agendado ni pierde el anterior.
    */
   async registerRecurring(job: RecurringJob): Promise<void> {
+    if (!this.started) {
+      console.error(`[jobs] ${job.queue} no se agendó: pg-boss no arrancó.`);
+      return;
+    }
     const retryLimit = job.retryLimit ?? 0;
     const { expireInSeconds } = job;
 

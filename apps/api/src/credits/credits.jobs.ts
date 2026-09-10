@@ -1,5 +1,6 @@
 import { Inject, Injectable, type OnApplicationBootstrap } from "@nestjs/common";
 import { BossService } from "../jobs/boss.service.js";
+import { enProcesoWorker } from "../jobs/process-role.js";
 import { CreditsService } from "./credits.service.js";
 
 // Diario a las 09:00 UTC (03:00 en Mérida): la hora exacta da igual porque el
@@ -7,6 +8,7 @@ import { CreditsService } from "./credits.service.js";
 // global del mes. Lo único que fija la cadencia es cuánto puede tardar el
 // asiento de un usuario dormido en aparecer, y un día es de sobra — el que
 // entra antes lo dispara solo por la ruta perezosa.
+const JOB_QUEUE = "credits.cycle";
 const CYCLE_CRON = "0 9 * * *";
 
 // Techo del pase, explícito. Una hora es holgado para un pase serial y sigue
@@ -32,8 +34,21 @@ export class CreditsJobs implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    // En el worker un fallo acá es fatal: un proceso vivo sin jobs registrados
+    // se reporta sano y no hace nada. En la API no, porque el módulo de jobs
+    // cuelga de AppModule y relanzar abortaría NestFactory.create entero (el
+    // arranque de pg-boss aplica el mismo criterio, ver BossService).
+    try {
+      await this.register();
+    } catch (error) {
+      if (enProcesoWorker()) throw error;
+      console.error(`[jobs] ${JOB_QUEUE} no quedó agendado; la API sigue sin él:`, error);
+    }
+  }
+
+  private async register(): Promise<void> {
     await this.boss.registerRecurring({
-      queue: "credits.cycle",
+      queue: JOB_QUEUE,
       cron: CYCLE_CRON,
       expireInSeconds: CYCLE_EXPIRE_SECONDS,
       handler: () => this.credits.refreshAllCycles(),
