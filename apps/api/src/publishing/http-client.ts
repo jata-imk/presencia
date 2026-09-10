@@ -22,9 +22,14 @@ import {
  */
 
 /**
- * Corte duro por request. Tiene que ser MENOR que el `RECONCILE_GRACE_MS` de
- * CardsService (2 min), y ese no es un número cómodo sino la condición que
- * evita un daño concreto (code review F8 PR2):
+ * Corte duro por request. La condición que importa no es "menor que
+ * `RECONCILE_GRACE_MS`" sino algo más estricto: **la suma de las llamadas al
+ * proveedor que pueden ocurrir mientras la card está `scheduled` sin
+ * `provider_ref`** tiene que caber en ese margen (2 min). Hoy el peor caso son
+ * dos —cambiar de cuenta hace `cancel` y después `schedule`—, así que el
+ * presupuesto real es 2 × 30s = 60s contra 120s de gracia. Si algún camino
+ * llega a encadenar una tercera llamada, ese margen se agota y hay que revisar
+ * este número. Y el daño que evita es concreto (code review F8 PR2):
  *
  * `schedule()` deja la card `scheduled` con `provider_ref` en null mientras la
  * llamada está en vuelo. Si esa llamada tarda más que el margen de gracia, el
@@ -97,7 +102,20 @@ export class ProviderHttpClient {
     // SyntaxError crudo — ni Rejected ni Unavailable —, así que se escapaba
     // de classifyScheduleFailure y de la idempotencia del cancel, y salía
     // como un 500 sin clasificar.
-    const raw = await res.text();
+    // El AbortSignal sigue armado mientras se lee el cuerpo, así que un
+    // proveedor que manda los headers a tiempo y después se atora aborta ACÁ.
+    // Sin este catch salía un TimeoutError crudo que se escapaba de la
+    // taxonomía de errores del puerto — exactamente el problema que el
+    // comentario de abajo describe para el SyntaxError.
+    let raw: string;
+    try {
+      raw = await res.text();
+    } catch (error) {
+      throw new PublishingUnavailableError(
+        `${this.providerName} respondió ${res.status} pero se cortó al leer el cuerpo.`,
+        error,
+      );
+    }
     if (raw.trim() === "") return undefined as T;
     try {
       return JSON.parse(raw) as T;

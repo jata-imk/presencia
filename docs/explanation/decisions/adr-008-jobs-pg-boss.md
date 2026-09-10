@@ -96,3 +96,11 @@ después como un job y no como "un job más un runtime".
 **Enumerar → iterar con `try/catch` por unidad → contar fallos → relanzar al final.** El `try/catch` existe para que el fallo de un usuario no deje sin atender a los demás; el relanzado, para que el pase no mienta sobre cómo le fue. Sin él, pg-boss registra `completed` y un fallo durable se repite en cada corrida sin más señal que un log que en el servidor nadie está mirando.
 
 **Y una consecuencia de haberlos escrito: un job global es difícil de probar contra una base compartida.** Los dos casos aparecieron solos. El de cards habría marcado como fallidas las cards de otros specs corriendo en paralelo; el de créditos se comió su timeout esperando advisory locks de usuarios que otros specs estaban usando. La salida no es subir el timeout: es probar las piezas con reglas (el colector, el cálculo, la idempotencia) y dejar fuera el bucle, que no las tiene.
+
+## Addendum (2026-09-09, F8 seguimiento) — dos ajustes de operación
+
+Del review sobre el rango completo, lo que toca a los jobs y no a la reconciliación:
+
+**Un fallo al agendar ya no tumba el arranque de la API.** Con `WORKER_INLINE` el módulo de jobs cuelga de `AppModule`, así que una excepción en `onApplicationBootstrap` abortaba `NestFactory.create` y la API entera se negaba a levantar. El caso real no es hipotético: arrancar `pnpm dev` con el túnel al VPS todavía abajo. Ahora se registra el error y la API sigue viva sin cron — el disparador perezoso cubre mientras tanto, que es exactamente para lo que se dejó.
+
+**El pase de créditos ya no espera locks.** Tomaba `pg_advisory_xact_lock` bloqueante por usuario: uno solo atrapado detrás de un request largo atrasaba a todos los demás del pase, y si el pase cruzaba su `expireInSeconds`, pg-boss lo daba por muerto y podía arrancar un segundo pase concurrente — el mismo peligro que documenta `RecurringJob.expireInSeconds`. Ahora usa `pg_try_advisory_xact_lock` y se salta al usuario ocupado. No cuesta nada: el pase de mañana lo agarra, y si el usuario entra antes, la ruta perezosa se lo resuelve en el acto.

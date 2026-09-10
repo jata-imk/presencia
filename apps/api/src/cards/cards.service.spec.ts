@@ -1093,6 +1093,62 @@ describe("CardsService", () => {
     },
   );
 
+  // Las guardias anti-carrera de las escrituras del barrido (code review del
+  // rango completo de F8). El pase LEE en una transacción y ESCRIBE en otra, y
+  // desde F8 corre cada minuto sin depender de que nadie mire: entre las dos, el
+  // usuario pudo cancelar o reprogramar. Se prueban sobre el repo directo porque
+  // lo que importa es el WHERE del UPDATE, no el orquestador.
+  it(
+    "el barrido no pisa una card que el usuario movió mientras el pase estaba en vuelo",
+    { timeout: 15_000 },
+    async () => {
+      const account = await connectAccount(userA, "linkedin");
+
+      // El pase la vio como huérfana; para cuando escribe, el usuario ya le dio
+      // Cancelar y la card está en draft.
+      const cancelada = await createCard(TEXT_CONTENT, "linkedin");
+      await dbService.runWithTenant(userA, async (tx) => {
+        await cardsRepo.markScheduling(tx, cancelada.id, {
+          socialAccountId: account.id,
+          scheduledAt: new Date(future(10)),
+        });
+        await cardsRepo.cancelSchedule(tx, cancelada.id);
+        await cardsRepo.markOrphansFailed(tx, [cancelada.id], { reason: "no debería aplicarse" });
+      });
+      const filaCancelada = await dbService.runWithTenant(userA, (tx) =>
+        cardsRepo.findById(tx, cancelada.id),
+      );
+      expect(filaCancelada?.status).toBe("draft");
+      expect(filaCancelada?.errorDetail).toBeNull();
+
+      // El pase le preguntó al proveedor por la ref vieja; mientras tanto la
+      // card se reprogramó y ahora apunta a otra. Publicarla con los datos del
+      // post viejo sería reportar como publicada una que no lo está.
+      const reprogramada = await createCard(TEXT_CONTENT, "linkedin");
+      await dbService.runWithTenant(userA, async (tx) => {
+        await cardsRepo.markScheduling(tx, reprogramada.id, {
+          socialAccountId: account.id,
+          scheduledAt: new Date(future(10)),
+        });
+        await cardsRepo.attachProviderRef(tx, reprogramada.id, "ref-nueva");
+      });
+      const resultado = await dbService.runWithTenant(userA, (tx) =>
+        cardsRepo.markPublishedIfStillScheduled(tx, {
+          id: reprogramada.id,
+          providerRef: "ref-vieja",
+          publishedAt: new Date(),
+          postUrl: "https://fake.local/p/vieja",
+        }),
+      );
+      expect(resultado).toBeUndefined();
+      const filaReprogramada = await dbService.runWithTenant(userA, (tx) =>
+        cardsRepo.findById(tx, reprogramada.id),
+      );
+      expect(filaReprogramada?.status).toBe("scheduled");
+      expect(filaReprogramada?.postUrl).toBeNull();
+    },
+  );
+
   // ── F7: listados que alimentan el Calendario ──────────────────────────
   //
   // Se prueban contra Postgres real por lo mismo que el resto del archivo:

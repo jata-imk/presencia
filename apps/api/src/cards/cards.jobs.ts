@@ -6,6 +6,7 @@ import { CardsService } from "./cards.service.js";
 // (`getPostStates` solo se llama si hay refs), así que la cadencia la fija la
 // latencia que queremos, no el costo: una card publicada aparece como tal
 // dentro del minuto siguiente a que se cumpla el margen de gracia.
+const JOB_QUEUE = "cards.reconcile";
 const RECONCILE_CRON = "* * * * *";
 
 // Techo del pase, explícito. Diez minutos son dos órdenes de magnitud más que
@@ -29,8 +30,21 @@ export class CardsJobs implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    // Un fallo acá NO debe tumbar el arranque. Con WORKER_INLINE el módulo de
+    // jobs cuelga de AppModule, así que una excepción en el bootstrap aborta
+    // NestFactory.create y la API entera se niega a levantar — el caso real es
+    // arrancar `pnpm dev` con el túnel al VPS todavía abajo. Es preferible una
+    // API viva sin cron (el barrido perezoso sigue cubriendo) que ninguna API.
+    try {
+      await this.register();
+    } catch (error) {
+      console.error(`[jobs] No se pudo agendar ${JOB_QUEUE}. La cola NO está corriendo:`, error);
+    }
+  }
+
+  private async register(): Promise<void> {
     await this.boss.registerRecurring({
-      queue: "cards.reconcile",
+      queue: JOB_QUEUE,
       cron: RECONCILE_CRON,
       expireInSeconds: RECONCILE_EXPIRE_SECONDS,
       handler: () => this.cards.reconcileAll(),

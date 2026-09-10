@@ -288,18 +288,83 @@ export class CardsRepository {
   }
 
   /**
-   * Igual que markFailed pero para varias cards con el MISMO errorDetail
-   * de una sola vez (code review 2026-08-20) — reconcileDueCards llamaba
-   * markFailed en un for-loop, una transacción por card huérfana/fallida;
-   * cuando todas comparten el mismo motivo (típico: "no confirmó nada"),
-   * es un solo UPDATE ... WHERE id = ANY(...) real, no N transacciones.
+   * Cierra las huérfanas de un pase de reconciliación: varias cards con el
+   * MISMO errorDetail en un solo UPDATE (code review 2026-08-20) en vez de una
+   * transacción por card.
+   *
+   * La guardia `status='scheduled' AND provider_ref IS NULL` no es decorativa,
+   * es anti-carrera (misma familia que `attachProviderRefIfScheduled`, y por el
+   * mismo motivo): el barrido LEE en una transacción y ESCRIBE en otra, y desde
+   * F8 corre cada minuto sin depender de que nadie mire. Entre las dos, el
+   * usuario pudo darle Cancelar —la card quedó `draft`— o reprogramarla con
+   * éxito —ya tiene `provider_ref`—. Sin la guardia, el pase le estampa
+   * "falló al programarse" a una card que el usuario acaba de cancelar.
    */
-  async markManyFailed(tx: Tx, ids: string[], errorDetail: unknown): Promise<void> {
+  async markOrphansFailed(tx: Tx, ids: string[], errorDetail: unknown): Promise<void> {
     if (ids.length === 0) return;
     await tx
       .update(publicationCards)
       .set({ status: "failed", errorDetail, updatedAt: new Date() })
-      .where(inArray(publicationCards.id, ids));
+      .where(
+        and(
+          inArray(publicationCards.id, ids),
+          eq(publicationCards.status, "scheduled"),
+          isNull(publicationCards.providerRef),
+        ),
+      );
+  }
+
+  /**
+   * Cierra las vencidas que el proveedor no confirmó. Igual que la de arriba,
+   * pero la guardia es por PAR (id, provider_ref): si el usuario reprogramó la
+   * card mientras se le preguntaba al proveedor, la ref cambió y lo que
+   * respondió el proveedor era sobre el post viejo — marcar fallida la card
+   * nueva sería reportar como perdida una publicación que sí está en pie.
+   */
+  async markDueFailed(
+    tx: Tx,
+    cards: readonly { id: string; providerRef: string }[],
+    errorDetail: unknown,
+  ): Promise<void> {
+    if (cards.length === 0) return;
+    await tx
+      .update(publicationCards)
+      .set({ status: "failed", errorDetail, updatedAt: new Date() })
+      .where(and(eq(publicationCards.status, "scheduled"), matchesAnyRef(cards)));
+  }
+
+  /**
+   * Marca publicada solo si la card sigue siendo la que se consultó: misma
+   * guardia que `markDueFailed` y por la misma carrera, agravada porque acá el
+   * pase habla con el proveedor entremedio (hasta 30s). Sin ella, una card
+   * cancelada durante esa llamada se le reportaría al usuario como publicada, y
+   * una reprogramada perdería su horario nuevo.
+   *
+   * Devuelve `undefined` cuando la card se movió — no es un error, es el caso
+   * que la guardia existe para detectar.
+   */
+  async markPublishedIfStillScheduled(
+    tx: Tx,
+    input: { id: string; providerRef: string; publishedAt: Date; postUrl: string | null },
+  ): Promise<CardRow | undefined> {
+    const [row] = await tx
+      .update(publicationCards)
+      .set({
+        status: "published",
+        publishedAt: input.publishedAt,
+        postUrl: input.postUrl,
+        errorDetail: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(publicationCards.id, input.id),
+          eq(publicationCards.providerRef, input.providerRef),
+          eq(publicationCards.status, "scheduled"),
+        ),
+      )
+      .returning();
+    return row;
   }
 
   /**
@@ -407,4 +472,13 @@ export class CardsRepository {
       .where(and(eq(publicationCards.status, "draft"), isNull(publicationCards.scheduledAt)))
       .orderBy(desc(publicationCards.createdAt));
   }
+}
+
+/** `(id = a AND provider_ref = x) OR (id = b AND provider_ref = y) OR ...` */
+function matchesAnyRef(cards: readonly { id: string; providerRef: string }[]) {
+  return or(
+    ...cards.map((card) =>
+      and(eq(publicationCards.id, card.id), eq(publicationCards.providerRef, card.providerRef)),
+    ),
+  );
 }

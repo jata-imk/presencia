@@ -7,6 +7,7 @@ import { CreditsService } from "./credits.service.js";
 // global del mes. Lo único que fija la cadencia es cuánto puede tardar el
 // asiento de un usuario dormido en aparecer, y un día es de sobra — el que
 // entra antes lo dispara solo por la ruta perezosa.
+const JOB_QUEUE = "credits.cycle";
 const CYCLE_CRON = "0 9 * * *";
 
 // Techo del pase, explícito. Una hora es holgado para un pase serial y sigue
@@ -32,8 +33,21 @@ export class CreditsJobs implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    // Un fallo acá NO debe tumbar el arranque. Con WORKER_INLINE el módulo de
+    // jobs cuelga de AppModule, así que una excepción en el bootstrap aborta
+    // NestFactory.create y la API entera se niega a levantar — el caso real es
+    // arrancar `pnpm dev` con el túnel al VPS todavía abajo. Es preferible una
+    // API viva sin cron (el barrido perezoso sigue cubriendo) que ninguna API.
+    try {
+      await this.register();
+    } catch (error) {
+      console.error(`[jobs] No se pudo agendar ${JOB_QUEUE}. La cola NO está corriendo:`, error);
+    }
+  }
+
+  private async register(): Promise<void> {
     await this.boss.registerRecurring({
-      queue: "credits.cycle",
+      queue: JOB_QUEUE,
       cron: CYCLE_CRON,
       expireInSeconds: CYCLE_EXPIRE_SECONDS,
       handler: () => this.credits.refreshAllCycles(),

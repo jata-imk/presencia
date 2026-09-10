@@ -250,3 +250,21 @@ El addendum de F6 decía que F8 solo cambiaría el disparador de `reconcileDueCa
 **El cron le puso timeout al cliente HTTP, y no es un detalle suelto.** `ProviderHttpClient` no tenía ninguno: una llamada podía quedarse colgada indefinidamente. Con el disparador perezoso eso era tolerable; con el barrido corriendo cada minuto pasó a ser un daño concreto. `schedule()` deja la card `scheduled` con `provider_ref` en null mientras la llamada está en vuelo — si tarda más que el margen de gracia de 2 minutos, el barrido la ve como huérfana y la marca `failed`; cuando el proveedor por fin contesta, `persistProviderRef` encuentra que ya no está `scheduled` y **cancela un post que sí se había creado bien**. La guardia `status='scheduled'` estaba pensada para significar "el usuario canceló", y sin timeout pasaba a significar también "el barrido se cansó de esperarte". Con 30s de corte, el fallo entra por la puerta correcta: ambiguo, la card va a `failed` conservando el rastro y avisándole al usuario que revise en el proveedor.
 
 **El disparador perezoso no se elimina, se degrada a respaldo.** `maybeReconcile` sigue colgado de `listByChat` y `listByRange`, con el cooldown subido de 60s a 5 min: el cron es la fuente primaria y esto solo cubre el hueco de que el worker esté caído. Cuando el worker corre, el usuario que abre el calendario casi nunca dispara nada.
+
+## Addendum (2026-09-09, F8 seguimiento) — hallazgos del review sobre el rango completo
+
+Al cerrar la fase se corrió `/code-review medium` sobre el diff acumulado de los cuatro PRs. Encontró seis cosas, y las dos primeras son de las que solo se ven mirando la fase entera: cada PR era defendible por separado.
+
+**Las escrituras del barrido no tenían guardia de estado, y F8 abrió esa ventana de par en par.** El pase LEE las cards en una transacción y las ESCRIBE en otra. `markManyFailed` y `markPublished` filtraban solo por id. Antes de F8 la ventana existía pero duraba lo que un request y solo se abría cuando alguien listaba sus cards; ahora el pase corre **cada minuto, para todos, sin que nadie mire**, y en el caso de las vencidas hay una llamada al proveedor de hasta 30 segundos entremedio.
+
+Los dos daños son concretos: una card que el usuario **canceló** durante el pase reaparecía como `failed` con un motivo inventado, y una card **reprogramada** mientras se le preguntaba al proveedor se marcaba `published` con el `publishedAt` y el `post_url` del post viejo — o sea, se le reportaba al usuario como publicada una publicación que ya no existe, perdiendo además su horario nuevo.
+
+El repo ya tenía la respuesta para exactamente esta carrera: `attachProviderRefIfScheduled`. Ahora hay tres escrituras guardadas en la misma familia:
+
+- `markOrphansFailed` — exige `status='scheduled' AND provider_ref IS NULL`. Si el usuario canceló (quedó `draft`) o reprogramó con éxito (ya tiene ref), no la toca.
+- `markDueFailed` — exige `status='scheduled'` **y el par `(id, provider_ref)`**. Guardar solo por estado no alcanzaba acá: una card reprogramada sigue `scheduled`, pero con otra ref, y lo que respondió el proveedor era sobre el post anterior.
+- `markPublishedIfStillScheduled` — mismo par, y devuelve `undefined` cuando la card se movió. No es un error: es el caso que la guardia existe para detectar, y el pase siguiente la mira con su estado nuevo.
+
+**El timeout del cliente HTTP dejaba un hueco al leer el cuerpo.** El `AbortSignal` sigue armado después de que llegan los headers, así que un proveedor que responde a tiempo y luego se atora abortaba dentro de `res.text()` con un `TimeoutError` crudo, fuera de la taxonomía del puerto — el mismo modo de fallo que el `SyntaxError` que se arregló en F7.5, por otra puerta.
+
+**Y el argumento que justificaba los 30 segundos estaba mal planteado.** No es "menor que el margen de gracia": es que **la suma de las llamadas al proveedor que ocurren mientras la card está `scheduled` sin `provider_ref`** quepa en ese margen. Hoy el peor caso son dos (cambiar de cuenta hace `cancel` y después `schedule`), así que el presupuesto real es 60s contra 120s, no 30 contra 120. Sigue holgado, pero con la mitad del margen que el comentario daba a entender, y se agota si algún camino encadena una tercera llamada.

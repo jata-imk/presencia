@@ -524,7 +524,7 @@ export class CardsService {
       // los demás: con un pase global, abortar aquí los afectaría a todos.
       try {
         await this.dbService.runWithTenant(userId, (tx) =>
-          this.repo.markManyFailed(tx, orphans, { reason: ORPHANED_REASON }),
+          this.repo.markOrphansFailed(tx, orphans, { reason: ORPHANED_REASON }),
         );
       } catch (error) {
         failedTenants.add(userId);
@@ -539,15 +539,16 @@ export class CardsService {
       const batch = due.slice(i, i + PROVIDER_BATCH_SIZE);
       const states = await this.provider.getPostStates(batch.map((c) => c.providerRef));
 
-      const failedByUser = new Map<string, string[]>();
+      const failedByUser = new Map<string, { id: string; providerRef: string }[]>();
       const publishedByUser = new Map<string, PublishedUpdate[]>();
       for (const card of batch) {
         const state = states.get(card.providerRef);
         if (!state || state.status === "failed") {
-          pushInto(failedByUser, card.userId, card.id);
+          pushInto(failedByUser, card.userId, { id: card.id, providerRef: card.providerRef });
         } else if (state.status === "published") {
           pushInto(publishedByUser, card.userId, {
             id: card.id,
+            providerRef: card.providerRef,
             publishedAt: state.publishedAt ?? new Date(),
             // Puede venir null y está bien: no todos los proveedores dan la
             // URL del post (PostFast no la da nunca).
@@ -557,10 +558,10 @@ export class CardsService {
         // "scheduled": sigue en cola del lado del proveedor, no-op.
       }
 
-      for (const [userId, ids] of failedByUser) {
+      for (const [userId, cards] of failedByUser) {
         try {
           await this.dbService.runWithTenant(userId, (tx) =>
-            this.repo.markManyFailed(tx, ids, { reason: UNCONFIRMED_REASON }),
+            this.repo.markDueFailed(tx, cards, { reason: UNCONFIRMED_REASON }),
           );
         } catch (error) {
           failedTenants.add(userId);
@@ -570,8 +571,12 @@ export class CardsService {
       for (const [userId, updates] of publishedByUser) {
         try {
           await this.dbService.runWithTenant(userId, async (tx) => {
-            for (const { id, publishedAt, postUrl } of updates) {
-              await this.repo.markPublished(tx, id, publishedAt, postUrl);
+            for (const update of updates) {
+              // `undefined` = la card se movió mientras se le preguntaba al
+              // proveedor (cancelada o reprogramada). No es un error: es lo que
+              // la guardia existe para detectar, y el pase siguiente la vuelve
+              // a mirar con su estado nuevo.
+              await this.repo.markPublishedIfStillScheduled(tx, update);
             }
           });
         } catch (error) {
@@ -592,6 +597,7 @@ export class CardsService {
 
 interface PublishedUpdate {
   id: string;
+  providerRef: string;
   publishedAt: Date;
   postUrl: string | null;
 }
