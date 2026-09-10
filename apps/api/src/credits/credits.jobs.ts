@@ -1,5 +1,6 @@
 import { Inject, Injectable, type OnApplicationBootstrap } from "@nestjs/common";
 import { BossService } from "../jobs/boss.service.js";
+import { enProcesoWorker } from "../jobs/process-role.js";
 import { CreditsService } from "./credits.service.js";
 
 // Diario a las 09:00 UTC (03:00 en Mérida): la hora exacta da igual porque el
@@ -33,15 +34,15 @@ export class CreditsJobs implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    // Un fallo acá NO debe tumbar el arranque. Con WORKER_INLINE el módulo de
-    // jobs cuelga de AppModule, así que una excepción en el bootstrap aborta
-    // NestFactory.create y la API entera se niega a levantar — el caso real es
-    // arrancar `pnpm dev` con el túnel al VPS todavía abajo. Es preferible una
-    // API viva sin cron (el barrido perezoso sigue cubriendo) que ninguna API.
+    // En el worker un fallo acá es fatal: un proceso vivo sin jobs registrados
+    // se reporta sano y no hace nada. En la API no, porque el módulo de jobs
+    // cuelga de AppModule y relanzar abortaría NestFactory.create entero (el
+    // arranque de pg-boss aplica el mismo criterio, ver BossService).
     try {
       await this.register();
     } catch (error) {
-      console.error(`[jobs] No se pudo agendar ${JOB_QUEUE}. La cola NO está corriendo:`, error);
+      if (enProcesoWorker()) throw error;
+      console.error(`[jobs] ${JOB_QUEUE} no quedó agendado; la API sigue sin él:`, error);
     }
   }
 

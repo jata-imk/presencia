@@ -29,13 +29,6 @@ export interface UserCycleAnchor {
 @Injectable()
 export class CreditsRepository {
   /**
-   * Serializa toda lectura-luego-escritura del ledger de un usuario dentro
-   * de la transacción actual: dos `spend()`/`ensureCurrentCycle()`
-   * concurrentes para el mismo usuario nunca se pisan — el segundo espera
-   * a que el primero haga commit/rollback antes de leer el saldo. Es el
-   * mecanismo anti-race del DoD, no el CHECK ni el índice.
-   */
-  /**
    * Como `lockUser` pero SIN esperar: devuelve `false` si otro lo tiene tomado.
    * Es para el pase diario (F8), que solo adelanta trabajo: quedarse bloqueado
    * detrás de un request largo de un usuario atrasa a todos los demás del pase,
@@ -51,6 +44,13 @@ export class CreditsRepository {
     return result.rows[0]?.locked === true;
   }
 
+  /**
+   * Serializa toda lectura-luego-escritura del ledger de un usuario dentro
+   * de la transacción actual: dos `spend()`/`ensureCurrentCycle()`
+   * concurrentes para el mismo usuario nunca se pisan — el segundo espera
+   * a que el primero haga commit/rollback antes de leer el saldo. Es el
+   * mecanismo anti-race del DoD, no el CHECK ni el índice.
+   */
   async lockUser(tx: Tx, userId: string): Promise<void> {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${userId}, 0))`);
   }

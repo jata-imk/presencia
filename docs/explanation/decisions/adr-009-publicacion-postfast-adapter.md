@@ -259,11 +259,13 @@ Al cerrar la fase se corrió `/code-review medium` sobre el diff acumulado de lo
 
 Los dos daños son concretos: una card que el usuario **canceló** durante el pase reaparecía como `failed` con un motivo inventado, y una card **reprogramada** mientras se le preguntaba al proveedor se marcaba `published` con el `publishedAt` y el `post_url` del post viejo — o sea, se le reportaba al usuario como publicada una publicación que ya no existe, perdiendo además su horario nuevo.
 
-El repo ya tenía la respuesta para exactamente esta carrera: `attachProviderRefIfScheduled`. Ahora hay tres escrituras guardadas en la misma familia:
+El repo ya tenía la respuesta para exactamente esta carrera: `attachProviderRefIfScheduled`. La regla que sale de arreglarlo, y que vale para las tres escrituras del barrido: **la guardia del UPDATE repite la condición con la que se leyó la fila**. Todo lo que la fila dejó de cumplir entremedio significa que ya no es el caso que se decidió atender.
 
-- `markOrphansFailed` — exige `status='scheduled' AND provider_ref IS NULL`. Si el usuario canceló (quedó `draft`) o reprogramó con éxito (ya tiene ref), no la toca.
-- `markDueFailed` — exige `status='scheduled'` **y el par `(id, provider_ref)`**. Guardar solo por estado no alcanzaba acá: una card reprogramada sigue `scheduled`, pero con otra ref, y lo que respondió el proveedor era sobre el post anterior.
-- `markPublishedIfStillScheduled` — mismo par, y devuelve `undefined` cuando la card se movió. No es un error: es el caso que la guardia existe para detectar, y el pase siguiente la mira con su estado nuevo.
+- `markOrphansFailed` — `status='scheduled'`, sin `provider_ref`, y `updated_at` anterior al cutoff.
+- `markDueFailed` — `status='scheduled'`, el par `(id, provider_ref)`, y `scheduled_at` todavía vencida.
+- `markPublishedIfStillScheduled` — lo mismo, y devuelve `undefined` cuando la card se movió. No es un error: es el caso que la guardia existe para detectar, y el pase siguiente la mira con su estado nuevo.
+
+**La primera versión de este arreglo guardaba solo por estado y por el par, y no alcanzaba** — lo encontró el segundo review, y el motivo está en este mismo ADR: `markRescheduled` **conserva** el `provider_ref` a propósito, y el `PATCH` de Upload-Post devuelve el **mismo** `job_id` (verificado contra la API real en F7.5). O sea que una card movida a la semana que viene puede tener el par idéntico y seguir `scheduled`; lo único que cambió es su hora. Sin repetir el `scheduled_at`, el pase la habría marcado `failed` —o `published` con los datos del post anterior— por lo que el proveedor dijo de la corrida pasada. La guardia por estado detectaba la cancelación; solo la condición completa detecta la reprogramación.
 
 **El timeout del cliente HTTP dejaba un hueco al leer el cuerpo.** El `AbortSignal` sigue armado después de que llegan los headers, así que un proveedor que responde a tiempo y luego se atora abortaba dentro de `res.text()` con un `TimeoutError` crudo, fuera de la taxonomía del puerto — el mismo modo de fallo que el `SyntaxError` que se arregló en F7.5, por otra puerta.
 

@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { env } from "./env.js";
+import { marcarProcesoWorker } from "./jobs/process-role.js";
 import { WorkerModule } from "./worker.module.js";
 
 // Entrypoint del worker. No abre puerto: arma el contexto de Nest, pg-boss se
@@ -8,6 +9,11 @@ import { WorkerModule } from "./worker.module.js";
 // En dev normalmente NO se usa — WORKER_INLINE hace que la API lo levante en
 // su propio proceso (ver jobs.module.ts).
 async function bootstrap() {
+  // Antes de armar el contexto: a partir de acá, un fallo de la cola es fatal.
+  // Un worker vivo sin jobs registrados es peor que uno que truena — se ve sano
+  // y no hace nada.
+  marcarProcesoWorker();
+
   if (env.WORKER_INLINE) {
     console.warn(
       "[worker] WORKER_INLINE está encendido: la API también levanta la cola. " +

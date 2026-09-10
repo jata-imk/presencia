@@ -487,7 +487,7 @@ export class CardsService {
   async reconcileAll(): Promise<void> {
     const cutoff = new Date(Date.now() - RECONCILE_GRACE_MS);
     const rows = await this.dbService.runWorkerScan((tx) => this.repo.listReconcilable(tx, cutoff));
-    await this.applyReconciliation(groupByUser(rows));
+    await this.applyReconciliation(groupByUser(rows), cutoff);
   }
 
   /** El mismo trabajo, acotado a un usuario. Lo usa el respaldo perezoso. */
@@ -496,7 +496,7 @@ export class CardsService {
     const rows = await this.dbService.runWithTenant(userId, (tx) =>
       this.repo.listReconcilable(tx, cutoff),
     );
-    await this.applyReconciliation(groupByUser(rows));
+    await this.applyReconciliation(groupByUser(rows), cutoff);
   }
 
   /**
@@ -510,7 +510,7 @@ export class CardsService {
    * separarse por usuario dentro de su `runWithTenant`. El RLS sigue siendo
    * quien decide qué fila toca cada UPDATE.
    */
-  private async applyReconciliation(work: Map<string, ReconcileWork>): Promise<void> {
+  private async applyReconciliation(work: Map<string, ReconcileWork>, cutoff: Date): Promise<void> {
     // Los fallos por tenant se cuentan y se relanzan al final (code review F8
     // PR2). Tragárselos con un console.error dejaba el job de pg-boss siempre
     // en "completed": un fallo durable de un tenant — una constraint, un
@@ -524,7 +524,7 @@ export class CardsService {
       // los demás: con un pase global, abortar aquí los afectaría a todos.
       try {
         await this.dbService.runWithTenant(userId, (tx) =>
-          this.repo.markOrphansFailed(tx, orphans, { reason: ORPHANED_REASON }),
+          this.repo.markOrphansFailed(tx, orphans, cutoff, { reason: ORPHANED_REASON }),
         );
       } catch (error) {
         failedTenants.add(userId);
@@ -561,7 +561,7 @@ export class CardsService {
       for (const [userId, cards] of failedByUser) {
         try {
           await this.dbService.runWithTenant(userId, (tx) =>
-            this.repo.markDueFailed(tx, cards, { reason: UNCONFIRMED_REASON }),
+            this.repo.markDueFailed(tx, cards, cutoff, { reason: UNCONFIRMED_REASON }),
           );
         } catch (error) {
           failedTenants.add(userId);
@@ -576,7 +576,7 @@ export class CardsService {
               // proveedor (cancelada o reprogramada). No es un error: es lo que
               // la guardia existe para detectar, y el pase siguiente la vuelve
               // a mirar con su estado nuevo.
-              await this.repo.markPublishedIfStillScheduled(tx, update);
+              await this.repo.markPublishedIfStillScheduled(tx, { ...update, cutoff });
             }
           });
         } catch (error) {

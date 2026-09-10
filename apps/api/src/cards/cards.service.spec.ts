@@ -1113,7 +1113,9 @@ describe("CardsService", () => {
           scheduledAt: new Date(future(10)),
         });
         await cardsRepo.cancelSchedule(tx, cancelada.id);
-        await cardsRepo.markOrphansFailed(tx, [cancelada.id], { reason: "no debería aplicarse" });
+        await cardsRepo.markOrphansFailed(tx, [cancelada.id], new Date(Date.now() - 2 * 60_000), {
+          reason: "no debería aplicarse",
+        });
       });
       const filaCancelada = await dbService.runWithTenant(userA, (tx) =>
         cardsRepo.findById(tx, cancelada.id),
@@ -1132,10 +1134,12 @@ describe("CardsService", () => {
         });
         await cardsRepo.attachProviderRef(tx, reprogramada.id, "ref-nueva");
       });
+      const cutoff = new Date(Date.now() - 2 * 60_000);
       const resultado = await dbService.runWithTenant(userA, (tx) =>
         cardsRepo.markPublishedIfStillScheduled(tx, {
           id: reprogramada.id,
           providerRef: "ref-vieja",
+          cutoff,
           publishedAt: new Date(),
           postUrl: "https://fake.local/p/vieja",
         }),
@@ -1146,6 +1150,37 @@ describe("CardsService", () => {
       );
       expect(filaReprogramada?.status).toBe("scheduled");
       expect(filaReprogramada?.postUrl).toBeNull();
+
+      // El caso que el par (id, provider_ref) NO detecta y que casi se nos
+      // escapa: markRescheduled conserva la ref a propósito y el PATCH de
+      // Upload-Post devuelve el MISMO job_id, así que una card movida a la
+      // semana que viene puede tener el par idéntico. Lo único que cambió es su
+      // hora — por eso la guardia repite el `scheduled_at < cutoff` del read.
+      const mismaRef = await createCard(TEXT_CONTENT, "linkedin");
+      await dbService.runWithTenant(userA, async (tx) => {
+        await cardsRepo.markScheduling(tx, mismaRef.id, {
+          socialAccountId: account.id,
+          scheduledAt: new Date(Date.now() - 5 * 60_000),
+        });
+        await cardsRepo.attachProviderRef(tx, mismaRef.id, "ref-estable");
+        // El usuario la mueve a futuro; la ref no cambia.
+        await cardsRepo.markRescheduled(tx, mismaRef.id, { scheduledAt: new Date(future(20)) });
+      });
+      const publicadaTarde = await dbService.runWithTenant(userA, (tx) =>
+        cardsRepo.markPublishedIfStillScheduled(tx, {
+          id: mismaRef.id,
+          providerRef: "ref-estable",
+          cutoff,
+          publishedAt: new Date(),
+          postUrl: "https://fake.local/p/estable",
+        }),
+      );
+      expect(publicadaTarde).toBeUndefined();
+      const filaMismaRef = await dbService.runWithTenant(userA, (tx) =>
+        cardsRepo.findById(tx, mismaRef.id),
+      );
+      expect(filaMismaRef?.status).toBe("scheduled");
+      expect(filaMismaRef?.postUrl).toBeNull();
     },
   );
 
