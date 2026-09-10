@@ -1,9 +1,10 @@
 // Cálculo puro del ciclo mensual de cuota, sin DB — ancla en el día del mes
 // de users.created_at (cada usuario renueva en su propio aniversario, no en
 // un corte global del mes). Lo consume CreditsService.ensureCurrentCycle.
-// El job de pg-boss de F8 reemplaza el *trigger* (cron en vez de "alguien
-// pidió su saldo"), no este cálculo — el ciclo de cada usuario sigue
-// anclado a su fecha de alta.
+// El job de pg-boss de F8 (`credits.cycle`) es un disparador MÁS, no un
+// reemplazo: la ruta perezosa sigue viva porque es la que garantiza que un
+// cobro nunca ocurra sobre un ciclo sin liquidar. Este cálculo no cambia — el
+// ciclo de cada usuario sigue anclado a su fecha de alta.
 
 export interface CycleWindow {
   start: Date;

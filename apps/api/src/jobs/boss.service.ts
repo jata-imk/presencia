@@ -36,6 +36,16 @@ export interface RecurringJob {
    * contra lo que sea que acaba de fallar.
    */
   retryLimit?: number;
+  /**
+   * Cuánto puede correr el handler antes de que pg-boss dé el job por perdido.
+   * **Obligatorio a propósito**: el default de la librería son 15 minutos, y no
+   * es una cota inofensiva — al expirar marca el job `failed` con el handler
+   * todavía corriendo, y como `exclusive` solo cuenta los jobs en
+   * `created`/`active`, el slot queda libre y el tick siguiente puede arrancar
+   * un SEGUNDO pase concurrente sobre los mismos datos. Que no tenga default
+   * obliga a cada job a declarar su techo.
+   */
+  expireInSeconds: number;
   handler: () => Promise<void>;
 }
 
@@ -84,13 +94,18 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
    */
   async registerRecurring(job: RecurringJob): Promise<void> {
     const retryLimit = job.retryLimit ?? 0;
+    const { expireInSeconds } = job;
 
-    await this.boss.createQueue(job.queue, { policy: RECURRING_QUEUE_POLICY, retryLimit });
+    await this.boss.createQueue(job.queue, {
+      policy: RECURRING_QUEUE_POLICY,
+      retryLimit,
+      expireInSeconds,
+    });
     // createQueue es un INSERT ... ON CONFLICT DO NOTHING: si la cola ya
     // existe, las opciones de arriba se ignoran EN SILENCIO. Sin este
     // updateQueue, cambiar `retryLimit` en el código no tendría efecto nunca
     // en una base donde la cola ya se creó una vez.
-    await this.boss.updateQueue(job.queue, { retryLimit });
+    await this.boss.updateQueue(job.queue, { retryLimit, expireInSeconds });
 
     // La policy es lo único que updateQueue NO puede cambiar (su tipo la
     // excluye), y es justo la que decide si dos pases se pisan. Si diverge,

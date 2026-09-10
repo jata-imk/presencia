@@ -4,7 +4,8 @@ import type { AiTaskKind } from "../ai/provider-registry.js";
 import { DbService, type Tx } from "../db/db.service.js";
 import { CreditsRepository } from "./credits.repository.js";
 import { currentCycleWindow } from "./cycle.js";
-import { InsufficientQuotaError } from "./errors.js";
+import { summarizeFailures } from "../jobs/summarize-failures.js";
+import { InsufficientQuotaError, UserGoneError } from "./errors.js";
 import {
   CURRENT_RATE_CARD_VERSION,
   PLAN_QUOTAS,
@@ -137,20 +138,72 @@ export class CreditsService {
   }
 
   /**
+   * El disparador del job diario (F8). Adelanta el asiento del ciclo para un
+   * usuario que no ha entrado: sin esto, el `monthly_grant` de alguien que no
+   * abre la app en dos meses no existe hasta que abra.
+   *
+   * NO reemplaza a la ruta perezosa, y la distinción importa: `charge()` y
+   * `spend()` siguen llamando a `ensureCurrentCycle` dentro de SU transacción,
+   * bajo el mismo advisory lock, y eso es lo que garantiza la corrección
+   * contable. El cron solo adelanta trabajo; si llega tarde, el primer cobro
+   * lo hace igual y con el mismo resultado.
+   */
+  async refreshCycle(userId: string): Promise<void> {
+    await this.dbService.runWithTenant(userId, async (tx) => {
+      await this.repo.lockUser(tx, userId);
+      await this.ensureCurrentCycle(tx, userId);
+    });
+  }
+
+  /**
+   * El pase completo del job diario. Vive acá y no en `CreditsJobs` para que
+   * el módulo no tenga que exportar el repositorio: cualquiera que importara
+   * `CreditsModule` podría entonces inyectarlo y llamar `insertEntry` directo,
+   * saltándose la disciplina de `lockUser` + `ensureCurrentCycle` que es el
+   * motivo de existir de este servicio. `CardsJobs` ya seguía este patrón.
+   *
+   * Solo usuarios con correo verificado: una cuenta sin verificar no puede
+   * entrar (el gate de F1), así que adelantarle el ciclo solo le escribiría
+   * asientos a una cuenta que nunca va a gastar — y el ledger es append-only
+   * por el motor desde la migración 0008, así que esas filas no se limpian
+   * después. Si algún día verifica, la ruta perezosa se lo otorga en su primer
+   * acceso.
+   */
+  async refreshAllCycles(): Promise<void> {
+    const userIds = await this.dbService.runWorkerScan((tx) => this.repo.listVerifiedUserIds(tx));
+
+    // El try/catch por usuario existe para que el fallo de uno no deje sin
+    // ciclo a los demás; el relanzado del final, para que el pase no mienta
+    // sobre cómo le fue — si se traga todo, pg-boss registra "completed" y un
+    // fallo durable se repite cada día sin más señal que un log.
+    const failed: string[] = [];
+    for (const userId of userIds) {
+      try {
+        await this.refreshCycle(userId);
+      } catch (error) {
+        // Una cuenta borrada entre la enumeración y su turno no es un fallo.
+        if (error instanceof UserGoneError) continue;
+        failed.push(userId);
+        console.error(`[credits] No se pudo refrescar el ciclo de ${userId}:`, error);
+      }
+    }
+    if (failed.length > 0) throw new Error(summarizeFailures("El ciclo mensual", failed));
+  }
+
+  /**
    * Bajo advisory lock (lockUser ya tomado por el caller): si el ciclo
    * vigente todavía no tiene su `monthly_grant`, liquida el anterior
    * (`cycle_expiration` si sobraba saldo, `adjustment` si sobregiró) y
-   * otorga la cuota nueva. Reemplaza temporalmente al job de pg-boss de F8
-   * (modelo-de-datos.md:124) — vive aquí para que el ciclo funcione antes
-   * de que exista el worker; F8 solo cambia el disparador (cron en vez de
-   * "alguien pidió su saldo"), no esta lógica.
+   * otorga la cuota nueva. El disparador puede ser perezoso (alguien pidió su
+   * saldo o gastó) o el cron diario de F8 (`refreshCycle`) — el cálculo es el
+   * mismo y es idempotente, que es lo que permite tener los dos.
    */
   private async ensureCurrentCycle(
     tx: Tx,
     userId: string,
   ): Promise<{ tier: PlanTier; cycleStartId: number; renewsAt: Date }> {
     const user = await this.repo.findUserForCycle(tx, userId);
-    if (!user) throw new Error(`Usuario ${userId} no encontrado para calcular su ciclo de cuota`);
+    if (!user) throw new UserGoneError(userId);
 
     const { start, end } = currentCycleWindow(user.createdAt, new Date());
     const lastGrant = await this.repo.lastGrant(tx, userId);

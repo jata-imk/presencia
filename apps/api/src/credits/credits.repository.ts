@@ -39,6 +39,28 @@ export class CreditsRepository {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${userId}, 0))`);
   }
 
+  /**
+   * Los usuarios con correo verificado, para el job diario de ciclo (F8). No
+   * necesita tenant fijado: `users` NO tiene RLS —la administra Better Auth—,
+   * así que el job la lee desde `runWorkerScan`, la única puerta del repo para
+   * acceso sin tenant.
+   *
+   * El filtro por `email_verified` no es cosmético: sin él, cada cuenta sin
+   * verificar acumularía dos asientos por mes para siempre (el
+   * `cycle_expiration` del ciclo viejo y el `monthly_grant` del nuevo), y el
+   * ledger es append-only por el motor desde la migración 0008.
+   *
+   * Límite conocido: el job recorre a todos, no solo a quienes les toca
+   * renovar hoy. Con el ciclo anclado al aniversario de cada uno, filtrar en
+   * SQL pediría repetir acá el cálculo que vive en `cycle.ts`, y duplicar esa
+   * regla es peor que un pase de más al día — `ensureCurrentCycle` no escribe
+   * nada cuando el ciclo ya está otorgado.
+   */
+  async listVerifiedUserIds(tx: Tx): Promise<string[]> {
+    const rows = await tx.select({ id: users.id }).from(users).where(eq(users.emailVerified, true));
+    return rows.map((row) => row.id);
+  }
+
   async balanceSince(tx: Tx, userId: string, since: Date): Promise<number> {
     const [row] = await tx
       .select({ balance: sql<string>`coalesce(sum(${creditLedger.delta}), 0)` })

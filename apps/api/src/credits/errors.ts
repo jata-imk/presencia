@@ -14,3 +14,16 @@ export class InsufficientQuotaError extends Error {
     this.name = "InsufficientQuotaError";
   }
 }
+
+/**
+ * El usuario dejó de existir entre que el job lo enumeró y que le tocó su
+ * turno (F8). No es un fallo del pase: una cuenta borrada es un evento normal,
+ * y confundirla con un error durable haría sonar la alarma que el job relanza
+ * justo para avisar de fallos que se repiten.
+ */
+export class UserGoneError extends Error {
+  constructor(readonly userId: string) {
+    super(`El usuario ${userId} ya no existe.`);
+    this.name = "UserGoneError";
+  }
+}

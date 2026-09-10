@@ -88,3 +88,11 @@ después como un job y no como "un job más un runtime".
 **Los jobs se declaran en un solo lugar** (`jobs/scheduled-jobs.module.ts`), que importan los dos entrypoints: `worker.ts` siempre y `main.ts` solo con `WORKER_INLINE`. Tener la lista duplicada era la forma más fácil de terminar con el worker y la API corriendo jobs distintos sin que nadie lo notara.
 
 **El registro va en `OnApplicationBootstrap`, no en `OnModuleInit`:** pg-boss tiene que haber arrancado —lo hace en el `OnModuleInit` de `BossService`— antes de que se pueda crear una cola.
+
+## Addendum (2026-09-08, F8 PR3) — el segundo job, y el patrón que ya se repite
+
+`credits.cycle`, cron diario. El detalle contable está en el addendum de ADR-012; lo que interesa acá es que los dos jobs terminaron con la misma forma, y conviene nombrarla antes de que llegue el tercero:
+
+**Enumerar → iterar con `try/catch` por unidad → contar fallos → relanzar al final.** El `try/catch` existe para que el fallo de un usuario no deje sin atender a los demás; el relanzado, para que el pase no mienta sobre cómo le fue. Sin él, pg-boss registra `completed` y un fallo durable se repite en cada corrida sin más señal que un log que en el servidor nadie está mirando.
+
+**Y una consecuencia de haberlos escrito: un job global es difícil de probar contra una base compartida.** Los dos casos aparecieron solos. El de cards habría marcado como fallidas las cards de otros specs corriendo en paralelo; el de créditos se comió su timeout esperando advisory locks de usuarios que otros specs estaban usando. La salida no es subir el timeout: es probar las piezas con reglas (el colector, el cálculo, la idempotencia) y dejar fuera el bucle, que no las tiene.
