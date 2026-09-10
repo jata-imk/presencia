@@ -1039,7 +1039,9 @@ describe("CardsService", () => {
       });
       const published = await createCard(TEXT_CONTENT, "linkedin");
       await dbService.runWithTenant(userA, (tx) =>
-        cardsRepo.markPublished(tx, published.id, new Date(), null),
+        tx.execute(
+          sql`update publication_cards set status = 'published', published_at = now() where id = ${published.id}`,
+        ),
       );
 
       const visto = await dbService.runWorkerScan(async (tx) => {
@@ -1096,91 +1098,120 @@ describe("CardsService", () => {
   // Las guardias anti-carrera de las escrituras del barrido (code review del
   // rango completo de F8). El pase LEE en una transacción y ESCRIBE en otra, y
   // desde F8 corre cada minuto sin depender de que nadie mire: entre las dos, el
-  // usuario pudo cancelar o reprogramar. Se prueban sobre el repo directo porque
-  // lo que importa es el WHERE del UPDATE, no el orquestador.
+  // usuario pudo cancelar o reprogramar. La regla es que la guardia repite la
+  // condición del read, así que cada caso de abajo viola UN SOLO término —
+  // dejando pasar los demás— para que el test no pueda aprobar por otra razón.
   it(
-    "el barrido no pisa una card que el usuario movió mientras el pase estaba en vuelo",
-    { timeout: 15_000 },
+    "cada término de la guardia bloquea por su cuenta, y una card intacta sí se escribe",
+    { timeout: 20_000 },
     async () => {
       const account = await connectAccount(userA, "linkedin");
+      const enElPasado = new Date(Date.now() - 5 * 60_000);
+      const cutoffVencidas = new Date(Date.now() - 2 * 60_000);
+      // Cutoff en el FUTURO para las huérfanas: así `updated_at < cutoff` se
+      // cumple siempre y lo único que puede bloquear es el término bajo prueba.
+      const cutoffFuturo = new Date(Date.now() + 60_000);
 
-      // El pase la vio como huérfana; para cuando escribe, el usuario ya le dio
-      // Cancelar y la card está en draft.
-      const cancelada = await createCard(TEXT_CONTENT, "linkedin");
+      const nuevaCard = async () => createCard(TEXT_CONTENT, "linkedin");
+
+      // (1) Solo falla el estado: cancelada, sin ref, updated_at reciente.
+      const cancelada = await nuevaCard();
       await dbService.runWithTenant(userA, async (tx) => {
         await cardsRepo.markScheduling(tx, cancelada.id, {
           socialAccountId: account.id,
           scheduledAt: new Date(future(10)),
         });
         await cardsRepo.cancelSchedule(tx, cancelada.id);
-        await cardsRepo.markOrphansFailed(tx, [cancelada.id], new Date(Date.now() - 2 * 60_000), {
-          reason: "no debería aplicarse",
-        });
+        await cardsRepo.markOrphansFailed(tx, [cancelada.id], cutoffFuturo, { reason: "no va" });
       });
-      const filaCancelada = await dbService.runWithTenant(userA, (tx) =>
-        cardsRepo.findById(tx, cancelada.id),
-      );
-      expect(filaCancelada?.status).toBe("draft");
-      expect(filaCancelada?.errorDetail).toBeNull();
+      expect(
+        (await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, cancelada.id)))
+          ?.status,
+      ).toBe("draft");
 
-      // El pase le preguntó al proveedor por la ref vieja; mientras tanto la
-      // card se reprogramó y ahora apunta a otra. Publicarla con los datos del
-      // post viejo sería reportar como publicada una que no lo está.
-      const reprogramada = await createCard(TEXT_CONTENT, "linkedin");
+      // (2) Solo falla `provider_ref IS NULL`: sigue scheduled y ya tiene ref,
+      // o sea que la programación se confirmó y no es huérfana.
+      const conRef = await nuevaCard();
       await dbService.runWithTenant(userA, async (tx) => {
-        await cardsRepo.markScheduling(tx, reprogramada.id, {
+        await cardsRepo.markScheduling(tx, conRef.id, {
           socialAccountId: account.id,
           scheduledAt: new Date(future(10)),
         });
-        await cardsRepo.attachProviderRef(tx, reprogramada.id, "ref-nueva");
+        await cardsRepo.attachProviderRef(tx, conRef.id, "ref-confirmada");
+        await cardsRepo.markOrphansFailed(tx, [conRef.id], cutoffFuturo, { reason: "no va" });
       });
-      const cutoff = new Date(Date.now() - 2 * 60_000);
-      const resultado = await dbService.runWithTenant(userA, (tx) =>
+      expect(
+        (await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, conRef.id)))?.status,
+      ).toBe("scheduled");
+
+      // (3) Solo falla el par: vencida de verdad, pero se le pasa OTRA ref
+      // (el caso de PostFast, que recrea el post al reprogramar).
+      const otraRef = await nuevaCard();
+      await dbService.runWithTenant(userA, async (tx) => {
+        await cardsRepo.markScheduling(tx, otraRef.id, {
+          socialAccountId: account.id,
+          scheduledAt: enElPasado,
+        });
+        await cardsRepo.attachProviderRef(tx, otraRef.id, "ref-nueva");
+      });
+      const porRef = await dbService.runWithTenant(userA, (tx) =>
         cardsRepo.markPublishedIfStillScheduled(tx, {
-          id: reprogramada.id,
+          id: otraRef.id,
           providerRef: "ref-vieja",
-          cutoff,
+          cutoff: cutoffVencidas,
           publishedAt: new Date(),
           postUrl: "https://fake.local/p/vieja",
         }),
       );
-      expect(resultado).toBeUndefined();
-      const filaReprogramada = await dbService.runWithTenant(userA, (tx) =>
-        cardsRepo.findById(tx, reprogramada.id),
-      );
-      expect(filaReprogramada?.status).toBe("scheduled");
-      expect(filaReprogramada?.postUrl).toBeNull();
+      expect(porRef).toBeUndefined();
 
-      // El caso que el par (id, provider_ref) NO detecta y que casi se nos
-      // escapa: markRescheduled conserva la ref a propósito y el PATCH de
-      // Upload-Post devuelve el MISMO job_id, así que una card movida a la
-      // semana que viene puede tener el par idéntico. Lo único que cambió es su
-      // hora — por eso la guardia repite el `scheduled_at < cutoff` del read.
-      const mismaRef = await createCard(TEXT_CONTENT, "linkedin");
+      // (4) Solo falla `scheduled_at`: el caso que casi se nos escapa.
+      // markRescheduled conserva la ref y el PATCH de Upload-Post devuelve el
+      // MISMO job_id, así que el par sigue coincidiendo — lo único que cambió
+      // es la hora.
+      const movida = await nuevaCard();
       await dbService.runWithTenant(userA, async (tx) => {
-        await cardsRepo.markScheduling(tx, mismaRef.id, {
+        await cardsRepo.markScheduling(tx, movida.id, {
           socialAccountId: account.id,
-          scheduledAt: new Date(Date.now() - 5 * 60_000),
+          scheduledAt: enElPasado,
         });
-        await cardsRepo.attachProviderRef(tx, mismaRef.id, "ref-estable");
-        // El usuario la mueve a futuro; la ref no cambia.
-        await cardsRepo.markRescheduled(tx, mismaRef.id, { scheduledAt: new Date(future(20)) });
+        await cardsRepo.attachProviderRef(tx, movida.id, "ref-estable");
+        await cardsRepo.markRescheduled(tx, movida.id, { scheduledAt: new Date(future(20)) });
       });
-      const publicadaTarde = await dbService.runWithTenant(userA, (tx) =>
+      const porFecha = await dbService.runWithTenant(userA, (tx) =>
         cardsRepo.markPublishedIfStillScheduled(tx, {
-          id: mismaRef.id,
+          id: movida.id,
           providerRef: "ref-estable",
-          cutoff,
+          cutoff: cutoffVencidas,
           publishedAt: new Date(),
           postUrl: "https://fake.local/p/estable",
         }),
       );
-      expect(publicadaTarde).toBeUndefined();
-      const filaMismaRef = await dbService.runWithTenant(userA, (tx) =>
-        cardsRepo.findById(tx, mismaRef.id),
+      expect(porFecha).toBeUndefined();
+      expect(
+        (await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, movida.id)))?.postUrl,
+      ).toBeNull();
+
+      // (5) Control positivo: sin esto, una guardia que bloqueara TODO pasaría
+      // los cuatro casos de arriba.
+      const intacta = await nuevaCard();
+      await dbService.runWithTenant(userA, async (tx) => {
+        await cardsRepo.markScheduling(tx, intacta.id, {
+          socialAccountId: account.id,
+          scheduledAt: enElPasado,
+        });
+        await cardsRepo.attachProviderRef(tx, intacta.id, "ref-intacta");
+      });
+      const escrita = await dbService.runWithTenant(userA, (tx) =>
+        cardsRepo.markPublishedIfStillScheduled(tx, {
+          id: intacta.id,
+          providerRef: "ref-intacta",
+          cutoff: cutoffVencidas,
+          publishedAt: new Date(),
+          postUrl: "https://fake.local/p/intacta",
+        }),
       );
-      expect(filaMismaRef?.status).toBe("scheduled");
-      expect(filaMismaRef?.postUrl).toBeNull();
+      expect(escrita?.status).toBe("published");
     },
   );
 
@@ -1257,7 +1288,11 @@ describe("CardsService", () => {
           // mitad de la corrida. Mismo motivo por el que seed-dev.ts los
           // falsea.
           await cardsRepo.attachProviderRef(tx, card.id, `pf_spec_${randomUUID()}`);
-          if (opts.published) await cardsRepo.markPublished(tx, card.id, opts.scheduledAt, null);
+          if (opts.published) {
+            await tx.execute(
+              sql`update publication_cards set status = 'published', published_at = ${opts.scheduledAt} where id = ${card.id}`,
+            );
+          }
           if (opts.orphan) {
             // insertCard exige chatId; la orfandad real la produce borrar el
             // chat (FK "set null"). Se simula el estado final directamente.

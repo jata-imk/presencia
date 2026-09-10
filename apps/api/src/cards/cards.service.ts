@@ -574,9 +574,20 @@ export class CardsService {
             for (const update of updates) {
               // `undefined` = la card se movió mientras se le preguntaba al
               // proveedor (cancelada o reprogramada). No es un error: es lo que
-              // la guardia existe para detectar, y el pase siguiente la vuelve
-              // a mirar con su estado nuevo.
-              await this.repo.markPublishedIfStillScheduled(tx, { ...update, cutoff });
+              // la guardia existe para detectar. Pero sí hay que dejar rastro:
+              // el post está publicado del lado del proveedor y, si la card se
+              // canceló, ninguna fila lo referencia ya — y el barrido solo mira
+              // cards `scheduled`, así que nadie va a volver a verlo.
+              const escrita = await this.repo.markPublishedIfStillScheduled(tx, {
+                ...update,
+                cutoff,
+              });
+              if (!escrita) {
+                console.warn(
+                  `[cards] ${update.id} se movió mientras el proveedor respondía; ` +
+                    `el post ${update.providerRef} quedó publicado sin card que lo refleje.`,
+                );
+              }
             }
           });
         } catch (error) {

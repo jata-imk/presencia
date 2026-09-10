@@ -97,10 +97,18 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (!this.started) return;
+    // Sin condicionar a `started`: `start()` abre su pool y corre la migración
+    // ANTES de poder fallar, así que un arranque roto a la mitad deja
+    // conexiones y timers vivos. Saltarse el stop ahí hacía que Ctrl+C ya no
+    // cerrara el proceso — justo en el escenario para el que se toleró el
+    // fallo.
     // `graceful` deja terminar el job en vuelo antes de cerrar — un pase de
     // reconciliación a medias dejaría unas cards escritas y otras no.
-    await this.boss.stop({ graceful: true, close: true });
+    try {
+      await this.boss.stop({ graceful: true, close: true });
+    } catch (error) {
+      console.error("[jobs] pg-boss no cerró limpio:", error);
+    }
   }
 
   /**

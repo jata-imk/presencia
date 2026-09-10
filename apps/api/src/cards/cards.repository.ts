@@ -261,21 +261,6 @@ export class CardsRepository {
     return row;
   }
 
-  async markPublished(
-    tx: Tx,
-    id: string,
-    publishedAt: Date,
-    postUrl: string | null,
-  ): Promise<CardRow> {
-    const [row] = await tx
-      .update(publicationCards)
-      .set({ status: "published", publishedAt, postUrl, errorDetail: null, updatedAt: new Date() })
-      .where(eq(publicationCards.id, id))
-      .returning();
-    if (!row) throw new Error("No se pudo marcar la publicación como publicada");
-    return row;
-  }
-
   /** Fallo terminal (proveedor confirmó FAILED, o nunca confirmó nada) — se queda visible, no vuelve a draft solo. */
   async markFailed(tx: Tx, id: string, errorDetail: unknown): Promise<CardRow> {
     const [row] = await tx
