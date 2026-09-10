@@ -1053,6 +1053,46 @@ describe("CardsService", () => {
     },
   );
 
+  it(
+    "el barrido no ve las programadas a futuro, pero sí las huérfanas aunque su fecha sea futura",
+    { timeout: 15_000 },
+    async () => {
+      const account = await connectAccount(userA, "linkedin");
+
+      // Programada para dentro de diez minutos y confirmada por el proveedor:
+      // no va a cambiar de estado en el pase de hoy, así que el worker ni
+      // siquiera tiene por qué poder verla.
+      const futura = await createCard(TEXT_CONTENT, "linkedin");
+      await dbService.runWithTenant(userA, async (tx) => {
+        await cardsRepo.markScheduling(tx, futura.id, {
+          socialAccountId: account.id,
+          scheduledAt: new Date(future(10)),
+        });
+        await cardsRepo.attachProviderRef(tx, futura.id, `ref-futura-${futura.id}`);
+      });
+
+      // Huérfana con fecha TAMBIÉN futura: el proceso murió entre las dos
+      // transacciones de schedule(), así que el proveedor nunca la recibió y
+      // no se va a publicar nunca. Hay que cerrarla igual — si la policy la
+      // acotara por fecha, se quedaría colgada para siempre.
+      const huerfanaFutura = await createCard(TEXT_CONTENT, "linkedin");
+      await dbService.runWithTenant(userA, async (tx) => {
+        await cardsRepo.markScheduling(tx, huerfanaFutura.id, {
+          socialAccountId: account.id,
+          scheduledAt: new Date(future(20)),
+        });
+      });
+
+      const visto = await dbService.runWorkerScan(async (tx) => {
+        const rows = await tx.select().from(publicationCards);
+        return rows.map((r) => r.id);
+      });
+
+      expect(visto).not.toContain(futura.id);
+      expect(visto).toContain(huerfanaFutura.id);
+    },
+  );
+
   // ── F7: listados que alimentan el Calendario ──────────────────────────
   //
   // Se prueban contra Postgres real por lo mismo que el resto del archivo:

@@ -33,7 +33,8 @@ export class DbService implements OnModuleDestroy {
    * No es un atajo para saltarse el RLS: casi todo sigue siendo ilegible acá.
    * Solo funciona donde hay una policy explícita que lo permita — hoy
    * únicamente `worker_scan` sobre publication_cards, que es solo SELECT y
-   * solo de filas `scheduled` (migración 0017).
+   * solo de las filas `scheduled` que el barrido puede necesitar: huérfanas o
+   * ya vencidas (migraciones 0017 y 0019).
    *
    * Fija `app.user_id` en el UUID nil en vez de dejarlo sin fijar, y eso NO es
    * cosmético: `tenant_isolation` lee la variable sin `missing_ok`, así que

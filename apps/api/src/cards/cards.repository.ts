@@ -309,9 +309,11 @@ export class CardsRepository {
    *
    * Sirve para los dos caminos sin cambiar de query: dentro de
    * `runWithTenant` el RLS la acota al usuario del momento, y dentro de
-   * `runWorkerScan` la policy `worker_scan` (migración 0017) la deja ver las
-   * cards `scheduled` de todos los tenants, que es lo que el cron necesita
-   * para saber a quién atender. El service separa las dos categorías al
+   * `runWorkerScan` la policy `worker_scan` la deja ver, de todos los tenants,
+   * las cards `scheduled` que el pase puede llegar a necesitar — las huérfanas
+   * (sin `provider_ref`, aunque su fecha sea futura) y las que ya vencieron
+   * (migraciones 0017 y 0019). Las programadas a futuro con `provider_ref` no
+   * las ve, y tampoco las pide. El service separa las dos categorías al
    * agrupar por usuario, mirando el `provider_ref`.
    */
   async listReconcilable(tx: Tx, cutoff: Date): Promise<CardRow[]> {
