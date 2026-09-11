@@ -44,7 +44,7 @@ corta o llega de golpe al final.
 
 CI construye la imagen y la publica en **GHCR** (`ghcr.io/jata-imk/presencia`); el VPS hace `pull`. El
 paquete es público porque el repo lo es (ADR-019), así que el `pull` no necesita credenciales. El
-deploy en sí es manual en V1 — ver `docs/how-to/desplegar.md`.
+deploy en sí es manual en V1: SSH al VPS, `docker compose pull`, `up -d`.
 
 ## Object Storage — ~€0/mes hoy
 

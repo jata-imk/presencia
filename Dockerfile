@@ -1,10 +1,11 @@
 # Imagen única para los dos procesos de Presencia: la API (`main.ts`) y el
 # worker de pg-boss (`worker.ts`). Misma imagen, distinto comando — ADR-008.
 #
-# El SPA de apps/web viaja ADENTRO de esta imagen y lo sirve el mismo proceso
-# de Express: apps/web no tiene variables de entorno y llama a la API con
-# rutas relativas (`/api/...`), así que web y API tienen que ser same-origin
-# (ADR-020).
+# El SPA de apps/web viaja ADENTRO de esta imagen: apps/web no tiene
+# variables de entorno y llama a la API con rutas relativas (`/api/...`), así
+# que web y API tienen que responder bajo el mismo origen (ADR-020). Quien lo
+# SIRVE todavía no existe — `main.ts` hoy solo monta `/api`. Hasta que lo
+# haga, esta imagen responde 404 en `/`.
 
 FROM node:22-alpine AS base
 RUN corepack enable
@@ -35,10 +36,6 @@ RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 # --- runtime
 FROM base AS runtime
 ENV NODE_ENV=production
-
-# pg_dump para el backup diario (ADR-011). La versión del cliente tiene que
-# coincidir con el server: el compose corre postgres:17-alpine.
-RUN apk add --no-cache postgresql17-client
 
 # node_modules de pnpm es un árbol de symlinks hacia la store de la raíz, así
 # que el orden importa: primero la raíz, después cada proyecto.

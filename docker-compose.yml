@@ -11,8 +11,7 @@
 # levantar contenedores de aplicación. Sin `--profile app` este archivo se
 # comporta exactamente como antes de F8.5.
 #
-# La receta completa del despliegue está en docs/how-to/desplegar.md y la
-# topología en ADR-020.
+# La topología está en ADR-020.
 services:
   postgres:
     image: postgres:17-alpine
@@ -38,10 +37,10 @@ services:
     profiles: ["app"]
     # La imagen la construye CI y se publica en GHCR (ADR-019: el repo es
     # público, así que el paquete también y el VPS hace pull sin credenciales).
-    # `build` queda como respaldo para construir a mano en una máquina con
-    # engine: `docker compose --profile app build`.
+    # A propósito NO hay `build:`: con él, un `up -d` sobre una imagen que
+    # falta la construiría en silencio en el VPS, que es justo lo que ADR-020
+    # descarta. Sin imagen publicada, esto tiene que fallar ruidosamente.
     image: ${APP_IMAGE:-ghcr.io/jata-imk/presencia:latest}
-    build: .
     restart: unless-stopped
     depends_on:
       postgres:
@@ -49,8 +48,17 @@ services:
     # Mismas variables que la API lee en dev (apps/api/src/env.ts). En el .env
     # de prod los hosts son los de la red de compose, no localhost:
     #   APP_DATABASE_URL=postgres://presencia_app:...@postgres:5432/presencia
+    #
+    # `required: false` porque el .env no está versionado y CI valida este
+    # archivo sin él (`docker compose config -q`).
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      # NO se hereda del .env: el default de WORKER_INLINE es `true`
+      # (apps/api/src/env.ts) y con él este contenedor consumiría la misma
+      # cola que el `worker`. Fijarlo acá hace imposible el olvido.
+      WORKER_INLINE: "false"
     ports:
       # Loopback igual que Postgres: quien publica al mundo es el nginx de
       # CloudPanel (ADR-020). El 3000 del host ya está ocupado por otra app,
@@ -68,13 +76,20 @@ services:
   worker:
     profiles: ["app"]
     image: ${APP_IMAGE:-ghcr.io/jata-imk/presencia:latest}
-    build: .
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      # Igual que en `app`, y por la misma razón: que el valor no dependa del
+      # .env. Acá el flag no cambia el comportamiento —quien consume la cola
+      # es el entrypoint, no la variable— pero sí el aviso de arranque de
+      # worker.ts, que grita cuando cree que la API también la está
+      # consumiendo. Con `app` fijado en false, ese aviso sería falso.
+      WORKER_INLINE: "false"
     # Misma imagen, distinto entrypoint (ADR-008). No abre puerto, así que no
     # tiene healthcheck: su señal de vida es no estar reiniciando. Es
     # deliberado que un fallo de la cola lo mate — un worker vivo sin jobs

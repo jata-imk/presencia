@@ -10,6 +10,11 @@ CI y se publica en **GHCR**; el VPS solo hace `pull`. Un único host hospeda dos
 - **Same-origin no es opcional.** `apps/web` no tiene ninguna variable de entorno y llama a la API con
   rutas relativas (`/api/...`). Web y API tienen que responder bajo el mismo host o no hay app. La
   forma más barata de garantizarlo es que el mismo proceso sirva las dos cosas.
+
+  **Estado:** el `dist` del SPA ya viaja en la imagen, pero `main.ts` todavía solo monta `/api` — el
+  `express.static` con fallback de historial llega en el PR siguiente de F8.5. Hasta entonces la
+  imagen responde 404 en `/`.
+
 - **CloudPanel ya trae nginx y Let's Encrypt.** Meter un contenedor Caddy delante significa dos
   reverse proxies en cadena, dos lugares donde configurar el buffering del SSE, y dos sitios donde
   buscar cuando algo devuelve 502.

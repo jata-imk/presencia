@@ -19,7 +19,7 @@ pnpm --filter @presencia/api test   # tests de la API (requiere DB, ver abajo)
 
 ## Docker: dos modos
 
-El proyecto usa Docker Compose (Postgres en dev; en prod además `app` y `worker`, detrás del profile `app` — ver `docs/how-to/desplegar.md`). El engine puede vivir en dos lugares:
+El proyecto usa Docker Compose (Postgres en dev; en prod además `app` y `worker`, detrás del profile `app`). El engine puede vivir en dos lugares:
 
 ### Modo A — Engine local (máquinas con Docker Desktop)
 
