@@ -31,7 +31,10 @@ RUN pnpm build
 # --- prune: vuelve a resolver node_modules sin devDependencies. No toca los
 # dist/ que acaba de producir el stage anterior.
 FROM build AS prune
-RUN pnpm install --frozen-lockfile --prod --ignore-scripts
+# CI=true: al pasar de un árbol completo a uno --prod, pnpm quiere purgar
+# node_modules y pide confirmación interactiva; sin TTY aborta con
+# ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY.
+RUN CI=true pnpm install --frozen-lockfile --prod --ignore-scripts
 
 # --- runtime
 FROM base AS runtime
