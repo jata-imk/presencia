@@ -1,0 +1,29 @@
+# Todo lo que no necesita el build de la imagen. node_modules y dist se
+# excluyen a propósito: la imagen los reconstruye adentro, y copiarlos desde
+# Windows traería binarios de la plataforma equivocada.
+node_modules
+**/node_modules
+dist
+**/dist
+.turbo
+**/.turbo
+*.tsbuildinfo
+
+.git
+.github
+.husky
+.vscode
+.idea
+
+# Secretos: nunca entran a una capa de la imagen.
+.env
+.env.*
+!.env.example
+
+docs
+*.md
+!README.md
+coverage
+playwright-report
+test-results
+.playwright-mcp
