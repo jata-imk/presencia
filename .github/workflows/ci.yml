@@ -53,6 +53,13 @@ jobs:
         env:
           POSTGRES_PASSWORD: ci
 
+      # Construye la imagen de la app/worker (ADR-020). No la publica: eso lo
+      # hace release.yml en push a main. Acá solo cierra la puerta a que un
+      # Dockerfile roto llegue a main — la máquina de Jose no tiene engine de
+      # Docker, así que CI es el único lugar donde esto se ejercita.
+      - name: Build Docker image
+        run: docker build -t presencia:ci .
+
       # Aplica las migraciones Drizzle (schema + RLS) contra un Postgres real.
       # Valida el SQL generado, los roles y las policies en cada push.
       - name: Apply migrations
