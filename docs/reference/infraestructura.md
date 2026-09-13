@@ -53,6 +53,10 @@ termina en verde sobre un push a `main`. El VPS no construye nada: hace `pull`.
 Un commit que ya no era la punta cuando terminó su release (entró otro merge mientras tanto) queda
 publicado solo con su `sha-`: desplegable, pero nunca por default.
 
+Para **republicar** un commit (p.ej. si se borró el paquete): _Re-run jobs_ sobre su run de _Release_ en
+GitHub Actions. No hay disparo manual libre a propósito: se saltaría CI. Todo esto supone que a `main` solo
+se llega por squash merge de un PR, así que todo push corre CI.
+
 **Volver a una versión anterior** no pide reconstruir: se fija `APP_IMAGE=ghcr.io/jata-imk/presencia:sha-<corto>`
 en el `.env` del stack y se repite `pull` + `up -d`.
 
