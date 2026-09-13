@@ -45,10 +45,13 @@ corta o llega de golpe al final.
 CI construye la imagen y `release.yml` la publica en **GHCR** (`ghcr.io/jata-imk/presencia`) cuando CI
 termina en verde sobre un push a `main`. El VPS no construye nada: hace `pull`.
 
-| Tag           | Qué es                                                                              |
-| ------------- | ----------------------------------------------------------------------------------- |
-| `sha-<corto>` | La identidad del artefacto: el commit exacto que CI probó                           |
-| `latest`      | El último commit de `main` con CI en verde. Es el default de `APP_IMAGE` en compose |
+| Tag           | Qué es                                                                                                                      |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `sha-<corto>` | La identidad del artefacto. **Todo** commit de `main` con CI en verde recibe el suyo                                        |
+| `latest`      | La **punta** de `main`, y solo si su CI pasó. Si la punta está en rojo, se queda donde estaba. Es el default de `APP_IMAGE` |
+
+Un commit que ya no era la punta cuando terminó su release (entró otro merge mientras tanto) queda
+publicado solo con su `sha-`: desplegable, pero nunca por default.
 
 **Volver a una versión anterior** no pide reconstruir: se fija `APP_IMAGE=ghcr.io/jata-imk/presencia:sha-<corto>`
 en el `.env` del stack y se repite `pull` + `up -d`.

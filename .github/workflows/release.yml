@@ -5,7 +5,7 @@ name: Release
 #
 # Corre DESPUÉS de que CI pase sobre un push a main, no en el push mismo: una
 # imagen publicada es lo que el VPS va a bajar, y no tiene que existir nunca
-# una `latest` hecha de un commit con los tests en rojo.
+# una imagen hecha de un commit con los tests en rojo.
 #
 # `workflow_run` tiene una trampa: solo se dispara con la versión de este
 # archivo que está en la rama default, así que un cambio acá no se puede
@@ -23,12 +23,15 @@ permissions:
   contents: read
   packages: write
 
-# Un release a la vez. Esto NO garantiza por sí solo que `latest` apunte al
-# commit más nuevo: ordena por cuándo termina CI, no por el orden de los
-# merges, y el CI de un merge posterior puede terminar primero. Esa garantía
-# la da el paso "Decide tags".
+# Un grupo POR COMMIT, no uno global. Un grupo global deja un solo run en
+# espera y cancela el que ya esperaba aunque cancel-in-progress sea false:
+# con tres merges seguidos, uno se perdía sin publicar su `sha-`. Por commit,
+# nada se cancela, y un mismo commit republicado a mano espera su turno.
+#
+# Que los releases de commits distintos corran en paralelo no rompe `latest`:
+# ver el último paso.
 concurrency:
-  group: release
+  group: release-${{ github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: false
 
 env:
@@ -59,31 +62,6 @@ jobs:
         with:
           ref: ${{ steps.commit.outputs.sha }}
 
-      # `latest` solo si este commit SIGUE siendo la punta de main. Dos merges
-      # seguidos, A y B, corren CI en paralelo; si el de B termina primero, el
-      # release de A llega después y sin este chequeo dejaba `latest` en A, y
-      # el siguiente pull del VPS desplegaba el commit viejo. Un commit que ya
-      # no es la punta solo recibe su `sha-`: sigue siendo desplegable
-      # fijándolo en APP_IMAGE, pero nunca por default.
-      - name: Decide tags
-        id: tags
-        run: |
-          head="$(git ls-remote origin refs/heads/main | cut -f1)"
-          short="${{ steps.commit.outputs.short }}"
-          latest=false
-          if [ "$head" = "${{ steps.commit.outputs.sha }}" ]; then
-            latest=true
-          else
-            # A stdout: los workflow commands (::notice::) se leen de ahí.
-            echo "::notice::${short} ya no es la punta de main (${head::7}): se publica solo sha-, sin latest."
-          fi
-          {
-            echo "list<<TAGS"
-            echo "${IMAGE}:sha-${short}"
-            if [ "$latest" = true ]; then echo "${IMAGE}:latest"; fi
-            echo "TAGS"
-          } >> "$GITHUB_OUTPUT"
-
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -92,16 +70,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Solo el tag `sha-<corto>`: la identidad del artefacto. Todo commit con
+      # CI verde lo recibe, y fijándolo en APP_IMAGE del .env de prod se vuelve
+      # a esa versión sin reconstruir. `latest` NO se publica acá.
       - uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64
           push: true
-          # `sha-<corto>` es la identidad del artefacto: fijándolo en APP_IMAGE
-          # del .env de prod se vuelve a una versión anterior sin reconstruir.
-          # `latest` es solo el default cómodo del compose, y lo decide el paso
-          # anterior.
-          tags: ${{ steps.tags.outputs.list }}
+          tags: ${{ env.IMAGE }}:sha-${{ steps.commit.outputs.short }}
           # Liga el paquete al repo en GHCR. No lo hace público: la primera
           # publicación de un paquete de cuenta personal nace privada y se
           # cambia a mano en Settings del paquete, una sola vez.
@@ -112,3 +89,27 @@ jobs:
           # estas capas minutos antes, así que acá casi todo es un hit.
           cache-from: type=gha,scope=presencia-image
           cache-to: type=gha,mode=max,scope=presencia-image
+
+      # `latest` = la punta de main, y solo si su CI pasó. Se decide AL FINAL,
+      # con la imagen ya publicada, porque decidirlo antes del build dejaba una
+      # carrera: el commit A era la punta al empezar, durante su build entraba
+      # B y terminaba su release, y A llegaba después a pisar `latest`.
+      #
+      # Acá la comprobación y el movimiento están a un segundo de distancia
+      # (imagetools solo re-etiqueta un manifiesto ya publicado, no construye),
+      # y un merge posterior no puede completar su propio release en ese
+      # segundo: su CI tarda minutos.
+      #
+      # Consecuencia buscada: si la punta de main tiene CI en rojo, `latest` se
+      # queda donde estaba. Un commit que no es la punta solo tiene su `sha-`.
+      - name: Move latest
+        run: |
+          sha="${{ steps.commit.outputs.sha }}"
+          short="${{ steps.commit.outputs.short }}"
+          head="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$head" = "$sha" ]; then
+            docker buildx imagetools create \
+              --tag "${IMAGE}:latest" "${IMAGE}:sha-${short}"
+          else
+            echo "::notice::${short} ya no es la punta de main (${head::7}): publicado solo sha-${short}, latest no se mueve."
+          fi
