@@ -42,9 +42,21 @@ corta o llega de golpe al final.
 
 ## Cómo llega el código
 
-CI construye la imagen y la publica en **GHCR** (`ghcr.io/jata-imk/presencia`); el VPS hace `pull`. El
-paquete es público porque el repo lo es (ADR-019), así que el `pull` no necesita credenciales. El
-deploy en sí es manual en V1: SSH al VPS, `docker compose pull`, `up -d`.
+CI construye la imagen y `release.yml` la publica en **GHCR** (`ghcr.io/jata-imk/presencia`) cuando CI
+termina en verde sobre un push a `main`. El VPS no construye nada: hace `pull`.
+
+| Tag           | Qué es                                                                              |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `sha-<corto>` | La identidad del artefacto: el commit exacto que CI probó                           |
+| `latest`      | El último commit de `main` con CI en verde. Es el default de `APP_IMAGE` en compose |
+
+**Volver a una versión anterior** no pide reconstruir: se fija `APP_IMAGE=ghcr.io/jata-imk/presencia:sha-<corto>`
+en el `.env` del stack y se repite `pull` + `up -d`.
+
+El paquete es público porque el repo lo es (ADR-019), así que el `pull` no necesita credenciales. **Ojo:**
+la primera publicación de un paquete de cuenta personal nace **privada** aunque el repo sea público; se
+cambia una sola vez en _Package settings → Change visibility_. El deploy en sí es manual en V1: SSH al VPS,
+`docker compose pull`, `up -d`.
 
 ## Object Storage — ~€0/mes hoy
 

@@ -1,0 +1,86 @@
+name: Release
+
+# Construye la imagen de app/worker y la publica en GHCR (ADR-020). El VPS no
+# construye nada: hace `docker compose pull` de lo que deja este workflow.
+#
+# Corre DESPUÉS de que CI pase sobre un push a main, no en el push mismo: una
+# imagen publicada es lo que el VPS va a bajar, y no tiene que existir nunca
+# una `latest` hecha de un commit con los tests en rojo.
+#
+# `workflow_run` tiene una trampa: solo se dispara con la versión de este
+# archivo que está en la rama default, así que un cambio acá no se puede
+# probar desde un PR — se ve en el primer push a main después de mergearlo.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Para republicar a mano un commit de main (p.ej. si el paquete se borró).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+# Dos merges seguidos: el run pendiente se reemplaza por el más nuevo en vez
+# de correr en paralelo, así `latest` nunca termina apuntando a un commit
+# anterior porque su build acabó después.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  publish:
+    # workflow_run se dispara también cuando CI falla, y también por los CI de
+    # los PRs cuya rama base es main: filtrar las dos cosas acá.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve commit
+        id: commit
+        run: |
+          sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "short=${sha::7}" >> "$GITHUB_OUTPUT"
+
+      # El commit que CI probó, no el que haya en main al momento de correr:
+      # entre los dos puede haber entrado otro merge.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.commit.outputs.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          # `sha-<corto>` es la identidad del artefacto: fijándolo en APP_IMAGE
+          # del .env de prod se vuelve a una versión anterior sin reconstruir.
+          # `latest` es solo el default cómodo del compose.
+          tags: |
+            ${{ env.IMAGE }}:sha-${{ steps.commit.outputs.short }}
+            ${{ env.IMAGE }}:latest
+          # Liga el paquete al repo en GHCR. No lo hace público: la primera
+          # publicación de un paquete de cuenta personal nace privada y se
+          # cambia a mano en Settings del paquete, una sola vez.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
+          # Misma caché que el build de ci.yml: el CI de main ya construyó
+          # estas capas minutos antes, así que acá casi todo es un hit.
+          cache-from: type=gha,scope=presencia-image
+          cache-to: type=gha,mode=max,scope=presencia-image
