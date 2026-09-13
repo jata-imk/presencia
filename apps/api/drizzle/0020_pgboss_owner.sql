@@ -29,6 +29,14 @@
 -- Password sin asignar a propósito, como en 0001: un password en SQL
 -- versionado es un secreto commiteado. Por entorno:
 --   ALTER ROLE presencia_jobs WITH PASSWORD '...';
+--
+-- QUIÉN PUEDE CORRERLA: cambiar el dueño de un objeto exige ser su dueño actual
+-- y poder hacer SET ROLE al nuevo. Hoy la corre el superusuario del compose y
+-- no hay problema. Un `presencia_migrator` sin superusuario (el que planea
+-- modelo-de-datos.md) necesita antes, como superusuario:
+--   GRANT presencia_jobs, presencia_app, presencia_worker TO presencia_migrator;
+-- Desde Postgres 16, crear un rol ya no hace miembro de él a quien lo crea, así
+-- que esto no sale gratis ni siquiera si el migrador creó presencia_jobs.
 
 DO $$
 BEGIN
