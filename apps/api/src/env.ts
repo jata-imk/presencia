@@ -12,6 +12,12 @@ import {
 const envSchema = z
   .object({
     APP_DATABASE_URL: z.string().min(1),
+    // Conexión de pg-boss con presencia_jobs, dueño único del schema `pgboss`
+    // (migración 0020, addendum ADR-008). Aparte de APP_DATABASE_URL a
+    // propósito: sus migraciones internas hacen DDL de dueño, y si el rol que
+    // conecta no es el dueño de las tablas el arranque aborta con
+    // "must be owner of table job".
+    JOBS_DATABASE_URL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_URL: z.url(),
     WEB_URL: z.url(),

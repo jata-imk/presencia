@@ -67,11 +67,12 @@ jobs:
         env:
           DATABASE_URL: postgres://presencia:ci@localhost:5432/presencia
 
-      # 0001_rls_roles_policies crea presencia_app/presencia_worker sin
-      # password (se asigna por entorno, nunca en la migración). Los specs
-      # de RLS y créditos conectan como presencia_app contra Postgres real
-      # (ver db/rls.spec.ts, credits/credits.service.spec.ts) — sin este
-      # paso no podrían autenticar.
+      # 0001_rls_roles_policies crea presencia_app/presencia_worker, y
+      # 0020_pgboss_owner crea presencia_jobs, todos sin password (se asigna
+      # por entorno, nunca en la migración). Los specs de RLS y créditos
+      # conectan como presencia_app contra Postgres real (ver db/rls.spec.ts,
+      # credits/credits.service.spec.ts), y el de jobs/boss-ownership.spec.ts
+      # como presencia_jobs — sin este paso no podrían autenticar.
       - name: Grant app role password
         run: |
           node -e "
@@ -81,6 +82,7 @@ jobs:
               await client.connect();
               await client.query(\"ALTER ROLE presencia_app WITH PASSWORD 'ci'\");
               await client.query(\"ALTER ROLE presencia_worker WITH PASSWORD 'ci'\");
+              await client.query(\"ALTER ROLE presencia_jobs WITH PASSWORD 'ci'\");
               await client.end();
             })();
           "
@@ -95,7 +97,11 @@ jobs:
       - name: Test
         run: pnpm test
         env:
+          # Rol owner: boss-ownership.spec.ts lo usa para devolver la cola al
+          # estado de una base de dev anterior a 0020 y volver a aplicarla.
+          DATABASE_URL: postgres://presencia:ci@localhost:5432/presencia
           APP_DATABASE_URL: postgres://presencia_app:ci@localhost:5432/presencia
+          JOBS_DATABASE_URL: postgres://presencia_jobs:ci@localhost:5432/presencia
           BETTER_AUTH_SECRET: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
           BETTER_AUTH_URL: http://localhost:3000
           WEB_URL: http://localhost:5173

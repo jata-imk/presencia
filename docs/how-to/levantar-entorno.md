@@ -57,15 +57,16 @@ Notas del modo B:
 
 ## Base de datos y variables (desde F1)
 
-1. Copia `.env.example` a `.env` y llena las variables (las de F1: `APP_DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `WEB_URL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `ZEPTOMAIL_TOKEN`, `MAIL_FROM`; desde F3 además las de IA multi-proveedor, ver abajo).
+1. Copia `.env.example` a `.env` y llena las variables (desde F8.5 además `JOBS_DATABASE_URL`; las de F1: `APP_DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `WEB_URL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `ZEPTOMAIL_TOKEN`, `MAIL_FROM`; desde F3 además las de IA multi-proveedor, ver abajo).
 2. Aplica migraciones (rol owner): `pnpm --filter @presencia/api db:migrate`.
 3. **Una sola vez por entorno**, asigna password al rol de runtime (la migración 0001 crea los roles sin password a propósito — un password en SQL versionado sería un secreto commiteado):
 
    ```sql
    ALTER ROLE presencia_app WITH PASSWORD 'el-password-de-tu-.env';
+   ALTER ROLE presencia_jobs WITH PASSWORD 'otro-password-de-tu-.env';  -- desde F8.5
    ```
 
-   `APP_DATABASE_URL` debe conectar con `presencia_app` (sujeto a RLS); `DATABASE_URL` (owner) queda solo para migraciones.
+   `APP_DATABASE_URL` debe conectar con `presencia_app` (sujeto a RLS); `JOBS_DATABASE_URL` con `presencia_jobs`, dueño de la cola; `DATABASE_URL` (owner) queda solo para migraciones.
 
 4. `pnpm dev` levanta api (puerto 3000) y web (5173, con proxy `/api` → 3000). La API lee `.env` de la raíz vía `tsx --env-file`.
 5. `pnpm --filter @presencia/api test` corre los tests de la API (vitest). El test de RLS (`src/db/rls.spec.ts`, DoD de F2) conecta contra la base real como `presencia_app` usando el mismo `.env` — necesita la DB alcanzable (túnel o compose local).
@@ -100,7 +101,18 @@ La cola es pg-boss sobre el mismo Postgres, en el schema `pgboss` (lo crea la mi
 
   Un job que falla queda con `state = 'failed'` y el error en `output` — esa es la "visibilidad que un crontab no da" del ADR.
 
-- **En el deploy** (fase pendiente) el contenedor `app` va con `WORKER_INLINE=false` y el contenedor `worker` corre `pnpm --filter @presencia/api worker`. Ahí el worker conectará con el rol `presencia_worker`, que ya existe desde la migración `0001` y necesitará su propio password.
+- **La cola conecta con su propio rol**, `presencia_jobs`, por `JOBS_DATABASE_URL` — no con `presencia_app`. Es el dueño de todo el schema `pgboss` (migración `0020`), y tiene que serlo: pg-boss migra sus tablas al arrancar y eso exige ser su dueño. Sin esa variable, la API no arranca (fail-fast de `env.ts`).
+
+  **Si tu base de dev es anterior a F8.5**, al aplicar `0020` las tablas de la cola pasan de `presencia_app` a `presencia_jobs`. Para confirmar que no quedó ninguna atrás (tiene que devolver cero filas):
+
+  ```sql
+  select tablename, tableowner from pg_tables
+   where schemaname = 'pgboss' and tableowner <> 'presencia_jobs';
+  ```
+
+  Esta consulta y las de "Qué mirar cuando algo no corre" corren con el rol owner o con `presencia_jobs`: `presencia_app` ya no tiene acceso a `pgboss`.
+
+- **En el deploy** el `docker-compose.yml` fija `WORKER_INLINE=false` en los dos contenedores, y el `worker` corre `node dist/worker.js`. Los dos usan el mismo `JOBS_DATABASE_URL`.
 
 ## IA multi-proveedor (desde F3, ADR-004)
 

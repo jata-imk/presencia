@@ -19,7 +19,10 @@
       // Mismo inventario que envSchema en src/env.ts — una fuente, dos
       // lugares por cómo funciona turbo, no se puede importar el schema acá.
       "env": [
+        // Fuera de envSchema: solo lo lee boss-ownership.spec.ts (rol owner).
+        "DATABASE_URL",
         "APP_DATABASE_URL",
+        "JOBS_DATABASE_URL",
         "BETTER_AUTH_SECRET",
         "BETTER_AUTH_URL",
         "WEB_URL",

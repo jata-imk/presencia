@@ -108,3 +108,67 @@ En el worker es al revés y a propósito: ahí un fallo **sí** es fatal. Un wor
 Distinguirlos no puede depender de `WORKER_INLINE`: esa variable es la intención declarada en el `.env`, no el entrypoint que de verdad arrancó (en dev vale `true` aunque corras `dev:worker`). Por eso `worker.ts` marca su propio proceso (`jobs/process-role.ts`) antes de armar el contexto de Nest. Y el corte aplica en los dos puntos donde la cola puede fallar: el `boss.start()` de `BossService` y el registro de cada job — el primero era además el que de verdad rompía el arranque, no el segundo.
 
 **El pase de créditos ya no espera locks.** Tomaba `pg_advisory_xact_lock` bloqueante por usuario: uno solo atrapado detrás de un request largo atrasaba a todos los demás del pase, y si el pase cruzaba su `expireInSeconds`, pg-boss lo daba por muerto y podía arrancar un segundo pase concurrente — el mismo peligro que documenta `RecurringJob.expireInSeconds`. Ahora usa `pg_try_advisory_xact_lock` y se salta al usuario ocupado. No cuesta nada: el pase de mañana lo agarra, y si el usuario entra antes, la ruta perezosa se lo resuelve en el acto.
+
+## Addendum (2026-09-13, F8.5 PR2) — la cola tiene un dueño único
+
+Cierra la decisión que el addendum de F8 PR1 dejó pendiente para la fase de deploy.
+
+**Decisión:** un rol `presencia_jobs`, dueño del schema `pgboss` y de todo lo que contiene (migración
+`0020_pgboss_owner`). pg-boss se conecta con él en **todos** los entornos, por una variable propia:
+`JOBS_DATABASE_URL`. Es el mismo rol en dev (la cola inline dentro de la API) y en prod (el contenedor
+`worker`).
+
+**Por qué resuelve el problema:** el choque venía de que el rol que _crea_ las tablas y el que las
+_migra_ después podían ser distintos. Con un solo rol conectando siempre, quien crea es quien usa, y el
+`must be owner of table job` deja de ser posible por construcción — no por disciplina.
+
+**La consecuencia que vale más que el arreglo: la cola queda separada del acceso a datos.**
+`presencia_app` y `presencia_worker` pierden todo acceso a `pgboss` y siguen con RLS sobre `public`
+(ADR-003); `presencia_jobs` tiene la cola y nada más. Ningún código de la app consultaba la cola por
+SQL, así que la separación no costó ninguna línea. `0020` retira también los `ALTER DEFAULT PRIVILEGES`
+cruzados de `0016`: existían para que el segundo rol heredara permisos del primero, y con un dueño único
+ya no hay segundo rol.
+
+**Descartado:** `migrate: false` con las migraciones de pg-boss vendidas como migraciones nuestras
+(`getConstructionPlans` / `getMigrationPlans`). Tenía a favor que todo el DDL entraría por una sola
+puerta (ADR-013) y que ningún rol de runtime tendría poder de DDL. Lo que la tumbó: convertía **cada
+upgrade** de pg-boss en trabajo manual —extraer el plan, commitearlo, no olvidarlo—, justo en el momento
+en que nadie se acuerda de esto. El poder de DDL de `presencia_jobs` queda acotado a un schema sin datos
+de tenant.
+
+**La migración tiene que servir para dos bases distintas, y lo hace sin ramas:** en dev las tablas ya
+existen a nombre de `presencia_app` y se reasignan; en prod la base es nueva, pg-boss nunca arrancó, los
+bucles no encuentran nada y las tablas nacen a nombre de `presencia_jobs`. Dos detalles que hacen falta
+para que el reasignado no truene: las secuencias que pertenecen a una columna se saltan (cambian de dueño
+con su tabla, y un `ALTER SEQUENCE` directo falla), y los tipos propios —el enum de estados del job— se
+reasignan aparte.
+
+**La trampa que casi pasa, y por qué el test prueba los dos caminos.** La primera versión de `0020`
+filtraba por `pg_depend` para saltarse esas secuencias, y se saltaba también **todas las particiones**:
+Postgres registra el vínculo de una partición con su padre como dependencia `deptype = 'a'`, igual que
+el de una secuencia con su columna. Y `ALTER TABLE` sobre el padre no propaga el dueño. En una base de
+dev, `job_common` y las particiones por cola se habrían quedado a nombre de `presencia_app`, y el primer
+upgrade de pg-boss que tocara una partición abortaba con el mismo `must be owner` que esto venía a
+evitar. CI no lo veía: en una base nueva el bucle no tiene nada que reasignar.
+
+Lo encontró el `/code-review`. El arreglo fue limitar el filtro a `relkind = 'S'`; lo que evita que se
+repita es `jobs/boss-ownership.spec.ts`, que prueba **los dos** estados contra Postgres real. Primero
+arranca `BossService` tal cual —marcado como proceso worker, para que un fallo de `start()` sea fatal en
+vez de tragarse— y comprueba el camino de prod. Después reproduce una base de dev (`REASSIGN OWNED BY
+presencia_jobs TO presencia_app`), vuelve a aplicar la migración, que es idempotente, y exige que ningún
+objeto de `pgboss` —particiones incluidas— quede con otro dueño. Verificado por mutación: con el filtro
+viejo falla y lista `job_common` más cuatro relaciones.
+
+**Probar el acceso no prueba la propiedad, y viceversa — y el acceso tiene su propia trampa.** El test de
+que los roles de datos no llegan a la cola pasaba en verde **con el bug de las particiones**: sin `USAGE`
+sobre el schema no hay acceso aunque un rol siga siendo dueño de alguna tabla. Por eso son dos
+aserciones distintas. Y al correr el spec contra la base de dev real apareció la segunda: quitando los
+`REVOKE` de `0020`, el test de acceso **seguía en verde** mientras miraba solo a `presencia_app`. La
+razón es que `ALTER ... OWNER` le transfiere al dueño nuevo los permisos del viejo, y en dev
+`presencia_app` era el dueño: pierde todo por el puro cambio de dueño. Donde el `REVOKE` hace el trabajo
+es en `presencia_worker`, que nunca fue dueño y conserva sus grants de `0016`. El test ahora mira a los
+dos roles, y con la mutación falla listando `presencia_worker → version, queue, schedule…`.
+
+El camino de dev del spec corre dentro de una transacción que termina en `ROLLBACK`: apunta a la base real
+—en dev, la del VPS por túnel— y un fallo a la mitad no puede dejar la cola commiteada a nombre de otro
+rol.

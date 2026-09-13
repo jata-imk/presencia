@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const BASE_ENV = {
   APP_DATABASE_URL: "postgres://test/test",
+  JOBS_DATABASE_URL: "postgres://test/test",
   BETTER_AUTH_SECRET: "x".repeat(32),
   BETTER_AUTH_URL: "http://localhost:3000",
   WEB_URL: "http://localhost:5173",
@@ -22,6 +23,7 @@ const BASE_ENV = {
 // pueden necesitar durante el import() dinámico y el cuerpo del test.
 const ENV_KEYS = [
   "APP_DATABASE_URL",
+  "JOBS_DATABASE_URL",
   "BETTER_AUTH_SECRET",
   "BETTER_AUTH_URL",
   "WEB_URL",

@@ -169,7 +169,11 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 ### Jobs
 
-**pg-boss** administra sus tablas dentro del schema `pgboss` (ADR-008), pero **el schema lo crea la migración `0016_pgboss_schema`**: crear schemas es DDL y la DDL vive en migraciones (ADR-013), así que el runtime corre con `createSchema: false` y `migrate: true`. Esa migración también deja `ALTER DEFAULT PRIVILEGES` en los dos sentidos entre `presencia_app` y `presencia_worker`, porque las tablas quedan a nombre de quien arranque primero (en dev es `presencia_app`: el worker corre dentro del proceso de la API, `WORKER_INLINE`).
+**pg-boss** administra sus tablas dentro del schema `pgboss` (ADR-008), pero **el schema lo crea la migración `0016_pgboss_schema`**: crear schemas es DDL y la DDL vive en migraciones (ADR-013), así que el runtime corre con `createSchema: false` y `migrate: true`.
+
+**Todo lo que vive en `pgboss` es de `presencia_jobs`** (migración `0020_pgboss_owner`), y pg-boss se conecta con ese rol en todos los entornos (`JOBS_DATABASE_URL`). La razón es que `migrate: true` corre las migraciones internas de la librería al arrancar, y esas hacen DDL de dueño (`CREATE OR REPLACE FUNCTION`, `ATTACH PARTITION`) que ningún `GRANT` otorga: si el rol que conecta no es el dueño, el arranque aborta con `must be owner of table job`. Con un dueño único, quien crea las tablas es siempre quien las usa.
+
+`presencia_app` y `presencia_worker` **no tienen acceso a `pgboss`**: ningún código de la app consulta la cola por SQL, solo pg-boss por su propio pool. Para inspeccionarla a mano, conectar con el rol owner o con `presencia_jobs`. (Hasta `0020`, la migración `0016` repartía privilegios cruzados entre esos dos roles porque las tablas quedaban a nombre de quien arrancara primero; `0020` los retira.)
 
 Sin RLS ahí — no es superficie de la API. Regla: los payloads de jobs llevan `user_id` explícito y el worker lo fija en su transacción (ver abajo).
 
@@ -189,11 +193,12 @@ En cada request autenticado, la API abre transacción y ejecuta `SET LOCAL app.u
 
 ### Roles de conexión
 
-| Rol                  | Uso                        | RLS                                                                                                                                                                                                     |
-| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `presencia_app`      | API (requests de usuarios) | Sujeto a RLS. Sin BYPASSRLS, no owner de tablas                                                                                                                                                         |
-| `presencia_worker`   | Worker pg-boss             | Sujeto a RLS; cada job fija `app.user_id` del payload. Jobs agregados cross-user (tendencias de Ritmo) usan tablas sin datos de tenant o una policy adicional explícita — nunca BYPASSRLS por comodidad |
-| `presencia_migrator` | Migraciones (CI/deploy)    | Owner del schema; solo corre DDL, nunca sirve tráfico. Se provisiona por entorno (la migración 0001 solo crea `presencia_app`/`presencia_worker`; en dev el owner es el rol del compose/VPS)            |
+| Rol                  | Uso                        | RLS                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `presencia_app`      | API (requests de usuarios) | Sujeto a RLS. Sin BYPASSRLS, no owner de tablas                                                                                                                                                                                                                                                                                                                                                  |
+| `presencia_worker`   | Worker pg-boss             | Sujeto a RLS; cada job fija `app.user_id` del payload. Jobs agregados cross-user (tendencias de Ritmo) usan tablas sin datos de tenant o una policy adicional explícita — nunca BYPASSRLS por comodidad                                                                                                                                                                                          |
+| `presencia_jobs`     | Cola de pg-boss            | Dueño del schema `pgboss` y de todo lo que contiene (migración 0020). Sin acceso a `public`: solo la cola, nunca datos de tenant                                                                                                                                                                                                                                                                 |
+| `presencia_migrator` | Migraciones (CI/deploy)    | Owner del schema; solo corre DDL, nunca sirve tráfico. Se provisiona por entorno (las migraciones solo crean `presencia_app`/`presencia_worker`/`presencia_jobs`; hoy el owner es el superusuario del compose). Sin superusuario necesita `GRANT presencia_jobs, presencia_app, presencia_worker TO presencia_migrator`: la `0020` cambia dueños y eso exige poder hacer `SET ROLE` a esos roles |
 
 ### La excepción del worker: `worker_scan` sobre `publication_cards`
 
