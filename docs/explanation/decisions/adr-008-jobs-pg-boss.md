@@ -143,8 +143,22 @@ para que el reasignado no truene: las secuencias que pertenecen a una columna se
 con su tabla, y un `ALTER SEQUENCE` directo falla), y los tipos propios —el enum de estados del job— se
 reasignan aparte.
 
-**Verificado contra Postgres real** en `jobs/boss-ownership.spec.ts`: arranca `BossService` tal cual
-—marcado como proceso worker, para que un fallo de `start()` sea fatal en vez de tragarse—, y comprueba
-que ningún objeto de `pgboss` quedó con otro dueño y que `presencia_app` recibe `insufficient_privilege`
-al leer `pgboss.job`. En CI la base está recién migrada, así que ese spec ejercita exactamente el camino
-de prod; el de dev se confirma al aplicar la migración (`docs/how-to/levantar-entorno.md`).
+**La trampa que casi pasa, y por qué el test prueba los dos caminos.** La primera versión de `0020`
+filtraba por `pg_depend` para saltarse esas secuencias, y se saltaba también **todas las particiones**:
+Postgres registra el vínculo de una partición con su padre como dependencia `deptype = 'a'`, igual que
+el de una secuencia con su columna. Y `ALTER TABLE` sobre el padre no propaga el dueño. En una base de
+dev, `job_common` y las particiones por cola se habrían quedado a nombre de `presencia_app`, y el primer
+upgrade de pg-boss que tocara una partición abortaba con el mismo `must be owner` que esto venía a
+evitar. CI no lo veía: en una base nueva el bucle no tiene nada que reasignar.
+
+Lo encontró el `/code-review`. El arreglo fue limitar el filtro a `relkind = 'S'`; lo que evita que se
+repita es `jobs/boss-ownership.spec.ts`, que prueba **los dos** estados contra Postgres real. Primero
+arranca `BossService` tal cual —marcado como proceso worker, para que un fallo de `start()` sea fatal en
+vez de tragarse— y comprueba el camino de prod. Después reproduce una base de dev (`REASSIGN OWNED BY
+presencia_jobs TO presencia_app`), vuelve a aplicar la migración, que es idempotente, y exige que ningún
+objeto de `pgboss` —particiones incluidas— quede con otro dueño. Verificado por mutación: con el filtro
+viejo falla y lista `job_common` más cuatro relaciones.
+
+Un detalle de esa misma corrida: el test de que `presencia_app` no llega a la cola pasaba en verde **con
+el bug**. El `REVOKE` de `USAGE` sobre el schema corta el acceso aunque el rol siga siendo dueño de
+alguna tabla. Probar el acceso no prueba la propiedad; por eso son dos aserciones distintas.
