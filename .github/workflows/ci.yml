@@ -97,6 +97,9 @@ jobs:
       - name: Test
         run: pnpm test
         env:
+          # Rol owner: boss-ownership.spec.ts lo usa para devolver la cola al
+          # estado de una base de dev anterior a 0020 y volver a aplicarla.
+          DATABASE_URL: postgres://presencia:ci@localhost:5432/presencia
           APP_DATABASE_URL: postgres://presencia_app:ci@localhost:5432/presencia
           JOBS_DATABASE_URL: postgres://presencia_jobs:ci@localhost:5432/presencia
           BETTER_AUTH_SECRET: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
