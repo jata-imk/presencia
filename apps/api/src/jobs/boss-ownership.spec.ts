@@ -139,6 +139,14 @@ describe("0020 sobre una base de dev anterior a la migración", () => {
     // arrancaba pg-boss dentro de la API. REASSIGN OWNED mueve todo lo que es de
     // presencia_jobs, y ese rol solo es dueño de cosas en pgboss.
     await ownerClient.query("REASSIGN OWNED BY presencia_jobs TO presencia_app");
+    // Y los privilegios que repartía 0016. Sin esto, el test de acceso de abajo
+    // pasaría aunque 0020 no revocara nada: el estado de partida ya vendría
+    // sin acceso.
+    await ownerClient.query(
+      "GRANT ALL ON SCHEMA pgboss TO presencia_app, presencia_worker; " +
+        "GRANT ALL ON ALL TABLES IN SCHEMA pgboss TO presencia_app, presencia_worker; " +
+        "GRANT ALL ON ALL SEQUENCES IN SCHEMA pgboss TO presencia_app, presencia_worker",
+    );
 
     const { rows } = await ownerClient.query(FOREIGN_OWNED);
     // Precondición: si esto no movió nada, el re-aplicado de abajo no prueba nada.
@@ -158,31 +166,42 @@ describe("0020 sobre una base de dev anterior a la migración", () => {
     expect(rows).toEqual([]);
   });
 
-  // Este test NO prueba la propiedad: el REVOKE de USAGE sobre el schema corta
-  // el acceso aunque presencia_app siguiera siendo dueño de alguna tabla (así
-  // pasó en verde con la versión rota de 0020). Prueba la separación de datos;
-  // la propiedad la prueba el de arriba, y es la que tumba un upgrade.
+  // Este test NO prueba la propiedad: sin USAGE sobre el schema no hay acceso
+  // aunque un rol siguiera siendo dueño de alguna tabla (así pasó en verde con
+  // la versión rota de 0020). Prueba la separación de datos; la propiedad la
+  // prueba el de arriba, y es la que tumba un upgrade.
   //
-  // Va por SET ROLE dentro de la misma transacción y no por appClient: otra
-  // conexión no vería los cambios sin commitear, y se quedaría esperando los
-  // locks de los ALTER ... OWNER. Cada intento vive en su savepoint porque un
-  // error aborta la transacción entera.
-  it("presencia_app no llega a ninguna tabla de la cola, ni por el padre ni por una partición", async () => {
-    const { rows } = await ownerClient.query<{ name: string }>(`
-      SELECT c.relname AS name
+  // Los DOS roles de datos, no solo presencia_app — verificado por mutación.
+  // En el estado de dev presencia_app ERA el dueño, y ALTER ... OWNER le
+  // transfiere al dueño nuevo los permisos del viejo: presencia_app pierde
+  // todo por el puro cambio de dueño, sin ningún REVOKE. Mirando solo a
+  // presencia_app, quitar los REVOKE de 0020 dejaba este test en verde.
+  // presencia_worker nunca fue dueño y conserva sus grants de 0016: ahí es
+  // donde el REVOKE hace el trabajo.
+  //
+  // Pregunta al catálogo en vez de intentar el SELECT: otra conexión no vería
+  // los cambios sin commitear (y esperaría los locks de los ALTER ... OWNER), y
+  // probar tabla por tabla con SET ROLE y savepoints pasaba del timeout por el
+  // túnel de dev. El acceso efectivo es USAGE sobre el schema Y el privilegio
+  // sobre la tabla; el SELECT real contra la cola ya lo prueba el bloque de prod.
+  it("ningún rol de datos llega a una tabla de la cola, ni por el padre ni por una partición", async () => {
+    const { rows } = await ownerClient.query<{ tables: number; reachable: string[] }>(`
+      SELECT
+        count(DISTINCT c.oid)::int AS tables,
+        -- ::text: node-pg no convierte name[] en arreglo, llega como el string '{}'.
+        coalesce(
+          array_agg(r.role || ' → ' || c.relname::text) FILTER (
+            WHERE has_schema_privilege(r.role, 'pgboss', 'USAGE')
+              AND has_table_privilege(r.role, c.oid, 'SELECT, INSERT, UPDATE, DELETE')
+          ),
+          '{}'
+        ) AS reachable
       FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
+      CROSS JOIN (VALUES ('presencia_app'), ('presencia_worker')) AS r(role)
       WHERE n.nspname = 'pgboss' AND c.relkind IN ('r', 'p')
-      ORDER BY 1
     `);
-    expect(rows.length).toBeGreaterThan(0);
-    for (const { name } of rows) {
-      await ownerClient.query("SAVEPOINT probe");
-      await ownerClient.query("SET LOCAL ROLE presencia_app");
-      await expect(
-        ownerClient.query(`SELECT 1 FROM pgboss.${pg.escapeIdentifier(name)} LIMIT 1`),
-      ).rejects.toMatchObject({ code: "42501" }); // insufficient_privilege
-      await ownerClient.query("ROLLBACK TO SAVEPOINT probe");
-    }
+    expect(rows[0]?.tables).toBeGreaterThan(0);
+    expect(rows[0]?.reachable).toEqual([]);
   });
 });
