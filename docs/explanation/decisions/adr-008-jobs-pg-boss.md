@@ -159,6 +159,16 @@ presencia_jobs TO presencia_app`), vuelve a aplicar la migración, que es idempo
 objeto de `pgboss` —particiones incluidas— quede con otro dueño. Verificado por mutación: con el filtro
 viejo falla y lista `job_common` más cuatro relaciones.
 
-Un detalle de esa misma corrida: el test de que `presencia_app` no llega a la cola pasaba en verde **con
-el bug**. El `REVOKE` de `USAGE` sobre el schema corta el acceso aunque el rol siga siendo dueño de
-alguna tabla. Probar el acceso no prueba la propiedad; por eso son dos aserciones distintas.
+**Probar el acceso no prueba la propiedad, y viceversa — y el acceso tiene su propia trampa.** El test de
+que los roles de datos no llegan a la cola pasaba en verde **con el bug de las particiones**: sin `USAGE`
+sobre el schema no hay acceso aunque un rol siga siendo dueño de alguna tabla. Por eso son dos
+aserciones distintas. Y al correr el spec contra la base de dev real apareció la segunda: quitando los
+`REVOKE` de `0020`, el test de acceso **seguía en verde** mientras miraba solo a `presencia_app`. La
+razón es que `ALTER ... OWNER` le transfiere al dueño nuevo los permisos del viejo, y en dev
+`presencia_app` era el dueño: pierde todo por el puro cambio de dueño. Donde el `REVOKE` hace el trabajo
+es en `presencia_worker`, que nunca fue dueño y conserva sus grants de `0016`. El test ahora mira a los
+dos roles, y con la mutación falla listando `presencia_worker → version, queue, schedule…`.
+
+El camino de dev del spec corre dentro de una transacción que termina en `ROLLBACK`: apunta a la base real
+—en dev, la del VPS por túnel— y un fallo a la mitad no puede dejar la cola commiteada a nombre de otro
+rol.
