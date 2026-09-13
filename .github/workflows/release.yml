@@ -15,16 +15,18 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
-  # Para republicar a mano un commit de main (p.ej. si el paquete se borró).
+  # Para republicar a mano la punta de main (p.ej. si el paquete se borró).
+  # Solo desde main: ver la condición del job.
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
 
-# Dos merges seguidos: el run pendiente se reemplaza por el más nuevo en vez
-# de correr en paralelo, así `latest` nunca termina apuntando a un commit
-# anterior porque su build acabó después.
+# Un release a la vez. Esto NO garantiza por sí solo que `latest` apunte al
+# commit más nuevo: ordena por cuándo termina CI, no por el orden de los
+# merges, y el CI de un merge posterior puede terminar primero. Esa garantía
+# la da el paso "Decide tags".
 concurrency:
   group: release
   cancel-in-progress: false
@@ -35,9 +37,11 @@ env:
 jobs:
   publish:
     # workflow_run se dispara también cuando CI falla, y también por los CI de
-    # los PRs cuya rama base es main: filtrar las dos cosas acá.
+    # los PRs cuya rama base es main: filtrar las dos cosas acá. El disparo
+    # manual solo desde main: con otra rama seleccionada en "Run workflow",
+    # github.sha sería esa rama, sin CI, y saldría publicada.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
@@ -55,6 +59,31 @@ jobs:
         with:
           ref: ${{ steps.commit.outputs.sha }}
 
+      # `latest` solo si este commit SIGUE siendo la punta de main. Dos merges
+      # seguidos, A y B, corren CI en paralelo; si el de B termina primero, el
+      # release de A llega después y sin este chequeo dejaba `latest` en A, y
+      # el siguiente pull del VPS desplegaba el commit viejo. Un commit que ya
+      # no es la punta solo recibe su `sha-`: sigue siendo desplegable
+      # fijándolo en APP_IMAGE, pero nunca por default.
+      - name: Decide tags
+        id: tags
+        run: |
+          head="$(git ls-remote origin refs/heads/main | cut -f1)"
+          short="${{ steps.commit.outputs.short }}"
+          latest=false
+          if [ "$head" = "${{ steps.commit.outputs.sha }}" ]; then
+            latest=true
+          else
+            # A stdout: los workflow commands (::notice::) se leen de ahí.
+            echo "::notice::${short} ya no es la punta de main (${head::7}): se publica solo sha-, sin latest."
+          fi
+          {
+            echo "list<<TAGS"
+            echo "${IMAGE}:sha-${short}"
+            if [ "$latest" = true ]; then echo "${IMAGE}:latest"; fi
+            echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -70,10 +99,9 @@ jobs:
           push: true
           # `sha-<corto>` es la identidad del artefacto: fijándolo en APP_IMAGE
           # del .env de prod se vuelve a una versión anterior sin reconstruir.
-          # `latest` es solo el default cómodo del compose.
-          tags: |
-            ${{ env.IMAGE }}:sha-${{ steps.commit.outputs.short }}
-            ${{ env.IMAGE }}:latest
+          # `latest` es solo el default cómodo del compose, y lo decide el paso
+          # anterior.
+          tags: ${{ steps.tags.outputs.list }}
           # Liga el paquete al repo en GHCR. No lo hace público: la primera
           # publicación de un paquete de cuenta personal nace privada y se
           # cambia a mano en Settings del paquete, una sola vez.
