@@ -144,7 +144,11 @@ describe("0020 sobre una base de dev anterior a la migración", () => {
     expect(rows).toEqual([]);
   });
 
-  it("presencia_app tampoco ve ninguna partición directamente", async () => {
+  // Este test NO prueba la propiedad: el REVOKE de USAGE sobre el schema corta
+  // el acceso aunque presencia_app siguiera siendo dueño de alguna tabla (así
+  // pasó en verde con la versión rota de 0020). Prueba la separación de datos;
+  // la propiedad la prueba el de arriba, y es la que tumba un upgrade.
+  it("presencia_app no llega a ninguna tabla de la cola, ni por el padre ni por una partición", async () => {
     const { rows } = await ownerClient.query<{ name: string }>(`
       SELECT c.relname AS name
       FROM pg_class c

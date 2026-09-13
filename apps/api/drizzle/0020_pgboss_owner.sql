@@ -42,11 +42,19 @@ $$;
 ALTER SCHEMA pgboss OWNER TO presencia_jobs;
 --> statement-breakpoint
 
--- Tablas (incluidas las particiones y el padre particionado), secuencias
--- sueltas y vistas. Las secuencias que pertenecen a una columna (serial,
--- identity) se SALTAN: cambian de dueño junto con su tabla, y un ALTER
--- SEQUENCE directo sobre ellas falla con "cannot change owner of sequence".
--- Los índices tampoco se tocan: siguen al dueño de su tabla.
+-- Tablas, secuencias sueltas y vistas. Las tablas incluyen el padre
+-- particionado Y cada partición por separado (job_common, una `j<hash>` por
+-- cola, las diarias de queue_stats): ALTER TABLE sobre el padre NO propaga el
+-- dueño a sus particiones.
+--
+-- Las secuencias que pertenecen a una columna (serial, identity) se SALTAN:
+-- cambian de dueño junto con su tabla, y un ALTER SEQUENCE directo sobre ellas
+-- falla con "cannot change owner of sequence". El filtro de pg_depend se
+-- limita a relkind 'S' a propósito: Postgres registra también el vínculo de
+-- una partición con su padre como dependencia `deptype = 'a'`, y sin esa
+-- condición el bucle se saltaba todas las particiones.
+--
+-- Los índices no se tocan: siguen al dueño de su tabla.
 DO $$
 DECLARE
   obj record;
@@ -57,11 +65,14 @@ BEGIN
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'pgboss'
       AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
-      AND NOT EXISTS (
-        SELECT 1 FROM pg_depend d
-        WHERE d.classid = 'pg_class'::regclass
-          AND d.objid = c.oid
-          AND d.deptype IN ('a', 'i')
+      AND (
+        c.relkind <> 'S'
+        OR NOT EXISTS (
+          SELECT 1 FROM pg_depend d
+          WHERE d.classid = 'pg_class'::regclass
+            AND d.objid = c.oid
+            AND d.deptype IN ('a', 'i')
+        )
       )
   LOOP
     EXECUTE format(
