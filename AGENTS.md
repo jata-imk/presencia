@@ -11,7 +11,7 @@ V1: web app (React) + bot de Telegram, 5 módulos (Chats, Calendario, Ritmo, Ana
 | Dónde                         | Qué hay                                                                                 |
 | ----------------------------- | --------------------------------------------------------------------------------------- |
 | `docs/explanation/product/`   | Lore docs: overview (leer primero), chat, calendario, ritmo, configuración/voz de marca |
-| `docs/explanation/decisions/` | ADRs 001–013 — fuente de verdad de arquitectura                                         |
+| `docs/explanation/decisions/` | ADRs 001–020 — fuente de verdad de arquitectura                                         |
 | `docs/reference/`             | Contratos: modelo de datos + RLS, infraestructura, design tokens, (futuro) API          |
 | `docs/how-to/`                | Recetas operativas: entorno, trabajar con IA, (futuro) deploy y backups                 |
 | `docs/tutorials/`             | Vacío hasta que exista código que recorrer                                              |
@@ -25,7 +25,7 @@ La gestión de proyecto (roadmap F0–F13) vive en Notion (página "Presencia").
 - **IA:** Vercel AI SDK multi-proveedor — Gemini/OpenAI/MiniMax (ADR-004). Cards por tool call con schema Zod por arquetipo (ADR-005). Streaming por SSE (ADR-006).
 - **Auth:** Better Auth, UI propia (ADR-007).
 - **Publicación:** PostFast detrás de interfaz `PublishingProvider` (ADR-009). Telegram con grammY detrás de adapter de canal (ADR-010).
-- **Infra:** Docker Compose (caddy/app/worker/postgres), Contabo VDS + Object Storage S3 (ADR-011). Dev/prod parity: staging corre el mismo compose que prod.
+- **Infra:** Docker Compose (app/worker/postgres) detrás del nginx que administra CloudPanel, sin Caddy; VPS OVH + Cloudflare R2 (ADR-011, ADR-020). Dev/prod parity: un solo `docker-compose.yml` para los dos stacks del VPS — lo que cambia es el `.env` y el profile.
 
 ## Reglas duras (no negociables)
 

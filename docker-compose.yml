@@ -1,13 +1,17 @@
-# Dev: solo Postgres. El desarrollo diario corre con `pnpm dev` en la máquina
-# de Jose contra este Postgres (por túnel SSH al VPS), no en contenedores.
+# Un solo archivo para todos los entornos (regla de dev/prod parity de
+# docs/reference/infraestructura.md): lo que cambia es el `.env`, el nombre
+# del proyecto (`-p`) y el profile.
 #
-# Los servicios app/worker/caddy siguen pendientes: se planearon para F1 y no
-# se construyeron, porque nunca hizo falta un Dockerfile para desarrollar. Van
-# con la fase de deploy, junto con el backup diario y el rol presencia_worker
-# — hasta entonces el worker de pg-boss (F8) corre dentro del proceso de la
-# API vía WORKER_INLINE. La forma prevista está en
-# docs/reference/infraestructura.md (staging/prod corren ESTE mismo archivo,
-# solo cambia el .env — regla de dev/prod parity).
+#   dev   docker compose -p presencia-dev  up -d                 → solo postgres
+#   prod  docker compose -p presencia-prod --profile app up -d   → postgres + app + worker
+#
+# Los servicios `app` y `worker` viven detrás del profile `app` a propósito:
+# el desarrollo diario de Jose corre `pnpm dev` en Windows contra el Postgres
+# de este compose por túnel SSH, sin engine de Docker local, y no quiere
+# levantar contenedores de aplicación. Sin `--profile app` este archivo se
+# comporta exactamente como antes de F8.5.
+#
+# La topología está en ADR-020.
 services:
   postgres:
     image: postgres:17-alpine
@@ -19,6 +23,7 @@ services:
     ports:
       # Solo loopback: nunca expuesto a internet. El acceso remoto es
       # siempre vía túnel SSH (docs/how-to/levantar-entorno.md, modo B).
+      # El host ya tiene el 5434 tomado por el stack de dev: prod usa 5435.
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -27,6 +32,69 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  app:
+    profiles: ["app"]
+    # La imagen la construye CI y se publica en GHCR (ADR-019: el repo es
+    # público, así que el paquete también y el VPS hace pull sin credenciales).
+    # A propósito NO hay `build:`: con él, un `up -d` sobre una imagen que
+    # falta la construiría en silencio en el VPS, que es justo lo que ADR-020
+    # descarta. Sin imagen publicada, esto tiene que fallar ruidosamente.
+    image: ${APP_IMAGE:-ghcr.io/jata-imk/presencia:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Mismas variables que la API lee en dev (apps/api/src/env.ts). En el .env
+    # de prod los hosts son los de la red de compose, no localhost:
+    #   APP_DATABASE_URL=postgres://presencia_app:...@postgres:5432/presencia
+    #
+    # `required: false` porque el .env no está versionado y CI valida este
+    # archivo sin él (`docker compose config -q`).
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # NO se hereda del .env: el default de WORKER_INLINE es `true`
+      # (apps/api/src/env.ts) y con él este contenedor consumiría la misma
+      # cola que el `worker`. Fijarlo acá hace imposible el olvido.
+      WORKER_INLINE: "false"
+    ports:
+      # Loopback igual que Postgres: quien publica al mundo es el nginx de
+      # CloudPanel (ADR-020). El 3000 del host ya está ocupado por otra app,
+      # así que el mapeo default es 3001 → 3000. NO definir PORT en el .env de
+      # prod: el lado del contenedor tiene que seguir siendo 3000.
+      - "127.0.0.1:${APP_PORT:-3001}:3000"
+    healthcheck:
+      # busybox wget: la imagen no trae curl.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    profiles: ["app"]
+    image: ${APP_IMAGE:-ghcr.io/jata-imk/presencia:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Igual que en `app`, y por la misma razón: que el valor no dependa del
+      # .env. Acá el flag no cambia el comportamiento —quien consume la cola
+      # es el entrypoint, no la variable— pero sí el aviso de arranque de
+      # worker.ts, que grita cuando cree que la API también la está
+      # consumiendo. Con `app` fijado en false, ese aviso sería falso.
+      WORKER_INLINE: "false"
+    # Misma imagen, distinto entrypoint (ADR-008). No abre puerto, así que no
+    # tiene healthcheck: su señal de vida es no estar reiniciando. Es
+    # deliberado que un fallo de la cola lo mate — un worker vivo sin jobs
+    # registrados se reporta sano y no hace nada.
+    command: ["node", "dist/worker.js"]
 
 volumes:
   pgdata:

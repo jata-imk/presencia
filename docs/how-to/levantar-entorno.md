@@ -19,7 +19,7 @@ pnpm --filter @presencia/api test   # tests de la API (requiere DB, ver abajo)
 
 ## Docker: dos modos
 
-El proyecto usa Docker Compose (Postgres en dev; en staging/prod además caddy/app/worker). El engine puede vivir en dos lugares:
+El proyecto usa Docker Compose (Postgres en dev; en prod además `app` y `worker`, detrás del profile `app`). El engine puede vivir en dos lugares:
 
 ### Modo A — Engine local (máquinas con Docker Desktop)
 
@@ -53,7 +53,7 @@ Notas del modo B:
 
 - Requiere llave SSH configurada (`ssh-keygen` + `ssh-copy-id`).
 - La Opción 1 solo necesita el CLI (`docker` + plugin compose), no el engine — en Windows se puede instalar standalone sin Docker Desktop.
-- El VPS de staging cumple este rol naturalmente (dev/prod parity: mismo `docker-compose.yml`, distinto `.env`).
+- El VPS cumple este rol naturalmente. Ahí conviven dos stacks del mismo `docker-compose.yml`: `presencia-dev` (solo Postgres, puerto 5434 — el del túnel de arriba) y `presencia-prod` (Postgres 5435 + `app` + `worker`). Dev/prod parity: mismo archivo, distinto `.env` y distinto profile.
 
 ## Base de datos y variables (desde F1)
 

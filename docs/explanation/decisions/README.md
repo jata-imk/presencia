@@ -25,5 +25,6 @@ Formato: **Decisión** → **Razón** → **Descartado**.
 | [017](./adr-017-busqueda-full-text.md)           | Búsqueda: full-text de Postgres (tsvector + trigramas)    |
 | [018](./adr-018-arquitectura-calendario.md)      | Calendario: vista sobre las cards, construida a mano      |
 | [019](./adr-019-repositorio-publico.md)          | Repositorio público, con la receta cultural adentro       |
+| [020](./adr-020-topologia-de-deploy.md)          | Deploy: CloudPanel + imagen única, sin Caddy              |
 
 Decisiones pendientes de cerrar: proveedor(es) de generación de imágenes; modelo default por acción (según suite de regresión cultural).
