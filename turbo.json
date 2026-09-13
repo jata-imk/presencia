@@ -20,6 +20,7 @@
       // lugares por cómo funciona turbo, no se puede importar el schema acá.
       "env": [
         "APP_DATABASE_URL",
+        "JOBS_DATABASE_URL",
         "BETTER_AUTH_SECRET",
         "BETTER_AUTH_URL",
         "WEB_URL",

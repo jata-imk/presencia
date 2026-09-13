@@ -6,7 +6,8 @@ import { enProcesoWorker } from "./process-role.js";
 // Schema propio de pg-boss, creado por la migración 0016 (no por pg-boss:
 // crear schemas es DDL y la DDL vive en migraciones, ADR-013). Por eso
 // `createSchema: false` — pero `migrate: true`, porque las TABLAS de la cola
-// sí son suyas y cambian con cada versión de la librería.
+// sí son suyas y cambian con cada versión de la librería. Que esa migración
+// no truene depende de conectar con el dueño del schema (ver el constructor).
 const PGBOSS_SCHEMA = "pgboss";
 
 // Pool propio de pg-boss, aparte del de la app (db/client.ts). Chico a
@@ -63,7 +64,11 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
 
   constructor() {
     this.boss = new PgBoss({
-      connectionString: env.APP_DATABASE_URL,
+      // presencia_jobs, NO presencia_app: pg-boss migra sus propias tablas al
+      // arrancar y eso exige ser su dueño (migración 0020). Es el mismo rol en
+      // dev (inline en la API) y en prod (contenedor worker), así que quien
+      // crea las tablas es siempre quien las usa.
+      connectionString: env.JOBS_DATABASE_URL,
       schema: PGBOSS_SCHEMA,
       createSchema: false,
       migrate: true,
