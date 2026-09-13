@@ -42,9 +42,28 @@ corta o llega de golpe al final.
 
 ## Cómo llega el código
 
-CI construye la imagen y la publica en **GHCR** (`ghcr.io/jata-imk/presencia`); el VPS hace `pull`. El
-paquete es público porque el repo lo es (ADR-019), así que el `pull` no necesita credenciales. El
-deploy en sí es manual en V1: SSH al VPS, `docker compose pull`, `up -d`.
+CI construye la imagen y `release.yml` la publica en **GHCR** (`ghcr.io/jata-imk/presencia`) cuando CI
+termina en verde sobre un push a `main`. El VPS no construye nada: hace `pull`.
+
+| Tag           | Qué es                                                                                                                      |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `sha-<corto>` | La identidad del artefacto. **Todo** commit de `main` con CI en verde recibe el suyo                                        |
+| `latest`      | La **punta** de `main`, y solo si su CI pasó. Si la punta está en rojo, se queda donde estaba. Es el default de `APP_IMAGE` |
+
+Un commit que ya no era la punta cuando terminó su release (entró otro merge mientras tanto) queda
+publicado solo con su `sha-`: desplegable, pero nunca por default.
+
+Para **republicar** un commit (p.ej. si se borró el paquete): _Re-run jobs_ sobre su run de _Release_ en
+GitHub Actions. No hay disparo manual libre a propósito: se saltaría CI. Todo esto supone que a `main` solo
+se llega por squash merge de un PR, así que todo push corre CI.
+
+**Volver a una versión anterior** no pide reconstruir: se fija `APP_IMAGE=ghcr.io/jata-imk/presencia:sha-<corto>`
+en el `.env` del stack y se repite `pull` + `up -d`.
+
+El paquete es público porque el repo lo es (ADR-019), así que el `pull` no necesita credenciales. **Ojo:**
+la primera publicación de un paquete de cuenta personal nace **privada** aunque el repo sea público; se
+cambia una sola vez en _Package settings → Change visibility_. El deploy en sí es manual en V1: SSH al VPS,
+`docker compose pull`, `up -d`.
 
 ## Object Storage — ~€0/mes hoy
 
