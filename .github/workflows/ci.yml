@@ -80,7 +80,7 @@ jobs:
         env:
           DATABASE_URL: postgres://presencia:ci@localhost:5432/presencia
 
-      # 0001_rls_roles_policies crea presencia_app/presencia_worker, y
+      # 0001_rls_roles_policies crea presencia_app, y
       # 0020_pgboss_owner crea presencia_jobs, todos sin password (se asigna
       # por entorno, nunca en la migración). Los specs de RLS y créditos
       # conectan como presencia_app contra Postgres real (ver db/rls.spec.ts,
@@ -94,7 +94,6 @@ jobs:
               const client = new Client({ connectionString: process.env.DATABASE_URL });
               await client.connect();
               await client.query(\"ALTER ROLE presencia_app WITH PASSWORD 'ci'\");
-              await client.query(\"ALTER ROLE presencia_worker WITH PASSWORD 'ci'\");
               await client.query(\"ALTER ROLE presencia_jobs WITH PASSWORD 'ci'\");
               await client.end();
             })();

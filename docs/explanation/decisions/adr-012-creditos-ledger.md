@@ -43,3 +43,8 @@ Entonces el job no es la fuente de verdad del ciclo, es un **adelanto**: hace qu
 **El techo del pase son 15 minutos, no un día — y hay que declararlo.** pg-boss expira los jobs a los 15 minutos por default, y al expirar marca el job `failed` **con el handler todavía corriendo**; como la policy `exclusive` solo cuenta los jobs en `created`/`active`, el slot queda libre y el tick siguiente puede arrancar un segundo pase concurrente sobre los mismos usuarios. Por eso `RecurringJob.expireInSeconds` es obligatorio y no tiene default: cada job declara su techo (este, una hora). El límite real del pase serial —una transacción y un advisory lock por usuario— es esa ventana, no la del cron.
 
 **Lo que los tests cubren y lo que no.** Se prueban `refreshCycle` (otorga el ciclo de un usuario dado de alta hace dos meses que nunca entró, y correrlo dos veces no lo duplica) y `listAllUserIds`. **No** se ejercita `refreshAllCycles()` entero: toma un advisory lock sobre cada usuario de la base, y la suite corre en paralelo con specs que crean y borran usuarios todo el tiempo — probarlo ahí medía la contención, no el job (se comió los 20s de timeout en el primer intento). Queda sin cubrir el `for` con su `try/catch`, que es la parte sin reglas.
+
+## Addendum (2026-09-16, F8.6) — un rol menos
+
+`0022_drop_presencia_worker` eliminó `presencia_worker`, que nunca se usó. El `REVOKE UPDATE, DELETE` de
+`0008` sigue vigente sobre `presencia_app`, el único rol de datos que queda (API y worker).

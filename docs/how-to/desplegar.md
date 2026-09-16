@@ -71,7 +71,7 @@ DATABASE_URL=postgres://presencia:...@localhost:5435/presencia \
   pnpm --filter @presencia/api db:migrate
 ```
 
-Las migraciones crean `presencia_app`, `presencia_worker` y `presencia_jobs` **sin password** (un
+Las migraciones crean `presencia_app` y `presencia_jobs` **sin password** (un
 password en SQL versionado sería un secreto commiteado). Se asignan en el VPS y se escriben en el `.env`
 como URLs completas. El host es `postgres:5432`, el nombre del servicio dentro de la red de compose, no
 `localhost:5435`:
@@ -89,9 +89,6 @@ echo "APP_DATABASE_URL=postgres://presencia_app:$APP_PW$H" | sudo tee -a .env >/
 echo "JOBS_DATABASE_URL=postgres://presencia_jobs:$JOBS_PW$H" | sudo tee -a .env >/dev/null
 unset APP_PW JOBS_PW H SQL
 ```
-
-`presencia_worker` se queda **sin password** a propósito: hoy nadie conecta con ese rol (el contenedor
-`worker` usa `APP_DATABASE_URL`), y un rol sin password no puede iniciar sesión.
 
 ### 3. El resto del `.env`
 
@@ -288,11 +285,18 @@ asignarlos. Antes de restaurar, con el superusuario:
 
 ```sql
 CREATE ROLE presencia_app LOGIN;
-CREATE ROLE presencia_worker LOGIN;
 CREATE ROLE presencia_jobs LOGIN;
 CREATE ROLE presencia_backup LOGIN BYPASSRLS;
 GRANT pg_read_all_data TO presencia_backup;
 ```
+
+**Un dump de antes de la migración `0022` necesita además `CREATE ROLE presencia_worker;`**, el rol
+que esa migración borró. No es cosmético: ese dump crea la policy `worker_scan` con `TO presencia_app,
+presencia_worker`, y si el rol falta `pg_restore` se salta la policy **entera**. El barrido de
+reconciliación deja de ver cards en silencio (RLS devuelve cero filas, no un error), y `0022` tampoco la
+repone: al no encontrar el rol, no hace nada. Con el rol creado, el siguiente `db:migrate` aplica `0022`
+y lo borra como en cualquier otro entorno. Para confirmar: `select roles from pg_policies where
+policyname = 'worker_scan';` debe devolver una fila.
 
 Y después, los passwords como en el paso 2 del alta del entorno. **No correr `db:migrate` para esto:** la
 base restaurada ya trae su historial de migraciones y no volvería a crear nada.

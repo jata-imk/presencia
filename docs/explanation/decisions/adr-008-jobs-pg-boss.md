@@ -172,3 +172,16 @@ dos roles, y con la mutación falla listando `presencia_worker → version, queu
 El camino de dev del spec corre dentro de una transacción que termina en `ROLLBACK`: apunta a la base real
 —en dev, la del VPS por túnel— y un fallo a la mitad no puede dejar la cola commiteada a nombre de otro
 rol.
+
+## Addendum (2026-09-16, F8.6) — `presencia_worker` ya no existe
+
+El rol que este ADR preveía para el worker nunca llegó a usarse: al desplegar (F8.5) el contenedor `worker`
+quedó con `APP_DATABASE_URL` (`presencia_app`) para los datos y `JOBS_DATABASE_URL` (`presencia_jobs`)
+para la cola, y dos identidades bastan. La migración `0022_drop_presencia_worker` deja la policy
+`worker_scan` solo para `presencia_app` y borra el rol con `DROP OWNED BY` + `DROP ROLE`.
+
+Las menciones de arriba son historia y se quedan como están. La única que tenía efecto en código es el
+spec `jobs/boss-ownership.spec.ts`: su camino de dev reaplica `0020`, que nombra al rol, así que ahora lo
+recrea dentro de la misma transacción con `ROLLBACK` antes de reaplicarla. La aserción sigue mirando a
+los dos roles, porque `presencia_worker` sigue siendo el que prueba que los `REVOKE` de `0020` hacen su
+trabajo.

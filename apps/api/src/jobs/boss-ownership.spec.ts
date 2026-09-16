@@ -139,6 +139,14 @@ describe("0020 sobre una base de dev anterior a la migración", () => {
     // arrancaba pg-boss dentro de la API. REASSIGN OWNED mueve todo lo que es de
     // presencia_jobs, y ese rol solo es dueño de cosas en pgboss.
     await ownerClient.query("REASSIGN OWNED BY presencia_jobs TO presencia_app");
+    // presencia_worker existía cuando corrió 0020 y la migración lo nombra;
+    // 0022 lo borró. Se recrea dentro de esta misma transacción (CREATE ROLE es
+    // transaccional, el ROLLBACK lo deshace) para reproducir el estado histórico
+    // sin reescribir una migración ya aplicada.
+    await ownerClient.query(
+      "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'presencia_worker') " +
+        "THEN CREATE ROLE presencia_worker; END IF; END $$",
+    );
     // Y los privilegios que repartía 0016. Sin esto, el test de acceso de abajo
     // pasaría aunque 0020 no revocara nada: el estado de partida ya vendría
     // sin acceso.
