@@ -1,11 +1,11 @@
 # Imagen única para los dos procesos de Presencia: la API (`main.ts`) y el
 # worker de pg-boss (`worker.ts`). Misma imagen, distinto comando — ADR-008.
 #
-# El SPA de apps/web viaja ADENTRO de esta imagen: apps/web no tiene
-# variables de entorno y llama a la API con rutas relativas (`/api/...`), así
-# que web y API tienen que responder bajo el mismo origen (ADR-020). Quien lo
-# SIRVE todavía no existe — `main.ts` hoy solo monta `/api`. Hasta que lo
-# haga, esta imagen responde 404 en `/`.
+# El SPA de apps/web viaja ADENTRO de esta imagen y lo sirve el mismo proceso
+# de Express (`serve-spa.ts`): apps/web no tiene variables de entorno y llama a
+# la API con rutas relativas (`/api/...`), así que web y API tienen que
+# responder bajo el mismo origen (ADR-020). Por eso el runtime fija
+# NODE_ENV=production: es lo que enciende el servido del SPA.
 
 FROM node:22-alpine AS base
 RUN corepack enable

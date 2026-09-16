@@ -55,10 +55,16 @@ services:
       - path: .env
         required: false
     environment:
-      # NO se hereda del .env: el default de WORKER_INLINE es `true`
-      # (apps/api/src/env.ts) y con él este contenedor consumiría la misma
-      # cola que el `worker`. Fijarlo acá hace imposible el olvido.
+      # NO se heredan del .env: `environment` gana sobre `env_file`, y estas
+      # dos no pueden depender de que alguien no las escriba mal allá.
+      #
+      # WORKER_INLINE: su default es `true` (apps/api/src/env.ts) y con él este
+      # contenedor consumiría la misma cola que el `worker`.
       WORKER_INLINE: "false"
+      # NODE_ENV: es lo que enciende el servido del SPA (serve-spa.ts). Un
+      # NODE_ENV=development perdido en el .env dejaría el sitio entero en 404
+      # con el contenedor reportándose sano y /api respondiendo bien.
+      NODE_ENV: production
     ports:
       # Loopback igual que Postgres: quien publica al mundo es el nginx de
       # CloudPanel (ADR-020). El 3000 del host ya está ocupado por otra app,
@@ -90,6 +96,7 @@ services:
       # worker.ts, que grita cuando cree que la API también la está
       # consumiendo. Con `app` fijado en false, ese aviso sería falso.
       WORKER_INLINE: "false"
+      NODE_ENV: production
     # Misma imagen, distinto entrypoint (ADR-008). No abre puerto, así que no
     # tiene healthcheck: su señal de vida es no estar reiniciando. Es
     # deliberado que un fallo de la cola lo mate — un worker vivo sin jobs

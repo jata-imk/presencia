@@ -60,10 +60,13 @@ se llega por squash merge de un PR, así que todo push corre CI.
 **Volver a una versión anterior** no pide reconstruir: se fija `APP_IMAGE=ghcr.io/jata-imk/presencia:sha-<corto>`
 en el `.env` del stack y se repite `pull` + `up -d`.
 
-El paquete es público porque el repo lo es (ADR-019), así que el `pull` no necesita credenciales. **Ojo:**
-la primera publicación de un paquete de cuenta personal nace **privada** aunque el repo sea público; se
-cambia una sola vez en _Package settings → Change visibility_. El deploy en sí es manual en V1: SSH al VPS,
-`docker compose pull`, `up -d`.
+El paquete es público porque el repo lo es (ADR-019): el label `org.opencontainers.image.source` lo liga
+al repositorio, y con _Inherit access from source repository_ (activado por default) salió público en su
+primera publicación — verificado bajando los dos tags sin credenciales. Así el `pull` del VPS no necesita
+login. Si un paquete nuevo llegara a nacer privado, el `pull` falla con `denied` y se cambia una vez en
+_Package settings → Change visibility_. El deploy en sí es manual en V1:
+SSH al VPS, `docker compose pull`, `up -d` — receta completa en
+[desplegar.md](../how-to/desplegar.md).
 
 ## Object Storage — ~€0/mes hoy
 

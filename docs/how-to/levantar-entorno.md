@@ -112,7 +112,7 @@ La cola es pg-boss sobre el mismo Postgres, en el schema `pgboss` (lo crea la mi
 
   Esta consulta y las de "Qué mirar cuando algo no corre" corren con el rol owner o con `presencia_jobs`: `presencia_app` ya no tiene acceso a `pgboss`.
 
-- **En el deploy** el `docker-compose.yml` fija `WORKER_INLINE=false` en los dos contenedores, y el `worker` corre `node dist/worker.js`. Los dos usan el mismo `JOBS_DATABASE_URL`.
+- **En el deploy** el `docker-compose.yml` fija `WORKER_INLINE=false` en los dos contenedores, y el `worker` corre `node dist/worker.js`. Los dos usan el mismo `JOBS_DATABASE_URL`. La receta completa está en [desplegar.md](./desplegar.md).
 
 ## IA multi-proveedor (desde F3, ADR-004)
 

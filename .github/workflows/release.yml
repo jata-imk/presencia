@@ -78,9 +78,12 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ env.IMAGE }}:sha-${{ steps.commit.outputs.short }}
-          # Liga el paquete al repo en GHCR. No lo hace público: la primera
-          # publicación de un paquete de cuenta personal nace privada y se
-          # cambia a mano en Settings del paquete, una sola vez.
+          # Liga el paquete al repo en GHCR. Con "Inherit access from source
+          # repository" (activado por default) el paquete de este repo salió
+          # PÚBLICO en su primera publicación, verificado bajando los dos tags
+          # sin credenciales — así el VPS hace pull sin login. Si alguna vez un
+          # paquete nuevo naciera privado, el pull falla con `denied` y se
+          # cambia una vez en Package settings.
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
