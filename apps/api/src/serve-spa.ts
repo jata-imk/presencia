@@ -13,7 +13,18 @@ import express from "express";
 // (ver Dockerfile). Desde apps/api/dist esa ruta es ../../web/dist.
 const WEB_DIST = path.resolve(__dirname, "../../web/dist");
 const INDEX_HTML = path.join(WEB_DIST, "index.html");
-const ASSETS_DIR = `${path.sep}assets${path.sep}`;
+
+// Nombre con hash de contenido, como los que emite Vite: `index-DejkezC8.js`.
+// NO alcanza con "está bajo /assets": ahí también aterriza todo lo de
+// apps/web/public, que Vite copia tal cual y conserva su nombre entre deploys
+// (hoy `assets/isotipo.png`). Cachear eso para siempre dejaría el logo viejo
+// pegado en cada navegador que ya abrió la app, sin forma de invalidarlo.
+const HASHED_ASSET = /-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/;
+
+/** Todo lo que cuelga de `/api` es de la API, exista el endpoint o no. */
+function isApiPath(urlPath: string): boolean {
+  return urlPath === "/api" || urlPath.startsWith("/api/");
+}
 
 /**
  * Deja el SPA servido en todo lo que no cuelgue de `/api`. Solo en producción:
@@ -36,29 +47,36 @@ export function serveSpa(app: express.Express): void {
     return;
   }
 
-  app.use(
-    express.static(WEB_DIST, {
-      // El index lo entrega el fallback de abajo, para que tenga las mismas
-      // cabeceras venga de "/" o de una ruta profunda.
-      index: false,
-      setHeaders: (res, filePath) => {
-        // Vite le pone hash al nombre de cada asset, así que su contenido
-        // nunca cambia: se pueden cachear para siempre. Lo demás (favicon,
-        // manifest) conserva su nombre entre deploys y se revalida. El index
-        // se trata aparte: `index: false` apaga el índice de directorio, pero
-        // un GET /index.html explícito sí pasa por acá, y ese documento apunta
-        // a los assets con hash del deploy actual.
-        if (filePath === INDEX_HTML) {
-          res.setHeader("Cache-Control", "no-store");
-          return;
-        }
-        res.setHeader(
-          "Cache-Control",
-          filePath.includes(ASSETS_DIR) ? "public, max-age=31536000, immutable" : "no-cache",
-        );
-      },
-    }),
-  );
+  const statics = express.static(WEB_DIST, {
+    // El index lo entrega el fallback de abajo, para que tenga las mismas
+    // cabeceras venga de "/" o de una ruta profunda.
+    index: false,
+    setHeaders: (res, filePath) => {
+      // `index: false` apaga el índice de directorio, pero un GET /index.html
+      // explícito sí pasa por acá, y ese documento apunta a los assets con
+      // hash del deploy actual: nunca se cachea.
+      if (filePath === INDEX_HTML) {
+        res.setHeader("Cache-Control", "no-store");
+        return;
+      }
+      // Un nombre con hash identifica su contenido: si el contenido cambia,
+      // cambia la URL. Eso y solo eso se puede cachear para siempre.
+      res.setHeader(
+        "Cache-Control",
+        HASHED_ASSET.test(path.basename(filePath))
+          ? "public, max-age=31536000, immutable"
+          : "no-cache",
+      );
+    },
+  });
+
+  // Este middleware queda DELANTE del router de Nest (ver main.ts), así que el
+  // filtro de /api tiene que aplicar también a los estáticos: sin él, un
+  // archivo en apps/web/public/api/... taparía en silencio un endpoint real.
+  app.use((req, res, next) => {
+    if (isApiPath(req.path)) return next();
+    statics(req, res, next);
+  });
 
   // Fallback de historial: `react-router` maneja las rutas del lado del
   // cliente, así que recargar /calendario tiene que devolver el index y no un
@@ -69,26 +87,33 @@ export function serveSpa(app: express.Express): void {
     // Un POST a una ruta inexistente no es una navegación: que siga su curso
     // y termine en 404, en vez de recibir un HTML con status 200.
     if (req.method !== "GET" && req.method !== "HEAD") return next();
-    // `/api` es de la API aunque no exista el endpoint: su 404 tiene que
-    // llegar como 404 al cliente, no como el index.
-    if (req.path === "/api" || req.path.startsWith("/api/")) return next();
-    // Un asset que no existe tampoco es una navegación, y devolverle el index
-    // es peor que un 404. Pasa de verdad: una pestaña abierta durante un
+    if (isApiPath(req.path)) return next();
+
+    // Un archivo que no existe tampoco es una navegación, y devolverle el
+    // index es peor que un 404. Pasa de verdad: una pestaña abierta durante un
     // deploy pide el chunk con hash viejo de una ruta diferida, y si recibe
     // HTML con status 200 el import falla con "Unexpected token '<'" en vez de
     // fallar como fetch — que es la señal con la que el navegador recarga.
-    if (req.path.startsWith("/assets/")) return next();
+    //
+    // El corte es "¿tiene extensión?" y no "¿empieza con /assets/?": las rutas
+    // del SPA no la tienen (`/calendario`), y los archivos sí, vivan donde
+    // vivan — `/favicon.ico` o cualquier cosa que alguien deje en public/.
+    if (path.extname(req.path) !== "") return next();
 
     // El index apunta a los assets con hash del deploy actual: si el navegador
     // lo cachea, tras un deploy pide assets que ya no existen.
     res.setHeader("Cache-Control", "no-store");
     res.sendFile(INDEX_HTML, (error) => {
-      // El callback también llega con ECONNABORTED cuando el cliente se va a
-      // media transferencia (navegar fuera, una pestaña que se suspende). Ahí
-      // la respuesta ya empezó: pasarlo a next() haría que Express delegue en
-      // el handler default de Node, que destruye el socket y escupe un stack
-      // por cada navegación abortada.
-      if (error && !res.headersSent) next(error);
+      if (!error) return;
+      // El cliente que se va a media transferencia (navegar fuera, una pestaña
+      // que se suspende) llega acá como un error de conexión. No es un fallo
+      // del servidor: pasarlo a next() haría que Express intente escribir un
+      // 500 sobre un socket muerto, y deja un stack por cada navegación
+      // abortada. Se filtra por código y no por headersSent, porque el aborto
+      // puede ocurrir antes de que salga la primera cabecera.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ECONNABORTED" || code === "ECONNRESET" || code === "EPIPE") return;
+      next(error);
     });
   });
 

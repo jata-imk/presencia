@@ -27,9 +27,10 @@ async function bootstrap() {
   // del stack, así que un middleware montado después nunca corre (se probó:
   // devolvía 404 hasta en `/`). Como este queda delante de los controllers, lo
   // que protege a la API no es el orden sino el filtro explícito de
-  // `serve-spa.ts`: todo lo que empiece con /api pasa de largo. Una ruta nueva
-  // FUERA del prefijo global (un webhook en la raíz, un /metrics) tendría que
-  // sumarse a ese filtro o el índice se la comería.
+  // `serve-spa.ts`, que aplica a los estáticos Y al fallback: todo lo que
+  // empiece con /api pasa de largo. Una ruta nueva FUERA del prefijo global
+  // (un webhook en la raíz, un /metrics) tendría que sumarse a ese filtro o el
+  // SPA se la comería.
   serveSpa(instance);
 
   // Sin esto, SIGTERM/SIGINT matan el proceso sin pasar por OnModuleDestroy:
