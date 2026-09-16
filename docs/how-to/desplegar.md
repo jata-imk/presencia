@@ -133,33 +133,38 @@ se pega al final de `APP_PORT=3001`. Para asegurarlo: `printf '
 Sitio tipo **Reverse Proxy** hacia `http://127.0.0.1:3001`, y certificado de Let's Encrypt (el DNS tiene
 que resolver antes de pedirlo).
 
-**El bloque que no es opcional.** nginx acumula la respuesta por default, y el chat es streaming
-(ADR-006): sin esto, la respuesta del modelo aparece completa de golpe al final, o se corta.
+Después hay que editar el vhost (**Sites → el sitio → Vhost**). CloudPanel no genera un `location /api/`:
+manda todo a una _named location_ con placeholders que él rellena, y ahí van los dos ajustes. **No tocar
+los `{{placeholders}}`**; los comentarios con `#` sí sobreviven a guardar y a renovar el certificado.
+
+**1. Apagar el buffering.** nginx acumula la respuesta por default —la plantilla incluso trae
+`proxy_buffers`—, y el chat es streaming (ADR-006): sin esto la respuesta del modelo aparece completa de
+golpe al final, o se corta. Dentro de `location @reverse_proxy`, después de `proxy_http_version 1.1;`:
 
 ```nginx
-location /api/ {
-    proxy_pass http://127.0.0.1:3001;
-    proxy_http_version 1.1;
-    proxy_set_header Connection "";
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    # Presencia: el chat es SSE; sin esto la respuesta llega de golpe al final.
     proxy_buffering off;
     proxy_cache off;
-    proxy_read_timeout 3600s;
-}
 ```
 
-**Compresión.** nginx no comprime lo que viene de un `proxy_pass` salvo que se le diga (`gzip_proxied`
-viene en `off`), y el bundle del SPA sale de ahí. Sin esto viaja sin comprimir — con el `index.js` actual,
-del orden de 1 MB en vez de ~310 KB:
+Los timeouts de la plantilla (900 s) alcanzan para un turno de chat: `proxy_read_timeout` cuenta entre
+lecturas sucesivas, y los fragmentos del modelo llegan muy por debajo de eso. **No alcanzan para un
+stream ocioso**: el SSE de notificaciones de F8.6 puede pasar 15 minutos sin un solo evento, y nginx lo
+cortaría. Esa fase tendrá que traer su propio heartbeat (lo normal, cada ~20 s) o subir este timeout.
+
+**2. Compresión.** nginx no comprime lo que viene de un `proxy_pass` salvo que se le diga (`gzip_proxied`
+viene en `off`), y el SPA sale de ahí. A nivel de `server`:
 
 ```nginx
-gzip on;
-gzip_proxied any;
-gzip_min_length 1024;
-gzip_types text/css application/javascript application/json image/svg+xml;
+  # Presencia: text/javascript es obligatorio — así sirve Express los .js, y
+  # con solo application/javascript el bundle viaja sin comprimir.
+  gzip on;
+  gzip_proxied any;
+  gzip_min_length 1024;
+  gzip_types text/css text/javascript application/javascript application/json image/svg+xml;
 ```
+
+Medido en el primer deploy: el bundle pasa de 1,001 KB a 308 KB (70%), el CSS de 49.6 KB a 10.1 KB.
 
 La app además emite `X-Accel-Buffering: no` en el stream del chat, así que el buffering queda apagado por
 los dos lados. El mismo requisito vale para el SSE de notificaciones (F8.6).

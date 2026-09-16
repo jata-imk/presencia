@@ -6,6 +6,17 @@
     <meta name="color-scheme" content="light dark" />
     <title>Presencia</title>
     <!--
+      Sin un icono declarado, el navegador pide /favicon.ico por convención y
+      se lleva un 404 por cada carga (se vio en la consola del primer deploy).
+      Y no puede ser el isotipo suelto: ese PNG es un glifo NEGRO con alfa,
+      pensado para usarse como máscara CSS —la app le pone el color con
+      tokens, ver PresenciaAvatar—, así que como favicon se pintaría negro
+      sobre la barra de pestañas oscura del navegador, o sea invisible.
+      Este otro es el mismo glifo en blanco sobre el círculo plum del logo
+      canónico (#3d2645), que es como la app lo dibuja en los dos temas.
+    -->
+    <link rel="icon" type="image/png" href="/assets/favicon.png" />
+    <!--
       Anti-FOUC del tema (ADR-016). Script CLÁSICO e inline a propósito:
       un `type="module"` es diferido y corre DESPUÉS del primer paint, o
       sea que el flash blanco pasa igual. Tiene que estar antes de que
