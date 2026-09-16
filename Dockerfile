@@ -7,7 +7,14 @@
 # responder bajo el mismo origen (ADR-020). Por eso el runtime fija
 # NODE_ENV=production: es lo que enciende el servido del SPA.
 
-FROM node:22-alpine AS base
+# Alpine fijado, no `node:22-alpine` a secas: el runtime instala
+# postgresql17-client, y ese paquete solo existe mientras el Alpine de abajo lo
+# traiga (3.21-3.23 hoy; 3.23 ya empaqueta también el 18). Con la etiqueta
+# flotante, el día que el base rote a un Alpine sin PG 17 el build se rompe sin
+# que nadie haya tocado nada. La versión del cliente tiene que seguir a la del
+# server (postgres:17-alpine en el compose): cuando se suba Postgres, se suben
+# las dos.
+FROM node:22-alpine3.22 AS base
 RUN corepack enable
 WORKDIR /app
 
@@ -39,6 +46,10 @@ RUN CI=true pnpm install --frozen-lockfile --prod --ignore-scripts
 # --- runtime
 FROM base AS runtime
 ENV NODE_ENV=production
+
+# pg_dump para el backup diario (jobs/backups, ADR-011). Ver la nota del FROM
+# de arriba sobre por qué el Alpine está fijado.
+RUN apk add --no-cache postgresql17-client
 
 # node_modules de pnpm es un árbol de symlinks hacia la store de la raíz, así
 # que el orden importa: primero la raíz, después cada proyecto.

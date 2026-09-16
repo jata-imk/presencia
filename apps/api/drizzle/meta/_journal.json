@@ -148,6 +148,13 @@
       "when": 1787455815028,
       "tag": "0020_pgboss_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787455816028,
+      "tag": "0021_backup_role",
+      "breakpoints": true
     }
   ]
 }

@@ -23,6 +23,8 @@
     "@ai-sdk/google": "^4.0.18",
     "@ai-sdk/openai": "^3.0.86",
     "@ai-sdk/openai-compatible": "^2.0.62",
+    "@aws-sdk/client-s3": "^3.1132.0",
+    "@aws-sdk/lib-storage": "^3.1132.0",
     "@nestjs/common": "^11.1.0",
     "@nestjs/core": "^11.1.0",
     "@nestjs/platform-express": "^11.1.0",

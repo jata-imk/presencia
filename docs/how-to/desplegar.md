@@ -125,10 +125,39 @@ Tres cosas que se olvidan y muerden:
   otro valor el sitio respondería 404 en `/` mientras `/api` sigue sano.
 
 El `.env` del paso 1 debe terminar con salto de línea antes de los `tee -a` del paso 2, o la primera URL
-se pega al final de `APP_PORT=3001`. Para asegurarlo: `printf '
-' | sudo tee -a .env >/dev/null`.
+se pega al final de `APP_PORT=3001`. Para asegurarlo: `printf '\n' | sudo tee -a .env >/dev/null`.
 
-### 4. El vhost de CloudPanel
+### 4. Backup diario (opcional, pero recomendado antes del primer usuario)
+
+Crear en Cloudflare R2 un bucket privado (`presencia-backups`), una **lifecycle rule** que borre objetos
+de más de 30 días, y un **API Token** con permiso _Object Read & Write_ acotado a ese bucket.
+
+El rol de lectura lo crea la migración `0021` sin password. En el VPS:
+
+```bash
+cd /opt/presencia
+BACKUP_PW=$(openssl rand -hex 24)
+sudo docker compose -p presencia-prod exec -T postgres \
+  psql -U presencia -d presencia -v ON_ERROR_STOP=1 \
+  -c "ALTER ROLE presencia_backup PASSWORD '$BACKUP_PW';"
+echo "BACKUP_DATABASE_URL=postgres://presencia_backup:$BACKUP_PW@postgres:5432/presencia" \
+  | sudo tee -a .env >/dev/null
+unset BACKUP_PW
+```
+
+Y las cuatro de R2 (el endpoint lleva tu Account ID):
+
+```
+S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+S3_BUCKET=presencia-backups
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+```
+
+**Todo o nada:** con algunas de las cinco y otras no, la API **no arranca**. Es deliberado: el modo de
+fallo peligroso es creer que hay respaldo y que el job nunca se haya registrado.
+
+### 5. El vhost de CloudPanel
 
 Sitio tipo **Reverse Proxy** hacia `http://127.0.0.1:3001`, y certificado de Let's Encrypt (el DNS tiene
 que resolver antes de pedirlo).
@@ -207,6 +236,36 @@ devolver 200, no 404: es el fallback del SPA.
 
 El streaming se comprueba con el chat abierto en el navegador: el texto aparece palabra por palabra. Si
 sale completo de golpe, falta el `proxy_buffering off`.
+
+**El backup no está verificado hasta que se restaura.** Que el objeto aparezca en el bucket no prueba que
+sirva. Una vez, y después de cada cambio que toque el dump:
+
+```bash
+cd /opt/presencia
+
+# 1. Bajar el dump del día desde R2 (rclone, o la interfaz de Cloudflare)
+#    y meterlo al contenedor: /tmp de adentro no es /tmp del host.
+sudo docker compose -p presencia-prod cp presencia-<fecha>.dump postgres:/tmp/prueba.dump
+
+# 2. Restaurar en una base desechable
+sudo docker compose -p presencia-prod exec -T postgres \
+  psql -U presencia -d postgres -c "CREATE DATABASE restore_test;"
+sudo docker compose -p presencia-prod exec -T postgres \
+  pg_restore -U presencia -d restore_test --no-owner --no-privileges /tmp/prueba.dump
+
+# 3. Comparar contra la base viva (la tabla es publication_cards, no cards)
+sudo docker compose -p presencia-prod exec -T postgres \
+  psql -U presencia -d restore_test -c "select count(*) from publication_cards;"
+sudo docker compose -p presencia-prod exec -T postgres \
+  psql -U presencia -d presencia -c "select count(*) from publication_cards;"
+
+# 4. Limpiar
+sudo docker compose -p presencia-prod exec -T postgres \
+  psql -U presencia -d postgres -c "DROP DATABASE restore_test;"
+sudo docker compose -p presencia-prod exec -T postgres rm -f /tmp/prueba.dump
+```
+
+Los dos conteos tienen que coincidir.
 
 El estado de los jobs vive en tablas, y se consulta con el rol owner o con `presencia_jobs`
 (`presencia_app` no tiene acceso al schema `pgboss`):
