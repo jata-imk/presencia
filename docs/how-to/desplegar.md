@@ -82,7 +82,7 @@ APP_PW=$(openssl rand -hex 24)
 JOBS_PW=$(openssl rand -hex 24)
 SQL="ALTER ROLE presencia_app PASSWORD '$APP_PW';"
 SQL="$SQL ALTER ROLE presencia_jobs PASSWORD '$JOBS_PW';"
-sudo docker compose -p presencia-prod exec -T postgres \n  \
+sudo docker compose -p presencia-prod exec -T postgres \
   psql -U presencia -d presencia -v ON_ERROR_STOP=1 -c "$SQL"
 H="@postgres:5432/presencia"
 echo "APP_DATABASE_URL=postgres://presencia_app:$APP_PW$H" | sudo tee -a .env >/dev/null
@@ -125,8 +125,7 @@ Tres cosas que se olvidan y muerden:
   otro valor el sitio respondería 404 en `/` mientras `/api` sigue sano.
 
 El `.env` del paso 1 debe terminar con salto de línea antes de los `tee -a` del paso 2, o la primera URL
-se pega al final de `APP_PORT=3001`. Para asegurarlo: `printf '
-' | sudo tee -a .env >/dev/null`.
+se pega al final de `APP_PORT=3001`. Para asegurarlo: `printf '\n' | sudo tee -a .env >/dev/null`.
 
 ### 4. Backup diario (opcional, pero recomendado antes del primer usuario)
 
@@ -138,8 +137,11 @@ El rol de lectura lo crea la migración `0021` sin password. En el VPS:
 ```bash
 cd /opt/presencia
 BACKUP_PW=$(openssl rand -hex 24)
-sudo docker compose -p presencia-prod exec -T postgres \n  psql -U presencia -d presencia -v ON_ERROR_STOP=1   -c "ALTER ROLE presencia_backup PASSWORD '$BACKUP_PW';"
-echo "BACKUP_DATABASE_URL=postgres://presencia_backup:$BACKUP_PW@postgres:5432/presencia"   | sudo tee -a .env >/dev/null
+sudo docker compose -p presencia-prod exec -T postgres \
+  psql -U presencia -d presencia -v ON_ERROR_STOP=1 \
+  -c "ALTER ROLE presencia_backup PASSWORD '$BACKUP_PW';"
+echo "BACKUP_DATABASE_URL=postgres://presencia_backup:$BACKUP_PW@postgres:5432/presencia" \
+  | sudo tee -a .env >/dev/null
 unset BACKUP_PW
 ```
 
@@ -246,15 +248,20 @@ cd /opt/presencia
 sudo docker compose -p presencia-prod cp presencia-<fecha>.dump postgres:/tmp/prueba.dump
 
 # 2. Restaurar en una base desechable
-sudo docker compose -p presencia-prod exec -T postgres \n  psql -U presencia -d postgres -c "CREATE DATABASE restore_test;"
-sudo docker compose -p presencia-prod exec -T postgres \n  pg_restore -U presencia -d restore_test --no-owner --no-privileges /tmp/prueba.dump
+sudo docker compose -p presencia-prod exec -T postgres \
+  psql -U presencia -d postgres -c "CREATE DATABASE restore_test;"
+sudo docker compose -p presencia-prod exec -T postgres \
+  pg_restore -U presencia -d restore_test --no-owner --no-privileges /tmp/prueba.dump
 
 # 3. Comparar contra la base viva (la tabla es publication_cards, no cards)
-sudo docker compose -p presencia-prod exec -T postgres \n  psql -U presencia -d restore_test -c "select count(*) from publication_cards;"
-sudo docker compose -p presencia-prod exec -T postgres \n  psql -U presencia -d presencia -c "select count(*) from publication_cards;"
+sudo docker compose -p presencia-prod exec -T postgres \
+  psql -U presencia -d restore_test -c "select count(*) from publication_cards;"
+sudo docker compose -p presencia-prod exec -T postgres \
+  psql -U presencia -d presencia -c "select count(*) from publication_cards;"
 
 # 4. Limpiar
-sudo docker compose -p presencia-prod exec -T postgres \n  psql -U presencia -d postgres -c "DROP DATABASE restore_test;"
+sudo docker compose -p presencia-prod exec -T postgres \
+  psql -U presencia -d postgres -c "DROP DATABASE restore_test;"
 sudo docker compose -p presencia-prod exec -T postgres rm -f /tmp/prueba.dump
 ```
 
