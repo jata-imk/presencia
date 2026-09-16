@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // así que cada escenario necesita su propio entorno y un import() dinámico
 // después de armarlo.
 
+// Cada import() dinámico, tras vi.resetModules(), vuelve a cargar el SDK de
+// AWS entero, y el primero del archivo pasaba de los 5 s por default en una
+// máquina cargada. El límite es sobre el arranque, no sobre la lógica.
+vi.setConfig({ testTimeout: 30_000 });
+
 const BASE_ENV = {
   APP_DATABASE_URL: "postgres://test/test",
   JOBS_DATABASE_URL: "postgres://test/test",
@@ -94,5 +99,54 @@ describe("configuración del backup", () => {
     delete incompleto.BACKUP_DATABASE_URL;
     setEnv(incompleto);
     await expect(import("./backups.service.js")).rejects.toThrow(/BACKUP_DATABASE_URL/);
+  });
+});
+
+describe("la salida del proceso solo termina bien si el proceso salió bien", () => {
+  // Procesos REALES, no mocks: lo que se prueba es la carrera entre el fin del
+  // stdout y el evento `close` con el código de salida, y un mock la resolvería
+  // en el orden que uno le pida.
+  async function runChild(script: string) {
+    setEnv(BASE_ENV);
+    const { spawn } = await import("node:child_process");
+    const { gatedOutput } = await import("./backups.service.js");
+    const child = spawn(process.execPath, ["-e", script], { stdio: ["ignore", "pipe", "pipe"] });
+    const { body, exited } = gatedOutput(child, "proceso de prueba");
+
+    // Lo que vería el SDK: si el stream termina limpio o con error.
+    const chunks: Buffer[] = [];
+    const outcome = new Promise<{ ended: boolean; error?: Error }>((resolve) => {
+      body.on("data", (chunk: Buffer) => chunks.push(chunk));
+      body.on("end", () => resolve({ ended: true }));
+      body.on("error", (error) => resolve({ ended: false, error }));
+    });
+    const [result, exit] = await Promise.all([
+      outcome,
+      exited.then(
+        () => ({ ok: true as const }),
+        (error: Error) => ({ ok: false as const, error }),
+      ),
+    ]);
+    return { result, exit, data: Buffer.concat(chunks).toString() };
+  }
+
+  it("con código 0, entrega todo y termina limpio", async () => {
+    const { result, exit, data } = await runChild(
+      "process.stdout.write('parte-1|'); process.stdout.write('parte-2')",
+    );
+    expect(exit.ok).toBe(true);
+    expect(result.ended).toBe(true);
+    expect(data).toBe("parte-1|parte-2");
+  });
+
+  it("si escribe la mitad y truena, el stream NUNCA termina limpio", async () => {
+    // El caso real: pg_dump vuelca unas tablas y falla en otra. Si el stream
+    // terminara limpio, el SDK subiría esa mitad como el respaldo del día.
+    const { result, exit } = await runChild(
+      "process.stdout.write('medio-dump'); process.stderr.write('fallo en brand_voices'); process.exitCode = 1",
+    );
+    expect(exit.ok).toBe(false);
+    expect(result.ended).toBe(false);
+    expect(result.error?.message).toMatch(/código 1.*fallo en brand_voices/);
   });
 });

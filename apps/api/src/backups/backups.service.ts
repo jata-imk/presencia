@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { PassThrough } from "node:stream";
+import { type ChildProcessByStdio, spawn } from "node:child_process";
+import { PassThrough, type Readable } from "node:stream";
 import { S3Client } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { Injectable } from "@nestjs/common";
@@ -55,6 +55,57 @@ export function backupKey(now: Date): string {
   return `backups/presencia-${now.toISOString().slice(0, 10)}.dump`;
 }
 
+/**
+ * Conecta la salida de un proceso a un stream que SOLO termina bien si el
+ * proceso salió con código 0.
+ *
+ * Es la pieza que impide subir un respaldo truncado, y no alcanza con destruir
+ * el stream cuando el proceso falla: `pipe()` por default cierra el destino en
+ * cuanto el origen deja de escribir, y eso pasa ANTES del evento `close` con el
+ * código de salida. Un pg_dump que muere a la mitad cerraba el stream limpio;
+ * el SDK, con un dump de pocos MB, lo mandaba entero en un solo PutObject al
+ * ver ese cierre, y el `destroy` llegaba tarde sobre un objeto ya escrito —que
+ * además pisaba el respaldo bueno del día—.
+ *
+ * Con `end: false` el cierre queda en manos de este código: `end()` si salió
+ * bien, `destroy(error)` si no, y la subida nunca ve un final limpio de un
+ * proceso que falló.
+ */
+export function gatedOutput(
+  child: ChildProcessByStdio<null, Readable, Readable>,
+  label: string,
+): { body: PassThrough; exited: Promise<void> } {
+  const body = new PassThrough();
+  child.stdout.pipe(body, { end: false });
+
+  let stderr = "";
+  child.stderr.setEncoding("utf-8");
+  child.stderr.on("data", (chunk: string) => {
+    // Acotado: un proceso que falla escupe pocas líneas, pero no hay por qué
+    // guardar sin límite lo que venga de afuera.
+    if (stderr.length < 4000) stderr += chunk;
+  });
+
+  const exited = new Promise<void>((resolve, reject) => {
+    const fail = (error: Error) => {
+      body.destroy(error);
+      reject(error);
+    };
+    // spawn falla así cuando el binario no está en la imagen (ENOENT).
+    child.on("error", fail);
+    child.on("close", (code) => {
+      if (code !== 0) {
+        fail(new Error(`${label} salió con código ${code}: ${stderr.trim() || "(sin stderr)"}`));
+        return;
+      }
+      body.end();
+      resolve();
+    });
+  });
+
+  return { body, exited };
+}
+
 @Injectable()
 export class BackupsService {
   /**
@@ -91,22 +142,7 @@ export class BackupsService {
       },
     );
 
-    let stderr = "";
-    dump.stderr.setEncoding("utf-8");
-    dump.stderr.on("data", (chunk: string) => {
-      // Acotado: un dump que falla escupe pocas líneas, pero no hay por qué
-      // guardar sin límite lo que venga de un proceso externo.
-      if (stderr.length < 4000) stderr += chunk;
-    });
-
-    // El PassThrough es lo que permite ABORTAR la subida en vez de completarla
-    // con basura. Sin él —o dejando que el pipe cierre normal— un pg_dump que
-    // muere a la mitad simplemente deja de escribir, el stream termina limpio,
-    // el SDK da por buena la subida y el bucket queda con un objeto truncado
-    // que parece el respaldo del día y no se puede restaurar. Destruir el
-    // stream CON un error es lo que hace que lib-storage cancele el multipart.
-    const body = new PassThrough();
-    dump.stdout.pipe(body);
+    const { body, exited } = gatedOutput(dump, "pg_dump");
 
     const upload = new Upload({
       client,
@@ -116,21 +152,6 @@ export class BackupsService {
         Body: body,
         ContentType: "application/octet-stream",
       },
-    });
-
-    const exited = new Promise<void>((resolve, reject) => {
-      const fail = (error: Error) => {
-        // Antes de rechazar: matar el stream con el error, para que la subida
-        // aborte en vez de completar un objeto a medias.
-        body.destroy(error);
-        reject(error);
-      };
-      // spawn falla así cuando pg_dump no está en la imagen (ENOENT).
-      dump.on("error", fail);
-      dump.on("close", (code) => {
-        if (code === 0) return resolve();
-        fail(new Error(`pg_dump salió con código ${code}: ${stderr.trim() || "(sin stderr)"}`));
-      });
     });
 
     try {
