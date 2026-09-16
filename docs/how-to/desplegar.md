@@ -237,35 +237,65 @@ devolver 200, no 404: es el fallback del SPA.
 El streaming se comprueba con el chat abierto en el navegador: el texto aparece palabra por palabra. Si
 sale completo de golpe, falta el `proxy_buffering off`.
 
-**El backup no está verificado hasta que se restaura.** Que el objeto aparezca en el bucket no prueba que
-sirva. Una vez, y después de cada cambio que toque el dump:
+**El backup no está verificado hasta que se restaura — y no alcanza con que vuelvan los datos.**
+Restaurar como superusuario prueba que los datos están; no prueba que **la app pueda usarlos**. El
+superusuario se salta permisos y RLS, así que una base restaurada sin sus `GRANT` pasa esa prueba y
+después devuelve `permission denied` a cada request. Por eso la comprobación de abajo pregunta por los
+permisos **de los roles de la app**. Una vez, y después de cada cambio que toque el dump:
 
 ```bash
 cd /opt/presencia
 
-# 1. Bajar el dump del día desde R2 (rclone, o la interfaz de Cloudflare)
-#    y meterlo al contenedor: /tmp de adentro no es /tmp del host.
+# 1. Bajar el dump desde R2 y meterlo al contenedor (/tmp de adentro no es /tmp del host)
 sudo docker compose -p presencia-prod cp presencia-<fecha>.dump postgres:/tmp/prueba.dump
 
-# 2. Restaurar en una base desechable
+# 2. Restaurar en una base desechable, CON dueños y permisos
 sudo docker compose -p presencia-prod exec -T postgres \
   psql -U presencia -d postgres -c "CREATE DATABASE restore_test;"
 sudo docker compose -p presencia-prod exec -T postgres \
-  pg_restore -U presencia -d restore_test --no-owner --no-privileges /tmp/prueba.dump
+  pg_restore -U presencia -d restore_test /tmp/prueba.dump
 
-# 3. Comparar contra la base viva (la tabla es publication_cards, no cards)
-sudo docker compose -p presencia-prod exec -T postgres \
-  psql -U presencia -d restore_test -c "select count(*) from publication_cards;"
-sudo docker compose -p presencia-prod exec -T postgres \
-  psql -U presencia -d presencia -c "select count(*) from publication_cards;"
+# 3. ¿Puede usarla la app? Cada línea tiene que decir t
+#    SELECT e INSERT por separado: con 'SELECT, INSERT' en una sola llamada,
+#    has_table_privilege da t si el rol tiene CUALQUIERA de los dos.
+sudo docker compose -p presencia-prod exec -T postgres psql -U presencia -d restore_test -tA -c \
+  "select has_table_privilege('presencia_app', 'public.chats', 'SELECT')
+      and has_table_privilege('presencia_app', 'public.chats', 'INSERT');"
+#    exists() y no un select directo: si el schema no volvió, un select sobre
+#    pg_namespace no devuelve nada, que se lee como "sin problemas".
+sudo docker compose -p presencia-prod exec -T postgres psql -U presencia -d restore_test -tA -c \
+  "select exists (select 1 from pg_namespace
+      where nspname = 'pgboss' and nspowner = 'presencia_jobs'::regrole);"
 
-# 4. Limpiar
+# 4. Limpiar (el archivo es una copia completa de producción)
 sudo docker compose -p presencia-prod exec -T postgres \
   psql -U presencia -d postgres -c "DROP DATABASE restore_test;"
 sudo docker compose -p presencia-prod exec -T postgres rm -f /tmp/prueba.dump
+rm -f presencia-<fecha>.dump
 ```
 
-Los dos conteos tienen que coincidir.
+Si el paso 3 da `f`, el dump no trae permisos y un restore real dejaría la app sin acceso.
+
+**Dumps de antes del 2026-09-16.** Hasta ese día el backup se hacía con `--no-owner --no-privileges`, y
+esos archivos se llaman igual que los nuevos (`presencia-<fecha>.dump`): restaurados con esta receta, el
+paso 3 da `f`. Después de desplegar el arreglo hay que correr un backup a mano para no depender de uno
+viejo. Si en una emergencia solo hubiera uno de esos, los permisos se reaplican a mano con el SQL de las
+migraciones `0001`, `0016`, `0020` y `0021` — **no** con `db:migrate`, que ve todo aplicado y no corre nada.
+
+**Restaurar en un servidor nuevo.** El dump guarda **a quién** pertenece cada objeto y **quién** tiene
+permiso, pero no crea los roles: esos son del cluster, no de la base. Si faltan, `pg_restore` falla al
+asignarlos. Antes de restaurar, con el superusuario:
+
+```sql
+CREATE ROLE presencia_app LOGIN;
+CREATE ROLE presencia_worker LOGIN;
+CREATE ROLE presencia_jobs LOGIN;
+CREATE ROLE presencia_backup LOGIN BYPASSRLS;
+GRANT pg_read_all_data TO presencia_backup;
+```
+
+Y después, los passwords como en el paso 2 del alta del entorno. **No correr `db:migrate` para esto:** la
+base restaurada ya trae su historial de migraciones y no volvería a crear nada.
 
 El estado de los jobs vive en tablas, y se consulta con el rol owner o con `presencia_jobs`
 (`presencia_app` no tiene acceso al schema `pgboss`):

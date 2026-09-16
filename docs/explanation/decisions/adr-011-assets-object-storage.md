@@ -37,6 +37,15 @@ archivo tirado ocupando espacio.
 Borrar objetos viejos es configuración del almacenamiento: así sigue limpiándose aunque la app se apague
 un mes, y no hay que escribir —ni probar— un job de limpieza.
 
+**Con dueños y permisos, no sin ellos.** La primera versión hacía el dump con `--no-owner
+--no-privileges`, suponiendo que las migraciones recrearían los permisos tras restaurar. No lo hacen: el
+dump incluye la tabla de migraciones de drizzle, así que `db:migrate` sobre una base restaurada ve todo
+aplicado y no corre ningún `GRANT`. La base volvía con todos sus datos y la app recibía `permission denied`
+en cada request; la cola quedaba a nombre del superusuario. **La verificación de restauración no lo vio,
+porque corría como superusuario**, que se salta permisos y RLS. Lo encontró el `/code-review` sobre el
+rango completo de la fase. Desde entonces, la receta comprueba los permisos **de los roles de la app** en
+la base restaurada, y un servidor nuevo necesita crear los roles antes del `pg_restore`.
+
 **Una clave por día, sobreescribible** (`backups/presencia-<fecha>.dump`, fecha UTC). Un reintento el
 mismo día pisa el objeto en vez de acumular basura.
 

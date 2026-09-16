@@ -130,17 +130,21 @@ export class BackupsService {
     const password = decodeURIComponent(dsn.password);
     dsn.password = "";
 
-    // `--format=custom` (comprimido, y `pg_restore` puede restaurar partes).
-    // `--no-owner`/`--no-privileges`: el restore no tiene por qué recrear los
-    // roles de este servidor, y las migraciones ya los crean donde haga falta.
-    const dump = spawn(
-      "pg_dump",
-      ["--format=custom", "--no-owner", "--no-privileges", "--dbname", dsn.toString()],
-      {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: password ? { ...process.env, PGPASSWORD: password } : process.env,
-      },
-    );
+    // `--format=custom`: comprimido, y `pg_restore` puede restaurar partes.
+    //
+    // CON dueños y permisos, a propósito. La primera versión usaba
+    // `--no-owner --no-privileges` suponiendo que las migraciones los
+    // recrearían tras restaurar, y no: el dump incluye la tabla de migraciones
+    // de drizzle, así que `db:migrate` sobre una base restaurada ve todo
+    // aplicado y no vuelve a correr ningún GRANT. La base volvía con todos sus
+    // datos y la app recibía `permission denied` en cada request, y la cola
+    // quedaba a nombre del superusuario — el `must be owner` que 0020 evita.
+    // La contrapartida: restaurar exige que los roles existan antes (ver
+    // docs/how-to/desplegar.md).
+    const dump = spawn("pg_dump", ["--format=custom", "--dbname", dsn.toString()], {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: password ? { ...process.env, PGPASSWORD: password } : process.env,
+    });
 
     const { body, exited } = gatedOutput(dump, "pg_dump");
 
