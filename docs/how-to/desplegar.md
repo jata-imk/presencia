@@ -256,10 +256,16 @@ sudo docker compose -p presencia-prod exec -T postgres \
   pg_restore -U presencia -d restore_test /tmp/prueba.dump
 
 # 3. ¿Puede usarla la app? Cada línea tiene que decir t
+#    SELECT e INSERT por separado: con 'SELECT, INSERT' en una sola llamada,
+#    has_table_privilege da t si el rol tiene CUALQUIERA de los dos.
 sudo docker compose -p presencia-prod exec -T postgres psql -U presencia -d restore_test -tA -c \
-  "select has_table_privilege('presencia_app', 'public.chats', 'SELECT, INSERT');"
+  "select has_table_privilege('presencia_app', 'public.chats', 'SELECT')
+      and has_table_privilege('presencia_app', 'public.chats', 'INSERT');"
+#    exists() y no un select directo: si el schema no volvió, un select sobre
+#    pg_namespace no devuelve nada, que se lee como "sin problemas".
 sudo docker compose -p presencia-prod exec -T postgres psql -U presencia -d restore_test -tA -c \
-  "select pg_get_userbyid(nspowner) = 'presencia_jobs' from pg_namespace where nspname = 'pgboss';"
+  "select exists (select 1 from pg_namespace
+      where nspname = 'pgboss' and nspowner = 'presencia_jobs'::regrole);"
 
 # 4. Limpiar (el archivo es una copia completa de producción)
 sudo docker compose -p presencia-prod exec -T postgres \
@@ -269,6 +275,12 @@ rm -f presencia-<fecha>.dump
 ```
 
 Si el paso 3 da `f`, el dump no trae permisos y un restore real dejaría la app sin acceso.
+
+**Dumps de antes del 2026-09-16.** Hasta ese día el backup se hacía con `--no-owner --no-privileges`, y
+esos archivos se llaman igual que los nuevos (`presencia-<fecha>.dump`): restaurados con esta receta, el
+paso 3 da `f`. Después de desplegar el arreglo hay que correr un backup a mano para no depender de uno
+viejo. Si en una emergencia solo hubiera uno de esos, los permisos se reaplican a mano con el SQL de las
+migraciones `0001`, `0016`, `0020` y `0021` — **no** con `db:migrate`, que ve todo aplicado y no corre nada.
 
 **Restaurar en un servidor nuevo.** El dump guarda **a quién** pertenece cada objeto y **quién** tiene
 permiso, pero no crea los roles: esos son del cluster, no de la base. Si faltan, `pg_restore` falla al
