@@ -147,7 +147,10 @@ golpe al final, o se corta. Dentro de `location @reverse_proxy`, después de `pr
     proxy_cache off;
 ```
 
-Los timeouts de la plantilla (900 s) alcanzan para un turno de chat; no hace falta subirlos.
+Los timeouts de la plantilla (900 s) alcanzan para un turno de chat: `proxy_read_timeout` cuenta entre
+lecturas sucesivas, y los fragmentos del modelo llegan muy por debajo de eso. **No alcanzan para un
+stream ocioso**: el SSE de notificaciones de F8.6 puede pasar 15 minutos sin un solo evento, y nginx lo
+cortaría. Esa fase tendrá que traer su propio heartbeat (lo normal, cada ~20 s) o subir este timeout.
 
 **2. Compresión.** nginx no comprime lo que viene de un `proxy_pass` salvo que se le diga (`gzip_proxied`
 viene en `off`), y el SPA sale de ahí. A nivel de `server`:
