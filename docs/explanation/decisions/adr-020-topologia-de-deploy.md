@@ -11,9 +11,10 @@ CI y se publica en **GHCR**; el VPS solo hace `pull`. Un único host hospeda dos
   rutas relativas (`/api/...`). Web y API tienen que responder bajo el mismo host o no hay app. La
   forma más barata de garantizarlo es que el mismo proceso sirva las dos cosas.
 
-  **Estado:** el `dist` del SPA ya viaja en la imagen, pero `main.ts` todavía solo monta `/api` — el
-  `express.static` con fallback de historial llega en el PR siguiente de F8.5. Hasta entonces la
-  imagen responde 404 en `/`.
+  Lo implementa `apps/api/src/serve-spa.ts`: estáticos con caché inmutable para los assets con hash,
+  `index.html` con `no-store`, y fallback de historial para las rutas de `react-router`. El fallback
+  deja pasar `/api` y `/assets`, porque ahí un 404 tiene que llegar como 404 — devolver el index a un
+  chunk que ya no existe convierte un fallo de red en un error de MIME.
 
 - **CloudPanel ya trae nginx y Let's Encrypt.** Meter un contenedor Caddy delante significa dos
   reverse proxies en cadena, dos lugares donde configurar el buffering del SSE, y dos sitios donde

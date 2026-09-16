@@ -16,13 +16,23 @@ const INDEX_HTML = path.join(WEB_DIST, "index.html");
 const ASSETS_DIR = `${path.sep}assets${path.sep}`;
 
 /**
- * Deja el SPA servido en todo lo que no cuelgue de `/api`. No hace nada si no
- * hay build: en dev el SPA lo sirve Vite en su propio puerto (5173) con proxy
- * hacia la API, y este proceso solo responde `/api`.
+ * Deja el SPA servido en todo lo que no cuelgue de `/api`. Solo en producción:
+ * en dev el SPA lo sirve Vite en su propio puerto (5173) con proxy hacia la
+ * API, y este proceso solo responde `/api`.
  */
 export function serveSpa(app: express.Express): void {
+  // Condicionado a NODE_ENV y no a "¿existe el build?": en dev la ruta resuelve
+  // al MISMO apps/web/dist, así que a cualquiera que haya corrido `pnpm build`
+  // una vez le quedaría un SPA congelado servido en el 3000, semanas viejo y
+  // sin ninguna señal. El Dockerfile fija NODE_ENV=production.
+  if (process.env.NODE_ENV !== "production") {
+    console.info(
+      "[spa] NODE_ENV != production: este proceso solo sirve /api (en dev el SPA lo sirve Vite).",
+    );
+    return;
+  }
   if (!existsSync(INDEX_HTML)) {
-    console.info(`[spa] sin build en ${WEB_DIST}: este proceso solo sirve /api (normal en dev).`);
+    console.warn(`[spa] NO hay build en ${WEB_DIST}: la app va a responder 404 en /.`);
     return;
   }
 
@@ -55,6 +65,12 @@ export function serveSpa(app: express.Express): void {
     // `/api` es de la API aunque no exista el endpoint: su 404 tiene que
     // llegar como 404 al cliente, no como el index.
     if (req.path === "/api" || req.path.startsWith("/api/")) return next();
+    // Un asset que no existe tampoco es una navegación, y devolverle el index
+    // es peor que un 404. Pasa de verdad: una pestaña abierta durante un
+    // deploy pide el chunk con hash viejo de una ruta diferida, y si recibe
+    // HTML con status 200 el import falla con "Unexpected token '<'" en vez de
+    // fallar como fetch — que es la señal con la que el navegador recarga.
+    if (req.path.startsWith("/assets/")) return next();
 
     // El index apunta a los assets con hash del deploy actual: si el navegador
     // lo cachea, tras un deploy pide assets que ya no existen.
