@@ -17,8 +17,17 @@ respaldo va a ser gratis por mucho tiempo. Bucket `presencia-backups`, privado.
 El dump necesita leer **todo**, y ese poder no tiene por qué vivir en el rol que sirve requests
 —`presencia_app`, sujeto a RLS— ni obligar a meter el password del superusuario en el contenedor del
 worker. `pg_read_all_data` es un rol predefinido desde Postgres 14: `SELECT` sobre todo lo presente y
-futuro, sin escritura ni DDL. Incluye saltarse las policies de lectura, que es exactamente lo que un
-respaldo necesita: un dump por tenant no es un respaldo de la base.
+futuro, sin escritura ni DDL.
+
+**Y hace falta `BYPASSRLS` encima, que no viene con él.** La primera versión de la migración daba por
+hecho que `pg_read_all_data` eximía de las policies. No lo hace —la documentación de Postgres lo dice y
+recomienda justamente poner `BYPASSRLS` a los roles a los que se le otorga—, y `pg_dump` corre con
+`row_security = off`, así que habría abortado en la primera tabla con RLS. Toda tabla de dominio la tiene
+desde `0001` con `ENABLE` + `FORCE`. Lo atrapó el `/code-review` y se comprobó contra la base de dev
+antes de mergear: el mismo `SELECT` falla sin `BYPASSRLS` y pasa con él.
+
+Un dump que respetara RLS no sería un respaldo de la base, sería el de un tenant vacío. Y el permiso es
+de solo lectura: el rol no tiene `INSERT`/`UPDATE`/`DELETE` ni DDL.
 
 **Sin archivo intermedio.** `pg_dump --format=custom` escribe a stdout y el SDK sube por partes conforme
 llega. El disco del VPS es chico y el dump crece con los datos; además, un fallo a la mitad no deja medio

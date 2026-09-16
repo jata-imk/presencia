@@ -8,10 +8,16 @@
 -- SELECT sobre todo, presente y futuro, y nada más — ni escritura, ni DDL, ni
 -- BYPASSRLS para modificar.
 --
--- RLS: `pg_read_all_data` incluye el privilegio de saltarse las policies de
--- lectura. Es exactamente lo que un respaldo necesita —un dump por tenant no
--- es un respaldo de la base— y es de solo lectura, así que no abre una vía
--- para escribir sobre datos de otro usuario.
+-- RLS: `pg_read_all_data` NO exime de las policies — la documentación de
+-- Postgres lo dice explícitamente y recomienda poner BYPASSRLS al rol. Sin él,
+-- `pg_dump` (que corre con `row_security = off`) aborta en la primera tabla con
+-- RLS: `query would be affected by row-level security policy for table ...`, y
+-- toda tabla de dominio la tiene desde 0001 con ENABLE + FORCE.
+--
+-- BYPASSRLS acá es de solo lectura: el rol no tiene INSERT/UPDATE/DELETE ni
+-- DDL, así que no abre ninguna vía para escribir sobre datos de otro usuario.
+-- Y un dump que respeta RLS no sería un respaldo de la base: sería el de un
+-- tenant vacío. Requiere superusuario, como el ALTER OWNER de 0020.
 --
 -- Password sin asignar, como en 0001 y 0020. Por entorno:
 --   ALTER ROLE presencia_backup WITH PASSWORD '...';
@@ -28,6 +34,6 @@ $$;
 GRANT pg_read_all_data TO presencia_backup;
 --> statement-breakpoint
 
--- El dump también lee el schema de la cola. Sin esto, `pg_dump` falla al
--- intentar listar `pgboss` (su dueño es presencia_jobs desde la 0020).
-GRANT USAGE ON SCHEMA pgboss TO presencia_backup;
+-- `pg_read_all_data` ya da USAGE sobre todos los schemas, `pgboss` incluido:
+-- no hace falta ningún GRANT extra para que el dump lo lea.
+ALTER ROLE presencia_backup BYPASSRLS;

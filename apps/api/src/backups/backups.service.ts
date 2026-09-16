@@ -72,13 +72,23 @@ export class BackupsService {
       credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
     });
 
+    // El password sale de la URL y viaja por el entorno del hijo: lo que va en
+    // argv lo ve cualquiera que pueda leer /proc o correr `ps` dentro del
+    // contenedor, y termina en los volcados si el proceso truena.
+    const dsn = new URL(config.databaseUrl);
+    const password = decodeURIComponent(dsn.password);
+    dsn.password = "";
+
     // `--format=custom` (comprimido, y `pg_restore` puede restaurar partes).
     // `--no-owner`/`--no-privileges`: el restore no tiene por qué recrear los
     // roles de este servidor, y las migraciones ya los crean donde haga falta.
     const dump = spawn(
       "pg_dump",
-      ["--format=custom", "--no-owner", "--no-privileges", "--dbname", config.databaseUrl],
-      { stdio: ["ignore", "pipe", "pipe"] },
+      ["--format=custom", "--no-owner", "--no-privileges", "--dbname", dsn.toString()],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: password ? { ...process.env, PGPASSWORD: password } : process.env,
+      },
     );
 
     let stderr = "";
@@ -89,8 +99,12 @@ export class BackupsService {
       if (stderr.length < 4000) stderr += chunk;
     });
 
-    // El PassThrough desacopla las dos fallas: si la subida muere, se puede
-    // matar el pg_dump sin que el error salga como un EPIPE ilegible.
+    // El PassThrough es lo que permite ABORTAR la subida en vez de completarla
+    // con basura. Sin él —o dejando que el pipe cierre normal— un pg_dump que
+    // muere a la mitad simplemente deja de escribir, el stream termina limpio,
+    // el SDK da por buena la subida y el bucket queda con un objeto truncado
+    // que parece el respaldo del día y no se puede restaurar. Destruir el
+    // stream CON un error es lo que hace que lib-storage cancele el multipart.
     const body = new PassThrough();
     dump.stdout.pipe(body);
 
@@ -105,10 +119,17 @@ export class BackupsService {
     });
 
     const exited = new Promise<void>((resolve, reject) => {
-      dump.on("error", reject);
+      const fail = (error: Error) => {
+        // Antes de rechazar: matar el stream con el error, para que la subida
+        // aborte en vez de completar un objeto a medias.
+        body.destroy(error);
+        reject(error);
+      };
+      // spawn falla así cuando pg_dump no está en la imagen (ENOENT).
+      dump.on("error", fail);
       dump.on("close", (code) => {
         if (code === 0) return resolve();
-        reject(new Error(`pg_dump salió con código ${code}: ${stderr.trim() || "(sin stderr)"}`));
+        fail(new Error(`pg_dump salió con código ${code}: ${stderr.trim() || "(sin stderr)"}`));
       });
     });
 
@@ -117,9 +138,12 @@ export class BackupsService {
       // antes que la otra colgaría el pase.
       await Promise.all([upload.done(), exited]);
     } catch (error) {
-      // Que el proceso no quede vivo consumiendo la base si la subida falló.
+      // Que el proceso no quede vivo consumiendo la base si quien falló fue la
+      // subida.
       if (dump.exitCode === null) dump.kill("SIGTERM");
       body.destroy();
+      // Por si el multipart quedó abierto del lado del SDK.
+      await upload.abort().catch(() => undefined);
       throw error;
     } finally {
       client.destroy();
