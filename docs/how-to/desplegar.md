@@ -120,7 +120,13 @@ Tres cosas que se olvidan y muerden:
   marcaría **fallida toda card programada** (ADR-008).
 - **No definir `PORT`.** El contenedor tiene que seguir escuchando en 3000; el puerto del host lo fija
   `APP_PORT`.
-- **No definir `WORKER_INLINE`.** El compose lo fija en `false` en los dos servicios.
+- **No definir `WORKER_INLINE` ni `NODE_ENV`.** El compose los fija (`false` y `production`) en los dos
+  servicios, y `environment` gana sobre `env_file`. `NODE_ENV` es lo que enciende el servido del SPA: con
+  otro valor el sitio respondería 404 en `/` mientras `/api` sigue sano.
+
+El `.env` del paso 1 debe terminar con salto de línea antes de los `tee -a` del paso 2, o la primera URL
+se pega al final de `APP_PORT=3001`. Para asegurarlo: `printf '
+' | sudo tee -a .env >/dev/null`.
 
 ### 4. El vhost de CloudPanel
 
@@ -142,6 +148,17 @@ location /api/ {
     proxy_cache off;
     proxy_read_timeout 3600s;
 }
+```
+
+**Compresión.** nginx no comprime lo que viene de un `proxy_pass` salvo que se le diga (`gzip_proxied`
+viene en `off`), y el bundle del SPA sale de ahí. Sin esto viaja sin comprimir — con el `index.js` actual,
+del orden de 1 MB en vez de ~310 KB:
+
+```nginx
+gzip on;
+gzip_proxied any;
+gzip_min_length 1024;
+gzip_types text/css application/javascript application/json image/svg+xml;
 ```
 
 La app además emite `X-Accel-Buffering: no` en el stream del chat, así que el buffering queda apagado por
@@ -175,6 +192,9 @@ sudo docker compose -p presencia-prod logs --tail=30 worker
 
 curl -s https://presencia.josetejero.com/api/health
 curl -sI https://presencia.josetejero.com/calendario | head -1
+
+# El bundle tiene que viajar comprimido (debe imprimir "content-encoding: gzip")
+curl -sI -H 'Accept-Encoding: gzip' https://presencia.josetejero.com/ | grep -i content-encoding
 ```
 
 El `ps` debe mostrar `app` como `healthy` y el `worker` sin reinicios. La ruta profunda tiene que

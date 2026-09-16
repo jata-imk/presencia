@@ -21,9 +21,17 @@ const INDEX_HTML = path.join(WEB_DIST, "index.html");
 // pegado en cada navegador que ya abrió la app, sin forma de invalidarlo.
 const HASHED_ASSET = /-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/;
 
-/** Todo lo que cuelga de `/api` es de la API, exista el endpoint o no. */
+/**
+ * Todo lo que cuelga de `/api` es de la API, exista el endpoint o no.
+ *
+ * En minúsculas porque Express enruta sin distinguir mayúsculas (`case
+ * sensitive routing` viene apagado y Nest no lo cambia): `/API/health` llega a
+ * su controller, pero este middleware va delante, y comparando tal cual lo
+ * habría mandado al índice del SPA con un 200.
+ */
 function isApiPath(urlPath: string): boolean {
-  return urlPath === "/api" || urlPath.startsWith("/api/");
+  const normalized = urlPath.toLowerCase();
+  return normalized === "/api" || normalized.startsWith("/api/");
 }
 
 /**

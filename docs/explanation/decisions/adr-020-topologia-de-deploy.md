@@ -13,8 +13,9 @@ CI y se publica en **GHCR**; el VPS solo hace `pull`. Un único host hospeda dos
 
   Lo implementa `apps/api/src/serve-spa.ts`: estáticos con caché inmutable para los assets con hash,
   `index.html` con `no-store`, y fallback de historial para las rutas de `react-router`. El fallback
-  deja pasar `/api` y `/assets`, porque ahí un 404 tiene que llegar como 404 — devolver el index a un
-  chunk que ya no existe convierte un fallo de red en un error de MIME.
+  deja pasar `/api`, y también todo lo que tenga extensión: una ruta del SPA no la tiene y un archivo
+  sí, así que un archivo que falta recibe su 404 en vez del índice — devolver el index a un chunk que
+  ya no existe convierte un fallo de red en un error de MIME.
 
 - **CloudPanel ya trae nginx y Let's Encrypt.** Meter un contenedor Caddy delante significa dos
   reverse proxies en cadena, dos lugares donde configurar el buffering del SSE, y dos sitios donde
