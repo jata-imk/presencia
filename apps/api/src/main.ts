@@ -20,9 +20,16 @@ async function bootstrap() {
   // auth: en Express 5 el stack respeta el orden de registro).
   app.use(express.json());
 
-  // El SPA, en el mismo origen que la API (ADR-020). Va después del handler
-  // de auth y del parser: lo que cuelga de /api ya quedó registrado antes, y
-  // este middleware lo deja pasar de todos modos.
+  // El SPA, en el mismo origen que la API (ADR-020).
+  //
+  // Va ANTES de que Nest arranque, y tiene que ser así: en `init()` —que
+  // dispara `listen()`— Nest registra un catch-all de "no encontrado" al final
+  // del stack, así que un middleware montado después nunca corre (se probó:
+  // devolvía 404 hasta en `/`). Como este queda delante de los controllers, lo
+  // que protege a la API no es el orden sino el filtro explícito de
+  // `serve-spa.ts`: todo lo que empiece con /api pasa de largo. Una ruta nueva
+  // FUERA del prefijo global (un webhook en la raíz, un /metrics) tendría que
+  // sumarse a ese filtro o el índice se la comería.
   serveSpa(instance);
 
   // Sin esto, SIGTERM/SIGINT matan el proceso sin pasar por OnModuleDestroy:

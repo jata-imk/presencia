@@ -193,10 +193,11 @@ select name, state, created_on, output from pgboss.job order by created_on desc 
 
 ## Cuando algo falla
 
-| Síntoma                         | Dónde mirar                                                                     |
-| ------------------------------- | ------------------------------------------------------------------------------- |
-| 502 en el navegador             | El contenedor `app` no está arriba o no escucha en 3001: `ps` y `logs app`      |
-| `app` reinicia en bucle         | Falta una variable del `.env`: `logs app` la nombra (fail-fast de `env.ts`)     |
-| `worker` reinicia en bucle      | La cola no arrancó. Casi siempre `JOBS_DATABASE_URL` mal, o su rol sin password |
-| El chat llega de golpe al final | Falta `proxy_buffering off` en el vhost                                         |
-| `manifest unknown` en el `pull` | Ese tag no existe: revisar el run de _Release_ en Actions                       |
+| Síntoma                                | Dónde mirar                                                                                      |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 502 en el navegador                    | El contenedor `app` no está arriba o no escucha en 3001: `ps` y `logs app`                       |
+| `app` reinicia en bucle                | Falta una variable del `.env`: `logs app` la nombra (fail-fast de `env.ts`)                      |
+| `worker` reinicia en bucle             | La cola no arrancó. Casi siempre `JOBS_DATABASE_URL` mal, o su rol sin password                  |
+| El chat llega de golpe al final        | Falta `proxy_buffering off` en el vhost                                                          |
+| `manifest unknown` en el `pull`        | Ese tag no existe: revisar el run de _Release_ en Actions                                        |
+| `denied` / `unauthorized` en el `pull` | El paquete quedó privado: _Packages → presencia → Package settings → Change visibility → Public_ |

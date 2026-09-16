@@ -44,7 +44,14 @@ export function serveSpa(app: express.Express): void {
       setHeaders: (res, filePath) => {
         // Vite le pone hash al nombre de cada asset, así que su contenido
         // nunca cambia: se pueden cachear para siempre. Lo demás (favicon,
-        // manifest) conserva su nombre entre deploys y se revalida.
+        // manifest) conserva su nombre entre deploys y se revalida. El index
+        // se trata aparte: `index: false` apaga el índice de directorio, pero
+        // un GET /index.html explícito sí pasa por acá, y ese documento apunta
+        // a los assets con hash del deploy actual.
+        if (filePath === INDEX_HTML) {
+          res.setHeader("Cache-Control", "no-store");
+          return;
+        }
         res.setHeader(
           "Cache-Control",
           filePath.includes(ASSETS_DIR) ? "public, max-age=31536000, immutable" : "no-cache",
@@ -76,7 +83,12 @@ export function serveSpa(app: express.Express): void {
     // lo cachea, tras un deploy pide assets que ya no existen.
     res.setHeader("Cache-Control", "no-store");
     res.sendFile(INDEX_HTML, (error) => {
-      if (error) next(error);
+      // El callback también llega con ECONNABORTED cuando el cliente se va a
+      // media transferencia (navegar fuera, una pestaña que se suspende). Ahí
+      // la respuesta ya empezó: pasarlo a next() haría que Express delegue en
+      // el handler default de Node, que destruye el socket y escupe un stack
+      // por cada navegación abortada.
+      if (error && !res.headersSent) next(error);
     });
   });
 
