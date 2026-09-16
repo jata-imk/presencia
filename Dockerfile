@@ -40,6 +40,11 @@ RUN CI=true pnpm install --frozen-lockfile --prod --ignore-scripts
 FROM base AS runtime
 ENV NODE_ENV=production
 
+# pg_dump para el backup diario (jobs/backups, ADR-011). La versión del
+# cliente tiene que coincidir con la del server: el compose corre
+# postgres:17-alpine.
+RUN apk add --no-cache postgresql17-client
+
 # node_modules de pnpm es un árbol de symlinks hacia la store de la raíz, así
 # que el orden importa: primero la raíz, después cada proyecto.
 COPY --from=prune /app/node_modules ./node_modules

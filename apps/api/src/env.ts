@@ -66,6 +66,22 @@ const envSchema = z
     // El /api final es parte de la base, no del path: todas las rutas del
     // openapi.json cuelgan de https://api.upload-post.com/api.
     UPLOAD_POST_BASE_URL: z.url().default("https://api.upload-post.com/api"),
+    // --- Backup diario (F8.5, ADR-011) ---
+    // Opcionales como grupo: sin configurar, el job no se registra y la API
+    // arranca igual (en dev nadie tiene bucket). Pero configurado a medias es
+    // un error de arranque, no un backup que se salta en silencio: ver el
+    // superRefine de abajo.
+    S3_ENDPOINT: z.url().optional(),
+    S3_BUCKET: z.string().min(1).optional(),
+    S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+    S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+    // R2 ignora la región pero el SDK exige uno; "auto" es lo que documenta
+    // Cloudflare.
+    S3_REGION: z.string().min(1).default("auto"),
+    // Conexión del pg_dump: rol presencia_backup, con pg_read_all_data y nada
+    // más. Aparte de APP_DATABASE_URL a propósito — el dump necesita leerlo
+    // TODO, y ese poder no tiene por qué vivir en el rol que sirve requests.
+    BACKUP_DATABASE_URL: z.string().min(1).optional(),
   })
   .superRefine((value, ctx) => {
     // Fail-fast: toda var de modelo (AI_MODEL + los 3 tiers opcionales) debe
@@ -114,6 +130,27 @@ const envSchema = z
         path: ["UPLOAD_POST_API_KEY"],
         message: 'PUBLISHING_PROVIDER="upload_post" requiere UPLOAD_POST_API_KEY en el entorno',
       });
+    }
+
+    // El backup es todo o nada. Media configuración sería lo peor de los dos
+    // mundos: el operador cree que hay respaldo y el job no se registra.
+    const backupVars = [
+      "S3_ENDPOINT",
+      "S3_BUCKET",
+      "S3_ACCESS_KEY_ID",
+      "S3_SECRET_ACCESS_KEY",
+      "BACKUP_DATABASE_URL",
+    ] as const;
+    const backupSet = backupVars.filter((name) => value[name]);
+    if (backupSet.length > 0 && backupSet.length < backupVars.length) {
+      const missing = backupVars.filter((name) => !value[name]);
+      for (const name of missing) {
+        ctx.addIssue({
+          code: "custom",
+          path: [name],
+          message: `El backup diario se configura completo o no se configura: falta ${name} (hay ${backupSet.join(", ")})`,
+        });
+      }
     }
   });
 
