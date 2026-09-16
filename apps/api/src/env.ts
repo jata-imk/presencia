@@ -78,10 +78,15 @@ const envSchema = z
     // R2 ignora la región pero el SDK exige uno; "auto" es lo que documenta
     // Cloudflare.
     S3_REGION: z.string().min(1).default("auto"),
-    // Conexión del pg_dump: rol presencia_backup, con pg_read_all_data y nada
-    // más. Aparte de APP_DATABASE_URL a propósito — el dump necesita leerlo
-    // TODO, y ese poder no tiene por qué vivir en el rol que sirve requests.
-    BACKUP_DATABASE_URL: z.string().min(1).optional(),
+    // Conexión del pg_dump: rol presencia_backup, con pg_read_all_data +
+    // BYPASSRLS (migración 0021) y sin escritura ni DDL. Aparte de
+    // APP_DATABASE_URL a propósito — el dump necesita leerlo TODO, y ese poder
+    // no tiene por qué vivir en el rol que sirve requests.
+    //
+    // z.url() y no string(): una URL mal escrita tiene que tronar al arrancar,
+    // no a las 08:00 UTC dentro del job, donde con retryLimit 0 fallaría todos
+    // los días con la única señal en pgboss.job.
+    BACKUP_DATABASE_URL: z.url().optional(),
   })
   .superRefine((value, ctx) => {
     // Fail-fast: toda var de modelo (AI_MODEL + los 3 tiers opcionales) debe

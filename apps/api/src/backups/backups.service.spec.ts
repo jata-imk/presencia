@@ -102,6 +102,13 @@ describe("configuración del backup", () => {
   });
 });
 
+describe("una URL de conexión mal escrita", () => {
+  it("truena al arrancar, no a las 08:00 dentro del job", async () => {
+    setEnv({ ...BASE_ENV, ...BACKUP_ENV, BACKUP_DATABASE_URL: "postgres//falta-el-dos-puntos" });
+    await expect(import("./backups.service.js")).rejects.toThrow(/BACKUP_DATABASE_URL/);
+  });
+});
+
 describe("la salida del proceso solo termina bien si el proceso salió bien", () => {
   // Procesos REALES, no mocks: lo que se prueba es la carrera entre el fin del
   // stdout y el evento `close` con el código de salida, y un mock la resolvería
