@@ -290,9 +290,13 @@ CREATE ROLE presencia_backup LOGIN BYPASSRLS;
 GRANT pg_read_all_data TO presencia_backup;
 ```
 
-Un dump de antes de la migración `0022` todavía trae permisos para `presencia_worker`, el
-rol que esa migración borró: para restaurar uno de esos, agregar `CREATE ROLE presencia_worker;` o
-`pg_restore` reporta errores en esos `GRANT` (inofensivos: el rol no se usa, pero ensucian la salida).
+**Un dump de antes de la migración `0022` necesita además `CREATE ROLE presencia_worker;`**, el rol
+que esa migración borró. No es cosmético: ese dump crea la policy `worker_scan` con `TO presencia_app,
+presencia_worker`, y si el rol falta `pg_restore` se salta la policy **entera**. El barrido de
+reconciliación deja de ver cards en silencio (RLS devuelve cero filas, no un error), y `0022` tampoco la
+repone: al no encontrar el rol, no hace nada. Con el rol creado, el siguiente `db:migrate` aplica `0022`
+y lo borra como en cualquier otro entorno. Para confirmar: `select roles from pg_policies where
+policyname = 'worker_scan';` debe devolver una fila.
 
 Y después, los passwords como en el paso 2 del alta del entorno. **No correr `db:migrate` para esto:** la
 base restaurada ya trae su historial de migraciones y no volvería a crear nada.
