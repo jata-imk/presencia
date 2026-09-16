@@ -13,7 +13,7 @@ V1: web app (React) + bot de Telegram, 5 módulos (Chats, Calendario, Ritmo, Ana
 | `docs/explanation/product/`   | Lore docs: overview (leer primero), chat, calendario, ritmo, configuración/voz de marca |
 | `docs/explanation/decisions/` | ADRs 001–020 — fuente de verdad de arquitectura                                         |
 | `docs/reference/`             | Contratos: modelo de datos + RLS, infraestructura, design tokens, (futuro) API          |
-| `docs/how-to/`                | Recetas operativas: entorno, trabajar con IA, (futuro) deploy y backups                 |
+| `docs/how-to/`                | Recetas operativas: entorno, desplegar, trabajar con IA, (futuro) backups               |
 | `docs/tutorials/`             | Vacío hasta que exista código que recorrer                                              |
 
 La gestión de proyecto (roadmap F0–F13) vive en Notion (página "Presencia"). La verdad técnica vive en este repo.

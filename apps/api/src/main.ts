@@ -5,6 +5,7 @@ import express from "express";
 import { AppModule } from "./app.module.js";
 import { auth } from "./auth/auth.js";
 import { env } from "./env.js";
+import { serveSpa } from "./serve-spa.js";
 
 async function bootstrap() {
   // bodyParser off: Better Auth necesita el body crudo en sus rutas.
@@ -18,6 +19,11 @@ async function bootstrap() {
   // El resto de rutas sí parsea JSON (registrado después del handler de
   // auth: en Express 5 el stack respeta el orden de registro).
   app.use(express.json());
+
+  // El SPA, en el mismo origen que la API (ADR-020). Va después del handler
+  // de auth y del parser: lo que cuelga de /api ya quedó registrado antes, y
+  // este middleware lo deja pasar de todos modos.
+  serveSpa(instance);
 
   // Sin esto, SIGTERM/SIGINT matan el proceso sin pasar por OnModuleDestroy:
   // ni el pool de la app ni el de pg-boss (WORKER_INLINE) cerrarían limpio.

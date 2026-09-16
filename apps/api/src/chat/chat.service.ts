@@ -353,6 +353,12 @@ export class ChatService {
 
     result.pipeUIMessageStreamToResponse(res, {
       originalMessages: history,
+      // nginx (el de CloudPanel, ADR-020) acumula la respuesta por default y
+      // eso convierte el streaming en una espera larga y un volcado al final.
+      // El vhost lleva `proxy_buffering off`, pero esta cabecera lo apaga
+      // desde la respuesta misma: así el chat no depende de que alguien se
+      // acuerde de configurar el proxy (docs/how-to/desplegar.md).
+      headers: { "X-Accel-Buffering": "no" },
       onError: (error) => {
         console.error("Error en el stream del chat:", error);
         return "Algo salió mal generando la respuesta. Inténtalo de nuevo.";
