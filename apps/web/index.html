@@ -6,6 +6,13 @@
     <meta name="color-scheme" content="light dark" />
     <title>Presencia</title>
     <!--
+      Sin esta línea el navegador pide /favicon.ico por convención y se lleva
+      un 404 (dos, porque lo reintenta). Antes quedaba tapado: el fallback del
+      SPA le devolvía el index con status 200, así que el error no se veía y el
+      icono tampoco funcionaba.
+    -->
+    <link rel="icon" type="image/png" href="/assets/isotipo.png" />
+    <!--
       Anti-FOUC del tema (ADR-016). Script CLÁSICO e inline a propósito:
       un `type="module"` es diferido y corre DESPUÉS del primer paint, o
       sea que el flash blanco pasa igual. Tiene que estar antes de que
