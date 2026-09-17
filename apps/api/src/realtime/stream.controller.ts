@@ -14,7 +14,8 @@ import { StreamRegistry } from "./stream-registry.service.js";
  * con la cookie de sesión, que `EventSource` manda por ser el mismo origen.
  *
  * Eventos: `card` (la card completa, PublicationCardDto), `card-deleted`
- * (`{ id }`) y `resync` (se perdieron eventos: volver a pedir lo visible).
+ * (`{ id }`), `resync` (se perdieron eventos: volver a pedir lo visible) y
+ * `ping` (cada 20 s, ver HEARTBEAT_MS).
  */
 @Controller("stream")
 export class StreamController {

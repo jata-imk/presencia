@@ -26,7 +26,7 @@ class FakeClient implements StreamClient {
   end(): void {
     this.ended = true;
   }
-  /** Los eventos recibidos, ya parseados. Ignora heartbeats. */
+  /** Los eventos recibidos, ya parseados. */
   events(): { event: string; data: { id?: string; status?: string; chatId?: string | null } }[] {
     return this.chunks
       .filter((chunk) => chunk.startsWith("event: "))
@@ -83,8 +83,8 @@ describe("StreamRegistry", () => {
     registry.add("u1", a);
     registry.add("u2", b);
     vi.advanceTimersByTime(HEARTBEAT_MS);
-    expect(a.chunks).toEqual([": ping\n\n"]);
-    expect(b.chunks).toEqual([": ping\n\n"]);
+    expect(a.events()).toEqual([{ event: "ping", data: {} }]);
+    expect(b.events()).toEqual([{ event: "ping", data: {} }]);
     registry.onModuleDestroy();
     expect(a.ended && b.ended).toBe(true);
   });

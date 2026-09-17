@@ -2,6 +2,7 @@ import { Navigate, Outlet, useLocation, useMatches } from "react-router";
 import { Sidebar } from "../components/layout/Sidebar.js";
 import { Topbar } from "../components/layout/Topbar.js";
 import { CommandPalette } from "../components/search/CommandPalette.js";
+import { LiveCards } from "../components/realtime/LiveCards.js";
 import { ScheduleDrawer } from "../components/schedule/ScheduleDrawer.js";
 import { ToastViewport } from "../components/ui/Toast.js";
 import { authClient } from "../lib/auth-client.js";
@@ -84,6 +85,8 @@ export function ProtectedLayout() {
       </div>
       <CommandPalette />
       <ToastViewport />
+      {/* Stream de eventos de cards (F8.6): no pinta nada. */}
+      <LiveCards />
     </div>
   );
 }
