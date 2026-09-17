@@ -23,3 +23,45 @@ Se implementó `stripReasoningParts` para descartarlo de todo el historial y se 
 **Queda como hueco de contexto conocido, no resuelto:** el reasoning de todos los turnos anteriores viaja completo en cada request, sin comprimir, y puede filtrar detalle de cards ya comprimidas por `compressToolOutputsForModel`. No compromete correctitud (el dato ya vive completo en Postgres) ni seguridad (mismo tenant), pero sí diluye el ahorro de tokens de la dieta de cards para modelos de razonamiento. Revisar si algún día se cambia de API mode, o cuando se construya `history_compaction` (backlog, Notion) — ese mecanismo sí podría absorber este caso si trabaja a nivel de mensajes completos en vez de parts sueltas.
 
 **Beneficio secundario:** un prefijo de contexto más corto y estable es precondición para que el prompt caching funcione después. Se evaluó y se pospuso deliberadamente en la sesión de diseño de F4.5 (2026-08-02, puerta abierta documentada en la tarea de Notion "F4.5 · Instrumentación de usage + routing por tarea"): el mínimo cacheable son 1024 tokens de prefijo estable (2048 en modelos clase Haiku), y el `SYSTEM_PROMPT` actual no los cruza de forma consistente — implementarlo hoy sería un no-op decorado. Las dos optimizaciones (dieta de contexto + caching futuro) se refuerzan.
+
+## Addendum (2026-09-16, F8.6) — un segundo stream: eventos de cards
+
+El "SSE de eventos" que este ADR dejaba para cuando hiciera falta llegó con F8.6: la card tiene que cambiar
+sola en el navegador cuando el worker la marca publicada o fallida, sin recargar.
+
+**Endpoint.** `GET /api/stream` (`realtime/stream.controller.ts`), abierto mientras la app esté abierta.
+Escrito a mano y no con el AI SDK: `EventSource` solo hace `GET` y no acepta headers, y esto es un canal,
+no una respuesta que termina. La autenticación es la cookie de sesión que el guard global ya resuelve.
+Eventos: `card` (el `PublicationCardDto` completo), `card-deleted` (`{ id }`) y `resync`.
+
+**El puente entre procesos: `NOTIFY`/`LISTEN`.** El worker corre en otro contenedor (ADR-020), así que un
+`Map` de conexiones en la API no ve lo que él escribe.
+
+- Toda escritura de `cards.repository.ts` hace `pg_notify('card_changed', '<userId>:<cardId>')` **dentro
+  de su transacción**. Postgres solo lo entrega con `COMMIT`, así que nunca se avisa de algo que no quedó
+  guardado.
+- La API escucha con un `pg.Client` dedicado (`realtime/card-listener.service.ts`), no del pool: `LISTEN`
+  vive lo que vive la sesión.
+- El payload lleva **solo ids**. La card se lee con el RLS de su dueño en `CardsService.findDto`, una
+  sola ruta arma el DTO, y un payload inventado no puede empujar la card de otro tenant (llega como
+  `card-deleted`).
+- Las notificaciones se atienden en serie para que dos cambios seguidos de la misma card no lleguen
+  invertidos. Sin conexiones de ese usuario en el proceso, no se lee nada.
+
+**Descartado: Redis/pub-sub.** Hay una sola API; Postgres ya está y el volumen es de pocos eventos por
+usuario. Si algún día hay varias réplicas de la API, cada una escucha el mismo canal y atiende a sus
+conexiones: el diseño no cambia.
+
+**Lo que se pierde y cómo se recupera.** `NOTIFY` no se encola: si el listener estaba desconectado, esos
+eventos no vuelven. Tres redes, de la más cercana a la más lejana:
+
+1. Al reconectar el listener, la API manda `resync` a todas las conexiones.
+2. `EventSource` reconecta solo si se corta (deploy, red), y el cliente revalida al reconectar (PR4 de F8.6).
+3. Volver a la pestaña revalida lo que está en pantalla (PR4 de F8.6).
+   Misma simetría que el resto del sistema: el cron es la red de seguridad del proveedor, y la revalidación
+   es la del stream.
+
+**Heartbeat.** Un comentario `: ping` cada 20 s a todas las conexiones, con un solo intervalo por proceso.
+El nginx de CloudPanel corta a los 900 s una conexión que no manda nada (`desplegar.md`).
+
+**El cliente** (PR4 de F8.6) aplica la card al store normalizado (addendum de ADR-018) sin volver a pedirla.

@@ -387,6 +387,17 @@ export class CardsService {
   }
 
   /**
+   * La card como la ve su dueño, o `null` si ya no existe o no es suya (F8.6).
+   * Es la única ruta que arma el DTO que empuja el stream de eventos: el
+   * NOTIFY solo trae ids y esto lee con el RLS del usuario, así que un evento
+   * nunca puede filtrar la card de otro tenant.
+   */
+  async findDto(userId: string, cardId: string): Promise<PublicationCardDto | null> {
+    const row = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, cardId));
+    return row ? toDto(row) : null;
+  }
+
+  /**
    * Cada card del grupo actúa independiente — una puede programarse y otra
    * fallar (cuenta desconectada, sin media, etc) sin abortar el resto.
    * "keepDraft" es un no-op explícito: la card conserva el estado que
