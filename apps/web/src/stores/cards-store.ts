@@ -172,13 +172,29 @@ export const useCardsStore = create<CardsState>()(
       setCalendarOpen: (calendarOpen) => set({ calendarOpen }, false, "cards/setCalendarOpen"),
 
       loadChat: async (chatId) => {
+        const requestedAt = performance.now();
         try {
           const rows = await apiFetch<PublicationCardDto[]>(`/api/chats/${chatId}/cards`);
           set(
-            (state) => ({
-              byId: mergeEntities(state.byId, rows).byId,
-              chatIds: { ...state.chatIds, [chatId]: rows.map((card) => card.id) },
-            }),
+            (state) => {
+              const { byId } = mergeEntities(state.byId, rows, requestedAt);
+              // Misma guardia que el rango y la bandeja: una card creada en el
+              // chat que llegó por el stream después de pedir la lista no se
+              // pierde porque la respuesta vieja no la traiga.
+              return {
+                byId,
+                chatIds: {
+                  ...state.chatIds,
+                  [chatId]: reconcileIds(
+                    rows.map((card) => card.id),
+                    state.chatIds[chatId],
+                    byId,
+                    requestedAt,
+                    (card) => card.chatId === chatId,
+                  ),
+                },
+              };
+            },
             false,
             "cards/loadChat",
           );

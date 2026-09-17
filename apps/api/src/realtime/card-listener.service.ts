@@ -29,7 +29,12 @@ const PROBE_MS = 60_000;
 export class CardListener implements OnModuleInit, OnModuleDestroy {
   private client: pg.Client | null = null;
   private stopped = false;
-  private connectedOnce = false;
+  /**
+   * Hubo un rato sin LISTEN desde que arrancó el proceso: una caída, o un
+   * primer intento fallido. En los dos casos pudieron perderse NOTIFY, y los
+   * navegadores ya conectados tienen que volver a pedir lo visible.
+   */
+  private missedEvents = false;
   private reconnectDelay = RECONNECT_MIN_MS;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private probeTimer: NodeJS.Timeout | null = null;
@@ -128,20 +133,23 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
       });
     }, PROBE_MS);
     this.probeTimer.unref();
-    if (this.connectedOnce) {
+    if (this.missedEvents) {
       // NOTIFY no se encola: lo que se publicó mientras no había LISTEN se
       // perdió. Se le pide a cada navegador que vuelva a pedir lo que tiene en
-      // pantalla, que es la red de seguridad del stream.
+      // pantalla, que es la red de seguridad del stream. Vale también para el
+      // primer LISTEN si no salió a la primera: el HTTP ya atendía y los
+      // navegadores pudieron abrir su stream antes.
       this.registry.broadcast("resync");
-      console.log("[realtime] listener reconectado; se pidió resync a los clientes");
+      console.log("[realtime] listener conectado tras un corte; se pidió resync a los clientes");
+      this.missedEvents = false;
     }
-    this.connectedOnce = true;
   }
 
   private scheduleReconnect(client: pg.Client): void {
     // `error` y `end` suelen llegar los dos por la misma caída; y una conexión
     // vieja no debe programar nada si ya hay otra.
     if (this.stopped || this.reconnectTimer || (this.client && this.client !== client)) return;
+    this.missedEvents = true;
     this.client = null;
     if (this.probeTimer) clearInterval(this.probeTimer);
     this.probeTimer = null;
