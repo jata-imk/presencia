@@ -174,9 +174,10 @@ golpe al final, o se corta. Dentro de `location @reverse_proxy`, después de `pr
 ```
 
 Los timeouts de la plantilla (900 s) alcanzan para un turno de chat: `proxy_read_timeout` cuenta entre
-lecturas sucesivas, y los fragmentos del modelo llegan muy por debajo de eso. **No alcanzan para un
-stream ocioso**: el SSE de notificaciones de F8.6 puede pasar 15 minutos sin un solo evento, y nginx lo
-cortaría. Esa fase tendrá que traer su propio heartbeat (lo normal, cada ~20 s) o subir este timeout.
+lecturas sucesivas, y los fragmentos del modelo llegan muy por debajo de eso. **Solos no alcanzarían
+para un stream ocioso**: `GET /api/stream` (F8.6) puede pasar horas sin un solo evento. Por eso la app
+manda un comentario SSE (`: ping`) cada 20 s a toda conexión abierta (`HEARTBEAT_MS` en
+`realtime/stream-registry.service.ts`), y el timeout del vhost no hace falta tocarlo.
 
 **2. Compresión.** nginx no comprime lo que viene de un `proxy_pass` salvo que se le diga (`gzip_proxied`
 viene en `off`), y el SPA sale de ahí. A nivel de `server`:
@@ -192,8 +193,14 @@ viene en `off`), y el SPA sale de ahí. A nivel de `server`:
 
 Medido en el primer deploy: el bundle pasa de 1,001 KB a 308 KB (70%), el CSS de 49.6 KB a 10.1 KB.
 
-La app además emite `X-Accel-Buffering: no` en el stream del chat, así que el buffering queda apagado por
-los dos lados. El mismo requisito vale para el SSE de notificaciones (F8.6).
+La app además emite `X-Accel-Buffering: no` en el stream del chat y en `GET /api/stream`, así que el
+buffering queda apagado por los dos lados aunque el vhost cambie.
+
+**Comprobar el stream de eventos en prod** (con la sesión abierta en el navegador): en DevTools → Network,
+la petición `stream` queda en _pending_ con tipo `eventsource`, y en su pestaña _EventStream_ no aparece
+nada más que los eventos (los `: ping` son comentarios y no se listan). Si al cabo de 15 minutos sin
+actividad la misma petición sigue abierta, el heartbeat hace su trabajo; si se reabre sola cada 15
+minutos, algo entre medio se lo está comiendo.
 
 ## Desplegar una versión
 

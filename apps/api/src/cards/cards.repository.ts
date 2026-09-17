@@ -12,13 +12,25 @@ import {
   lt,
   lte,
   or,
+  sql,
 } from "drizzle-orm";
 import type { CardContent, CardStatus, SocialNetwork } from "@presencia/shared";
 import { chats, publicationCards } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
+import { CARD_CHANGED_CHANNEL, encodeCardChanged } from "../realtime/card-events.js";
 
 // Todo acceso a publication_cards vive aquí (patrón de ChatRepository).
 // Las queries no filtran por user_id: el RLS de la transacción es el filtro.
+//
+// F8.6: toda escritura que cambia lo que ve el usuario avisa con
+// `notifyChanged` DENTRO de su transacción (ver realtime/card-events.ts). Una
+// escritura nueva que no lo haga deja la pantalla desactualizada hasta que el
+// usuario recargue o vuelva a la pestaña.
+//
+// Eso incluye lo que Postgres cambiaría solo: `chat_id` y
+// `social_account_id` son ON DELETE SET NULL, y un SET NULL del motor no pasa
+// por acá ni avisa. Quien borra un chat o una cuenta llama antes a
+// `detachFromChat` / `detachFromAccount`.
 
 export type CardRow = typeof publicationCards.$inferSelect;
 
@@ -32,6 +44,21 @@ export interface CalendarFilters {
   status?: CardStatus[];
   network?: SocialNetwork[];
   folderId?: string;
+}
+
+/** Lo mínimo que hace falta para avisar: de quién es la card y cuál. */
+type ChangedRow = Pick<CardRow, "id" | "userId">;
+
+/**
+ * NOTIFY transaccional (F8.6): Postgres lo entrega solo si la transacción
+ * hace COMMIT, y deduplica payloads idénticos dentro de la misma. Uno por
+ * card: en un pase de reconciliación son pocas por usuario.
+ */
+async function notifyChanged(tx: Tx, rows: readonly ChangedRow[]): Promise<void> {
+  for (const row of rows) {
+    const payload = encodeCardChanged({ userId: row.userId, cardId: row.id });
+    await tx.execute(sql`select pg_notify(${CARD_CHANGED_CHANNEL}, ${payload})`);
+  }
 }
 
 @Injectable()
@@ -53,11 +80,14 @@ export class CardsRepository {
       .values({ ...input, archetype: input.content.archetype })
       .returning();
     if (!card) throw new Error("No se pudo crear la card de publicación");
+    await notifyChanged(tx, [card]);
     return card;
   }
 
   // La card nace durante el stream, antes de que exista el mensaje assistant
   // (que se inserta en onEnd) — backfill de message_id una vez que sí existe.
+  // Sin NOTIFY: `message_id` no viaja en el DTO, así que no cambia nada de lo
+  // que se ve, y el mismo turno ya avisó al insertar la card.
   async linkCardsToMessage(tx: Tx, cardIds: string[], messageId: string): Promise<void> {
     if (cardIds.length === 0) return;
     await tx
@@ -70,7 +100,36 @@ export class CardsRepository {
   // cascade): sin este paso las cards quedarían huérfanas en vez de
   // borradas al reintentar un turno (decisión de producto, F3 PR3).
   async deleteCardsByMessageId(tx: Tx, messageId: string): Promise<void> {
-    await tx.delete(publicationCards).where(eq(publicationCards.messageId, messageId));
+    const deleted = await tx
+      .delete(publicationCards)
+      .where(eq(publicationCards.messageId, messageId))
+      .returning({ id: publicationCards.id, userId: publicationCards.userId });
+    await notifyChanged(tx, deleted);
+  }
+
+  /**
+   * Suelta las cards de un chat que se va a borrar (F8.6). El FK haría lo
+   * mismo con ON DELETE SET NULL, pero en silencio: sin este paso, otra
+   * pestaña seguiría mostrando esas cards colgadas de un chat que ya no
+   * existe. Va en la misma transacción que el DELETE del chat.
+   */
+  async detachFromChat(tx: Tx, chatId: string): Promise<void> {
+    const detached = await tx
+      .update(publicationCards)
+      .set({ chatId: null, updatedAt: new Date() })
+      .where(eq(publicationCards.chatId, chatId))
+      .returning({ id: publicationCards.id, userId: publicationCards.userId });
+    await notifyChanged(tx, detached);
+  }
+
+  /** Lo mismo que `detachFromChat`, para una cuenta conectada que se va a borrar. */
+  async detachFromAccount(tx: Tx, socialAccountId: string): Promise<void> {
+    const detached = await tx
+      .update(publicationCards)
+      .set({ socialAccountId: null, updatedAt: new Date() })
+      .where(eq(publicationCards.socialAccountId, socialAccountId))
+      .returning({ id: publicationCards.id, userId: publicationCards.userId });
+    await notifyChanged(tx, detached);
   }
 
   // ── F6: ciclo de vida (programar/reprogramar/cancelar/reconciliar) ────
@@ -144,6 +203,7 @@ export class CardsRepository {
       .where(eq(publicationCards.id, id))
       .returning();
     if (!row) throw new Error("No se pudo programar la publicación");
+    await notifyChanged(tx, [row]);
     return row;
   }
 
@@ -184,6 +244,7 @@ export class CardsRepository {
       // solo mover la hora.
       .where(and(eq(publicationCards.id, id), eq(publicationCards.status, "scheduled")))
       .returning();
+    if (row) await notifyChanged(tx, [row]);
     return row;
   }
 
@@ -194,6 +255,7 @@ export class CardsRepository {
       .where(eq(publicationCards.id, id))
       .returning();
     if (!row) throw new Error("No se pudo confirmar la programación de la publicación");
+    await notifyChanged(tx, [row]);
     return row;
   }
 
@@ -222,6 +284,7 @@ export class CardsRepository {
       .set({ providerRef, updatedAt: new Date() })
       .where(and(eq(publicationCards.id, id), eq(publicationCards.status, "scheduled")))
       .returning();
+    if (row) await notifyChanged(tx, [row]);
     return row;
   }
 
@@ -240,6 +303,7 @@ export class CardsRepository {
       .where(eq(publicationCards.id, id))
       .returning();
     if (!row) throw new Error("No se pudo revertir la publicación a borrador");
+    await notifyChanged(tx, [row]);
     return row;
   }
 
@@ -258,6 +322,7 @@ export class CardsRepository {
       .where(eq(publicationCards.id, id))
       .returning();
     if (!row) throw new Error("No se pudo cancelar la programación");
+    await notifyChanged(tx, [row]);
     return row;
   }
 
@@ -269,6 +334,7 @@ export class CardsRepository {
       .where(eq(publicationCards.id, id))
       .returning();
     if (!row) throw new Error("No se pudo marcar la publicación como fallida");
+    await notifyChanged(tx, [row]);
     return row;
   }
 
@@ -297,7 +363,7 @@ export class CardsRepository {
     errorDetail: unknown,
   ): Promise<void> {
     if (ids.length === 0) return;
-    await tx
+    const failed = await tx
       .update(publicationCards)
       .set({ status: "failed", errorDetail, updatedAt: new Date() })
       .where(
@@ -307,7 +373,11 @@ export class CardsRepository {
           isNull(publicationCards.providerRef),
           lt(publicationCards.updatedAt, cutoff),
         ),
-      );
+      )
+      // Solo las que la guardia dejó pasar: avisar de las demás sería
+      // anunciar un cambio que no ocurrió.
+      .returning({ id: publicationCards.id, userId: publicationCards.userId });
+    await notifyChanged(tx, failed);
   }
 
   /**
@@ -329,7 +399,7 @@ export class CardsRepository {
     errorDetail: unknown,
   ): Promise<void> {
     if (cards.length === 0) return;
-    await tx
+    const failed = await tx
       .update(publicationCards)
       .set({ status: "failed", errorDetail, updatedAt: new Date() })
       .where(
@@ -338,7 +408,9 @@ export class CardsRepository {
           lt(publicationCards.scheduledAt, cutoff),
           matchesAnyRef(cards),
         ),
-      );
+      )
+      .returning({ id: publicationCards.id, userId: publicationCards.userId });
+    await notifyChanged(tx, failed);
   }
 
   /**
@@ -381,6 +453,7 @@ export class CardsRepository {
         ),
       )
       .returning();
+    if (row) await notifyChanged(tx, [row]);
     return row;
   }
 

@@ -47,8 +47,9 @@ CI y se publica en **GHCR**; el VPS solo hace `pull`. Un único host hospeda dos
 **Consecuencias operativas:**
 
 - El vhost de CloudPanel **necesita** `proxy_buffering off` y un `proxy_read_timeout` largo, o el chat
-  (SSE, ADR-006) llega completo de golpe al final o se corta. Mismo requisito para el SSE de
-  notificaciones que viene después.
+  (SSE, ADR-006) llega completo de golpe al final o se corta. Mismo requisito para el stream de eventos
+  de F8.6 (`GET /api/stream`), que además manda un heartbeat cada 20 s para no chocar con los timeouts
+  de 900 s de la plantilla.
 - El deploy es manual en esta fase: SSH, `pull`, `up -d`. Automatizarlo pide una llave SSH como
   secreto de GitHub, y eso es superficie de F13.
 - Las migraciones se aplican desde la laptop por túnel SSH con el rol owner (`drizzle-kit` es

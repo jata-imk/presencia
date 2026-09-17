@@ -152,6 +152,9 @@ export class ChatService {
           "Este chat tiene publicaciones programadas — cancélalas o espera a que se publiquen antes de eliminarlo.",
         );
       }
+      // Antes del DELETE y en la misma transacción: el SET NULL del FK no avisa
+      // a las otras pestañas (F8.6).
+      await this.cardsRepo.detachFromChat(tx, chatId);
       await this.repo.deleteChat(tx, chatId);
     });
   }
