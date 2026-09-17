@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { devtools } from "zustand/middleware";
 
 // F6.5 PR4: preferencia de tema (ADR-016).
 //
@@ -36,14 +37,19 @@ interface ThemeState {
   setPreference: (preference: ThemePreference) => void;
 }
 
-export const useThemeStore = create<ThemeState>((set) => ({
-  preference: readPreference(),
-  setPreference: (preference) => {
-    set({ preference });
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, preference);
-    } catch {
-      // Sin persistencia el tema sigue funcionando, solo se olvida.
-    }
-  },
-}));
+export const useThemeStore = create<ThemeState>()(
+  devtools(
+    (set) => ({
+      preference: readPreference(),
+      setPreference: (preference) => {
+        set({ preference }, false, "theme/setPreference");
+        try {
+          localStorage.setItem(THEME_STORAGE_KEY, preference);
+        } catch {
+          // Sin persistencia el tema sigue funcionando, solo se olvida.
+        }
+      },
+    }),
+    { name: "theme", enabled: import.meta.env.DEV },
+  ),
+);

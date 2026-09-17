@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { devtools } from "zustand/middleware";
 
 // F6 PR4: reemplaza el Context/ToastProvider de PR3 por un store — mismo
 // API pública (show({title, ...})), sin envolver <App> en un provider.
@@ -29,18 +30,31 @@ interface ToastState {
 const DEFAULT_DURATION_MS = 5000;
 let nextId = 0;
 
-export const useToastStore = create<ToastState>((set, get) => ({
-  toasts: [],
-  show: (options) => {
-    const id = nextId++;
-    const durationMs = options.durationMs ?? DEFAULT_DURATION_MS;
-    set((state) => ({ toasts: [...state.toasts, { ...options, id, durationMs }] }));
-    window.setTimeout(() => get().dismiss(id), durationMs);
-  },
-  dismiss: (id) => {
-    set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
-  },
-}));
+export const useToastStore = create<ToastState>()(
+  devtools(
+    (set, get) => ({
+      toasts: [],
+      show: (options) => {
+        const id = nextId++;
+        const durationMs = options.durationMs ?? DEFAULT_DURATION_MS;
+        set(
+          (state) => ({ toasts: [...state.toasts, { ...options, id, durationMs }] }),
+          false,
+          "toast/show",
+        );
+        window.setTimeout(() => get().dismiss(id), durationMs);
+      },
+      dismiss: (id) => {
+        set(
+          (state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }),
+          false,
+          "toast/dismiss",
+        );
+      },
+    }),
+    { name: "toast", enabled: import.meta.env.DEV },
+  ),
+);
 
 /** Atajo para llamar desde fuera de un componente (handlers, catch blocks). */
 export function showToast(options: ToastOptions): void {

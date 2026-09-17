@@ -4,7 +4,7 @@ import { PublicationCardView } from "./cards/PublicationCardView.js";
 import { ApiError } from "../lib/api.js";
 import { cancelCardSchedule, rescheduleCard } from "../lib/cards-api.js";
 import type { CardToolPart } from "../lib/chat-types.js";
-import { useCardsForChat, useCardsStore } from "../stores/cards-store.js";
+import { useCard, useCardsStore, useChatCards } from "../stores/cards-store.js";
 import { useScheduleDrawerStore } from "../stores/schedule-drawer-store.js";
 import { useToastStore } from "../stores/toast-store.js";
 
@@ -15,25 +15,26 @@ const ARCHETYPE_LABEL: Record<string, string> = {
 };
 
 // F6 PR4: ya no recibe liveCard/siblingCards/onCardsChanged por props — se
-// suscribe directo a cards-store por chatId (ver stores/cards-store.ts).
+// suscribe directo a cards-store (ver stores/cards-store.ts). F8.6: la card
+// viva sale de `byId`, así que cambia sola cuando cambia en cualquier lado.
 // Un solo <ScheduleDrawer/> vive en ChatView, escuchando schedule-drawer-store;
 // esta card solo le pide que se abra.
 export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: string }) {
   const label = ARCHETYPE_LABEL[part.type] ?? "Borrador";
   const toast = useToastStore((s) => s.show);
   const openDrawer = useScheduleDrawerStore((s) => s.open);
-  const cards = useCardsForChat(chatId);
-  const refresh = useCardsStore((s) => s.refresh);
+  const chatCards = useChatCards(chatId);
+  const applyCards = useCardsStore((s) => s.apply);
   const [busy, setBusy] = useState(false);
 
   const cardId = part.state === "output-available" ? part.output.cardId : undefined;
-  const liveCard = cardId ? cards.get(cardId) : undefined;
+  const liveCard = useCard(cardId);
   const siblingCards = useMemo(
     () =>
       liveCard?.groupId
-        ? [...cards.values()].filter((c) => c.groupId === liveCard.groupId && c.id !== liveCard.id)
+        ? chatCards.filter((c) => c.groupId === liveCard.groupId && c.id !== liveCard.id)
         : [],
-    [cards, liveCard],
+    [chatCards, liveCard],
   );
 
   if (part.state === "input-streaming" || part.state === "input-available") {
@@ -93,8 +94,7 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
     };
     setBusy(true);
     try {
-      await cancelCardSchedule(liveCard.id);
-      await refresh(chatId);
+      applyCards(await cancelCardSchedule(liveCard.id));
       toast({
         title: "Programación cancelada",
         description: "Vuelve a borrador.",
@@ -105,7 +105,7 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
                   socialAccountId: previous.socialAccountId!,
                   scheduledAt: previous.scheduledAt!,
                 })
-                  .then(() => refresh(chatId))
+                  .then(applyCards)
                   .catch((err: unknown) => {
                     toast({
                       title:

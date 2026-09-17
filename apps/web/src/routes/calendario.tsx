@@ -54,7 +54,7 @@ import { useTimezone } from "../lib/calendar/use-timezone.js";
 import { parseView, type CalendarView } from "../lib/calendar/view.js";
 import { useChannels } from "../lib/use-channels.js";
 import { useMediaQuery } from "../lib/use-media-query.js";
-import { useCalendarStore } from "../stores/calendar-store.js";
+import { useCardsStore, useDraftCards, useRangeCards } from "../stores/cards-store.js";
 import { useFoldersStore } from "../stores/folders-store.js";
 import { useChatsStore } from "../stores/chats-store.js";
 import { useScheduleDrawerStore } from "../stores/schedule-drawer-store.js";
@@ -106,7 +106,23 @@ export function CalendarioPage() {
       : `${String(first.day)} de ${monthNameOf(first)} – ${String(last.day)} de ${monthNameOf(last)}`;
   }, [focusedDay, month, view]);
 
-  const { cards, drafts, loading, error, load, loadDrafts, upsert } = useCalendarStore();
+  // Selectores puntuales y no el store entero: cards-store también cambia
+  // cuando se mueve algo de un chat, y eso no tiene por qué re-renderizar la
+  // grilla.
+  const cards = useRangeCards();
+  const drafts = useDraftCards();
+  const loading = useCardsStore((s) => s.rangeLoading);
+  const error = useCardsStore((s) => s.rangeError);
+  const load = useCardsStore((s) => s.loadRange);
+  const loadDrafts = useCardsStore((s) => s.loadDrafts);
+  const apply = useCardsStore((s) => s.apply);
+  const setCalendarOpen = useCardsStore((s) => s.setCalendarOpen);
+  useEffect(() => {
+    // `revalidate` solo recarga el rango y la bandeja mientras el Calendario
+    // está montado.
+    setCalendarOpen(true);
+    return () => setCalendarOpen(false);
+  }, [setCalendarOpen]);
   const navigate = useNavigate();
   const openDrawer = useScheduleDrawerStore((s) => s.open);
   const { disconnectedChannels, refreshDisconnected } = useChannels();
@@ -204,8 +220,8 @@ export function CalendarioPage() {
   }, [load, range.from, range.to, filtersKey]);
 
   // Los borradores no dependen del rango visible (no tienen fecha), así que
-  // se piden una sola vez al entrar y se refrescan cuando uno cruza a
-  // programado.
+  // se piden una sola vez al entrar. Cuando uno cruza a programado no hace
+  // falta recargar: cards-store lo saca de la bandeja al aplicar la card.
   useEffect(() => {
     void loadDrafts();
   }, [loadDrafts]);
@@ -235,7 +251,7 @@ export function CalendarioPage() {
   const visibleDrafts = useMemo(() => filterDrafts(drafts, filters), [drafts, filtersKey]);
 
   const selectedDay = useMemo(() => parseDayParam(selectedKey), [selectedKey]);
-  // Las cards del modal se releen del store por id en cada render, no se
+  // Las cards del modal se releen del rango por id en cada render, no se
   // guardan como snapshot: así reprogramar o cancelar desde el propio modal
   // se refleja adentro sin cerrarlo ni sincronizar dos copias.
   const modalCards = useMemo(
@@ -335,7 +351,7 @@ export function CalendarioPage() {
         scheduledAt: card.scheduledAt,
         card,
       }));
-      for (const card of conCuenta) upsert({ ...card, scheduledAt: at });
+      for (const card of conCuenta) apply({ ...card, scheduledAt: at });
       setFlashDay(landingDay);
 
       try {
@@ -344,7 +360,7 @@ export function CalendarioPage() {
             rescheduleCard(p.id, { socialAccountId: p.socialAccountId, scheduledAt: at }),
           ),
         );
-        for (const card of movidas) upsert(card);
+        apply(movidas);
       } catch (error) {
         // Revertir a la copia local NO alcanza. Reprogramar es, del lado del
         // servidor, cancelar el post viejo en el proveedor y crear uno nuevo
@@ -355,7 +371,7 @@ export function CalendarioPage() {
         // Se revierte igual para que el hueco no dure el viaje de ida y
         // vuelta, y enseguida se recarga para quedarse con la verdad. Con un
         // grupo puede haber movidas y no movidas: la recarga las reconcilia.
-        for (const p of previous) upsert({ ...p.card, scheduledAt: p.scheduledAt });
+        apply(previous.map((p) => ({ ...p.card, scheduledAt: p.scheduledAt })));
         setFlashDay(null);
         toast({
           title: error instanceof ApiError ? error.message : "No se pudo mover la publicación.",
@@ -390,9 +406,7 @@ export function CalendarioPage() {
                     }),
                   ),
                 )
-                  .then((restored) => {
-                    for (const card of restored) upsert(card);
-                  })
+                  .then(apply)
                   .catch((error: unknown) => {
                     toast({
                       title:
@@ -406,7 +420,7 @@ export function CalendarioPage() {
             : undefined,
       });
     },
-    [reload, timeZone, toast, upsert],
+    [apply, reload, timeZone, toast],
   );
 
   // "Por qué no existe en mobile: el drag-and-drop táctil es notoriamente
@@ -437,7 +451,7 @@ export function CalendarioPage() {
   }, [folders, refreshFolders]);
 
   // Solo la PRIMERA carga muestra esqueleto. Al cambiar de mes la grilla
-  // conserva lo anterior (calendar-store no lo limpia), que se lee mejor que
+  // conserva lo anterior (cards-store no lo limpia), que se lee mejor que
   // parpadear a vacío y volver.
   //
   // Hace falta el ref: el store arranca en `loading: false`, así que un
@@ -479,7 +493,7 @@ export function CalendarioPage() {
     onDropDrafts: (dragged) => {
       const programadas = dragged.filter((c) => c.scheduledAt !== null);
       if (programadas.length === 0) return;
-      void cancelMany(programadas, { reload, toast });
+      void cancelMany(programadas, { apply, reload, toast });
     },
     onDrop: (dragged, key, offsetY) => {
       const card = dragged[0]!;
@@ -498,7 +512,7 @@ export function CalendarioPage() {
       if (!card.scheduledAt) {
         const minutes = view === "mes" ? 10 * 60 : minutesFromOffset(offsetY);
         const preset = instantAt(day, minutes, timeZone).toDate();
-        openDrawer(dragged, { presetDate: preset, onDone: () => void reload() });
+        openDrawer(dragged, { presetDate: preset });
         return;
       }
       const target = targetFor(card, key, offsetY);
@@ -579,14 +593,13 @@ export function CalendarioPage() {
         const first = target[0];
         openDrawer(target, {
           presetDate: first?.scheduledAt ? new Date(first.scheduledAt) : null,
-          onDone: () => void reload(),
         });
       },
       onCancel: (target) => {
-        void cancelMany(target, { reload, toast });
+        void cancelMany(target, { apply, reload, toast });
       },
     }),
-    [cards, navigate, openDrawer, reload, toast],
+    [apply, cards, navigate, openDrawer, reload, toast],
   );
 
   /**
@@ -852,7 +865,7 @@ export function CalendarioPage() {
             onToggle={() => setDraftsSheetOpen(false)}
             onSchedule={(card) => {
               setDraftsSheetOpen(false);
-              openDrawer([card], { presetDate: null, onDone: () => void reload() });
+              openDrawer([card], { presetDate: null });
             }}
             draggingId={null}
           />
@@ -924,10 +937,7 @@ export function CalendarioPage() {
               onPickAnother={() => {
                 const moving = conflict.cards;
                 setConflict(null);
-                openDrawer(moving, {
-                  presetDate: target.toDate(),
-                  onDone: () => void reload(),
-                });
+                openDrawer(moving, { presetDate: target.toDate() });
               }}
               onCancel={() => setConflict(null)}
             />
@@ -935,7 +945,7 @@ export function CalendarioPage() {
         })()}
 
       {/* Indicador de carga discreto: la grilla conserva el contenido
-          anterior mientras llega el mes nuevo (calendar-store), así que esto
+          anterior mientras llega el mes nuevo (cards-store), así que esto
           reemplaza al skeleton y evita el parpadeo a vacío. */}
       <div
         aria-live="polite"
@@ -971,9 +981,11 @@ function parseDayParam(value: string | null): CalendarDate | null {
 async function cancelMany(
   target: PublicationCardDto[],
   {
+    apply,
     reload,
     toast,
   }: {
+    apply: (cards: PublicationCardDto[]) => void;
     reload: () => Promise<void>;
     toast: (options: { title: string; description?: string; onUndo?: () => void }) => void;
   },
@@ -990,15 +1002,17 @@ async function cancelMany(
     }));
 
   try {
-    await Promise.all(target.map((card) => cancelCardSchedule(card.id)));
+    // Cada respuesta es la card ya en borrador: aplicarla la saca de la
+    // grilla y la pone en la bandeja sin volver a pedir nada.
+    apply(await Promise.all(target.map((card) => cancelCardSchedule(card.id))));
   } catch (error) {
     toast({
       title: error instanceof ApiError ? error.message : "No se pudo cancelar la programación.",
     });
+    // Con varias, alguna pudo cancelarse antes del fallo: la recarga deja la verdad.
     await reload();
     return;
   }
-  await reload();
 
   // Deshacer solo si se pueden restaurar TODAS. Una card `scheduled`
   // siempre tiene cuenta y horario (los pone markScheduling), así que el
@@ -1024,7 +1038,7 @@ async function cancelMany(
                 }),
               ),
             )
-              .then(reload)
+              .then(apply)
               .catch((error: unknown) => {
                 toast({
                   title:

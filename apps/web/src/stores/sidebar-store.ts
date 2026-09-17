@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { devtools } from "zustand/middleware";
 
 // F6.5 PR1: estado del App Shell. Tres cosas distintas viven acá y solo
 // dos se persisten.
@@ -80,34 +81,40 @@ interface SidebarState extends Persisted {
   setExpandedFolder: (id: string | null) => void;
 }
 
-export const useSidebarStore = create<SidebarState>((set, get) => ({
-  ...readPersisted(),
-  mobileOpen: false,
-  expandedFolderId: null,
+export const useSidebarStore = create<SidebarState>()(
+  devtools(
+    (set, get) => ({
+      ...readPersisted(),
+      mobileOpen: false,
+      expandedFolderId: null,
 
-  // Devuelve el mando al viewport. Lo llama Sidebar al cruzar por debajo de
-  // 1024px: la preferencia guardada solo se respeta donde hay ancho para
-  // honrarla, si no una elección hecha en escritorio dejaba el sidebar
-  // abierto en tablet comiéndose la pantalla. No se persiste el null: la
-  // decisión del usuario se conserva para cuando vuelva a haber ancho.
-  clearUserCollapsed: () => set({ userCollapsed: null }),
+      // Devuelve el mando al viewport. Lo llama Sidebar al cruzar por debajo de
+      // 1024px: la preferencia guardada solo se respeta donde hay ancho para
+      // honrarla, si no una elección hecha en escritorio dejaba el sidebar
+      // abierto en tablet comiéndose la pantalla. No se persiste el null: la
+      // decisión del usuario se conserva para cuando vuelva a haber ancho.
+      clearUserCollapsed: () => set({ userCollapsed: null }, false, "sidebar/clearUserCollapsed"),
 
-  toggleCollapsed: (effective) => {
-    const userCollapsed = !effective;
-    set({ userCollapsed });
-    persist({ userCollapsed, width: get().width });
-  },
+      toggleCollapsed: (effective) => {
+        const userCollapsed = !effective;
+        set({ userCollapsed }, false, "sidebar/toggleCollapsed");
+        persist({ userCollapsed, width: get().width });
+      },
 
-  setWidth: (px) => {
-    const width = clampSidebarWidth(px);
-    set({ width });
-    persist({ userCollapsed: get().userCollapsed, width });
-  },
+      setWidth: (px) => {
+        const width = clampSidebarWidth(px);
+        set({ width }, false, "sidebar/setWidth");
+        persist({ userCollapsed: get().userCollapsed, width });
+      },
 
-  openMobile: () => set({ mobileOpen: true }),
-  closeMobile: () => set({ mobileOpen: false }),
-  setExpandedFolder: (expandedFolderId) => set({ expandedFolderId }),
-}));
+      openMobile: () => set({ mobileOpen: true }, false, "sidebar/openMobile"),
+      closeMobile: () => set({ mobileOpen: false }, false, "sidebar/closeMobile"),
+      setExpandedFolder: (expandedFolderId) =>
+        set({ expandedFolderId }, false, "sidebar/setExpandedFolder"),
+    }),
+    { name: "sidebar", enabled: import.meta.env.DEV },
+  ),
+);
 
 /**
  * Escribe el ancho como variable CSS inline en <html>.

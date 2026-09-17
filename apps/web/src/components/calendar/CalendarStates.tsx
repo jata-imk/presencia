@@ -133,7 +133,7 @@ export function DisconnectedChannelsBanner({ networks }: { networks: SocialNetwo
 
 /**
  * Esqueleto de carga. Solo en la primera carga del módulo: al cambiar de mes
- * la grilla conserva el contenido anterior (calendar-store no lo limpia), que
+ * la grilla conserva el contenido anterior (cards-store no lo limpia), que
  * es mejor que parpadear a vacío y volver.
  *
  * Reserva el ancho de la bandeja de borradores. Sin eso el esqueleto ocupaba

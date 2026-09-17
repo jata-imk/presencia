@@ -18,7 +18,7 @@ import { fetchScheduleConflicts, scheduleGroup } from "../../lib/cards-api.js";
 import { backdropFade, drawerPush, sheetUp } from "../../lib/motion.js";
 import { useChannels } from "../../lib/use-channels.js";
 import { useMediaQuery } from "../../lib/use-media-query.js";
-import { useCardsStore } from "../../stores/cards-store.js";
+import { useCardsByIds, useCardsStore } from "../../stores/cards-store.js";
 import { useScheduleDrawerStore } from "../../stores/schedule-drawer-store.js";
 
 /** `Date` → "HH:MM" en hora local, que es en la que trabajan las filas. */
@@ -53,9 +53,10 @@ function defaultDate(): Date {
 // hijo no desaparece de golpe, motion le deja terminar su animación de
 // salida (variants "closed"/"exit" — lib/motion.ts) antes de desmontar.
 export function ScheduleDrawer() {
-  const cards = useScheduleDrawerStore((s) => s.cards);
+  const cardIds = useScheduleDrawerStore((s) => s.cardIds);
+  // Vivas desde cards-store (F8.6), no una foto tomada al abrir.
+  const cards = useCardsByIds(cardIds);
   const presetDate = useScheduleDrawerStore((s) => s.presetDate);
-  const onDone = useScheduleDrawerStore((s) => s.onDone);
   const close = useScheduleDrawerStore((s) => s.close);
   // key por ids, no un string fijo (code review 2026-08-20): el panel
   // desktop es a propósito no-modal (el chat de al lado sigue
@@ -69,17 +70,20 @@ export function ScheduleDrawer() {
   // la MISMA card pero otra fecha (reprogramar dos veces desde el
   // Calendario) reutilizaría la instancia y `rows` se quedaría con el
   // horario anterior.
-  const drawerKey = cards
-    ? `${cards.map((c) => c.id).join(",")}@${String(presetDate?.getTime() ?? "")}`
+  //
+  // La key sale de los ids pedidos y NO de las cards vivas: que una card
+  // cambie de estado con el drawer abierto no debe remontarlo, o se perdería
+  // lo que el usuario ya llenó.
+  const drawerKey = cardIds
+    ? `${cardIds.join(",")}@${String(presetDate?.getTime() ?? "")}`
     : "closed";
   return (
     <AnimatePresence>
-      {cards && (
+      {cardIds && cards.length > 0 && (
         <ScheduleDrawerInner
           key={drawerKey}
           cards={cards}
           presetDate={presetDate}
-          onDone={onDone}
           onClose={close}
         />
       )}
@@ -90,16 +94,15 @@ export function ScheduleDrawer() {
 function ScheduleDrawerInner({
   cards,
   presetDate,
-  onDone,
   onClose,
 }: {
   cards: PublicationCardDto[];
   presetDate: Date | null;
-  onDone: (() => void) | null;
   onClose: () => void;
 }) {
   const { channels } = useChannels();
-  const refreshCards = useCardsStore((s) => s.refresh);
+  const applyCards = useCardsStore((s) => s.apply);
+  const revalidateCards = useCardsStore((s) => s.revalidate);
   // Desktop (≥1024px): hermano flex que empuja, sin backdrop, no es modal.
   // Mobile: bottom sheet con backdrop, sí es modal (focus-trap + Escape).
   const isDesktop = useMediaQuery("(min-width: 1024px)");
@@ -314,8 +317,7 @@ function ScheduleDrawerInner({
       return;
     }
 
-    const [firstCard] = cards;
-    if (!firstCard) return;
+    if (cards.length === 0) return;
 
     // El choque se comprueba al confirmar y no antes: hasta acá el usuario
     // estaba eligiendo, y un diálogo mientras mueve la hora sería un
@@ -332,27 +334,16 @@ function ScheduleDrawerInner({
     setSubmitting(true);
     try {
       const results = await scheduleGroup({ items });
-      // chatId nunca es null acá en la práctica: el drawer solo se abre
-      // desde una card renderizada dentro de un chat vivo (F6 PR8, ver
-      // schema.ts — chatId es nullable para cards huérfanas de un chat ya
-      // eliminado, que no tienen ninguna UI que las muestre todavía).
-      //
-      // Refresca SIEMPRE, no solo en el happy path — antes, una falla
-      // parcial dejaba el badge viejo en pantalla sin reflejar que la card
-      // ahora está failed (ver CardsService.scheduleGroup, cada item es
-      // independiente).
-      // onDone PRIMERO y sin await: quien abrió el drawer refresca lo suyo
-      // (el Calendario lee por rango, no por chat, y una card huérfana no
-      // tiene chat que refrescar). Encadenarlo detrás del refresh del chat
-      // costaba ~4 s hasta que la grilla reflejaba el cambio, porque ese
-      // refresh dispara maybeReconcile y eso es una llamada de red a
-      // PostFast. De paso, el orden ayuda: la primera de las dos lecturas
-      // deja puesto el cooldown de reconciliación y la segunda ya no paga
-      // ese viaje.
-      onDone?.();
-      if (firstCard.chatId) await refreshCards(firstCard.chatId);
+      // Cada item es independiente (CardsService.scheduleGroup): los que
+      // salieron bien traen su card ya programada y se aplican al store, que
+      // la mueve de la bandeja a la grilla y cambia el badge del chat a la
+      // vez (F8.6). Los que fallaron no traen card, pero del lado del
+      // servidor pueden haber quedado en `draft` o `failed`: para esos se
+      // vuelve a pedir lo que está en pantalla, o el badge viejo se quedaría.
+      applyCards(results.flatMap((r) => (r.card ? [r.card] : [])));
 
       const failures = results.filter((r) => !r.ok);
+      if (failures.length > 0) void revalidateCards();
       if (failures.length === 0) {
         onClose();
         return;

@@ -662,6 +662,7 @@ function toDto(row: CardRow): PublicationCardDto {
     // llenar un proveedor futuro o un UPDATE a mano.
     postUrl: parseHttpUrl(row.postUrl),
     errorMessage: errorMessageFrom(row.errorDetail),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
