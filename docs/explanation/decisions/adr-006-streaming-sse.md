@@ -56,12 +56,18 @@ conexiones: el diseño no cambia.
 eventos no vuelven. Tres redes, de la más cercana a la más lejana:
 
 1. Al reconectar el listener, la API manda `resync` a todas las conexiones.
-2. `EventSource` reconecta solo si se corta (deploy, red), y el cliente revalida al reconectar (PR4 de F8.6).
-3. Volver a la pestaña revalida lo que está en pantalla (PR4 de F8.6).
+2. `EventSource` reconecta solo si se corta (deploy, red), y el cliente revalida al reconectar.
+3. Volver a la pestaña revalida lo que está en pantalla.
    Misma simetría que el resto del sistema: el cron es la red de seguridad del proveedor, y la revalidación
    es la del stream.
 
-**Heartbeat.** Un comentario `: ping` cada 20 s a todas las conexiones, con un solo intervalo por proceso.
+**Heartbeat.** Un `event: ping` cada 20 s a todas las conexiones, con un solo intervalo por proceso. Es un
+evento con nombre y no un comentario SSE porque también lo usa el cliente: si pasan 50 s sin recibir nada,
+da la conexión por muerta y reconecta. Eso cubre las conexiones medio abiertas, que `EventSource` no
+detecta solo: una laptop que se durmió, o un proxy que no propaga el cierre del servidor. El proxy de dev
+de Vite es uno de esos: al reiniciar la API deja colgado al navegador.
 El nginx de CloudPanel corta a los 900 s una conexión que no manda nada (`desplegar.md`).
 
-**El cliente** (PR4 de F8.6) aplica la card al store normalizado (addendum de ADR-018) sin volver a pedirla.
+**El cliente** aplica la card al store normalizado (addendum de ADR-018) sin volver a pedirla. Vive en `components/realtime/LiveCards.tsx`, montado en el shell autenticado: si el
+stream responde algo que no es un stream (un 502 de nginx durante un deploy, un 401), `EventSource` se
+cierra para siempre, así que ahí el cliente reintenta a mano con espera creciente (3 s a 60 s).

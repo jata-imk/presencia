@@ -7,10 +7,15 @@ export interface StreamClient {
 }
 
 /**
- * Cada cuánto se manda un comentario SSE a todas las conexiones. Tiene que
- * quedar muy por debajo del timeout de lectura del proxy: el nginx de
- * CloudPanel corta a los 900 s una conexión que no manda nada, y un stream de
- * eventos de cards puede pasar horas callado.
+ * Cada cuánto se manda `event: ping` a todas las conexiones. Cumple dos
+ * funciones:
+ * - Mantener viva la conexión por debajo del timeout de lectura del proxy: el
+ *   nginx de CloudPanel corta a los 900 s una conexión que no manda nada, y un
+ *   stream de eventos de cards puede pasar horas callado.
+ * - Que el navegador pueda notar una conexión medio abierta (laptop dormida,
+ *   un proxy que no propaga el cierre): si deja de recibir pings, reconecta.
+ *   Por eso es un evento con nombre y no un comentario SSE (`: ping`), que
+ *   `EventSource` descarta sin avisarle a JavaScript.
  */
 export const HEARTBEAT_MS = 20_000;
 
@@ -25,7 +30,7 @@ export class StreamRegistry implements OnModuleDestroy {
 
   constructor() {
     // Un solo intervalo para todas las conexiones, no uno por conexión.
-    this.heartbeat = setInterval(() => this.writeAll(": ping\n\n"), HEARTBEAT_MS);
+    this.heartbeat = setInterval(() => this.writeAll(formatEvent("ping", {})), HEARTBEAT_MS);
     // No mantiene vivo al proceso por sí solo (tests, apagado).
     this.heartbeat.unref();
   }
