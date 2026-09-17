@@ -46,6 +46,21 @@ export interface CalendarFilters {
   folderId?: string;
 }
 
+/**
+ * `updated_at` de toda escritura: el reloj de la base en el momento de
+ * escribir la fila, no el del proceso al armar la query (F8.6).
+ *
+ * El navegador usa `updatedAt` como guardia de orden y descarta una versión
+ * más vieja que la que ya tiene. Con `new Date()` el valor salía de la app
+ * antes de esperar el lock de la fila: si el worker y la API escribían la
+ * misma card a la vez, la que esperaba el lock quedaba última en la base pero
+ * con un `updated_at` menor, y el navegador la descartaba para siempre.
+ * `clock_timestamp()` se evalúa al escribir, después del lock, así que sigue
+ * el orden real de las escrituras. (`now()` no serviría: es la hora de inicio
+ * de la transacción.)
+ */
+const WRITTEN_AT = sql`clock_timestamp()`;
+
 /** Lo mínimo que hace falta para avisar: de quién es la card y cuál. */
 type ChangedRow = Pick<CardRow, "id" | "userId">;
 
@@ -92,7 +107,7 @@ export class CardsRepository {
     if (cardIds.length === 0) return;
     await tx
       .update(publicationCards)
-      .set({ messageId, updatedAt: new Date() })
+      .set({ messageId, updatedAt: WRITTEN_AT })
       .where(inArray(publicationCards.id, cardIds));
   }
 
@@ -116,7 +131,7 @@ export class CardsRepository {
   async detachFromChat(tx: Tx, chatId: string): Promise<void> {
     const detached = await tx
       .update(publicationCards)
-      .set({ chatId: null, updatedAt: new Date() })
+      .set({ chatId: null, updatedAt: WRITTEN_AT })
       .where(eq(publicationCards.chatId, chatId))
       .returning({ id: publicationCards.id, userId: publicationCards.userId });
     await notifyChanged(tx, detached);
@@ -126,7 +141,7 @@ export class CardsRepository {
   async detachFromAccount(tx: Tx, socialAccountId: string): Promise<void> {
     const detached = await tx
       .update(publicationCards)
-      .set({ socialAccountId: null, updatedAt: new Date() })
+      .set({ socialAccountId: null, updatedAt: WRITTEN_AT })
       .where(eq(publicationCards.socialAccountId, socialAccountId))
       .returning({ id: publicationCards.id, userId: publicationCards.userId });
     await notifyChanged(tx, detached);
@@ -198,7 +213,7 @@ export class CardsRepository {
         scheduledAt: input.scheduledAt,
         providerRef: null,
         errorDetail: null,
-        updatedAt: new Date(),
+        updatedAt: WRITTEN_AT,
       })
       .where(eq(publicationCards.id, id))
       .returning();
@@ -228,7 +243,7 @@ export class CardsRepository {
       .set({
         scheduledAt: input.scheduledAt,
         errorDetail: null,
-        updatedAt: new Date(),
+        updatedAt: WRITTEN_AT,
       })
       // Guardia `status='scheduled'`, misma familia que
       // attachProviderRefIfScheduled y por el mismo motivo. Este UPDATE
@@ -251,7 +266,7 @@ export class CardsRepository {
   async attachProviderRef(tx: Tx, id: string, providerRef: string): Promise<CardRow> {
     const [row] = await tx
       .update(publicationCards)
-      .set({ providerRef, updatedAt: new Date() })
+      .set({ providerRef, updatedAt: WRITTEN_AT })
       .where(eq(publicationCards.id, id))
       .returning();
     if (!row) throw new Error("No se pudo confirmar la programación de la publicación");
@@ -281,7 +296,7 @@ export class CardsRepository {
   ): Promise<CardRow | undefined> {
     const [row] = await tx
       .update(publicationCards)
-      .set({ providerRef, updatedAt: new Date() })
+      .set({ providerRef, updatedAt: WRITTEN_AT })
       .where(and(eq(publicationCards.id, id), eq(publicationCards.status, "scheduled")))
       .returning();
     if (row) await notifyChanged(tx, [row]);
@@ -298,7 +313,7 @@ export class CardsRepository {
         scheduledAt: null,
         providerRef: null,
         errorDetail,
-        updatedAt: new Date(),
+        updatedAt: WRITTEN_AT,
       })
       .where(eq(publicationCards.id, id))
       .returning();
@@ -317,7 +332,7 @@ export class CardsRepository {
         scheduledAt: null,
         providerRef: null,
         errorDetail: null,
-        updatedAt: new Date(),
+        updatedAt: WRITTEN_AT,
       })
       .where(eq(publicationCards.id, id))
       .returning();
@@ -330,7 +345,7 @@ export class CardsRepository {
   async markFailed(tx: Tx, id: string, errorDetail: unknown): Promise<CardRow> {
     const [row] = await tx
       .update(publicationCards)
-      .set({ status: "failed", errorDetail, updatedAt: new Date() })
+      .set({ status: "failed", errorDetail, updatedAt: WRITTEN_AT })
       .where(eq(publicationCards.id, id))
       .returning();
     if (!row) throw new Error("No se pudo marcar la publicación como fallida");
@@ -365,7 +380,7 @@ export class CardsRepository {
     if (ids.length === 0) return;
     const failed = await tx
       .update(publicationCards)
-      .set({ status: "failed", errorDetail, updatedAt: new Date() })
+      .set({ status: "failed", errorDetail, updatedAt: WRITTEN_AT })
       .where(
         and(
           inArray(publicationCards.id, ids),
@@ -401,7 +416,7 @@ export class CardsRepository {
     if (cards.length === 0) return;
     const failed = await tx
       .update(publicationCards)
-      .set({ status: "failed", errorDetail, updatedAt: new Date() })
+      .set({ status: "failed", errorDetail, updatedAt: WRITTEN_AT })
       .where(
         and(
           eq(publicationCards.status, "scheduled"),
@@ -442,7 +457,7 @@ export class CardsRepository {
         publishedAt: input.publishedAt,
         postUrl: input.postUrl,
         errorDetail: null,
-        updatedAt: new Date(),
+        updatedAt: WRITTEN_AT,
       })
       .where(
         and(

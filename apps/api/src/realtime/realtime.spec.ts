@@ -289,6 +289,39 @@ describe("NOTIFY → LISTEN → stream", { timeout: 30_000 }, () => {
     registry.remove(userA, tab);
   });
 
+  it("updated_at sigue el orden real de las escrituras aunque una espere el lock", async () => {
+    const card = await dbService.runWithTenant(userA, (tx) =>
+      cardsRepo.insertCard(tx, {
+        userId: userA,
+        chatId: chatA,
+        network: "linkedin",
+        content: TEXT,
+      }),
+    );
+    let releaseLock!: () => void;
+    const lockHeld = new Promise<void>((r) => (releaseLock = r));
+    let lockTaken!: () => void;
+    const locked = new Promise<void>((r) => (lockTaken = r));
+
+    // A toma el lock de la fila y escribe DESPUÉS de que B ya armó su UPDATE.
+    const first = dbService.runWithTenant(userA, async (tx) => {
+      await tx.execute(sql`select id from publication_cards where id = ${card.id} for update`);
+      lockTaken();
+      await lockHeld;
+      return cardsRepo.markFailed(tx, card.id, { reason: "a" });
+    });
+    await locked;
+    // B arranca antes pero espera el lock: termina escribiendo último.
+    const second = dbService.runWithTenant(userA, (tx) => cardsRepo.cancelSchedule(tx, card.id));
+    await new Promise((r) => setTimeout(r, 300));
+    releaseLock();
+    const a = await first;
+    const b = await second;
+    // El navegador descarta lo "más viejo": la última escritura tiene que
+    // tener el updated_at mayor, o su evento se perdería.
+    expect(b.updatedAt.getTime()).toBeGreaterThan(a.updatedAt.getTime());
+  });
+
   it("una card que ya no existe llega como card-deleted", async () => {
     const tab = connect(userA);
     const ghost = randomUUID();
