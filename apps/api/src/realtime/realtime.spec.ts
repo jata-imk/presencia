@@ -27,14 +27,18 @@ class FakeClient implements StreamClient {
     this.ended = true;
   }
   /** Los eventos recibidos, ya parseados. Ignora heartbeats. */
-  events(): { event: string; data: { id?: string; status?: string } }[] {
+  events(): { event: string; data: { id?: string; status?: string; chatId?: string | null } }[] {
     return this.chunks
       .filter((chunk) => chunk.startsWith("event: "))
       .map((chunk) => {
         const [eventLine, dataLine] = chunk.split("\n");
         return {
           event: eventLine!.slice("event: ".length),
-          data: JSON.parse(dataLine!.slice("data: ".length)) as { id?: string; status?: string },
+          data: JSON.parse(dataLine!.slice("data: ".length)) as {
+            id?: string;
+            status?: string;
+            chatId?: string | null;
+          },
         };
       });
   }
@@ -256,6 +260,32 @@ describe("NOTIFY → LISTEN → stream", { timeout: 30_000 }, () => {
     // Margen para que un aviso de más, si lo hubiera, alcance a llegar.
     await new Promise((r) => setTimeout(r, 500));
     expect(tab.events().map((e) => [e.data.id, e.data.status])).toEqual([[orphan!.id, "failed"]]);
+    registry.remove(userA, tab);
+  });
+
+  it("borrar un chat avisa de sus cards, que el SET NULL del FK haría en silencio", async () => {
+    const tab = connect(userA);
+    const doomedChat = await dbService.runWithTenant(userA, async (tx) => {
+      const [chat] = await tx.insert(chats).values({ userId: userA }).returning({ id: chats.id });
+      return chat!.id;
+    });
+    const card = await dbService.runWithTenant(userA, (tx) =>
+      cardsRepo.insertCard(tx, {
+        userId: userA,
+        chatId: doomedChat,
+        network: "linkedin",
+        content: TEXT,
+      }),
+    );
+    await until(() => tab.events().some((e) => e.data.id === card.id));
+    tab.chunks = [];
+
+    await dbService.runWithTenant(userA, async (tx) => {
+      await cardsRepo.detachFromChat(tx, doomedChat);
+      await tx.delete(chats).where(inArray(chats.id, [doomedChat]));
+    });
+    await until(() => tab.events().some((e) => e.data.id === card.id));
+    expect(tab.events()[0]).toMatchObject({ event: "card", data: { id: card.id, chatId: null } });
     registry.remove(userA, tab);
   });
 

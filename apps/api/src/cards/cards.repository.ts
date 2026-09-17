@@ -26,6 +26,11 @@ import { CARD_CHANGED_CHANNEL, encodeCardChanged } from "../realtime/card-events
 // `notifyChanged` DENTRO de su transacción (ver realtime/card-events.ts). Una
 // escritura nueva que no lo haga deja la pantalla desactualizada hasta que el
 // usuario recargue o vuelva a la pestaña.
+//
+// Eso incluye lo que Postgres cambiaría solo: `chat_id` y
+// `social_account_id` son ON DELETE SET NULL, y un SET NULL del motor no pasa
+// por acá ni avisa. Quien borra un chat o una cuenta llama antes a
+// `detachFromChat` / `detachFromAccount`.
 
 export type CardRow = typeof publicationCards.$inferSelect;
 
@@ -100,6 +105,31 @@ export class CardsRepository {
       .where(eq(publicationCards.messageId, messageId))
       .returning({ id: publicationCards.id, userId: publicationCards.userId });
     await notifyChanged(tx, deleted);
+  }
+
+  /**
+   * Suelta las cards de un chat que se va a borrar (F8.6). El FK haría lo
+   * mismo con ON DELETE SET NULL, pero en silencio: sin este paso, otra
+   * pestaña seguiría mostrando esas cards colgadas de un chat que ya no
+   * existe. Va en la misma transacción que el DELETE del chat.
+   */
+  async detachFromChat(tx: Tx, chatId: string): Promise<void> {
+    const detached = await tx
+      .update(publicationCards)
+      .set({ chatId: null, updatedAt: new Date() })
+      .where(eq(publicationCards.chatId, chatId))
+      .returning({ id: publicationCards.id, userId: publicationCards.userId });
+    await notifyChanged(tx, detached);
+  }
+
+  /** Lo mismo que `detachFromChat`, para una cuenta conectada que se va a borrar. */
+  async detachFromAccount(tx: Tx, socialAccountId: string): Promise<void> {
+    const detached = await tx
+      .update(publicationCards)
+      .set({ socialAccountId: null, updatedAt: new Date() })
+      .where(eq(publicationCards.socialAccountId, socialAccountId))
+      .returning({ id: publicationCards.id, userId: publicationCards.userId });
+    await notifyChanged(tx, detached);
   }
 
   // ── F6: ciclo de vida (programar/reprogramar/cancelar/reconciliar) ────

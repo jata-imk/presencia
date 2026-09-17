@@ -7,6 +7,14 @@ import { StreamRegistry } from "./stream-registry.service.js";
 
 const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
+/**
+ * Cada cuánto se comprueba que la conexión del LISTEN sigue viva. Una conexión
+ * que un firewall, un NAT o el túnel de dev tiran en silencio no da error
+ * hasta que se intenta usarla, y el keepalive de TCP de Linux no empieza a
+ * sondear hasta 2 horas de inactividad: sin esto el listener pasaría todo ese
+ * tiempo sin recibir nada y sin enterarse.
+ */
+const PROBE_MS = 60_000;
 
 /**
  * El lado LISTEN del puente de cards (F8.6, addendum de ADR-006). Escucha el
@@ -24,6 +32,7 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
   private connectedOnce = false;
   private reconnectDelay = RECONNECT_MIN_MS;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private probeTimer: NodeJS.Timeout | null = null;
   // Las notificaciones se atienden EN SERIE. Cada una lee la card de la base;
   // en paralelo, dos cambios seguidos de la misma card podrían resolver al
   // revés y dejar en pantalla el más viejo (el cliente tiene su guardia de
@@ -44,6 +53,7 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     this.stopped = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.probeTimer) clearInterval(this.probeTimer);
     await this.client?.end().catch(() => undefined);
     this.client = null;
   }
@@ -78,10 +88,10 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
     if (this.stopped) return;
     const client = new pg.Client({
       connectionString: env.APP_DATABASE_URL,
-      // Una conexión que pasa horas sin tráfico: sin keepalive de TCP, un
-      // firewall o el túnel de dev la pueden matar en silencio y el LISTEN se
-      // quedaría esperando notificaciones que ya no llegan.
+      // Keepalive de TCP con un arranque corto (el default del sistema son
+      // 2 horas). No alcanza solo: ver PROBE_MS.
       keepAlive: true,
+      keepAliveInitialDelayMillis: 30_000,
       application_name: "presencia-card-listener",
     });
     client.on("notification", (message) => {
@@ -107,6 +117,17 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
 
     this.client = client;
     this.reconnectDelay = RECONNECT_MIN_MS;
+    if (this.probeTimer) clearInterval(this.probeTimer);
+    this.probeTimer = setInterval(() => {
+      client.query("SELECT 1").catch((error: unknown) => {
+        console.error(
+          "[realtime] la conexión del listener no responde:",
+          error instanceof Error ? error.message : error,
+        );
+        this.scheduleReconnect(client);
+      });
+    }, PROBE_MS);
+    this.probeTimer.unref();
     if (this.connectedOnce) {
       // NOTIFY no se encola: lo que se publicó mientras no había LISTEN se
       // perdió. Se le pide a cada navegador que vuelva a pedir lo que tiene en
@@ -122,6 +143,8 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
     // vieja no debe programar nada si ya hay otra.
     if (this.stopped || this.reconnectTimer || (this.client && this.client !== client)) return;
     this.client = null;
+    if (this.probeTimer) clearInterval(this.probeTimer);
+    this.probeTimer = null;
     // Se sueltan los handlers (que no vuelva a programar nada), pero queda uno
     // de `error` que no hace nada: un error tardío de la conexión vieja sin
     // ningún handler tumbaría el proceso entero.

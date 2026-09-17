@@ -257,6 +257,9 @@ export class ChannelsService {
           "Esta cuenta tiene publicaciones programadas — cancélalas o espera a que se publiquen antes de eliminarla.",
         );
       }
+      // Antes del DELETE y en la misma transacción: el SET NULL del FK no avisa
+      // a las otras pestañas (F8.6).
+      await this.cardsRepo.detachFromAccount(tx, id);
       await this.repo.deleteAccount(tx, id);
     });
   }
