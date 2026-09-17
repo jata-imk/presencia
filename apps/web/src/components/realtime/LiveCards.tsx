@@ -34,16 +34,31 @@ export function LiveCards(): null {
   useEffect(() => {
     let source: EventSource | null = null;
     let disposed = false;
-    let lostConnection = false;
+    // Arranca en true: la primera apertura también revalida. Las pantallas
+    // cargan sus cards por su lado, y lo que cambie entre esa carga y que el
+    // servidor registre este stream no llega por ningún evento.
+    let lostConnection = true;
     let lastSeen = Date.now();
     let reconnectDelay = RECONNECT_MIN_MS;
     let reconnectTimer: number | null = null;
-    // Coalescida: volver a la pestaña justo cuando el stream se reconecta no
-    // tiene por qué pedir todo dos veces.
-    let inFlight: Promise<void> | null = null;
+    // Coalescida, pero sin tragarse pedidos: si llega uno mientras otra
+    // revalidación está en vuelo, se corre UNA más al terminar. Reusar la que
+    // está en vuelo no alcanza: pudo haber leído antes del corte que motivó el
+    // pedido nuevo, y lo perdido en ese corte se quedaría sin recuperar.
+    let inFlight = false;
+    let pending = false;
     const revalidateOnce = () => {
-      inFlight ??= revalidate().finally(() => {
-        inFlight = null;
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+      inFlight = true;
+      void revalidate().finally(() => {
+        inFlight = false;
+        if (pending && !disposed) {
+          pending = false;
+          revalidateOnce();
+        }
       });
     };
 
