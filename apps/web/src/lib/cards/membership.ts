@@ -11,8 +11,9 @@ import type { CalendarFilters } from "../cards-api.js";
 // esas cambia, cambia acá también, o la vista y el servidor discrepan hasta
 // la siguiente recarga.
 //
-// La pertenencia al chat no vive acá: `chatId` no cambia nunca, así que una
-// card de un chat ya cargado solo puede entrar (al crearse), nunca salir.
+// La pertenencia al chat no vive acá: una card solo entra a la lista de su
+// chat al crearse. `chatId` pasa a null únicamente cuando se borra el chat
+// (ON DELETE SET NULL), y para entonces esa lista ya no está en pantalla.
 
 export interface RangeQuery {
   from: Date;
@@ -66,7 +67,8 @@ export function belongsToRange(
  * ¿`incoming` puede reemplazar a `current`? Solo si no es más vieja. Empate
  * gana la que llega: el optimismo del Calendario escribe copias con el mismo
  * `updatedAt` (cambia `scheduledAt` antes de que responda el servidor) y
- * tienen que aplicarse.
+ * tienen que aplicarse. Las recargas de listas agregan una regla más en
+ * cards-store: en empate no pisan una card aplicada después de pedirlas.
  */
 export function isNotOlder(incoming: PublicationCardDto, current: PublicationCardDto): boolean {
   return Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt);

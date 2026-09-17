@@ -46,7 +46,7 @@ interface CardsState {
   rangeError: string | null;
   /** Borradores sin fecha, más nuevos primero. null = nunca se pidieron. */
   draftIds: string[] | null;
-  /** El chat en pantalla (lo fija chat.tsx). Es lo único de chats que `revalidate` recarga. */
+  /** El chat en pantalla (lo fija chat.tsx). Es el único chat que `revalidate` recarga. */
   openChatId: string | null;
   /** Si el Calendario está montado (lo fija calendario.tsx). */
   calendarOpen: boolean;
@@ -88,12 +88,31 @@ function folderOfChat(chatId: string): string | null | undefined {
 }
 
 /**
+ * Cuándo (reloj del navegador) se aplicó por última vez cada card vía
+ * `apply`. Las recargas de listas lo consultan: una respuesta pedida ANTES de
+ * ese momento no sabe de ese cambio, así que no puede pisarlo — ni la entidad
+ * (la copia optimista del arrastre tiene el mismo `updatedAt` que la
+ * respuesta vieja) ni su pertenencia (una card recién programada que la
+ * respuesta vieja todavía no traía).
+ */
+const appliedAt = new Map<string, number>();
+
+function touchedSince(cardId: string, since: number): boolean {
+  return (appliedAt.get(cardId) ?? -1) >= since;
+}
+
+/**
  * Mezcla versiones nuevas en `byId` respetando la guardia de orden. Devuelve
  * el mapa nuevo (o el mismo si nada cambió) y las cards que sí entraron.
+ *
+ * `requestedAt` viene de las recargas: con él, una versión con el MISMO
+ * `updatedAt` no reemplaza a una que se aplicó después de pedir la lista.
+ * Sin él (`apply`), el empate gana la que llega.
  */
 function mergeEntities(
   byId: Record<string, PublicationCardDto>,
   cards: PublicationCardDto[],
+  requestedAt?: number,
 ): { byId: Record<string, PublicationCardDto>; accepted: PublicationCardDto[] } {
   let next = byId;
   const accepted: PublicationCardDto[] = [];
@@ -101,11 +120,40 @@ function mergeEntities(
     const current = next[card.id];
     if (current === card) continue;
     if (current && !isNotOlder(card, current)) continue;
+    if (
+      current &&
+      requestedAt !== undefined &&
+      card.updatedAt === current.updatedAt &&
+      touchedSince(card.id, requestedAt)
+    ) {
+      continue;
+    }
     if (next === byId) next = { ...byId };
     next[card.id] = card;
     accepted.push(card);
   }
   return { byId: next, accepted };
+}
+
+/**
+ * Ids de una lista recargada: los de la respuesta que siguen perteneciendo
+ * según la versión que quedó en `byId`, más los que se aplicaron después de
+ * pedirla y pertenecen — la respuesta vieja no podía traerlos.
+ */
+function reconcileIds(
+  responseIds: string[],
+  previousIds: string[] | null | undefined,
+  byId: Record<string, PublicationCardDto>,
+  requestedAt: number,
+  belongs: (card: PublicationCardDto) => boolean,
+): string[] {
+  const seen = new Set(responseIds);
+  const ids = responseIds.filter((id) => belongs(byId[id]!));
+  const late = (previousIds ?? []).filter((id) => {
+    const card = byId[id];
+    return !seen.has(id) && card !== undefined && touchedSince(id, requestedAt) && belongs(card);
+  });
+  return [...ids, ...late];
 }
 
 export const useCardsStore = create<CardsState>()(
@@ -146,6 +194,7 @@ export const useCardsStore = create<CardsState>()(
         const controller = new AbortController();
         rangeInFlight = controller;
         const token = (rangeToken += 1);
+        const requestedAt = performance.now();
         lastRangeQuery = { from, to, filters };
 
         // Las cards anteriores NO se limpian: cambiar de mes deja la grilla
@@ -158,13 +207,20 @@ export const useCardsStore = create<CardsState>()(
           if (token !== rangeToken) return;
           set(
             (state) => {
-              const { byId } = mergeEntities(state.byId, rows);
+              const { byId } = mergeEntities(state.byId, rows, requestedAt);
               // Si la guardia de orden conservó una versión más nueva que la
               // de la respuesta, esa versión decide si pertenece.
               const query = { from, to, filters };
-              const ids = rows
-                .map((row) => row.id)
-                .filter((id) => belongsToRange(byId[id]!, query, folderOfChat) !== false);
+              const ids = sortByScheduledAt(
+                reconcileIds(
+                  rows.map((row) => row.id),
+                  state.range?.ids,
+                  byId,
+                  requestedAt,
+                  (card) => belongsToRange(card, query, folderOfChat) !== false,
+                ),
+                byId,
+              );
               return {
                 byId,
                 range: { ...query, ids },
@@ -199,15 +255,22 @@ export const useCardsStore = create<CardsState>()(
 
       loadDrafts: async () => {
         const token = (draftsToken += 1);
+        const requestedAt = performance.now();
         try {
           const rows = await fetchDraftCards();
           if (token !== draftsToken) return;
           set(
             (state) => {
-              const { byId } = mergeEntities(state.byId, rows);
+              const { byId } = mergeEntities(state.byId, rows, requestedAt);
               return {
                 byId,
-                draftIds: rows.map((row) => row.id).filter((id) => belongsToDrafts(byId[id]!)),
+                draftIds: reconcileIds(
+                  rows.map((row) => row.id),
+                  state.draftIds,
+                  byId,
+                  requestedAt,
+                  belongsToDrafts,
+                ),
               };
             },
             false,
@@ -226,11 +289,14 @@ export const useCardsStore = create<CardsState>()(
           (state) => {
             const { byId, accepted } = mergeEntities(state.byId, cards);
             if (accepted.length === 0) return {};
+            const now = performance.now();
+            for (const card of accepted) appliedAt.set(card.id, now);
 
             let { chatIds, draftIds, range } = state;
             for (const card of accepted) {
-              // Chat: `chatId` no cambia nunca, así que solo puede entrar (una
-              // card recién creada) y solo si ese chat ya está cargado.
+              // Chat: una card solo puede ENTRAR a la lista de su chat (recién
+              // creada) y solo si ese chat ya está cargado. `chatId` solo cambia
+              // a null cuando se borra el chat, y entonces su lista ya no se ve.
               const inChat = card.chatId ? chatIds[card.chatId] : undefined;
               if (card.chatId && inChat && !inChat.includes(card.id)) {
                 chatIds = { ...chatIds, [card.chatId]: [...inChat, card.id] };

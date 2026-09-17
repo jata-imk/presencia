@@ -118,8 +118,8 @@ export function CalendarioPage() {
   const apply = useCardsStore((s) => s.apply);
   const setCalendarOpen = useCardsStore((s) => s.setCalendarOpen);
   useEffect(() => {
-    // `revalidate` (foco, reconexión del stream) solo recarga el Calendario
-    // mientras está montado.
+    // `revalidate` solo recarga el rango y la bandeja mientras el Calendario
+    // está montado.
     setCalendarOpen(true);
     return () => setCalendarOpen(false);
   }, [setCalendarOpen]);

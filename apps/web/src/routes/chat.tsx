@@ -121,7 +121,7 @@ function ChatView({
   // cards del chat sin que nada de ellas hubiera cambiado.
   useEffect(() => {
     void loadChatCards(chatId);
-    // `revalidate` (foco, reconexión del stream) solo recarga el chat en pantalla.
+    // `revalidate` solo recarga el chat en pantalla, no todos los visitados.
     setOpenChat(chatId);
     return () => setOpenChat(null);
   }, [chatId, loadChatCards, setOpenChat]);
