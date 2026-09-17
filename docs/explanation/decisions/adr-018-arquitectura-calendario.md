@@ -165,3 +165,39 @@ La previsualización en sí sigue variando **por arquetipo** (`visual_first` / `
 - **Un breakpoint único de 768.** Dejaba la banda de tablet con la bandeja de 300px comiéndose la grilla, o sin bandeja teniendo ancho de sobra. El rail resuelve las dos.
 - **Guardar la preferencia de vista en el perfil.** El usuario que abre un link de semana quiere ver esa semana, no su default. La URL gana.
 - **Grilla de 6 filas fijas.** Rellenar siempre a 6 deja una fila entera de días de otro mes en la mitad de los meses y, con filas `1fr`, le roba alto a los días que sí importan. Se renderizan las semanas que el mes realmente ocupa (5 o 6).
+
+## Addendum (2026-09-16, F8.6) — un solo store de cards, normalizado
+
+La entrada "Reutilizar `cards-store.ts`" de **Descartado** tenía razón sobre la pregunta y se equivocaba
+sobre el remedio. El Chat y el Calendario siguen preguntando cosas distintas, pero tenerlas en dos stores
+hacía que una misma card viviera en tres copias (`cards-store` por chat, `calendar-store` por rango y
+bandeja, y la foto de `schedule-drawer-store`) que se sincronizaban a mano: cada acción terminaba en un
+`refresh(chatId)` o un `reload()` para que la otra pantalla se enterara. F8.6 empuja cambios desde el
+servidor (SSE), y con tres copias cada evento hubiera tenido que saber a qué copias tocar.
+
+**Lo que quedó.** `stores/cards-store.ts` guarda cada card **una vez** (`byId`) y las vistas guardan ids:
+`chatIds[chatId]`, `range.ids` (la consulta del Calendario) y `draftIds`. La "clave que sirva para las
+dos preguntas" que se temía no hace falta: cada pregunta conserva su lista, y lo que comparten es la
+entidad. `calendar-store.ts` se borró.
+
+- **Pertenencia.** Cuando una card cambia, `apply()` actualiza la entidad y decide si sigue en cada
+  lista con `lib/cards/membership.ts`, que es espejo exacto de `listDrafts` y `listByRange` del servidor.
+  Así una card que el worker publica sale sola de una grilla filtrada por "Programado", y un borrador que
+  se programa cruza de la bandeja a la grilla sin recargar. El filtro de carpeta se resuelve con la
+  carpeta del chat (`chats-store`); si el cliente no conoce ese chat, no adivina: vuelve a pedir el rango.
+- **Guardia de orden.** El DTO trae `updatedAt` y `apply()` ignora una versión más vieja que la que ya
+  tiene. La misma card llega por la respuesta de una mutación, por una recarga y por el stream; sin la
+  guardia, la que llega último gana aunque sea la más vieja. Empate gana la que llega, porque el optimismo
+  del arrastre escribe copias con el mismo `updatedAt`.
+- **Mutaciones.** Cancelar, programar y reprogramar aplican la card que devuelve el servidor en vez de
+  recargar. `reload()` queda solo en caminos de error, donde no se sabe qué quedó.
+- **El drawer** guarda ids y lee las cards vivas; su `key` sigue saliendo de los ids pedidos, así que un
+  cambio de estado con el drawer abierto actualiza el encabezado sin remontarlo ni borrar lo que el
+  usuario llenó. El callback `onDone` del drawer desapareció: existía solo para que el Calendario se
+  enterara de algo que ahora ya ve.
+- **Selectores con `useShallow`.** Las listas se arman desde `byId` en cada lectura; sin comparación
+  superficial zustand v5 re-renderiza en bucle, y los `useMemo` de `calendario.tsx` (`entriesByDay`,
+  `conflictDays`…) perderían su identidad estable.
+
+Todos los stores llevan el middleware `devtools` de zustand con acciones nombradas, activo solo en dev,
+para inspeccionarlos con Redux DevTools.

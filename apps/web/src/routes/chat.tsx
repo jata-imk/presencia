@@ -101,7 +101,8 @@ function ChatView({
   const { quota, refresh: refreshQuota } = useQuota();
   // F6: estado vivo de las cards (cards-store, PR4) — el tool part
   // persistido solo sabe cómo nació la card, nunca se actualiza solo.
-  const refreshCards = useCardsStore((s) => s.refresh);
+  const loadChatCards = useCardsStore((s) => s.loadChat);
+  const setOpenChat = useCardsStore((s) => s.setOpenChat);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [modalDismissed, setModalDismissed] = useState(false);
 
@@ -115,16 +116,24 @@ function ChatView({
   const chatTitle = currentChat?.title ?? "Conversación";
   const chatFolderId = currentChat?.folderId ?? null;
 
+  // Cards y chats en efectos separados: juntos, cada cambio de identidad de
+  // `chats` (renombrar, fijar, archivar desde el sidebar) volvía a pedir las
+  // cards del chat sin que nada de ellas hubiera cambiado.
   useEffect(() => {
-    void refreshCards(chatId);
+    void loadChatCards(chatId);
+    // `revalidate` (foco, reconexión del stream) solo recarga el chat en pantalla.
+    setOpenChat(chatId);
+    return () => setOpenChat(null);
+  }, [chatId, loadChatCards, setOpenChat]);
+  useEffect(() => {
     if (!chats) void refreshChats();
-  }, [chatId, refreshCards, refreshChats, chats]);
+  }, [refreshChats, chats]);
   useEffect(() => {
     if (status === "ready") {
       refreshQuota();
-      void refreshCards(chatId);
+      void loadChatCards(chatId);
     }
-  }, [status, chatId, refreshQuota, refreshCards]);
+  }, [status, chatId, refreshQuota, loadChatCards]);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length]);

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { devtools } from "zustand/middleware";
 import type { ChatSummary } from "@presencia/shared";
 import { apiFetch } from "../lib/api.js";
 import { useFoldersStore } from "./folders-store.js";
@@ -55,87 +56,125 @@ interface ChatsState {
   remove: (id: string) => Promise<void>;
 }
 
-export const useChatsStore = create<ChatsState>((set, get) => ({
-  chats: null,
-  archivedChats: null,
-  error: null,
-  refresh: async () => {
-    try {
-      const rows = await apiFetch<ChatSummary[]>("/api/chats");
-      set({ chats: rows, error: null });
-    } catch {
-      set({ error: "No se pudieron cargar tus chats." });
-    }
-  },
-  refreshArchived: async () => {
-    try {
-      const rows = await apiFetch<ChatSummary[]>("/api/chats/archived");
-      set({ archivedChats: rows, error: null });
-    } catch {
-      set({ error: "No se pudieron cargar tus chats archivados." });
-    }
-  },
-  create: async (title) => {
-    const chat = await apiFetch<ChatSummary>("/api/chats", { method: "POST", body: { title } });
-    set({ chats: [chat, ...(get().chats ?? [])] });
-    return chat;
-  },
-  rename: async (id, title) => {
-    const updated = await apiFetch<ChatSummary>(`/api/chats/${id}`, {
-      method: "PATCH",
-      body: { title },
-    });
-    set((state) => ({
-      chats: state.chats?.map((c) => (c.id === id ? updated : c)) ?? null,
-    }));
-    return updated;
-  },
-  moveToFolder: async (id, folderId) => {
-    const updated = await apiFetch<ChatSummary>(`/api/chats/${id}/folder`, {
-      method: "PATCH",
-      body: { folderId },
-    });
-    set((state) => ({
-      chats: state.chats?.map((c) => (c.id === id ? updated : c)) ?? null,
-    }));
-    refreshFolderCounts();
-    return updated;
-  },
-  setPinned: async (id, pinned) => {
-    const updated = await apiFetch<ChatSummary>(`/api/chats/${id}/${pinned ? "pin" : "unpin"}`, {
-      method: "POST",
-    });
-    set((state) => ({
-      chats: state.chats
-        ? sortLikeServer(state.chats.map((c) => (c.id === id ? updated : c)))
-        : null,
-    }));
-    return updated;
-  },
-  archive: async (id) => {
-    await apiFetch<ChatSummary>(`/api/chats/${id}/archive`, { method: "POST" });
-    set((state) => ({ chats: state.chats?.filter((c) => c.id !== id) ?? null }));
-    refreshFolderCounts();
-  },
-  unarchive: async (id) => {
-    // El mirror de archive() no basta: archive() solo saca de `chats`
-    // porque archivedChats se carga aparte, pero unarchive() necesita
-    // meterlo de vuelta en `chats` (code review 2026-08-20) — sin esto, un
-    // chat recién desarchivado desaparecía de Recientes hasta un refresh
-    // que nada dispara (Sidebar solo llama refresh() una vez, al montar).
-    const updated = await apiFetch<ChatSummary>(`/api/chats/${id}/unarchive`, { method: "POST" });
-    set((state) => ({
-      archivedChats: state.archivedChats?.filter((c) => c.id !== id) ?? null,
-      chats: sortLikeServer([updated, ...(state.chats ?? [])]),
-    }));
-    refreshFolderCounts();
-  },
-  remove: async (id) => {
-    await apiFetch<undefined>(`/api/chats/${id}`, { method: "DELETE" });
-    set((state) => ({
-      chats: state.chats?.filter((c) => c.id !== id) ?? null,
-      archivedChats: state.archivedChats?.filter((c) => c.id !== id) ?? null,
-    }));
-    refreshFolderCounts();
-  },
-}));
+export const useChatsStore = create<ChatsState>()(
+  devtools(
+    (set, get) => ({
+      chats: null,
+      archivedChats: null,
+      error: null,
+      refresh: async () => {
+        try {
+          const rows = await apiFetch<ChatSummary[]>("/api/chats");
+          set({ chats: rows, error: null }, false, "chats/refresh");
+        } catch {
+          set({ error: "No se pudieron cargar tus chats." }, false, "chats/refresh");
+        }
+      },
+      refreshArchived: async () => {
+        try {
+          const rows = await apiFetch<ChatSummary[]>("/api/chats/archived");
+          set({ archivedChats: rows, error: null }, false, "chats/refreshArchived");
+        } catch {
+          set(
+            { error: "No se pudieron cargar tus chats archivados." },
+            false,
+            "chats/refreshArchived",
+          );
+        }
+      },
+      create: async (title) => {
+        const chat = await apiFetch<ChatSummary>("/api/chats", { method: "POST", body: { title } });
+        set({ chats: [chat, ...(get().chats ?? [])] }, false, "chats/create");
+        return chat;
+      },
+      rename: async (id, title) => {
+        const updated = await apiFetch<ChatSummary>(`/api/chats/${id}`, {
+          method: "PATCH",
+          body: { title },
+        });
+        set(
+          (state) => ({
+            chats: state.chats?.map((c) => (c.id === id ? updated : c)) ?? null,
+          }),
+          false,
+          "chats/rename",
+        );
+        return updated;
+      },
+      moveToFolder: async (id, folderId) => {
+        const updated = await apiFetch<ChatSummary>(`/api/chats/${id}/folder`, {
+          method: "PATCH",
+          body: { folderId },
+        });
+        set(
+          (state) => ({
+            chats: state.chats?.map((c) => (c.id === id ? updated : c)) ?? null,
+          }),
+          false,
+          "chats/moveToFolder",
+        );
+        refreshFolderCounts();
+        return updated;
+      },
+      setPinned: async (id, pinned) => {
+        const updated = await apiFetch<ChatSummary>(
+          `/api/chats/${id}/${pinned ? "pin" : "unpin"}`,
+          {
+            method: "POST",
+          },
+        );
+        set(
+          (state) => ({
+            chats: state.chats
+              ? sortLikeServer(state.chats.map((c) => (c.id === id ? updated : c)))
+              : null,
+          }),
+          false,
+          "chats/setPinned",
+        );
+        return updated;
+      },
+      archive: async (id) => {
+        await apiFetch<ChatSummary>(`/api/chats/${id}/archive`, { method: "POST" });
+        set(
+          (state) => ({ chats: state.chats?.filter((c) => c.id !== id) ?? null }),
+          false,
+          "chats/archive",
+        );
+        refreshFolderCounts();
+      },
+      unarchive: async (id) => {
+        // El mirror de archive() no basta: archive() solo saca de `chats`
+        // porque archivedChats se carga aparte, pero unarchive() necesita
+        // meterlo de vuelta en `chats` (code review 2026-08-20) — sin esto, un
+        // chat recién desarchivado desaparecía de Recientes hasta un refresh
+        // que nada dispara (Sidebar solo llama refresh() una vez, al montar).
+        const updated = await apiFetch<ChatSummary>(`/api/chats/${id}/unarchive`, {
+          method: "POST",
+        });
+        set(
+          (state) => ({
+            archivedChats: state.archivedChats?.filter((c) => c.id !== id) ?? null,
+            chats: sortLikeServer([updated, ...(state.chats ?? [])]),
+          }),
+          false,
+          "chats/unarchive",
+        );
+        refreshFolderCounts();
+      },
+      remove: async (id) => {
+        await apiFetch<undefined>(`/api/chats/${id}`, { method: "DELETE" });
+        set(
+          (state) => ({
+            chats: state.chats?.filter((c) => c.id !== id) ?? null,
+            archivedChats: state.archivedChats?.filter((c) => c.id !== id) ?? null,
+          }),
+          false,
+          "chats/remove",
+        );
+        refreshFolderCounts();
+      },
+    }),
+    { name: "chats", enabled: import.meta.env.DEV },
+  ),
+);

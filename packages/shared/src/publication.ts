@@ -220,6 +220,14 @@ export interface PublicationCardDto {
   postUrl: string | null;
   /** Mensaje en español, listo para mostrar, cuando status es "failed". Null si no hay. */
   errorMessage: string | null;
+  /**
+   * ISO 8601 UTC de la última escritura (F8.6). El store normalizado del
+   * frontend lo usa como guardia de orden: la misma card llega por varios
+   * caminos (respuesta de una mutación, recarga de una lista, evento SSE) y
+   * una versión vieja que llega tarde no debe pisar a una más nueva. Toda
+   * escritura de cards.repository.ts lo fija.
+   */
+  updatedAt: string;
 }
 
 export const cardIdParamSchema = z.object({ id: z.uuid() });
