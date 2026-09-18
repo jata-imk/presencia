@@ -482,12 +482,15 @@ export const aiUsageEvents = pgTable(
 //    en Presencia — es el caso del creator que conecta sus cuentas y trae un
 //    historial previo. Atarlo a la card haría imposible guardarlo sin una
 //    migración después.
-//  - La llave NO incluye `social_account_id` aunque la columna exista:
-//    reconectar una cuenta crea una FILA NUEVA en social_accounts, así que
-//    llavear por ella duplicaría el mismo post del mismo día. `(user_id,
-//    network, platform_post_id)` identifica la publicación sin depender de
-//    por cuál conexión se llegó a ella, y además nunca es NULL — un NULL en
-//    un índice único no colisiona con nada y el upsert insertaría de más.
+//  - La llave NO incluye `social_account_id` aunque la columna exista, por
+//    dos razones. Una es que la columna es NULLABLE (el `SET NULL` de abajo),
+//    y un NULL en un índice único no colisiona con nada: el upsert insertaría
+//    una fila nueva cada pase. La otra es que la fila no es estable — borrar
+//    una cuenta y volver a conectarla crea una FILA NUEVA (reconectar sin
+//    borrar sí reutiliza la vieja, ver ChannelsService.claimConnectIntent),
+//    y entonces el mismo post del mismo día se guardaría dos veces.
+//    `(user_id, network, platform_post_id)` identifica la publicación sin
+//    depender de por cuál conexión se llegó a ella.
 //  - Un snapshot POR DÍA, no una fila viva por post. Una sola fila que se
 //    sobrescribe pierde la velocidad (cuánto creció en las primeras 24 h es
 //    justo lo que distingue un post que funcionó de uno que no), y la serie

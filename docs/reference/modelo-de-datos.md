@@ -172,7 +172,7 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 **`post_metrics`** — un snapshot por post y día (F8.7, **ADR-021**, migraciones `0024_post_metrics` / `0025_rls_post_metrics`). Lo llena el job de ingesta; no hay UI que la lea hasta F12.
 
-La llave es `(user_id, network, platform_post_id, snapshot_date)` — **no** la card y **no** la cuenta conectada. La card porque un post puede existir en la red sin haber nacido en Presencia (historial previo del creator); la cuenta porque reconectarla crea una fila nueva en `social_accounts` y duplicaría el mismo post.
+La llave es `(user_id, network, platform_post_id, snapshot_date)` — **no** la card y **no** la cuenta conectada. La card porque un post puede existir en la red sin haber nacido en Presencia (historial previo del creator); la cuenta porque es nullable (un `NULL` no colisiona en un índice único) y porque su fila cambia de id si la cuenta se borra y se vuelve a conectar.
 
 | Columna                                               | Tipo              | Nota                                                                                                          |
 | ----------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------- |

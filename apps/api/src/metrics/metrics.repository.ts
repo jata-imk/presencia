@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { sql } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
 import type { SocialNetwork } from "@presencia/shared";
 import { postMetrics } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
@@ -43,6 +44,24 @@ export interface UpsertSnapshotInput extends NormalizedMetrics {
 // que la precedió.
 const WRITTEN_AT = sql`clock_timestamp()`;
 
+/**
+ * En el UPDATE del conflicto: toma el valor nuevo si existe, conserva el
+ * guardado si el nuevo es `NULL`.
+ *
+ * No es una precaución abstracta. "Publicó pero la red no dio métricas" es el
+ * caso NORMAL (LinkedIn personal no las da nunca; X respondió 401 en la sonda
+ * del 2026-09-17), y un pase que falle después de uno que funcionó llegaría
+ * acá con todo en `null`. Sin esto, el índice único convertiría ese fallo en
+ * un UPDATE que borra el único número bueno del día, sin forma de
+ * recuperarlo: el proveedor ya no lo tiene, era un snapshot.
+ *
+ * Un contador no baja a "desconocido": si la red reportó 210 impresiones a las
+ * 06:00, esos 210 siguen siendo ciertos a las 18:00 aunque la llamada truene.
+ */
+function conservaSiFalta(columna: PgColumn) {
+  return sql`coalesce(excluded.${sql.identifier(columna.name)}, ${columna})`;
+}
+
 @Injectable()
 export class MetricsRepository {
   /**
@@ -51,12 +70,25 @@ export class MetricsRepository {
    * filas") y lo garantiza el índice único, no el código que llama.
    *
    * El conflicto se resuelve por `(user_id, network, platform_post_id,
-   * snapshot_date)` y no por la cuenta: reconectar una cuenta crea una fila
-   * nueva en social_accounts, y llavear por ella duplicaría el mismo post.
+   * snapshot_date)` y no por la cuenta: `social_account_id` es nullable (y un
+   * NULL no colisiona en un índice único) y su fila cambia de id si la cuenta
+   * se borra y se vuelve a conectar. Ver el docblock de la tabla.
    *
    * `card_id` y `social_account_id` se actualizan también, y a propósito: una
    * fila que entró por backfill (sin card) puede ganar una después, y la
-   * cuenta puede haberse reconectado entre dos pases del mismo día.
+   * cuenta puede haber cambiado entre dos pases.
+   *
+   * Todo lo que puede venir vacío pasa por `conservaSiFalta`: un pase fallido
+   * no borra lo que ya se sabía. Lo que sí se pisa siempre es `raw` (queremos
+   * el motivo del último intento), `captured_at` y `provider`.
+   *
+   * `provider` NO es parte de la llave. Hoy no puede serlo sin romper el
+   * invariante del DoD: dos proveedores para la misma red darían dos filas
+   * del mismo día. Y hoy tampoco hace falta — `PUBLISHING_PROVIDER` es una
+   * sola variable global, así que en un momento dado hay exactamente un
+   * proveedor por instalación. Si eso cambiara (un proveedor por red, por
+   * ejemplo), hay que volver acá: la serie de un post mezclaría números que
+   * el comentario de `schema.ts` dice que no siempre son comparables.
    */
   async upsertSnapshot(tx: Tx, input: UpsertSnapshotInput): Promise<void> {
     await tx
@@ -86,15 +118,15 @@ export class MetricsRepository {
           postMetrics.snapshotDate,
         ],
         set: {
-          socialAccountId: input.socialAccountId,
-          cardId: input.cardId,
+          socialAccountId: conservaSiFalta(postMetrics.socialAccountId),
+          cardId: conservaSiFalta(postMetrics.cardId),
           capturedAt: input.capturedAt,
-          publishedAt: input.publishedAt,
-          impressions: input.impressions,
-          reach: input.reach,
-          likes: input.likes,
-          comments: input.comments,
-          shares: input.shares,
+          publishedAt: conservaSiFalta(postMetrics.publishedAt),
+          impressions: conservaSiFalta(postMetrics.impressions),
+          reach: conservaSiFalta(postMetrics.reach),
+          likes: conservaSiFalta(postMetrics.likes),
+          comments: conservaSiFalta(postMetrics.comments),
+          shares: conservaSiFalta(postMetrics.shares),
           raw: input.raw,
           provider: input.provider,
           updatedAt: WRITTEN_AT,

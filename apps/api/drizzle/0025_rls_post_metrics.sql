@@ -9,9 +9,15 @@
 -- Los GRANT no hacen falta: 0001_rls_roles_policies.sql dejó un
 -- ALTER DEFAULT PRIVILEGES para presencia_app sobre las tablas nuevas.
 --
--- No lleva policy de worker_scan: el job de ingesta enumera desde
--- publication_cards (que sí la tiene, ver 0026) y escribe por tenant con
--- runWithTenant. Nunca necesita leer métricas de todos los usuarios a la vez.
+-- No lleva policy de worker_scan: el job de ingesta escribe por tenant con
+-- runWithTenant, así que nunca necesita leer métricas de todos los usuarios a
+-- la vez.
+--
+-- OJO para quien escriba ese job: la policy worker_scan que ya existe sobre
+-- publication_cards (0017, acotada por 0019) solo deja ver cards `scheduled`,
+-- así que un barrido cross-tenant de cards PUBLICADAS a través de ella
+-- devuelve cero filas en silencio. Enumerar publicadas pide una policy nueva,
+-- no reutilizar aquella.
 ALTER TABLE "post_metrics" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 ALTER TABLE "post_metrics" FORCE ROW LEVEL SECURITY;
