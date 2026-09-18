@@ -7,6 +7,7 @@ import {
   chats,
   folders,
   messages,
+  postMetrics,
   publicationCards,
   socialAccounts,
   socialConnectIntents,
@@ -660,5 +661,70 @@ describe("RLS tenant_isolation", () => {
         );
       },
     );
+  });
+  // F8.7: la tabla que acumula el historial del que aprende Ritmo. Su fuga
+  // sería peor que la de una card: son los números de negocio del creator.
+  describe("post_metrics", () => {
+    const snapshotBase = {
+      network: "linkedin" as const,
+      snapshotDate: "2026-09-17",
+      capturedAt: new Date("2026-09-17T06:00:00.000Z"),
+      raw: {},
+      provider: "fake",
+    };
+
+    beforeAll(async () => {
+      await dbService.runWithTenant(userA, (tx) =>
+        tx.insert(postMetrics).values({
+          ...snapshotBase,
+          userId: userA,
+          platformPostId: "urn:li:share:rls-a",
+          impressions: 84,
+        }),
+      );
+    }, 15_000);
+
+    it("el dueño ve sus propias métricas", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userA, (tx) => tx.select().from(postMetrics));
+      expect(rows.map((m) => m.platformPostId)).toContain("urn:li:share:rls-a");
+    });
+
+    it("otro tenant no lee métricas ajenas", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userB, (tx) => tx.select().from(postMetrics));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("otro tenant no puede insertar métricas a nombre ajeno", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx.insert(postMetrics).values({
+            ...snapshotBase,
+            userId: userA,
+            platformPostId: "urn:li:share:intruso",
+          }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(error).toBeInstanceOf(Error);
+      expect(String((error as Error).cause)).toMatch(/row-level security/);
+    });
+
+    // A diferencia de ai_usage_events, esta tabla NO es append-only: el pase
+    // del mismo día tiene que poder actualizar su fila. Si alguien copiara el
+    // REVOKE de aquella migración, el segundo pase del día fallaría.
+    it("el dueño puede actualizar su propia fila", { timeout: 15_000 }, async () => {
+      await dbService.runWithTenant(userA, (tx) =>
+        tx
+          .update(postMetrics)
+          .set({ impressions: 120 })
+          .where(eq(postMetrics.platformPostId, "urn:li:share:rls-a")),
+      );
+      const rows = await dbService.runWithTenant(userA, (tx) =>
+        tx.select().from(postMetrics).where(eq(postMetrics.platformPostId, "urn:li:share:rls-a")),
+      );
+      expect(rows[0]?.impressions).toBe(120);
+    });
   });
 });

@@ -1,0 +1,23 @@
+# ADR-021 · Métricas de publicación: un snapshot por post y día
+
+**Decisión:** las métricas de una publicación viven en `post_metrics`, una fila por **post y día**, llaveada por `(user_id, network, platform_post_id, snapshot_date)`. La card es una referencia opcional, no la llave. Cada fila guarda las métricas dos veces: normalizadas en columnas (`impressions`, `reach`, `likes`, `comments`, `shares`) y crudas en `raw`. `NULL` significa "la red no lo reportó" y nunca se traduce a `0`.
+
+**Razón:** las tres partes de la llave están elegidas contra un modo de falla concreto.
+
+- **No por card.** Un post puede existir en la red sin haber nacido en Presencia. Es el caso normal, no el raro: un creator que conecta sus cuentas trae un historial previo, y ese historial es la única forma de que Ritmo tenga algo que decir antes de que el usuario publique diez veces con nosotros. Atarlo a `publication_cards` haría que guardarlo exigiera una migración después, justo cuando ya hubiera usuarios.
+- **No por cuenta conectada.** Reconectar una cuenta crea una **fila nueva** en `social_accounts`. Con la cuenta en la llave, el mismo post del mismo día se guardaría dos veces, y la primera reconexión rompería el invariante sin que nadie se enterara. `social_account_id` se conserva como dato (y como `SET NULL`, para que desconectar no borre historial), pero no identifica nada.
+- **Un snapshot por día, no una fila viva.** Una fila que se sobrescribe pierde la velocidad, que es justo la señal: cuánto creció un post en sus primeras 24 h distingue el que funcionó del que no, y el total acumulado no. Guardar la serie completa por pase iría al otro extremo: las redes reportan con horas de retraso, así que cuatro pases diarios darían cuatro filas casi idénticas. El día es la granularidad a la que el dato cambia de verdad. El índice único hace que el segundo pase del mismo día actualice en vez de insertar — es el invariante que el DoD de F8.7 pide por nombre.
+
+Las dos copias de las métricas siguen el criterio de `ai_usage_events`: lo derivado se recalcula, lo crudo no se recupera. Las columnas normalizadas son lo que comparten todas las redes y lo que Ritmo va a leer; `raw` guarda lo que cada red reporta además (retención de video, reacciones por tipo) y también el **motivo** cuando no hubo métricas, que es información y no ausencia de información.
+
+`NULL ≠ 0` es decisión de producto, no de estilo. `reach: 0` es "nadie lo vio"; `reach: null` es "la red no lo reportó". Confundirlos haría que una recomendación de Ritmo promediara ceros inventados y le dijera al usuario que su mejor horario es el peor.
+
+**Descartado:**
+
+- **Una fila viva por card, actualizada in-place** — el mínimo posible y lo que pedía la lectura literal de "no duplicar filas". Pierde la curva de crecimiento y no puede recibir historial previo del creator.
+- **Guardar `activity_by_hour`** (seguidores en línea por hora, que Upload-Post describe como _"the field to build a publishing schedule on"_) — verificado el 2026-09-17: ese endpoint **solo responde TikTok**, y Post for Me no lo tiene. Para LinkedIn, Facebook o X no existe. Los mejores horarios de F9 salen de nuestra propia tabla: hora de publicación cruzada con engagement. Funciona en toda red, no depende de que el proveedor lo regale, y es literalmente "la app aprende de tu historial" en vez de "la app repite lo que dice la red".
+- **Una tabla por red, con las columnas de cada una** — las métricas comparables se vuelven joins, y agregar una red sexta sería una migración. `raw` cubre lo específico sin pagar eso.
+
+**Lo que esta decisión NO cubre:** de dónde salen los números (el puerto `getPostMetrics` y sus adapters, ADR-009), cada cuándo se piden (ADR-008), ni cómo se muestran (F12). Tampoco el backfill del historial previo al conectar una cuenta: el modelo lo admite, pero traerlo depende del proveedor — hoy solo Post for Me expone el feed de la cuenta, no solo lo que se subió a través de él.
+
+**Contexto:** F8.7, 2026-09-17. La fase existe porque la deuda de datos no se rebobina: cada semana en producción sin capturar métricas es historial que ninguna migración recupera. El diseño se cerró después de verificar las tres specs de máquina (Upload-Post, PostFast, Post for Me) y de sondear la API real de Upload-Post, que devolvió números para la Page de Facebook y errores explicativos para LinkedIn personal y X — el caso "publicó pero no hay métricas" es la norma, no la excepción, y por eso es de primera clase en el modelo.

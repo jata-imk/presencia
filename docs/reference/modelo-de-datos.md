@@ -168,6 +168,31 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 - **Hueco conocido:** en un turno abortado (`isAborted`) no se registra usage — `onEnd` retorna temprano y las promesas de `streamText` pueden no resolver. Los tokens quemados por "detener generación" (ADR-006) quedan sin medir hasta que se revisite.
 - Índice `usage_by_user` sobre `(user_id, created_at)` — mismo shape que `ledger_balance`, responde "¿cuánto gastó X este mes y en qué modelos?" sin abrir el dashboard de ningún proveedor.
 
+### Métricas de publicación
+
+**`post_metrics`** — un snapshot por post y día (F8.7, **ADR-021**, migraciones `0024_post_metrics` / `0025_rls_post_metrics`). Lo llena el job de ingesta; no hay UI que la lea hasta F12.
+
+La llave es `(user_id, network, platform_post_id, snapshot_date)` — **no** la card y **no** la cuenta conectada. La card porque un post puede existir en la red sin haber nacido en Presencia (historial previo del creator); la cuenta porque reconectarla crea una fila nueva en `social_accounts` y duplicaría el mismo post.
+
+| Columna                                               | Tipo              | Nota                                                                                                          |
+| ----------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| `id`                                                  | uuid PK           |                                                                                                               |
+| `user_id`                                             | uuid FK           | RLS                                                                                                           |
+| `social_account_id`                                   | uuid FK, nullable | `SET NULL` — desconectar la cuenta no borra el historial del que Ritmo aprende; no es parte de la llave       |
+| `network`                                             | enum              | denormalizada: sobrevive al `SET NULL` y un id nativo solo es único dentro de su red                          |
+| `platform_post_id`                                    | text              | id del post en la red (espejo de `publication_cards.platform_post_id`)                                        |
+| `card_id`                                             | uuid FK, nullable | `SET NULL`; nullable = post que no nació en Presencia                                                         |
+| `snapshot_date`                                       | date              | día del snapshot **en UTC** — coincide a propósito con el `date` que usa la caché de Upload-Post              |
+| `captured_at`                                         | timestamptz       | cuándo lo leímos; dice qué tan fresco es el número dentro del día                                             |
+| `published_at`                                        | timestamptz null  | copiada, no leída por join: las filas sin card también la necesitan. Materia prima de "mejores horarios" (F9) |
+| `impressions`, `reach`, `likes`, `comments`, `shares` | bigint nullable   | normalizadas. **`NULL` no es `0`**: `0` es "nadie lo vio", `NULL` es "la red no lo reportó"                   |
+| `raw`                                                 | jsonb             | lo que devolvió el proveedor, incluido el **motivo** cuando no hubo métricas                                  |
+| `provider`                                            | text              | qué adapter lo trajo: dos proveedores no siempre cuentan lo mismo con el mismo nombre                         |
+| `created_at` / `updated_at`                           | timestamptz       | `updated_at` con `clock_timestamp()`                                                                          |
+
+- Índice único `post_metrics_snapshot (user_id, network, platform_post_id, snapshot_date)`: es lo que hace que un segundo pase del mismo día **actualice** en vez de insertar (DoD de F8.7).
+- A diferencia de `ai_usage_events`, **no** es append-only: el upsert diario necesita `UPDATE`.
+
 ### Jobs
 
 **pg-boss** administra sus tablas dentro del schema `pgboss` (ADR-008), pero **el schema lo crea la migración `0016_pgboss_schema`**: crear schemas es DDL y la DDL vive en migraciones (ADR-013), así que el runtime corre con `createSchema: false` y `migrate: true`.
@@ -226,7 +251,7 @@ El centinela además conserva la red de seguridad que da ese error: una query qu
 
 ### Tablas cubiertas
 
-RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
+RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`, `post_metrics`. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
 
 ## Diagrama ER
 
@@ -247,6 +272,8 @@ erDiagram
     publication_cards |o--o{ assets : usa
     chats |o--o{ assets : "genera en"
     publication_cards }o--|| social_accounts : "publica via"
+    users ||--o{ post_metrics : acumula
+    publication_cards |o--o{ post_metrics : "mide (opcional)"
 ```
 
 ## ORM y migraciones — decisión (ADR-013)
