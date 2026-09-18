@@ -341,6 +341,27 @@ describe("PostFastProvider", () => {
     });
   });
 
+  // La respuesta de PostFast no se valida en runtime y NADA de este adapter
+  // se corroboró contra su API real. Un "" pasaría el filtro del barrido de
+  // métricas (no es null) y después pediría métricas de un post inexistente.
+  it("getPostStates degrada a null un platformPostId vacío o de otro tipo", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        data: [
+          { id: "pf_vacio", status: "PUBLISHED", platformPostId: "  " },
+          { id: "pf_raro", status: "PUBLISHED", platformPostId: 42 },
+        ],
+        pageInfo: { hasNextPage: false },
+      }),
+    );
+    const provider: PublishingProvider = new PostFastProvider("test-key");
+
+    const states = await provider.getPostStates(["pf_vacio", "pf_raro"]);
+
+    expect(states.get("pf_vacio")).toMatchObject({ status: "published", platformPostId: null });
+    expect(states.get("pf_raro")).toMatchObject({ status: "published", platformPostId: null });
+  });
+
   it("getPostStates con lista vacía no llama a fetch", async () => {
     const provider: PublishingProvider = new PostFastProvider("test-key");
     const states = await provider.getPostStates([]);

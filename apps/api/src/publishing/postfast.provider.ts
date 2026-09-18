@@ -1,6 +1,7 @@
 import type { SocialNetwork } from "@presencia/shared";
 import { PublishingRejectedError, PublishingUnavailableError } from "./errors.js";
 import { isStatus, ProviderHttpClient } from "./http-client.js";
+import { parsePlatformPostId } from "./platform-post-id.js";
 import { buildPostText } from "./post-text.js";
 import type {
   ProviderAccount,
@@ -67,8 +68,11 @@ interface PostfastPostSummary {
   id: string;
   status: "DRAFT" | "SCHEDULED" | "PUBLISHED" | "FAILED";
   publishedAt?: string | null;
-  /** Id nativo en la red; null mientras el post no se publicó. */
-  platformPostId?: string | null;
+  /**
+   * Id nativo en la red; null mientras el post no se publicó. `unknown` por
+   * el mismo motivo que `post_url` en Upload-Post: la respuesta es un cast.
+   */
+  platformPostId?: unknown;
 }
 
 export class PostFastProvider implements PublishingProvider {
@@ -225,8 +229,10 @@ export class PostFastProvider implements PublishingProvider {
           // botones "Ver en la red" se quedan apagados con este proveedor.
           postUrl: null,
           // El id nativo sí lo trae esta misma respuesta (mismo doc), y es
-          // con lo que después se le piden métricas.
-          platformPostId: post.platformPostId ?? null,
+          // con lo que después se le piden métricas. Pasa por el mismo
+          // parser que el de Upload-Post: esta respuesta tampoco se valida
+          // en runtime, y acá NADA lo corroboró contra la API real.
+          platformPostId: parsePlatformPostId(post.platformPostId),
         });
       }
       if (!body.pageInfo?.hasNextPage) break;

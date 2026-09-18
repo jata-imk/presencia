@@ -2,6 +2,7 @@ import type { SocialNetwork } from "@presencia/shared";
 import { PublishingRejectedError, PublishingUnavailableError } from "./errors.js";
 import { isStatus, ProviderHttpClient } from "./http-client.js";
 import { parseHttpUrl } from "./http-url.js";
+import { parsePlatformPostId } from "./platform-post-id.js";
 import { buildPostText } from "./post-text.js";
 import type {
   ProviderAccount,
@@ -539,18 +540,6 @@ function parseTimestamp(raw: string | null | undefined): Date | null {
   if (!raw) return null;
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-/**
- * El id nativo llega tipado `unknown` por la misma razón que `post_url`: la
- * respuesta del proveedor no se valida en runtime. Se acepta solo un string
- * no vacío — un `null`, un número o un objeto se degradan a "no lo dio", que
- * es un caso legítimo y no un error.
- */
-function parsePlatformPostId(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }
 
 /**
