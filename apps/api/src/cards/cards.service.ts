@@ -564,6 +564,10 @@ export class CardsService {
             // Puede venir null y está bien: no todos los proveedores dan la
             // URL del post (PostFast no la da nunca).
             postUrl: state.postUrl,
+            // Igual de opcional, y por la misma razón. Sin él no se le pueden
+            // pedir métricas a esa publicación (F8.7), pero no publicarla no
+            // es una opción: la card sí se publicó.
+            platformPostId: state.platformPostId,
           });
         }
         // "scheduled": sigue en cola del lado del proveedor, no-op.
@@ -622,6 +626,7 @@ interface PublishedUpdate {
   providerRef: string;
   publishedAt: Date;
   postUrl: string | null;
+  platformPostId: string | null;
 }
 
 /** Trabajo pendiente de un usuario, ya partido en las dos ramas de la reconciliación. */

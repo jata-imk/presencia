@@ -132,7 +132,12 @@ class NoUrlProvider extends FakePublishingProvider {
   override getPostStates(refs: string[]): Promise<Map<string, ProviderPostState>> {
     const states = new Map<string, ProviderPostState>();
     for (const ref of refs) {
-      states.set(ref, { status: "published", publishedAt: new Date(), postUrl: null });
+      states.set(ref, {
+        status: "published",
+        publishedAt: new Date(),
+        postUrl: null,
+        platformPostId: null,
+      });
     }
     return Promise.resolve(states);
   }
@@ -154,7 +159,12 @@ class CountingProvider extends FakePublishingProvider {
     const states = await super.getPostStates(refs);
     for (const ref of refs) {
       if (!states.has(ref))
-        states.set(ref, { status: "scheduled", publishedAt: null, postUrl: null });
+        states.set(ref, {
+          status: "scheduled",
+          publishedAt: null,
+          postUrl: null,
+          platformPostId: null,
+        });
     }
     return states;
   }
@@ -1161,6 +1171,7 @@ describe("CardsService", () => {
           cutoff: cutoffVencidas,
           publishedAt: new Date(),
           postUrl: "https://fake.local/p/vieja",
+          platformPostId: null,
         }),
       );
       expect(porRef).toBeUndefined();
@@ -1185,6 +1196,7 @@ describe("CardsService", () => {
           cutoff: cutoffVencidas,
           publishedAt: new Date(),
           postUrl: "https://fake.local/p/estable",
+          platformPostId: null,
         }),
       );
       expect(porFecha).toBeUndefined();
@@ -1209,9 +1221,15 @@ describe("CardsService", () => {
           cutoff: cutoffVencidas,
           publishedAt: new Date(),
           postUrl: "https://fake.local/p/intacta",
+          platformPostId: "fake-post-ref-intacta",
         }),
       );
       expect(escrita?.status).toBe("published");
+      // El id nativo se persiste en la MISMA escritura que published_at: si
+      // se guardara aparte, una card publicada podría quedarse sin él y sin
+      // nadie que vuelva a mirarla (el barrido solo lee `scheduled`), y esa
+      // publicación no tendría métricas nunca (F8.7).
+      expect(escrita?.platformPostId).toBe("fake-post-ref-intacta");
     },
   );
 

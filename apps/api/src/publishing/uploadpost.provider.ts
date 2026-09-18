@@ -2,6 +2,7 @@ import type { SocialNetwork } from "@presencia/shared";
 import { PublishingRejectedError, PublishingUnavailableError } from "./errors.js";
 import { isStatus, ProviderHttpClient } from "./http-client.js";
 import { parseHttpUrl } from "./http-url.js";
+import { parsePlatformPostId } from "./platform-post-id.js";
 import { buildPostText } from "./post-text.js";
 import type {
   ProviderAccount,
@@ -131,6 +132,13 @@ interface UploadPostHistoryItem {
   // mentirle al compilador. Lo estrecha parseHttpUrl.
   post_url?: unknown;
   upload_timestamp?: string | null;
+  /**
+   * Id del post en la red. Sí está en el openapi (`HistoryItem`) y la corrida
+   * real lo confirmó en las siete publicaciones (2026-09-17): Facebook
+   * `<pageId>_<postId>`, LinkedIn `urn:li:share:…`, X el id del tweet. Es la
+   * llave de las métricas por post, así que desde F8.7 se persiste.
+   */
+  platform_post_id?: unknown;
 }
 
 interface UploadPostHistoryPage {
@@ -437,7 +445,12 @@ export class UploadPostProvider implements PublishingProvider {
     const colaTruncada = typeof scheduled.total === "number" && scheduled.total > enCola.length;
     for (const post of enCola) {
       if (post.job_id && pending.delete(post.job_id)) {
-        result.set(post.job_id, { status: "scheduled", publishedAt: null, postUrl: null });
+        result.set(post.job_id, {
+          status: "scheduled",
+          publishedAt: null,
+          postUrl: null,
+          platformPostId: null,
+        });
       }
     }
     if (pending.size === 0) return result;
@@ -461,7 +474,12 @@ export class UploadPostProvider implements PublishingProvider {
       for (const entry of body.in_progress ?? []) {
         const jobId = typeof entry === "string" ? entry : entry?.job_id;
         if (jobId && pending.delete(jobId)) {
-          result.set(jobId, { status: "scheduled", publishedAt: null, postUrl: null });
+          result.set(jobId, {
+            status: "scheduled",
+            publishedAt: null,
+            postUrl: null,
+            platformPostId: null,
+          });
         }
       }
 
@@ -477,8 +495,9 @@ export class UploadPostProvider implements PublishingProvider {
                 status: "published",
                 publishedAt: parseTimestamp(item.upload_timestamp),
                 postUrl: parseHttpUrl(item.post_url),
+                platformPostId: parsePlatformPostId(item.platform_post_id),
               }
-            : { status: "failed", publishedAt: null, postUrl: null },
+            : { status: "failed", publishedAt: null, postUrl: null, platformPostId: null },
         );
       }
       // Última página: no hay nada más viejo que traer.
@@ -498,7 +517,12 @@ export class UploadPostProvider implements PublishingProvider {
     const historialTruncado = historyTotal !== undefined && historyTotal > scannedHistory;
     if (pending.size > 0 && (historialTruncado || colaTruncada)) {
       for (const ref of pending) {
-        result.set(ref, { status: "scheduled", publishedAt: null, postUrl: null });
+        result.set(ref, {
+          status: "scheduled",
+          publishedAt: null,
+          postUrl: null,
+          platformPostId: null,
+        });
       }
     }
     return result;

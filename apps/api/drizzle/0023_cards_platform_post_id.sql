@@ -1,0 +1,26 @@
+-- F8.7 PR1: el id del post en la RED, que no es el id del envío en el proveedor.
+--
+-- `provider_ref` identifica el trabajo dentro del proveedor (el job_id de
+-- Upload-Post, el UUID de PostFast). Los endpoints de analíticas no preguntan
+-- por eso: preguntan por el id nativo de la publicación en la red
+-- (`<pageId>_<postId>` en Facebook, `urn:li:share:…` en LinkedIn, el id del
+-- tweet en X). Sin esta columna no hay por quién pedir métricas.
+--
+-- Nullable y sin default, por el mismo criterio que `post_url` (0015): no todos
+-- los proveedores lo dan en la respuesta que ya leemos. Upload-Post sí, en
+-- `GET /uploadposts/history` (verificado contra la API real el 2026-09-17, en
+-- las siete publicaciones que existen); PostFast lo trae en `GET /social-posts`
+-- según su doc, sin corroborar contra la API real (cuenta sin suscripción).
+--
+-- Sin backfill: lo llena la reconciliación junto con `published_at`, así que
+-- las cards publicadas antes de esta migración se quedan sin él y nunca van a
+-- tener métricas. Son siete posts de prueba de un solo usuario; reconstruirlo
+-- costaría más que el historial que rescata.
+--
+-- SIN ÍNDICE sobre esta columna sola: se lee en la fila que ya se seleccionó
+-- por otro criterio. El índice que sí hace falta es el del barrido de métricas
+-- y llega con su propia migración, junto a la policy que lo usa.
+--
+-- RLS: `publication_cards` ya tiene ENABLE + FORCE + POLICY tenant_isolation
+-- desde 0001_rls_roles_policies.sql. Agregar una columna no toca policies.
+ALTER TABLE "publication_cards" ADD COLUMN "platform_post_id" text;

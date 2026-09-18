@@ -320,6 +320,12 @@ export const publicationCards = pgTable(
     // PostFast no lo devuelve nunca, así que ahí se queda null y los botones
     // "Ver en la red" siguen apagados con su tooltip.
     postUrl: text("post_url"),
+    // F8.7: id nativo del post en la red (Facebook `<pageId>_<postId>`,
+    // LinkedIn `urn:li:share:…`). Lo llena la misma escritura que published_at
+    // y es la llave con la que se le piden métricas al proveedor: sin él no
+    // hay por quién preguntar. Null legítimo cuando el proveedor no lo da
+    // (PostFast no lo incluye en su respuesta de estado).
+    platformPostId: text("platform_post_id"),
     errorDetail: jsonb("error_detail"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
