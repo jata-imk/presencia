@@ -169,6 +169,20 @@
       "when": 1789709044609,
       "tag": "0023_cards_platform_post_id",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1789710040985,
+      "tag": "0024_post_metrics",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1789710040986,
+      "tag": "0025_rls_post_metrics",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -470,4 +471,92 @@ export const aiUsageEvents = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("usage_by_user").on(t.userId, t.createdAt)],
+);
+
+// F8.7: métricas de una publicación, un snapshot por día.
+//
+// La llave NO es la card, es `(user_id, network, platform_post_id,
+// snapshot_date)`, y cada parte está elegida:
+//
+//  - `card_id` es NULLABLE. Un post puede existir en la red sin haber nacido
+//    en Presencia — es el caso del creator que conecta sus cuentas y trae un
+//    historial previo. Atarlo a la card haría imposible guardarlo sin una
+//    migración después.
+//  - La llave NO incluye `social_account_id` aunque la columna exista, por
+//    dos razones. Una es que la columna es NULLABLE (el `SET NULL` de abajo),
+//    y un NULL en un índice único no colisiona con nada: el upsert insertaría
+//    una fila nueva cada pase. La otra es que la fila no es estable — borrar
+//    una cuenta y volver a conectarla crea una FILA NUEVA (reconectar sin
+//    borrar sí reutiliza la vieja, ver ChannelsService.claimConnectIntent),
+//    y entonces el mismo post del mismo día se guardaría dos veces.
+//    `(user_id, network, platform_post_id)` identifica la publicación sin
+//    depender de por cuál conexión se llegó a ella.
+//  - Un snapshot POR DÍA, no una fila viva por post. Una sola fila que se
+//    sobrescribe pierde la velocidad (cuánto creció en las primeras 24 h es
+//    justo lo que distingue un post que funcionó de uno que no), y la serie
+//    completa por pase llenaría la tabla de ruido: las redes reportan con
+//    horas de retraso. El índice único hace que el segundo pase del mismo día
+//    actualice en vez de insertar.
+//
+// Las métricas van DOS veces: normalizadas en columnas (lo que comparten
+// todas las redes, que es lo que Ritmo va a leer) y crudas en `raw` (lo que
+// cada red reporta además). Es el mismo criterio de ai_usage_events: lo
+// derivado se puede recalcular, lo crudo no se puede recuperar.
+//
+// NULL no es 0, y esta distinción es de producto, no de estilo: `reach: 0` es
+// "nadie lo vio", `reach: null` es "la red no lo reportó". Confundirlos haría
+// que una recomendación de Ritmo promediara ceros inventados.
+export const postMetrics = pgTable(
+  "post_metrics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // SET NULL y no cascade: desconectar una cuenta no borra el historial de
+    // lo que se publicó con ella — es justo el historial del que Ritmo
+    // aprende.
+    socialAccountId: uuid("social_account_id").references(() => socialAccounts.id, {
+      onDelete: "set null",
+    }),
+    // Denormalizada a propósito: sobrevive al SET NULL de arriba (sin esto,
+    // desconectar la cuenta dejaría filas sin saber de qué red son) y es
+    // parte de la llave, porque un id nativo solo es único dentro de su red.
+    network: socialNetwork("network").notNull(),
+    platformPostId: text("platform_post_id").notNull(),
+    cardId: uuid("card_id").references(() => publicationCards.id, { onDelete: "set null" }),
+    // Día del snapshot en UTC. Coincide a propósito con el `date` que usa
+    // Upload-Post en su caché: si acá se usara la fecha local del servidor,
+    // dos pases del mismo día del proveedor caerían en filas distintas.
+    snapshotDate: date("snapshot_date").notNull(),
+    // Cuándo lo leímos nosotros. No es lo mismo que snapshot_date y no es
+    // redundante: dice qué tan fresco es el número dentro del día.
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    // Hora de publicación del post. Copiada acá y no leída por join con la
+    // card: las filas sin card (backfill) también la necesitan, y es la
+    // materia prima de "mejores horarios" (F9).
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    impressions: bigint("impressions", { mode: "number" }),
+    reach: bigint("reach", { mode: "number" }),
+    likes: bigint("likes", { mode: "number" }),
+    comments: bigint("comments", { mode: "number" }),
+    shares: bigint("shares", { mode: "number" }),
+    // Lo que devolvió el proveedor, sin tocar. Incluye lo que no cabe en las
+    // columnas de arriba (retención de video, reacciones por tipo) y también
+    // el motivo cuando NO hubo métricas.
+    raw: jsonb("raw").notNull(),
+    // Qué adapter lo trajo. Los números de dos proveedores no siempre son
+    // comparables (Facebook llama "impressions" a cosas distintas según por
+    // dónde se pregunte), así que la procedencia es parte del dato.
+    provider: text("provider").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // El invariante del DoD: un segundo pase el mismo día actualiza la fila,
+    // no crea otra.
+    uniqueIndex("post_metrics_snapshot").on(t.userId, t.network, t.platformPostId, t.snapshotDate),
+    // Para el join de Analíticas (F12) y para saber qué cards ya tienen datos.
+    index("post_metrics_by_card").on(t.cardId),
+  ],
 );
