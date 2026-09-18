@@ -62,6 +62,17 @@ export interface ProviderPostState {
    * solo (botón apagado con tooltip) en vez de bifurcar por proveedor.
    */
   postUrl: string | null;
+  /**
+   * Id del post en la red, no en el proveedor (Facebook `<pageId>_<postId>`,
+   * LinkedIn `urn:li:share:…`, X el id numérico del tweet). `null` es
+   * legítimo, igual que `postUrl`: PostFast no lo devuelve en su respuesta de
+   * estado.
+   *
+   * Existe porque es la llave con la que se piden métricas (F8.7): el
+   * `providerRef` identifica el envío dentro del proveedor, no la publicación
+   * dentro de la red, y los endpoints de analíticas preguntan por el segundo.
+   */
+  platformPostId: string | null;
 }
 
 export interface PublishingProvider {

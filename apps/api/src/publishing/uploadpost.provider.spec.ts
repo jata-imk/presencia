@@ -570,11 +570,13 @@ describe("UploadPostProvider", () => {
         status: "scheduled",
         publishedAt: null,
         postUrl: null,
+        platformPostId: null,
       });
       expect(states.get("job_2")).toEqual({
         status: "scheduled",
         publishedAt: null,
         postUrl: null,
+        platformPostId: null,
       });
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
@@ -591,6 +593,7 @@ describe("UploadPostProvider", () => {
                 job_id: "job_ok",
                 success: true,
                 post_url: "https://linkedin.com/posts/abc",
+                platform_post_id: "urn:li:share:7506411715882811392",
                 upload_timestamp: "2026-09-10T18:00:05.000Z",
               },
               { job_id: "job_bad", success: false, error_message: "token revocado" },
@@ -610,6 +613,7 @@ describe("UploadPostProvider", () => {
         status: "scheduled",
         publishedAt: null,
         postUrl: null,
+        platformPostId: null,
       });
       expect(states.get("job_ok")).toEqual({
         status: "published",
@@ -617,8 +621,16 @@ describe("UploadPostProvider", () => {
         // La URL del post viaja con el estado — es lo que enciende
         // "Ver en la red" (PR4).
         postUrl: "https://linkedin.com/posts/abc",
+        // Y el id nativo, que es por quien se preguntan las métricas (F8.7).
+        // No es el job_id: ese identifica el envío dentro de Upload-Post.
+        platformPostId: "urn:li:share:7506411715882811392",
       });
-      expect(states.get("job_bad")).toEqual({ status: "failed", publishedAt: null, postUrl: null });
+      expect(states.get("job_bad")).toEqual({
+        status: "failed",
+        publishedAt: null,
+        postUrl: null,
+        platformPostId: null,
+      });
       // Ausente del Map, no "failed" explícito: el caller ya trata la
       // ausencia como fallo, igual que con PostFast.
       expect(states.has("job_desconocido")).toBe(false);
@@ -647,6 +659,7 @@ describe("UploadPostProvider", () => {
         status: "scheduled",
         publishedAt: null,
         postUrl: null,
+        platformPostId: null,
       });
     });
 
@@ -662,6 +675,7 @@ describe("UploadPostProvider", () => {
         status: "scheduled",
         publishedAt: null,
         postUrl: null,
+        platformPostId: null,
       });
     });
 
@@ -698,6 +712,7 @@ describe("UploadPostProvider", () => {
         status: "scheduled",
         publishedAt: null,
         postUrl: null,
+        platformPostId: null,
       });
       // 1 de /schedule + 5 páginas de /history (MAX_HISTORY_PAGES).
       expect(fetchMock).toHaveBeenCalledTimes(6);
@@ -738,6 +753,7 @@ describe("UploadPostProvider", () => {
         status: "scheduled",
         publishedAt: null,
         postUrl: null,
+        platformPostId: null,
       });
     });
 
@@ -778,6 +794,44 @@ describe("UploadPostProvider", () => {
       expect(states.get("job_ok")).toMatchObject({ status: "published", postUrl: null });
     });
 
+    // Mismo criterio que post_url: request<T>() es un cast, no validación.
+    // Un platform_post_id que no sea string llegaría hasta el INSERT de
+    // métricas, donde la columna es text.
+    it("un platform_post_id que no es string se descarta en vez de propagarse", async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(200, { scheduled_posts: [] }))
+        .mockResolvedValueOnce(
+          jsonResponse(200, {
+            history: [{ job_id: "job_ok", success: true, platform_post_id: 12345 }],
+            total: 1,
+          }),
+        );
+      const provider = makeProvider();
+
+      const states = await provider.getPostStates(["job_ok"]);
+
+      expect(states.get("job_ok")).toMatchObject({ status: "published", platformPostId: null });
+    });
+
+    // Publicó, pero el proveedor no dijo en qué post quedó. La card se marca
+    // publicada igual: no tener a quién pedirle métricas no es razón para
+    // reportarle al usuario que su publicación falló.
+    it("una publicación sin platform_post_id sigue siendo published", async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(200, { scheduled_posts: [] }))
+        .mockResolvedValueOnce(
+          jsonResponse(200, {
+            history: [{ job_id: "job_ok", success: true, platform_post_id: "   " }],
+            total: 1,
+          }),
+        );
+      const provider = makeProvider();
+
+      const states = await provider.getPostStates(["job_ok"]);
+
+      expect(states.get("job_ok")).toMatchObject({ status: "published", platformPostId: null });
+    });
+
     it("un upload_timestamp corrupto no se convierte en Invalid Date", async () => {
       fetchMock
         .mockResolvedValueOnce(jsonResponse(200, { scheduled_posts: [] }))
@@ -797,6 +851,7 @@ describe("UploadPostProvider", () => {
         status: "published",
         publishedAt: null,
         postUrl: null,
+        platformPostId: null,
       });
     });
   });

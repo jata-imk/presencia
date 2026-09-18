@@ -100,6 +100,9 @@ export class FakePublishingProvider implements PublishingProvider {
         // Enlace falso pero con forma de enlace: así el camino de "Ver en la
         // red" se puede recorrer en dev sin proveedor real.
         postUrl: published ? `https://fake.local/p/${encodeURIComponent(ref)}` : null,
+        // Estable por ref: el mismo post devuelve siempre el mismo id, que es
+        // lo que permite probar el upsert de métricas sin proveedor real.
+        platformPostId: published ? `fake-post-${ref}` : null,
       });
     }
     return Promise.resolve(result);

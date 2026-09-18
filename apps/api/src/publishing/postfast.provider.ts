@@ -67,6 +67,8 @@ interface PostfastPostSummary {
   id: string;
   status: "DRAFT" | "SCHEDULED" | "PUBLISHED" | "FAILED";
   publishedAt?: string | null;
+  /** Id nativo en la red; null mientras el post no se publicó. */
+  platformPostId?: string | null;
 }
 
 export class PostFastProvider implements PublishingProvider {
@@ -222,6 +224,9 @@ export class PostFastProvider implements PublishingProvider {
           // respuestas (verificado contra postfa.st/docs/posts/list): los
           // botones "Ver en la red" se quedan apagados con este proveedor.
           postUrl: null,
+          // El id nativo sí lo trae esta misma respuesta (mismo doc), y es
+          // con lo que después se le piden métricas.
+          platformPostId: post.platformPostId ?? null,
         });
       }
       if (!body.pageInfo?.hasNextPage) break;

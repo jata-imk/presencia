@@ -300,7 +300,14 @@ describe("PostFastProvider", () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse(200, {
-          data: [{ id: "pf_1", status: "PUBLISHED", publishedAt: "2026-09-01T18:02:00.000Z" }],
+          data: [
+            {
+              id: "pf_1",
+              status: "PUBLISHED",
+              publishedAt: "2026-09-01T18:02:00.000Z",
+              platformPostId: "1251762594688211_122115803355439372",
+            },
+          ],
           pageInfo: { hasNextPage: true },
         }),
       )
@@ -321,8 +328,17 @@ describe("PostFastProvider", () => {
       // PostFast no devuelve la URL del post en ninguna de sus respuestas:
       // acá siempre es null, y el frontend deja "Ver en la red" apagado.
       postUrl: null,
+      // El id nativo sí viene en esta misma respuesta, y es con lo que se le
+      // piden métricas al proveedor (F8.7).
+      platformPostId: "1251762594688211_122115803355439372",
     });
-    expect(states.get("pf_2")).toEqual({ status: "failed", publishedAt: null, postUrl: null });
+    // pf_2 falló: sin id nativo, porque no hay post en la red.
+    expect(states.get("pf_2")).toEqual({
+      status: "failed",
+      publishedAt: null,
+      postUrl: null,
+      platformPostId: null,
+    });
   });
 
   it("getPostStates con lista vacía no llama a fetch", async () => {

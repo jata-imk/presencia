@@ -162,6 +162,13 @@
       "when": 1787455817028,
       "tag": "0022_drop_presencia_worker",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1789709044609,
+      "tag": "0023_cards_platform_post_id",
+      "breakpoints": true
     }
   ]
 }

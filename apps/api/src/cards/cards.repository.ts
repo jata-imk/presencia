@@ -448,6 +448,7 @@ export class CardsRepository {
       cutoff: Date;
       publishedAt: Date;
       postUrl: string | null;
+      platformPostId: string | null;
     },
   ): Promise<CardRow | undefined> {
     const [row] = await tx
@@ -456,6 +457,7 @@ export class CardsRepository {
         status: "published",
         publishedAt: input.publishedAt,
         postUrl: input.postUrl,
+        platformPostId: input.platformPostId,
         errorDetail: null,
         updatedAt: WRITTEN_AT,
       })
