@@ -52,6 +52,15 @@ const TUPLAS_POR_PASE = 8;
 /** Cuántas tendencias se le piden al modelo. La UI pinta las que sobrevivan. */
 const MAX_TENDENCIAS = 10;
 
+/**
+ * Cuánto se pospone una tupla que no produjo nada.
+ *
+ * Igual al intervalo del cron: así la tupla se salta exactamente un pase y
+ * queda por detrás de cualquier tupla sana recién vencida, en vez de volver a
+ * encabezar la fila. Ver `TrendsRepository.posponer`.
+ */
+const REINTENTO_HORAS = 6;
+
 const MS_POR_HORA = 60 * 60 * 1000;
 
 const esquemaCrudo = z.object({
@@ -66,7 +75,7 @@ const esquemaCrudo = z.object({
         sourceIndex: z.number().int(),
       }),
     )
-    .max(MAX_TENDENCIAS),
+    .max(MAX_TENDENCIAS * 2),
 });
 
 export interface ResultadoDeRefresco {
@@ -120,7 +129,18 @@ export class TrendsService {
       ...extraerFuentes(busqueda.providerMetadata),
       ...busqueda.steps.flatMap((step) => extraerFuentes(step.providerMetadata)),
     ];
-    const unicas = [...new Map(fuentes.map((f) => [f.uri, f])).values()];
+    // Únicas por TÍTULO y no por URL, y eso es una corrección de honestidad.
+    // Google reporta el dominio como título, así que una búsqueda normal trae
+    // varios chunks de la misma página madre: el modelo veía
+    // `0. mexicofollowers.mx`, `3. mexicofollowers.mx`, `7. mexicofollowers.mx`
+    // —entradas indistinguibles— y su elección entre ellas era azar. El
+    // resultado podía ser un enlace a otra página del mismo dominio que la que
+    // sostiene la tendencia.
+    //
+    // Colapsándolas, el índice deja de ser ambiguo y la cita afirma justo lo
+    // que se puede defender: "visto en este medio". Es lo mismo que el usuario
+    // lee en la tarjeta.
+    const unicas = [...new Map(fuentes.map((f) => [f.title, f])).values()];
 
     // Sin páginas no hay nada que citar, y sin cita no hay tendencia. Se corta
     // acá para no pagar la segunda llamada por un resultado que ya se sabe
@@ -130,12 +150,24 @@ export class TrendsService {
     }
 
     const estructura = await generateObject({
-      model: this.ai.resolveForTask("chat_title").model,
+      // Se pide el TIER, no una tarea: `resolveForTask` obligaría a declarar
+      // un AiTaskKind, y ninguno de los que existen es esto. Decir
+      // "chat_title" pondría a alguien a afinar AI_MODEL_UTILITY para
+      // titulares cortos sin saber que también está tocando una llamada con
+      // salida estructurada.
+      model: this.ai.resolve(env.AI_MODEL_UTILITY).model,
       schema: esquemaCrudo,
       prompt: promptDeEstructura(busqueda.text, unicas),
     });
 
-    const items = ensamblarTendencias(estructura.object.tendencias, unicas);
+    // El recorte va DESPUÉS de ensamblar, no en el schema. Con un `.max`
+    // estricto, un modelo que devolviera once items tiraba la validación
+    // entera y perdía la tupla — después de haber pagado ya la búsqueda, que
+    // es la llamada cara.
+    const items = ensamblarTendencias(estructura.object.tendencias, unicas).slice(
+      0,
+      MAX_TENDENCIAS,
+    );
     if (items.length === 0) return { tupla, items: [], fuentes: unicas.length };
 
     const ahora = new Date();
@@ -190,15 +222,37 @@ export class TrendsService {
           // registra porque si pasa siempre para la misma tupla, el problema
           // es el prompt o la vertical, no la red.
           console.warn(
-            `[trends] ${tupla.vertical}/${tupla.region}: ${String(resultado.fuentes)} fuentes, 0 tendencias citables`,
+            `[trends] ${claveDe(tupla)}: ${String(resultado.fuentes)} fuentes, 0 tendencias citables`,
           );
+          await this.posponer(tupla);
         }
       } catch (error) {
         console.error(`[trends] ${claveDe(tupla)} no se pudo refrescar:`, error);
+        // Posponer TAMBIÉN cuando truena, y por la misma razón: si no, la
+        // tupla que falla siempre acapara el pase entero.
+        await this.posponer(tupla);
         fallidas.push(claveDe(tupla));
       }
     }
-    if (fallidas.length > 0) throw new Error(summarizeFailures("trends.refresh", fallidas));
+    if (fallidas.length > 0) {
+      throw new Error(summarizeFailures("trends.refresh", fallidas, "tupla(s)"));
+    }
+  }
+
+  /**
+   * Manda una tupla improductiva al final de la fila del barrido.
+   *
+   * Si esto mismo falla no se relanza: el pase ya tiene su propio resultado que
+   * reportar, y tumbarlo por no haber podido posponer cambiaría un problema de
+   * prioridad por uno de disponibilidad.
+   */
+  private async posponer(tupla: TuplaDeTendencias): Promise<void> {
+    const hasta = new Date(Date.now() + REINTENTO_HORAS * MS_POR_HORA);
+    try {
+      await this.dbService.db.transaction((tx) => this.repo.posponer(tx, tupla, hasta));
+    } catch (error) {
+      console.error(`[trends] ${claveDe(tupla)} no se pudo posponer:`, error);
+    }
   }
 }
 

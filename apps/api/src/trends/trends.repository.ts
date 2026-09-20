@@ -1,7 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { and, eq, lte, sql } from "drizzle-orm";
 import {
+  macroRegionIdSchema,
   trendItemSchema,
+  verticalIdSchema,
   type MacroRegionId,
   type TrendItem,
   type VerticalId,
@@ -94,7 +96,46 @@ export class TrendsRepository {
       .where(lte(nicheTrends.expiresAt, hasta))
       .orderBy(nicheTrends.expiresAt)
       .limit(limite);
-    return filas as TuplaDeTendencias[];
+
+    // Las columnas son `text` para que una vertical retirada no rompa nada al
+    // guardarse, pero ACÁ sí importa: lo que salga de esta función se convierte
+    // en el nicho del prompt de búsqueda. Sin validar, una fila con
+    // `vertical: "spec_9f2a1c33"` —o con el nombre de una vertical que ya se
+    // fusionó— haría que el job saliera a buscar tendencias de un nicho
+    // inexistente, cada pase, para siempre.
+    return filas.flatMap((fila) => {
+      const vertical = verticalIdSchema.safeParse(fila.vertical);
+      const region = macroRegionIdSchema.safeParse(fila.region);
+      if (!vertical.success || !region.success) return [];
+      return [{ vertical: vertical.data, marketCountry: fila.marketCountry, region: region.data }];
+    });
+  }
+
+  /**
+   * Corre la fecha de vencimiento sin tocar las tendencias guardadas.
+   *
+   * Es lo que impide que una tupla improductiva se coma el pase. `porRefrescar`
+   * ordena por `expires_at` ascendente, así que una tupla que falla —o que
+   * busca bien y no trae nada citable— conserva la fecha más vieja de la tabla
+   * y vuelve a salir PRIMERA en cada pase, para siempre. Con ocho así, el
+   * presupuesto completo se va en ellas y las tuplas sanas ya vencidas no se
+   * refrescan nunca, sin más señal que un warning en el log.
+   *
+   * Posponer la manda al final de la fila y le devuelve su lugar a las demás.
+   * Los `items` no se tocan: el usuario sigue viendo su última tanda buena con
+   * su fecha, que es mejor que una pantalla vacía.
+   */
+  async posponer(tx: Tx, tupla: TuplaDeTendencias, hasta: Date): Promise<void> {
+    await tx
+      .update(nicheTrends)
+      .set({ expiresAt: hasta, updatedAt: WRITTEN_AT })
+      .where(
+        and(
+          eq(nicheTrends.vertical, tupla.vertical),
+          eq(nicheTrends.marketCountry, tupla.marketCountry),
+          eq(nicheTrends.region, tupla.region),
+        ),
+      );
   }
 
   async upsert(tx: Tx, input: UpsertTendenciasInput): Promise<void> {

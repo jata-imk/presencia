@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   DEFAULT_MODEL_ID,
+  DEFAULT_TRENDS_MODEL_ID,
   MODEL_TIER_ENV_VARS,
   parseModelId,
   PROVIDERS,
@@ -128,7 +129,11 @@ const envSchema = z
       const modelId = value[path];
       if (modelId) validateModelEnv(path, modelId);
     }
-    if (value.AI_MODEL_TRENDS) validateModelEnv("AI_MODEL_TRENDS", value.AI_MODEL_TRENDS);
+    // Se valida el id EFECTIVO, no solo el que alguien escribió: sin setear,
+    // la variable cae a un modelo de Google, y si no hay key de Google eso es
+    // un job que truena cada 6 h con la única señal en `pgboss.job`. Un boot
+    // roto se ve; un job que falla en silencio, no.
+    validateModelEnv("AI_MODEL_TRENDS", value.AI_MODEL_TRENDS ?? DEFAULT_TRENDS_MODEL_ID);
 
     // Fail-fast (mismo criterio que el modelo de IA): pedir el provider real
     // sin key es un boot roto, no un fallback silencioso a datos falsos.
