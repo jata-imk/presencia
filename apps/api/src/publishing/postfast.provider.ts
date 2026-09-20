@@ -363,7 +363,7 @@ export class PostFastProvider implements PublishingProvider {
         // donde el job saca el día del snapshot. Usar el `fetchedAt` del
         // proveedor (puede ser de hace 6 h) haría que un pase de las 02:00
         // escribiera en la fila de AYER, pisando sus números finales, y que
-        // otro pase del mismo día creara la de hoy: dos filas el mismo día,
+        // otro pase posterior creara la de hoy: dos filas del mismo bucket,
         // que es justo lo que el índice único existe para impedir. La edad
         // real del número no se pierde: `fetchedAt` viaja entero en `raw`.
         capturedAt: new Date(),

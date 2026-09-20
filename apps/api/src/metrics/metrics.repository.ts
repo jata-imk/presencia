@@ -31,8 +31,8 @@ export interface UpsertSnapshotInput extends NormalizedMetrics {
   network: SocialNetwork;
   platformPostId: string;
   cardId: string | null;
-  /** Día del snapshot en UTC, `YYYY-MM-DD`. Lo calcula el servicio, no esta capa. */
-  snapshotDate: string;
+  /** Inicio del bucket de la medición. Lo calcula `frescura.ts`, no esta capa. */
+  snapshotAt: Date;
   capturedAt: Date;
   publishedAt: Date | null;
   raw: unknown;
@@ -65,40 +65,38 @@ function conservaSiFalta(columna: PgColumn) {
 @Injectable()
 export class MetricsRepository {
   /**
-   * Último día medido de cada post, para la política de frescura.
+   * Último bucket medido de cada post, para la política de frescura.
    *
    * Se lee DENTRO del tenant (la tabla tiene RLS), así que solo devuelve los
    * posts de ese usuario aunque la lista venga de un barrido global. Un post
    * ausente del Map es uno que nunca se midió.
    */
-  async lastSnapshotDates(
-    tx: Tx,
-    platformPostIds: readonly string[],
-  ): Promise<Map<string, string>> {
-    const result = new Map<string, string>();
+  async lastBuckets(tx: Tx, platformPostIds: readonly string[]): Promise<Map<string, Date>> {
+    const result = new Map<string, Date>();
     if (platformPostIds.length === 0) return result;
     const filas = await tx
       .select({
         platformPostId: postMetrics.platformPostId,
-        snapshotDate: postMetrics.snapshotDate,
+        snapshotAt: postMetrics.snapshotAt,
       })
       .from(postMetrics)
       .where(inArray(postMetrics.platformPostId, [...platformPostIds]))
-      .orderBy(desc(postMetrics.snapshotDate));
+      .orderBy(desc(postMetrics.snapshotAt));
     // Orden descendente + primer gana: el máximo por post sin GROUP BY.
     for (const fila of filas) {
-      if (!result.has(fila.platformPostId)) result.set(fila.platformPostId, fila.snapshotDate);
+      if (!result.has(fila.platformPostId)) result.set(fila.platformPostId, fila.snapshotAt);
     }
     return result;
   }
 
   /**
-   * Un snapshot por post y día. El segundo pase del mismo día ACTUALIZA la
-   * fila — es el invariante del DoD de F8.7 ("un segundo pase no duplica
-   * filas") y lo garantiza el índice único, no el código que llama.
+   * Un snapshot por post y bucket de tiempo. Un segundo pase DENTRO DEL MISMO
+   * bucket ACTUALIZA la fila — es el invariante del DoD de F8.7 ("un segundo
+   * pase no duplica filas") y lo garantiza el índice único, no el código que
+   * llama.
    *
    * El conflicto se resuelve por `(user_id, network, platform_post_id,
-   * snapshot_date)` y no por la cuenta: `social_account_id` es nullable (y un
+   * snapshot_at)` y no por la cuenta: `social_account_id` es nullable (y un
    * NULL no colisiona en un índice único) y su fila cambia de id si la cuenta
    * se borra y se vuelve a conectar. Ver el docblock de la tabla.
    *
@@ -112,7 +110,7 @@ export class MetricsRepository {
    *
    * `provider` NO es parte de la llave. Hoy no puede serlo sin romper el
    * invariante del DoD: dos proveedores para la misma red darían dos filas
-   * del mismo día. Y hoy tampoco hace falta — `PUBLISHING_PROVIDER` es una
+   * del mismo bucket. Y hoy tampoco hace falta — `PUBLISHING_PROVIDER` es una
    * sola variable global, así que en un momento dado hay exactamente un
    * proveedor por instalación. Si eso cambiara (un proveedor por red, por
    * ejemplo), hay que volver acá: la serie de un post mezclaría números que
@@ -127,7 +125,7 @@ export class MetricsRepository {
         network: input.network,
         platformPostId: input.platformPostId,
         cardId: input.cardId,
-        snapshotDate: input.snapshotDate,
+        snapshotAt: input.snapshotAt,
         capturedAt: input.capturedAt,
         publishedAt: input.publishedAt,
         impressions: input.impressions,
@@ -143,7 +141,7 @@ export class MetricsRepository {
           postMetrics.userId,
           postMetrics.network,
           postMetrics.platformPostId,
-          postMetrics.snapshotDate,
+          postMetrics.snapshotAt,
         ],
         set: {
           socialAccountId: conservaSiFalta(postMetrics.socialAccountId),

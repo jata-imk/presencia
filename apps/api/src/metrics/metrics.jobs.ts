@@ -3,28 +3,43 @@ import { BossService } from "../jobs/boss.service.js";
 import { enProcesoWorker } from "../jobs/process-role.js";
 import { MetricsService } from "./metrics.service.js";
 
-// Cada 6 horas. La cadencia NO la fija lo que queremos ver, la fija lo que
-// hay para ver: las redes reportan con horas de retraso (Instagram hasta 48 h
-// según su propia doc) y los proveedores refrescan cada 6 h ellos mismos
-// —PostFast lo documenta—, así que preguntar más seguido gasta cuota para
-// traer el mismo número.
+// Cada hora. El pase es barato cuando no hay nada que medir —la política de
+// frescura corta antes de tocar la red—, así que la cadencia no la fija el
+// costo: la fija la RESOLUCIÓN. Las primeras 12 h de un post se guardan en
+// buckets de una hora (frescura.ts), y un bucket que ningún pase visita es un
+// punto que no existe; con cron cada 6 h, ese primer escalón de la escalera
+// era inalcanzable.
 //
-// Y la cuota importa de verdad acá: Upload-Post pide UNA request por post
+// Lo que NO cambia es cuántas veces se mide cada post: eso lo decide su
+// bucket, no el cron. Un post de cinco días vive en buckets diarios y lo
+// saltan 23 de los 24 pases sin tocar la red.
+//
+// La cuota importa de verdad acá: Upload-Post pide UNA request por post
 // contra un tope de 100 cada 5 minutos, con la misma API key que usa la
-// reconciliación cada minuto.
-const JOB_QUEUE = "metrics.ingest";
-const INGEST_CRON = "0 */6 * * *";
+// reconciliación cada minuto. Por eso el presupuesto del pase
+// (POSTS_POR_PASE, en metrics.service.ts) sigue acotado aunque los pases sean
+// seis veces más frecuentes.
 
-// Techo del pase. Más generoso que el de reconciliación porque este sí hace
-// red por post.
+const JOB_QUEUE = "metrics.ingest";
+const INGEST_CRON = "0 * * * *";
+
+// Techo del pase, y su margen es de las dos puntas.
 //
-// El peor caso sale del presupuesto de POSTS_POR_PASE (60, del pase entero y
-// no por usuario): 60 requests secuenciales con el timeout de 30 s del
-// cliente HTTP. Si ese presupuesto sube, esto sube con él — pg-boss no mata
-// al handler cuando expira, solo marca el job como fallido y libera el slot
-// `exclusive`, así que un expire corto de más deja dos pases corriendo
-// encima (ver RecurringJob.expireInSeconds en boss.service.ts).
-const INGEST_EXPIRE_SECONDS = 30 * 60;
+// Por abajo: el peor caso del presupuesto son 60 requests secuenciales con el
+// timeout de 30 s del cliente HTTP, o sea 30 minutos. El expire tiene que
+// quedar POR ENCIMA de eso, porque pg-boss NO mata al handler cuando expira —
+// marca el job como fallido y libera el slot `exclusive` (ver
+// RecurringJob.expireInSeconds en boss.service.ts). Si expirara justo en el
+// peor caso, un pase lento seguiría corriendo con su slot ya libre.
+//
+// Por arriba: tiene que quedar POR DEBAJO de la hora que separa dos pases. Si
+// no, el pase siguiente arrancaría encima del anterior y los dos estarían
+// pidiéndole a la misma API key que comparte `cards.reconcile`.
+//
+// 50 minutos deja 20 de colchón sobre el peor caso y 10 antes del pase
+// siguiente. Si sube POSTS_POR_PASE, esto se recalcula: el peor caso crece
+// medio minuto por post.
+const INGEST_EXPIRE_SECONDS = 50 * 60;
 
 /**
  * El disparador de la ingesta de métricas (F8.7). La lógica vive entera en

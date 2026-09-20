@@ -41,6 +41,11 @@ let provider: ProviderFijo;
 let userA: string;
 let accountA: string;
 
+// Instante fijo para los casos que dependen del bucket. Un post de una hora
+// vive en el tramo horario de la escalera, así que sin congelar el reloj el
+// resultado cambiaría según el minuto en que corra la suite.
+const AHORA = new Date("2026-09-20T09:30:00.000Z");
+
 /**
  * Números fijos, para poder afirmar sobre ellos; y guarda los lotes pedidos.
  *
@@ -151,9 +156,9 @@ describe("MetricsService.ingestAll", () => {
 
   it("escribe un snapshot de cada card publicada", { timeout: 30_000 }, async () => {
     const postId = `fb_${randomUUID()}`;
-    await nuevaCardPublicada(postId, new Date(Date.now() - 60 * 60 * 1000));
+    await nuevaCardPublicada(postId, new Date(AHORA.getTime() - 60 * 60 * 1000));
 
-    await service.ingestAll();
+    await service.ingestAll({ ahora: AHORA });
 
     const filas = await metricasDe(postId);
     expect(filas).toHaveLength(1);
@@ -162,15 +167,22 @@ describe("MetricsService.ingestAll", () => {
     expect(filas[0]?.reach).toBeNull();
     expect(filas[0]?.network).toBe("facebook");
     expect(filas[0]?.cardId).not.toBeNull();
+    // Un post de una hora vive en el tramo horario de la escalera, así que su
+    // fila se llavea por la hora en curso — no por el día. Es lo que hace que
+    // la serie de las primeras 12 h tenga 12 puntos y no uno.
+    expect(filas[0]?.snapshotAt).toEqual(new Date("2026-09-20T09:00:00.000Z"));
   });
 
   // El DoD de la fase, de punta a punta y no solo en el repositorio.
-  it("un segundo pase el mismo día no duplica filas", { timeout: 30_000 }, async () => {
+  it("un segundo pase del mismo bucket no duplica filas", { timeout: 30_000 }, async () => {
     const postId = `fb_${randomUUID()}`;
-    await nuevaCardPublicada(postId, new Date(Date.now() - 60 * 60 * 1000));
+    await nuevaCardPublicada(postId, new Date(AHORA.getTime() - 60 * 60 * 1000));
 
-    await service.ingestAll();
-    await service.ingestAll();
+    // El mismo instante en los dos pases: con `new Date()` real, dos pases
+    // que cruzaran el borde de la hora caerían en buckets distintos y el test
+    // fallaría por el reloj, no por el código.
+    await service.ingestAll({ ahora: AHORA });
+    await service.ingestAll({ ahora: AHORA });
 
     expect(await metricasDe(postId)).toHaveLength(1);
   });
@@ -178,7 +190,8 @@ describe("MetricsService.ingestAll", () => {
   // La política de frescura corta antes de gastar red, no después de traerla.
   it("no le pregunta al proveedor por un post ya medido hoy", { timeout: 30_000 }, async () => {
     const postId = `fb_${randomUUID()}`;
-    // Diez días: fuera del tramo "cada pase", dentro del "una vez al día".
+    // Diez días: su bucket es el día entero, así que el segundo pase de la
+    // misma jornada no tiene punto nuevo que guardar y no toca la red.
     await nuevaCardPublicada(postId, new Date(Date.now() - 10 * 24 * 60 * 60 * 1000));
 
     await service.ingestAll();
@@ -238,7 +251,7 @@ describe("MetricsService.ingestAll", () => {
     // TODOS los usuarios con algo que medir, y la base de dev tiene varios.
     // Por eso se afirma la prioridad, no un conteo exacto: cuántos entran
     // depende de cuántos tenants haya, cuál entra no.
-    await service.ingestAll(2);
+    await service.ingestAll({ presupuesto: 2 });
 
     // La query del barrido no ordena y el índice parcial la sirve por
     // published_at ascendente: sin la prioridad explícita, el recorte se

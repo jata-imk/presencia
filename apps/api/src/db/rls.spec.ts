@@ -667,7 +667,7 @@ describe("RLS tenant_isolation", () => {
   describe("post_metrics", () => {
     const snapshotBase = {
       network: "linkedin" as const,
-      snapshotDate: "2026-09-17",
+      snapshotAt: new Date("2026-09-17T00:00:00.000Z"),
       capturedAt: new Date("2026-09-17T06:00:00.000Z"),
       raw: {},
       provider: "fake",

@@ -190,6 +190,13 @@
       "when": 1789710040987,
       "tag": "0026_worker_metrics_scan",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1789710040988,
+      "tag": "0027_post_metrics_bucket",
+      "breakpoints": true
     }
   ]
 }
