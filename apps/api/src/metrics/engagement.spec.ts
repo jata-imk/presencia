@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { franjaDe } from "@presencia/shared";
 import {
   baseDeRed,
   calcularHorarios,
-  franjaDe,
   interaccionesDe,
   N_MINIMO_GRUPO,
   N_MINIMO_RED,

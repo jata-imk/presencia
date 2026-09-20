@@ -1,10 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { SocialNetwork } from "@presencia/shared";
+import { franjaDe, type SocialNetwork } from "@presencia/shared";
 import type { Tx } from "../db/db.service.js";
 import {
   baseDeRed,
   calcularHorarios,
-  franjaDe,
   interaccionesDe,
   valorDe,
   type ModoHorarios,

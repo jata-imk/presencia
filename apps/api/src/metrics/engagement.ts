@@ -16,7 +16,12 @@
 //   3. Misma edad. Dos posts solo son comparables medidos al mismo tiempo de
 //      vida.
 
-import type { SocialNetwork } from "@presencia/shared";
+import { FRANJAS, type SocialNetwork } from "@presencia/shared";
+
+// FRANJAS y `franjaDe` viven en shared (packages/shared/src/ritmo.ts): las
+// usan el motor para agrupar y la UI para etiquetar las filas del heatmap, y
+// con dos definiciones un cambio de corte movería las barras sin mover los
+// datos.
 
 /**
  * Edad a la que se compara un post con otro.
@@ -48,31 +53,6 @@ export const N_MINIMO_GRUPO = 5;
  * general que es ese mismo grupo: "+0%" con cara de dato.
  */
 export const N_MINIMO_RED = 10;
-
-/**
- * Franjas de 3 h, las ocho que cubren el día completo.
- *
- * El diseño dibuja seis (de 6:00 a 24:00) porque son las horas en las que la
- * gente publica, pero el motor no puede tener un hueco: un post de las 3 de la
- * mañana existe, y si no cayera en ninguna franja desaparecería del heatmap
- * mientras seguiría contando en el promedio general. Eso haría que las celdas
- * visibles se comparen contra un denominador que incluye algo que no se ve.
- */
-export const FRANJAS = [
-  { id: "madrugada", desde: 0, hasta: 3, etiqueta: "0–3", nombre: "Madrugada" },
-  { id: "amanecer", desde: 3, hasta: 6, etiqueta: "3–6", nombre: "Antes del amanecer" },
-  { id: "temprano", desde: 6, hasta: 9, etiqueta: "6–9", nombre: "Mañana temprano" },
-  { id: "manana", desde: 9, hasta: 12, etiqueta: "9–12", nombre: "Mañana" },
-  { id: "mediodia", desde: 12, hasta: 15, etiqueta: "12–15", nombre: "Mediodía" },
-  { id: "tarde", desde: 15, hasta: 18, etiqueta: "15–18", nombre: "Tarde" },
-  { id: "noche", desde: 18, hasta: 21, etiqueta: "18–21", nombre: "Noche" },
-  { id: "trasnoche", desde: 21, hasta: 24, etiqueta: "21–24", nombre: "Tarde-noche" },
-] as const;
-
-/** Índice de la franja de una hora local (0–23). */
-export function franjaDe(horaLocal: number): number {
-  return Math.floor(horaLocal / 3);
-}
 
 /**
  * Cómo se mide el engagement de una red en una ventana.

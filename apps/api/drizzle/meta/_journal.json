@@ -211,6 +211,13 @@
       "when": 1789898298258,
       "tag": "0029_niche_trends",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1789926620072,
+      "tag": "0030_cadence_targets",
+      "breakpoints": true
     }
   ]
 }

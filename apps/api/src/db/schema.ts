@@ -450,6 +450,33 @@ export const creditLedger = pgTable(
   ],
 );
 
+// ── Objetivos de cadencia (F9) ───────────────────────────────────────
+// Cuántas publicaciones por semana quiere hacer el usuario en cada red.
+//
+// La AUSENCIA de fila es un valor: significa "no he puesto la mía, usa la
+// sugerida" (META_SEMANAL_SUGERIDA en packages/shared/src/ritmo.ts). Mismo
+// criterio que `brand_voices.vertical`: sembrar la sugerencia como dato
+// convertiría a cada usuario en alguien que ya eligió, y la UI perdería la
+// distinción entre un número que el producto propuso y uno que la persona
+// aceptó — que no son la misma promesa.
+
+export const cadenceTargets = pgTable(
+  "cadence_targets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    network: socialNetwork("network").notNull(),
+    // Publicaciones por semana. `0` es legítimo: "en esta red no publico",
+    // que es distinto de no tener fila.
+    target: smallint("target").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("cadence_targets_user_network").on(t.userId, t.network)],
+);
+
 // ── Tendencias de nicho (F9) ─────────────────────────────────────────
 // La ÚNICA tabla del dominio sin `user_id` y sin RLS, y es a propósito: no
 // es dato de un tenant, es una caché compartida. Ver ADR-023.

@@ -47,8 +47,16 @@ export const trendsDtoSchema = z.object({
   vertical: verticalIdSchema,
   region: macroRegionIdSchema,
   items: z.array(trendItemSchema),
-  /** Cuándo se generó esta tanda. La UI dice "actualizado hace X". */
-  generatedAt: z.string(),
+  /**
+   * Cuándo se generó esta tanda, o `null` si el nicho nunca se ha buscado.
+   *
+   * El DTO viaja SIEMPRE, aunque no haya nada: devolver `null` pelón desde el
+   * controller manda un cuerpo vacío que el cliente no puede parsear, y
+   * además tirar la vertical y la región perdería lo único que hace honesto
+   * al estado vacío — poder decir "no encontramos tendencias de Diseño en el
+   * Sureste" en vez de un "no hay nada" sin sujeto.
+   */
+  generatedAt: z.string().nullable(),
 });
 export type TrendsDto = z.infer<typeof trendsDtoSchema>;
 
