@@ -1,10 +1,17 @@
 import type { SocialNetwork } from "@presencia/shared";
-import { PublishingRejectedError, PublishingUnavailableError } from "./errors.js";
+import {
+  PublishingRateLimitError,
+  PublishingRejectedError,
+  PublishingUnavailableError,
+} from "./errors.js";
 import { isStatus, ProviderHttpClient } from "./http-client.js";
 import { parseHttpUrl } from "./http-url.js";
+import { parseMetricNumber, parseTimestamp } from "./metric-values.js";
 import { parsePlatformPostId } from "./platform-post-id.js";
 import { buildPostText } from "./post-text.js";
 import type {
+  PostMetricsQuery,
+  PostMetricsSnapshot,
   ProviderAccount,
   ProviderPostState,
   PublishingProvider,
@@ -75,6 +82,30 @@ const CONNECT_LINK_TTL_MS = 48 * 60 * 60 * 1000;
 const HISTORY_PAGE_SIZE = 100;
 const MAX_HISTORY_PAGES = 5;
 
+// El endpoint de métricas por post NO está en el openapi ni en las páginas de
+// documentación: existe, y su contrato se conoce por haberlo llamado
+// (2026-09-17, ver docblock de getPostMetrics). Pide UN post por request, así
+// que el tope documentado de 100 requests / 5 minutos —el único rate limit de
+// toda su spec— se traduce en 100 posts por pase.
+//
+// El tope real que se aplica es más bajo a propósito: el mismo API key la usa
+// el resto de la app (la reconciliación corre cada minuto), y agotar la
+// ventana de métricas dejaría al usuario sin poder programar. Lo que no entra
+// en un pase no se pierde: queda ausente del Map y el siguiente lo toma.
+const METRICS_MAX_POSTS_POR_PASE = 60;
+
+// Redes que el endpoint acepta en su parámetro `platform`. La lista sale del
+// enum de la variante cacheada, que sí está documentada. `x` NO está: la
+// sonda confirmó que responde con error de la API de X, no con métricas.
+const METRICS_PLATFORMS: ReadonlySet<string> = new Set([
+  "instagram",
+  "tiktok",
+  "youtube",
+  "facebook",
+  "linkedin",
+  "threads",
+]);
+
 // SocialNetwork (nuestro enum) → platform de Upload-Post. Minúsculas, 1:1.
 const PLATFORM_BY_NETWORK: Record<SocialNetwork, string> = {
   instagram: "instagram",
@@ -139,6 +170,26 @@ interface UploadPostHistoryItem {
    * llave de las métricas por post, así que desde F8.7 se persiste.
    */
   platform_post_id?: unknown;
+}
+
+/**
+ * Respuesta de `GET /uploadposts/post-analytics`. NO está en el openapi: esta
+ * forma se capturó llamando al endpoint real el 2026-09-17.
+ *
+ * La trampa está en `success`: viene `true` a nivel raíz Y dentro de
+ * `platforms.<red>` aunque no haya un solo número. Cuando la red no da
+ * métricas, en vez de `post_metrics` viene `post_metrics_error` con el motivo
+ * en texto. Hay que ramificar por la PRESENCIA de `post_metrics`, nunca por
+ * `success`.
+ */
+interface UploadPostAnalyticsResponse {
+  post?: { upload_timestamp?: string | null } | null;
+  platforms?: Record<string, UploadPostPlatformAnalytics | null> | null;
+}
+
+interface UploadPostPlatformAnalytics {
+  post_metrics?: Record<string, unknown> | null;
+  post_metrics_error?: unknown;
 }
 
 interface UploadPostHistoryPage {
@@ -527,19 +578,131 @@ export class UploadPostProvider implements PublishingProvider {
     }
     return result;
   }
-}
+  /**
+   * Métricas por post, una request por post.
+   *
+   * `GET /uploadposts/post-analytics?user=<perfil>&platform=<red>&platform_post_id=<id>`
+   * **no está en el openapi ni en el sitemap de la documentación**: solo se lo
+   * menciona de pasada en la descripción de su variante cacheada. Existe, y
+   * todo lo que sabemos de su contrato viene de haberlo llamado con la cuenta
+   * real el 2026-09-17. Si algún día cambia, no habrá aviso en ninguna spec.
+   *
+   * Lo que devolvió esa sonda, y que decide el diseño de abajo:
+   *
+   *  - Facebook (Page): `post_metrics` con reactions/likes/comments/shares/
+   *    reach/impressions.
+   *  - LinkedIn (perfil personal): `post_metrics_error` — "only available for
+   *    posts published to a LinkedIn Page". No es un fallo transitorio, es
+   *    cómo funciona la API de LinkedIn.
+   *  - X: `post_metrics_error` con un 401 de la API de X.
+   *
+   * En los tres casos `success` era `true`. Por eso acá se ramifica por la
+   * presencia de `post_metrics` y nunca por `success`.
+   *
+   * La variante `/cached` NO sirve como fuente: es un write-through que se
+   * llena como efecto de estas lecturas (comprobado: antes de la sonda
+   * devolvía `posts: []`, después traía solo el post de Facebook, el único
+   * que había dado números). Leerla en vez de esto sería leer nuestro propio
+   * eco.
+   */
+  async getPostMetrics(
+    posts: readonly PostMetricsQuery[],
+  ): Promise<Map<string, PostMetricsSnapshot>> {
+    const result = new Map<string, PostMetricsSnapshot>();
+    let pedidos = 0;
+    for (const post of posts) {
+      if (pedidos >= METRICS_MAX_POSTS_POR_PASE) break;
+      // Un post que truena NO puede tirar el pase: son requests
+      // independientes y lo ya recolectado es trabajo pagado con cuota que no
+      // vuelve. Un post borrado de la red (404), una cuenta desconectada (403)
+      // o el propio tope de 100/5min (429) se llevarían por delante los
+      // snapshots de los otros 59 — y el pase siguiente arrancaría de cero
+      // para tropezar con la misma fila.
+      try {
+        const { pidio, snapshot } = await this.leerMetricas(post);
+        // Se cuenta la REQUEST, no el resultado: una respuesta sin el bloque
+        // de la plataforma igual gastó cuota, y no contarla dejaría el tope
+        // por encima del límite real del proveedor.
+        if (pidio) pedidos += 1;
+        if (snapshot) result.set(post.platformPostId, snapshot);
+      } catch (error) {
+        if (error instanceof PublishingRateLimitError) {
+          // Acá sí se corta, pero devolviendo lo que ya se juntó: seguir
+          // pidiendo contra una ventana agotada gasta requests que el resto
+          // de la app necesita (la reconciliación usa la misma API key cada
+          // minuto).
+          console.warn("[publishing] Upload-Post cortó el pase de métricas por rate limit.");
+          break;
+        }
+        console.warn(`[publishing] No se pudieron leer métricas de ${post.platformPostId}:`, error);
+        pedidos += 1;
+      }
+    }
+    return result;
+  }
 
-/**
- * Una fecha inválida NO es null, así que sobreviviría al `publishedAt ?? new
- * Date()` de reconcileDueCards y llegaría hasta el UPDATE, que tronaría y
- * abortaría el batch entero — incluidas las cards que ya estaban listas para
- * escribirse. Ante un timestamp que no se entiende, mejor null: el caller
- * cae a "ahora".
- */
-function parseTimestamp(raw: string | null | undefined): Date | null {
-  if (!raw) return null;
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  /**
+   * Una lectura, un post.
+   *
+   * `snapshot: null` significa que el post queda AUSENTE del Map, que no es
+   * lo mismo que "no hay métricas": no sabemos nada de esa publicación.
+   * `pidio` dice si se gastó una request, que es lo que cuenta contra el tope
+   * del pase — y no coincide con `snapshot`: una respuesta sin el bloque de
+   * la plataforma cuesta cuota y no deja dato.
+   */
+  private async leerMetricas(
+    post: PostMetricsQuery,
+  ): Promise<{ pidio: boolean; snapshot: PostMetricsSnapshot | null }> {
+    const { profile, platform } = parseAccountRef(post.accountProviderRef);
+    // Una red que este endpoint no cubre no se pregunta. Escribir una fila
+    // vacía ahí afirmaría algo sobre la publicación que no comprobamos.
+    if (!METRICS_PLATFORMS.has(platform)) return { pidio: false, snapshot: null };
+    const query = new URLSearchParams({
+      user: profile,
+      platform,
+      platform_post_id: post.platformPostId,
+    });
+    const body = await this.http.request<UploadPostAnalyticsResponse>(
+      "GET",
+      `/uploadposts/post-analytics?${query.toString()}`,
+    );
+    const porPlataforma = body.platforms?.[platform];
+    if (!porPlataforma) return { pidio: true, snapshot: null };
+    const metrics = porPlataforma.post_metrics;
+    const capturedAt = new Date();
+    if (!metrics) {
+      // Preguntamos y la red contestó que no. Eso ES un dato sobre la
+      // publicación, y guardarlo evita volver a gastar la cuota el mismo día
+      // preguntando lo mismo.
+      return {
+        pidio: true,
+        snapshot: {
+          capturedAt,
+          impressions: null,
+          reach: null,
+          likes: null,
+          comments: null,
+          shares: null,
+          raw: porPlataforma,
+        },
+      };
+    }
+    return {
+      pidio: true,
+      snapshot: {
+        capturedAt,
+        impressions: parseMetricNumber(metrics.impressions),
+        reach: parseMetricNumber(metrics.reach),
+        likes: parseMetricNumber(metrics.likes),
+        comments: parseMetricNumber(metrics.comments),
+        shares: parseMetricNumber(metrics.shares),
+        // Crudo entero: `reactions` de Facebook, `available_metrics` y
+        // `primary_impressions_field` no caben en las cinco columnas y son
+        // justo lo que F12 va a querer para etiquetar bien cada número.
+        raw: porPlataforma,
+      },
+    };
+  }
 }
 
 /**

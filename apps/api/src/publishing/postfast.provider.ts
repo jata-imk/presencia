@@ -1,9 +1,12 @@
 import type { SocialNetwork } from "@presencia/shared";
 import { PublishingRejectedError, PublishingUnavailableError } from "./errors.js";
 import { isStatus, ProviderHttpClient } from "./http-client.js";
+import { parseMetricNumber } from "./metric-values.js";
 import { parsePlatformPostId } from "./platform-post-id.js";
 import { buildPostText } from "./post-text.js";
 import type {
+  PostMetricsQuery,
+  PostMetricsSnapshot,
   ProviderAccount,
   ProviderPostState,
   PublishingProvider,
@@ -49,6 +52,13 @@ const POSTFAST_WORKSPACE: WorkspaceRef = { ref: "postfast:workspace" };
 // `expiresAt` resultante, no la política para calcularlo.
 const CONNECT_LINK_EXPIRY_DAYS = 7;
 
+const MILISEGUNDOS_POR_DIA = 24 * 60 * 60 * 1000;
+
+// Tope de la ventana que se le pide a `/social-posts/analytics`. Coincide con
+// lo que el job considera "todavía vale la pena medir", pero se aplica acá
+// porque la consecuencia de pasarse es de este endpoint: no pagina.
+const METRICS_VENTANA_MAXIMA_DIAS = 35;
+
 // SocialNetwork (nuestro enum) → platform de PostFast. 1:1, siempre
 // mayúsculas. No mapeamos youtube/threads porque nunca se llama a este
 // adapter para ellas todavía (video_script no publica video generado por
@@ -63,6 +73,27 @@ const PLATFORM_BY_NETWORK: Record<SocialNetwork, string> = {
   threads: "THREADS",
   x: "X",
 };
+
+/**
+ * Fila de `GET /social-posts/analytics`. Documentada en
+ * postfa.st/docs/posts/analytics — y NO corroborada contra la API real: la
+ * cuenta de Jose no tiene suscripción desde F7 y ese endpoint pide plan
+ * Growth. Todo lo de abajo puede estar mal en los detalles.
+ */
+interface PostfastAnalyticsRow {
+  platformPostId?: unknown;
+  socialMediaId?: unknown;
+  publishedAt?: string | null;
+  latestMetric?: {
+    likes?: unknown;
+    comments?: unknown;
+    shares?: unknown;
+    impressions?: unknown;
+    reach?: unknown;
+    totalInteractions?: unknown;
+    fetchedAt?: string | null;
+  } | null;
+}
 
 interface PostfastPostSummary {
   id: string;
@@ -237,6 +268,112 @@ export class PostFastProvider implements PublishingProvider {
       }
       if (!body.pageInfo?.hasNextPage) break;
       page += 1;
+    }
+    return result;
+  }
+  /**
+   * Métricas por rango de fechas, no por post: `GET /social-posts/analytics`
+   * toma `startDate`/`endDate` y devuelve TODO lo publicado en esa ventana,
+   * así que un pase entero cuesta UNA request (su límite es 350 por hora).
+   *
+   * **Nada de este método se ejercitó contra la API real.** La cuenta de
+   * PostFast no tiene suscripción desde F7 y su API pide plan Growth; lo de
+   * acá sale de postfa.st/docs/posts/analytics (leído el 2026-09-17) y está
+   * cubierto solo por tests con `fetch` stubeado. Es el mismo trato que tuvo
+   * `reschedule` en F7.5, donde un fallo real apareció solo cuando se lo
+   * miró con cuidado — al recuperar la cuenta, esto se revisa antes de
+   * confiar en sus números. Ver ADR-009.
+   *
+   * Dos cosas de su contrato que el código de abajo respeta y conviene tener
+   * presentes al revisarlo:
+   *
+   *  - **No pagina.** La doc lo dice y recomienda ventanas cortas. La ventana
+   *    se calcula del post más viejo del lote, que el job acota a 30 días.
+   *  - **Los contadores son bigint SERIALIZADOS COMO STRING** ("1234"), salvo
+   *    los de video y las tasas de Instagram, que son number. Por eso pasan
+   *    todos por `parseMetricNumber`.
+   *
+   * LinkedIn personal queda fuera acá también ("LinkedIn personal accounts
+   * excluded" en su doc): la limitación es de la API de LinkedIn, no del
+   * proveedor, y los tres coinciden.
+   */
+  async getPostMetrics(
+    posts: readonly PostMetricsQuery[],
+  ): Promise<Map<string, PostMetricsSnapshot>> {
+    const result = new Map<string, PostMetricsSnapshot>();
+    if (posts.length === 0) return result;
+
+    const pedidos = new Map(posts.map((post) => [post.platformPostId, post]));
+    // La ventana del lote, con un día de margen a cada lado: `publishedAt`
+    // nuestro y el del proveedor pueden no coincidir al segundo, y un post
+    // justo en el borde no debería caerse del rango por eso.
+    // `reduce` y no `Math.min(...)`: el spread pone un argumento por post en
+    // el stack, y un lote grande (un backfill) tumbaría la llamada con
+    // RangeError en vez de devolver algo.
+    const masViejo = posts.reduce(
+      (min, post) => Math.min(min, post.publishedAt.getTime()),
+      Number.POSITIVE_INFINITY,
+    );
+    // La ventana se acota ACÁ, no por contrato con el caller: este endpoint
+    // NO pagina (su doc pide "keep date ranges reasonable"), así que un solo
+    // post viejo en el lote traería meses de publicaciones y las filas que sí
+    // se pidieron podrían caerse del final en silencio, sin ninguna señal de
+    // truncamiento.
+    const tope = Date.now() - METRICS_VENTANA_MAXIMA_DIAS * MILISEGUNDOS_POR_DIA;
+    const desde = new Date(Math.max(masViejo, tope) - MILISEGUNDOS_POR_DIA);
+    const hasta = new Date(Date.now() + MILISEGUNDOS_POR_DIA);
+    const cuentas = [...new Set(posts.map((post) => post.accountProviderRef))];
+    const query = new URLSearchParams({
+      startDate: desde.toISOString(),
+      endDate: hasta.toISOString(),
+      socialMediaIds: cuentas.join(","),
+    });
+
+    const body = await this.http.request<{ data?: PostfastAnalyticsRow[] }>(
+      "GET",
+      `/social-posts/analytics?${query.toString()}`,
+    );
+
+    for (const fila of body.data ?? []) {
+      const platformPostId = typeof fila.platformPostId === "string" ? fila.platformPostId : null;
+      // La ventana trae todo lo publicado en el rango, también posts por los
+      // que nadie preguntó. Se ignoran: el caller mapea por el id que pidió.
+      if (!platformPostId || !pedidos.has(platformPostId)) continue;
+      const metric = fila.latestMetric;
+      if (!metric) {
+        // La fila VINO en la respuesta, o sea que preguntamos y el proveedor
+        // contestó que de ese post no tiene números — es la forma
+        // documentada para LinkedIn personal. Mismo trato que en Upload-Post:
+        // snapshot con los cinco en null y el motivo en `raw`. Omitirlo
+        // dejaría esos posts pendientes para siempre, re-preguntados en cada
+        // pase y sin que nunca se registre nada sobre ellos.
+        result.set(platformPostId, {
+          capturedAt: new Date(),
+          impressions: null,
+          reach: null,
+          likes: null,
+          comments: null,
+          shares: null,
+          raw: fila,
+        });
+        continue;
+      }
+      result.set(platformPostId, {
+        // Cuándo lo leímos NOSOTROS, que es lo que significa la columna —y de
+        // donde el job saca el día del snapshot. Usar el `fetchedAt` del
+        // proveedor (puede ser de hace 6 h) haría que un pase de las 02:00
+        // escribiera en la fila de AYER, pisando sus números finales, y que
+        // otro pase del mismo día creara la de hoy: dos filas el mismo día,
+        // que es justo lo que el índice único existe para impedir. La edad
+        // real del número no se pierde: `fetchedAt` viaja entero en `raw`.
+        capturedAt: new Date(),
+        impressions: parseMetricNumber(metric.impressions),
+        reach: parseMetricNumber(metric.reach),
+        likes: parseMetricNumber(metric.likes),
+        comments: parseMetricNumber(metric.comments),
+        shares: parseMetricNumber(metric.shares),
+        raw: fila,
+      });
     }
     return result;
   }

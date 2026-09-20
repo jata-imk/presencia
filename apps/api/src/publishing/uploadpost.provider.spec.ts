@@ -856,6 +856,229 @@ describe("UploadPostProvider", () => {
     });
   });
 
+  // Fixtures copiadas de la respuesta REAL del endpoint (sonda del
+  // 2026-09-17). No está en el openapi ni en el sitemap de la documentación:
+  // esto es todo el contrato que existe.
+  describe("getPostMetrics", () => {
+    const FACEBOOK_POST = {
+      accountProviderRef: `${PROFILE}:facebook`,
+      network: "facebook" as const,
+      platformPostId: "1251762594688211_122115803355439372",
+      publishedAt: new Date("2026-09-17T07:10:05.705Z"),
+    };
+
+    function respuestaConMetricas() {
+      return jsonResponse(200, {
+        success: true,
+        post: { platform_post_id: FACEBOOK_POST.platformPostId, platform: "facebook" },
+        platforms: {
+          facebook: {
+            success: true,
+            platform_post_id: FACEBOOK_POST.platformPostId,
+            post_metrics: {
+              reactions: 2,
+              likes: 2,
+              comments: 0,
+              shares: 1,
+              reach: 0,
+              impressions: 84,
+            },
+            post_metrics_source: "platform_api",
+            primary_impressions_field: "reach",
+          },
+        },
+      });
+    }
+
+    it("normaliza las cinco métricas y guarda el crudo entero", async () => {
+      fetchMock.mockResolvedValueOnce(respuestaConMetricas());
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([FACEBOOK_POST]);
+
+      const snapshot = metrics.get(FACEBOOK_POST.platformPostId);
+      expect(snapshot).toMatchObject({
+        impressions: 84,
+        likes: 2,
+        comments: 0,
+        shares: 1,
+        // 0 y no null: la Page existe y la red contestó "nadie único lo vio".
+        reach: 0,
+      });
+      // `reactions` no cabe en las cinco columnas y es justo lo que F12 va a
+      // querer, así que el bloque entero viaja en raw.
+      expect(snapshot?.raw).toMatchObject({ post_metrics: { reactions: 2 } });
+
+      const [url] = fetchMock.mock.calls[0] as [string];
+      expect(url).toContain("/uploadposts/post-analytics?");
+      expect(url).toContain(`platform_post_id=${encodeURIComponent(FACEBOOK_POST.platformPostId)}`);
+      expect(url).toContain("platform=facebook");
+      expect(url).toContain(`user=${PROFILE}`);
+    });
+
+    // El hallazgo central de la sonda: `success` es `true` a nivel raíz Y
+    // dentro de la plataforma aunque no haya un solo número. Ramificar por
+    // `success` guardaría filas de ceros para todo LinkedIn personal.
+    it("un post_metrics_error da snapshot en null, no error ni ceros", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          success: true,
+          post: { platform_post_id: "urn:li:share:7506411715882811392" },
+          platforms: {
+            linkedin: {
+              success: true,
+              post_metrics_error:
+                "LinkedIn post metrics are only available for posts published to a LinkedIn Page.",
+            },
+          },
+        }),
+      );
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([
+        {
+          accountProviderRef: `${PROFILE}:linkedin`,
+          network: "linkedin",
+          platformPostId: "urn:li:share:7506411715882811392",
+          publishedAt: new Date("2026-09-17T18:00:20.930Z"),
+        },
+      ]);
+
+      const snapshot = metrics.get("urn:li:share:7506411715882811392");
+      expect(snapshot).toBeDefined();
+      expect(snapshot?.impressions).toBeNull();
+      expect(snapshot?.likes).toBeNull();
+      const raw = snapshot?.raw as { post_metrics_error?: unknown };
+      expect(String(raw.post_metrics_error)).toContain("Page");
+    });
+
+    // X está conectada en la cuenta real, y su endpoint de métricas no la
+    // cubre. Ausente del Map ≠ snapshot vacío: no preguntamos, así que no
+    // afirmamos nada sobre esa publicación.
+    it("una red que el endpoint no cubre no se pregunta ni se inventa", async () => {
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([
+        {
+          accountProviderRef: `${PROFILE}:x`,
+          network: "x",
+          platformPostId: "2100328881571942536",
+          publishedAt: new Date("2026-09-16T21:00:04.613Z"),
+        },
+      ]);
+
+      expect(metrics.size).toBe(0);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    // Una request por post contra un tope de 100 cada 5 minutos, con la misma
+    // API key que usa la reconciliación cada minuto. Lo que no entra queda
+    // ausente y lo toma el pase siguiente.
+    it("corta el pase en el tope y deja el resto para después", async () => {
+      const provider = makeProvider();
+      const muchos = Array.from({ length: 70 }, (_, i) => ({
+        ...FACEBOOK_POST,
+        platformPostId: `1251762594688211_${i}`,
+      }));
+      for (let i = 0; i < 70; i += 1) fetchMock.mockResolvedValueOnce(respuestaConMetricas());
+
+      const metrics = await provider.getPostMetrics(muchos);
+
+      expect(fetchMock).toHaveBeenCalledTimes(60);
+      // Todas las respuestas stubeadas traen el MISMO platform_post_id, así
+      // que el Map colapsa: lo que se afirma acá es el número de requests.
+      expect(metrics.size).toBeLessThanOrEqual(60);
+    });
+
+    // Son requests independientes: un post que truena no puede llevarse por
+    // delante los snapshots ya recolectados, que costaron cuota que no
+    // vuelve. Un post borrado de la red responde 404.
+    it("un post que falla no tira el pase ni descarta lo ya recolectado", async () => {
+      fetchMock
+        .mockResolvedValueOnce(respuestaConMetricas())
+        .mockResolvedValueOnce(jsonResponse(404, { error: "Post not found" }))
+        .mockResolvedValueOnce(respuestaConMetricas());
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([
+        { ...FACEBOOK_POST, platformPostId: "fb_1" },
+        { ...FACEBOOK_POST, platformPostId: "fb_borrado" },
+        { ...FACEBOOK_POST, platformPostId: "fb_3" },
+      ]);
+
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      // El que falló queda ausente; los otros dos sobreviven.
+      expect(metrics.has("fb_borrado")).toBe(false);
+      expect(metrics.size).toBe(2);
+    });
+
+    // El 429 sí corta —seguir pidiendo contra una ventana agotada gasta
+    // requests que la reconciliación necesita—, pero devolviendo lo que ya
+    // se juntó.
+    it("un rate limit corta el pase pero devuelve lo recolectado", async () => {
+      fetchMock
+        .mockResolvedValueOnce(respuestaConMetricas())
+        .mockResolvedValueOnce(jsonResponse(429, { error: "Too many requests" }))
+        .mockResolvedValueOnce(respuestaConMetricas());
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([
+        { ...FACEBOOK_POST, platformPostId: "fb_1" },
+        { ...FACEBOOK_POST, platformPostId: "fb_2" },
+        { ...FACEBOOK_POST, platformPostId: "fb_3" },
+      ]);
+
+      expect(metrics.size).toBe(1);
+      // No se intentó el tercero.
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    // Una fila con provider_ref corrupto tumbaría a todos los demás, en cada
+    // pase, para siempre.
+    it("una cuenta con ref malformado no arrastra al resto del lote", async () => {
+      fetchMock.mockResolvedValueOnce(respuestaConMetricas());
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([
+        { ...FACEBOOK_POST, accountProviderRef: "sin-separador", platformPostId: "fb_malo" },
+        { ...FACEBOOK_POST, platformPostId: "fb_bueno" },
+      ]);
+
+      expect(metrics.has("fb_malo")).toBe(false);
+      expect(metrics.get("fb_bueno")?.impressions).toBe(84);
+    });
+
+    it("una métrica que no es número no se propaga como NaN", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          success: true,
+          platforms: {
+            facebook: {
+              success: true,
+              post_metrics: { impressions: "no-es-un-numero", likes: "2", reach: null },
+            },
+          },
+        }),
+      );
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([FACEBOOK_POST]);
+
+      const snapshot = metrics.get(FACEBOOK_POST.platformPostId);
+      expect(snapshot?.impressions).toBeNull();
+      // Un bigint serializado como string sí se acepta: PostFast los manda así.
+      expect(snapshot?.likes).toBe(2);
+      expect(snapshot?.reach).toBeNull();
+    });
+
+    it("sin posts no llama a fetch", async () => {
+      const provider = makeProvider();
+      const metrics = await provider.getPostMetrics([]);
+      expect(metrics.size).toBe(0);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   it("un error de red se traduce a PublishingUnavailableError y conserva el original en detail", async () => {
     const networkError = new TypeError("fetch failed");
     fetchMock.mockRejectedValueOnce(networkError);

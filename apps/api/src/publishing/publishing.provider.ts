@@ -75,6 +75,35 @@ export interface ProviderPostState {
   platformPostId: string | null;
 }
 
+/** Un post ya publicado, del que se quieren métricas. */
+export interface PostMetricsQuery {
+  /** `providerRef` de la social_accounts por la que se publicó. */
+  accountProviderRef: string;
+  network: SocialNetwork;
+  /** Id del post en la RED (ProviderPostState.platformPostId), no el del envío. */
+  platformPostId: string;
+  /** Cuándo se publicó. Algún proveedor pregunta por rango de fechas, no por id. */
+  publishedAt: Date;
+}
+
+/**
+ * Métricas de UN post en UN momento.
+ *
+ * Los cinco números son los que comparten todas las redes. `null` no es `0`:
+ * `0` es "nadie lo vio", `null` es "la red no reportó esa métrica" (ADR-021).
+ * Lo que cada red da además vive en `raw`, sin normalizar.
+ */
+export interface PostMetricsSnapshot {
+  capturedAt: Date;
+  impressions: number | null;
+  reach: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  /** Crudo del proveedor. Cuando NO hubo números, el motivo que dio. */
+  raw: unknown;
+}
+
 export interface PublishingProvider {
   /**
    * Resuelve (creándolo si hace falta) el workspace del usuario en el
@@ -129,4 +158,27 @@ export interface PublishingProvider {
   cancel(providerRef: string): Promise<void>;
   /** Batch de hasta 100 refs (límite del proveedor). El caller trocea si hay más. */
   getPostStates(providerRefs: string[]): Promise<Map<string, ProviderPostState>>;
+  /**
+   * Métricas de posts YA publicados (F8.7). La clave del Map es
+   * `platformPostId`.
+   *
+   * Tres resultados posibles, y los tres son normales:
+   *
+   *  1. **Snapshot con números.** El caso feliz.
+   *  2. **Snapshot con los cinco en `null` y el motivo en `raw`.** "Publicó
+   *     pero la red no da métricas para esta cuenta" — LinkedIn solo las da
+   *     de páginas de empresa, nunca de perfiles personales, y un token
+   *     vencido responde parecido. NO es un error: es un hecho sobre esa
+   *     publicación, y guardarlo evita volver a preguntar lo mismo el mismo
+   *     día.
+   *  3. **Ausente del Map.** No se llegó a preguntar (tope del pase, red que
+   *     el proveedor no cubre). El caller no escribe nada y el siguiente pase
+   *     vuelve a intentar.
+   *
+   * El troceo y el respeto de los límites de tasa son del adapter, no del
+   * caller: cada proveedor tiene el suyo y pregunta distinto (Upload-Post una
+   * request por post con tope de 100 cada 5 minutos, PostFast una por rango
+   * de fechas).
+   */
+  getPostMetrics(posts: readonly PostMetricsQuery[]): Promise<Map<string, PostMetricsSnapshot>>;
 }

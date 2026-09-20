@@ -1,5 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import type {
+  PostMetricsQuery,
+  PostMetricsSnapshot,
   ProviderAccount,
   ProviderPostState,
   PublishingProvider,
@@ -107,4 +109,64 @@ export class FakePublishingProvider implements PublishingProvider {
     }
     return Promise.resolve(result);
   }
+
+  /**
+   * Métricas inventadas pero DETERMINISTAS: el mismo post devuelve siempre lo
+   * mismo, y crece con los días que lleva publicado. Es lo que permite probar
+   * el job y el upsert —incluido "el segundo pase del mismo día no duplica"—
+   * sin proveedor real ni cuota que gastar.
+   *
+   * Un post de cada cinco (por hash) devuelve los cinco números en `null` con
+   * un motivo en `raw`: es el caso de LinkedIn personal, que en producción es
+   * la norma y no la excepción. Sin esto, el camino "publicó pero no hay
+   * métricas" no se recorrería nunca en dev.
+   */
+  getPostMetrics(posts: readonly PostMetricsQuery[]): Promise<Map<string, PostMetricsSnapshot>> {
+    const now = new Date();
+    const result = new Map<string, PostMetricsSnapshot>();
+    for (const post of posts) {
+      const semilla = hashEstable(post.platformPostId);
+      const dias = Math.max(
+        0,
+        Math.floor((now.getTime() - post.publishedAt.getTime()) / (24 * 60 * 60 * 1000)),
+      );
+      if (semilla % 5 === 0) {
+        result.set(post.platformPostId, {
+          capturedAt: now,
+          impressions: null,
+          reach: null,
+          likes: null,
+          comments: null,
+          shares: null,
+          raw: { fake: true, motivo: "La red no da métricas para esta cuenta." },
+        });
+        continue;
+      }
+      const impresiones = (semilla % 400) + 20 * (dias + 1);
+      result.set(post.platformPostId, {
+        capturedAt: now,
+        impressions: impresiones,
+        reach: Math.floor(impresiones * 0.7),
+        likes: semilla % 30,
+        comments: semilla % 7,
+        shares: semilla % 4,
+        raw: { fake: true, dias },
+      });
+    }
+    return Promise.resolve(result);
+  }
+}
+
+/**
+ * Hash estable por string (djb2). No es criptográfico ni pretende serlo: solo
+ * necesita que el mismo post dé siempre el mismo número, también entre
+ * reinicios del proceso — `Math.random()` haría que cada pase "descubriera"
+ * métricas nuevas y ningún test de upsert probaría nada.
+ */
+function hashEstable(texto: string): number {
+  let hash = 5381;
+  for (let i = 0; i < texto.length; i += 1) {
+    hash = (hash * 33 + texto.charCodeAt(i)) % 1_000_003;
+  }
+  return hash;
 }

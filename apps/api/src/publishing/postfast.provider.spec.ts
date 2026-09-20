@@ -369,6 +369,134 @@ describe("PostFastProvider", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  // OJO al revisar: NADA de getPostMetrics en PostFast se ejercitó contra su
+  // API real (cuenta sin suscripción desde F7, y el endpoint pide plan
+  // Growth). Estas fixtures salen de postfa.st/docs/posts/analytics, no de una
+  // respuesta observada — es exactamente la situación en la que F7.5 dejó
+  // pasar un bug de reschedule.
+  describe("getPostMetrics", () => {
+    const POST = {
+      accountProviderRef: "sm_linkedin",
+      network: "linkedin" as const,
+      platformPostId: "urn:li:share:7506411715882811392",
+      publishedAt: new Date("2026-09-10T18:00:00.000Z"),
+    };
+
+    it("pide UNA sola request por lote, acotada al rango del lote", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          data: [
+            {
+              platformPostId: POST.platformPostId,
+              socialMediaId: "sm_linkedin",
+              publishedAt: "2026-09-10T18:00:00.000Z",
+              latestMetric: {
+                likes: "12",
+                comments: "3",
+                shares: "1",
+                impressions: "840",
+                reach: "612",
+                fetchedAt: "2026-09-17T06:00:00.000Z",
+              },
+            },
+          ],
+        }),
+      );
+      const provider: PublishingProvider = new PostFastProvider("test-key");
+
+      const metrics = await provider.getPostMetrics([POST]);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // Los contadores vienen como bigint serializado en string: si se
+      // guardaran tal cual, la columna bigint recibiría texto.
+      expect(metrics.get(POST.platformPostId)).toMatchObject({
+        likes: 12,
+        comments: 3,
+        shares: 1,
+        impressions: 840,
+        reach: 612,
+      });
+      // `captured_at` es cuándo lo leímos NOSOTROS, y de ahí sale el día del
+      // snapshot: tomar el `fetchedAt` del proveedor (hasta 6 h viejo) haría
+      // que un pase de madrugada escribiera en la fila de ayer. La edad real
+      // no se pierde, viaja en `raw`.
+      const snapshot = metrics.get(POST.platformPostId);
+      expect(snapshot?.capturedAt.getTime()).toBeGreaterThan(Date.now() - 60_000);
+      expect(snapshot?.raw).toMatchObject({
+        latestMetric: { fetchedAt: "2026-09-17T06:00:00.000Z" },
+      });
+
+      const [url] = fetchMock.mock.calls[0] as [string];
+      expect(url).toContain("/social-posts/analytics?");
+      expect(url).toContain("socialMediaIds=sm_linkedin");
+      // Un día de margen a cada lado del post más viejo del lote.
+      expect(url).toContain(`startDate=${encodeURIComponent("2026-09-09T18:00:00.000Z")}`);
+    });
+
+    // El endpoint devuelve TODO lo publicado en la ventana, también posts que
+    // no se pidieron (los de otro usuario del mismo workspace, por ejemplo).
+    it("ignora las filas por las que nadie preguntó", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          data: [
+            { platformPostId: "urn:li:share:ajeno", latestMetric: { likes: "99" } },
+            { platformPostId: POST.platformPostId, latestMetric: { likes: "1" } },
+          ],
+        }),
+      );
+      const provider: PublishingProvider = new PostFastProvider("test-key");
+
+      const metrics = await provider.getPostMetrics([POST]);
+
+      expect(metrics.size).toBe(1);
+      expect(metrics.has("urn:li:share:ajeno")).toBe(false);
+    });
+
+    // Su doc dice que LinkedIn personal queda excluido; no dice con qué
+    // forma. Si la fila VINO en la respuesta, preguntamos y el proveedor
+    // contestó que no tiene números: eso se guarda como snapshot en null
+    // —igual que en Upload-Post—, no como ceros ni como ausencia. Omitirlo
+    // dejaría esos posts re-preguntados en cada pase para siempre.
+    it("una fila sin latestMetric da snapshot en null, no ausencia", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, { data: [{ platformPostId: POST.platformPostId, latestMetric: null }] }),
+      );
+      const provider: PublishingProvider = new PostFastProvider("test-key");
+
+      const metrics = await provider.getPostMetrics([POST]);
+
+      const snapshot = metrics.get(POST.platformPostId);
+      expect(snapshot).toBeDefined();
+      expect(snapshot?.likes).toBeNull();
+      expect(snapshot?.impressions).toBeNull();
+    });
+
+    // La ventana se acota en el adapter y no por contrato con el caller: este
+    // endpoint NO pagina, así que un post viejo colado en el lote traería
+    // meses de publicaciones y las filas pedidas podrían caerse del final sin
+    // ninguna señal.
+    it("un post muy viejo no ensancha la ventana más allá del tope", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
+      const provider: PublishingProvider = new PostFastProvider("test-key");
+
+      await provider.getPostMetrics([
+        { ...POST, publishedAt: new Date("2020-01-01T00:00:00.000Z") },
+      ]);
+
+      const [url] = fetchMock.mock.calls[0] as [string];
+      const startDate = new Date(new URL(url).searchParams.get("startDate") ?? "");
+      const diasAtras = (Date.now() - startDate.getTime()) / (24 * 60 * 60 * 1000);
+      expect(diasAtras).toBeLessThan(40);
+    });
+
+    it("sin posts no llama a fetch", async () => {
+      const provider: PublishingProvider = new PostFastProvider("test-key");
+      const metrics = await provider.getPostMetrics([]);
+      expect(metrics.size).toBe(0);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   it("un error de red se traduce a PublishingUnavailableError y conserva el error original en detail", async () => {
     const networkError = new TypeError("fetch failed");
     fetchMock.mockRejectedValueOnce(networkError);
