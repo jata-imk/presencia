@@ -172,7 +172,7 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 **`post_metrics`** — un snapshot por post y día (F8.7, **ADR-021**, migraciones `0024_post_metrics` / `0025_rls_post_metrics`). Lo llena el job de ingesta; no hay UI que la lea hasta F12.
 
-La llave es `(user_id, network, platform_post_id, snapshot_date)` — **no** la card y **no** la cuenta conectada. La card porque un post puede existir en la red sin haber nacido en Presencia (historial previo del creator); la cuenta porque es nullable (un `NULL` no colisiona en un índice único) y porque su fila cambia de id si la cuenta se borra y se vuelve a conectar.
+La llave es `(user_id, network, platform_post_id, snapshot_at)` — **no** la card y **no** la cuenta conectada. La card porque un post puede existir en la red sin haber nacido en Presencia (historial previo del creator); la cuenta porque es nullable (un `NULL` no colisiona en un índice único) y porque su fila cambia de id si la cuenta se borra y se vuelve a conectar.
 
 | Columna                                               | Tipo              | Nota                                                                                                          |
 | ----------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -190,7 +190,22 @@ La llave es `(user_id, network, platform_post_id, snapshot_date)` — **no** la 
 | `provider`                                            | text              | qué adapter lo trajo: dos proveedores no siempre cuentan lo mismo con el mismo nombre                         |
 | `created_at` / `updated_at`                           | timestamptz       | `updated_at` con `clock_timestamp()`                                                                          |
 
-- Índice único `post_metrics_snapshot (user_id, network, platform_post_id, snapshot_date)`: es lo que hace que un segundo pase del mismo día **actualice** en vez de insertar (DoD de F8.7).
+- Índice único `post_metrics_snapshot (user_id, network, platform_post_id, snapshot_at)`: es lo que hace que un segundo pase **del mismo bucket** actualice en vez de insertar (DoD de F8.7).
+
+**La escalera de buckets** (`apps/api/src/metrics/frescura.ts`, migración `0027`). El ancho del bucket es a la vez la resolución de la serie y la política de frescura — y que sean _lo mismo_ es el punto: cada request que se paga deja un punto, ni más ni menos.
+
+| edad del post | ancho del bucket | puntos que deja |
+| ------------- | ---------------- | --------------- |
+| 0 – 12 h      | 1 hora           | 12              |
+| 12 – 48 h     | 6 horas          | 6               |
+| 2 – 14 días   | 1 día            | 12              |
+| 14 – 30 días  | 3 días           | 5               |
+| > 30 días     | —                | no se mide      |
+
+Los bordes se alinean al **reloj UTC**, no a la hora de publicación: así dos posts distintos tienen series comparables y dos pases del mismo bucket escriben la misma fila. El tramo de 3 días se trunca contando desde la época Unix, porque "cada 3 días desde medianoche" necesitaría elegir _cuál_ medianoche.
+
+Con una sola fila por día —como estaba hasta `0027`— medir un post ocho veces en su primer día costaba ocho requests y guardaba un punto, el último. La escalera existe para que eso no pueda pasar.
+
 - A diferencia de `ai_usage_events`, **no** es append-only: el upsert diario necesita `UPDATE`.
 
 ### Jobs

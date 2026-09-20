@@ -162,10 +162,16 @@ describe("MetricsService.ingestAll", () => {
     expect(filas[0]?.reach).toBeNull();
     expect(filas[0]?.network).toBe("facebook");
     expect(filas[0]?.cardId).not.toBeNull();
+    // Un post de una hora vive en el tramo horario de la escalera, así que su
+    // fila se llavea por la hora en curso — no por el día. Es lo que hace que
+    // la serie de las primeras 12 h tenga 12 puntos y no uno.
+    const snapshotAt = filas[0]?.snapshotAt as Date;
+    expect(snapshotAt.getTime() % (60 * 60 * 1000)).toBe(0);
+    expect(Date.now() - snapshotAt.getTime()).toBeLessThan(60 * 60 * 1000);
   });
 
   // El DoD de la fase, de punta a punta y no solo en el repositorio.
-  it("un segundo pase el mismo día no duplica filas", { timeout: 30_000 }, async () => {
+  it("un segundo pase del mismo bucket no duplica filas", { timeout: 30_000 }, async () => {
     const postId = `fb_${randomUUID()}`;
     await nuevaCardPublicada(postId, new Date(Date.now() - 60 * 60 * 1000));
 
@@ -178,7 +184,8 @@ describe("MetricsService.ingestAll", () => {
   // La política de frescura corta antes de gastar red, no después de traerla.
   it("no le pregunta al proveedor por un post ya medido hoy", { timeout: 30_000 }, async () => {
     const postId = `fb_${randomUUID()}`;
-    // Diez días: fuera del tramo "cada pase", dentro del "una vez al día".
+    // Diez días: su bucket es el día entero, así que el segundo pase de la
+    // misma jornada no tiene punto nuevo que guardar y no toca la red.
     await nuevaCardPublicada(postId, new Date(Date.now() - 10 * 24 * 60 * 60 * 1000));
 
     await service.ingestAll();

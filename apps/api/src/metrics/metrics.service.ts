@@ -10,7 +10,7 @@ import {
   type PostMetricsQuery,
   type PublishingProvider,
 } from "../publishing/publishing.provider.js";
-import { debeMedirse, diaUtc, EDAD_MAXIMA_DIAS } from "./frescura.js";
+import { bucketDe, debeMedirse, EDAD_MAXIMA_DIAS } from "./frescura.js";
 import { MetricsRepository } from "./metrics.repository.js";
 
 // La ingesta de métricas (F8.7, ADR-021). Estructura de ADR-008: enumerar →
@@ -135,7 +135,7 @@ export class MetricsService {
     // del barrido global: `social_accounts` no tiene policy de worker_scan,
     // así que un join ahí devolvería cero filas sin avisar.
     const { medidos, refsDeCuenta } = await this.dbService.runWithTenant(userId, async (tx) => {
-      const medidos = await this.repo.lastSnapshotDates(tx, [...porPost.keys()]);
+      const medidos = await this.repo.lastBuckets(tx, [...porPost.keys()]);
       const refsDeCuenta = new Map<string, string>();
       const idsDeCuenta = new Set(
         [...porPost.values()].map((card) => card.socialAccountId).filter((id) => id !== null),
@@ -151,7 +151,7 @@ export class MetricsService {
     for (const [platformPostId, card] of porPost) {
       const publishedAt = card.publishedAt;
       if (!publishedAt) continue;
-      if (!debeMedirse({ publishedAt, ultimoSnapshot: medidos.get(platformPostId) ?? null, ahora }))
+      if (!debeMedirse({ publishedAt, ultimoBucket: medidos.get(platformPostId) ?? null, ahora }))
         continue;
       // Una card cuya cuenta se borró (SET NULL) no tiene por dónde
       // preguntar. Queda fuera del pase: no se inventa un destino, y sus
@@ -198,9 +198,12 @@ export class MetricsService {
           network: card.network,
           platformPostId,
           cardId: card.id,
-          // El día sale de cuándo LEÍMOS, en UTC. Es lo que hace que dos
-          // pases del mismo día caigan en la misma fila.
-          snapshotDate: diaUtc(snapshot.capturedAt),
+          // El bucket sale de la edad del post y del momento en que LEÍMOS.
+          // Es lo que hace que dos pases del mismo bucket caigan en la misma
+          // fila, y lo que fija la resolución de la serie.
+          snapshotAt:
+            bucketDe(card.publishedAt ?? snapshot.capturedAt, snapshot.capturedAt) ??
+            snapshot.capturedAt,
           capturedAt: snapshot.capturedAt,
           publishedAt: card.publishedAt,
           impressions: snapshot.impressions,

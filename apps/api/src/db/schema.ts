@@ -3,7 +3,6 @@ import {
   bigint,
   boolean,
   check,
-  date,
   index,
   integer,
   jsonb,
@@ -476,7 +475,7 @@ export const aiUsageEvents = pgTable(
 // F8.7: métricas de una publicación, un snapshot por día.
 //
 // La llave NO es la card, es `(user_id, network, platform_post_id,
-// snapshot_date)`, y cada parte está elegida:
+// snapshot_at)`, y cada parte está elegida:
 //
 //  - `card_id` es NULLABLE. Un post puede existir en la red sin haber nacido
 //    en Presencia — es el caso del creator que conecta sus cuentas y trae un
@@ -491,12 +490,17 @@ export const aiUsageEvents = pgTable(
 //    y entonces el mismo post del mismo día se guardaría dos veces.
 //    `(user_id, network, platform_post_id)` identifica la publicación sin
 //    depender de por cuál conexión se llegó a ella.
-//  - Un snapshot POR DÍA, no una fila viva por post. Una sola fila que se
-//    sobrescribe pierde la velocidad (cuánto creció en las primeras 24 h es
-//    justo lo que distingue un post que funcionó de uno que no), y la serie
-//    completa por pase llenaría la tabla de ruido: las redes reportan con
-//    horas de retraso. El índice único hace que el segundo pase del mismo día
-//    actualice en vez de insertar.
+//  - Un snapshot por BUCKET DE TIEMPO, no una fila viva por post. Una sola
+//    fila que se sobrescribe pierde la velocidad, que es justo la señal:
+//    cuánto creció un post en sus primeras horas distingue el que funcionó
+//    del que no, y el total acumulado no.
+//
+//    El ancho del bucket lo decide la edad del post (`frescura.ts`): 1 h en
+//    las primeras 12, 6 h hasta las 48, 1 día hasta los 14, 3 días hasta los
+//    30. Así la resolución es fina donde pasa algo y barata donde no, y
+//    —clave— la frecuencia de medición no puede divergir de la resolución:
+//    medir dos veces dentro del mismo bucket sobrescribe la misma fila en vez
+//    de generar un punto, que es exactamente lo que el índice único garantiza.
 //
 // Las métricas van DOS veces: normalizadas en columnas (lo que comparten
 // todas las redes, que es lo que Ritmo va a leer) y crudas en `raw` (lo que
@@ -525,12 +529,13 @@ export const postMetrics = pgTable(
     network: socialNetwork("network").notNull(),
     platformPostId: text("platform_post_id").notNull(),
     cardId: uuid("card_id").references(() => publicationCards.id, { onDelete: "set null" }),
-    // Día del snapshot en UTC. Coincide a propósito con el `date` que usa
-    // Upload-Post en su caché: si acá se usara la fecha local del servidor,
-    // dos pases del mismo día del proveedor caerían en filas distintas.
-    snapshotDate: date("snapshot_date").notNull(),
-    // Cuándo lo leímos nosotros. No es lo mismo que snapshot_date y no es
-    // redundante: dice qué tan fresco es el número dentro del día.
+    // Inicio del bucket al que pertenece esta medición, alineado al reloj UTC
+    // (no a la hora de publicación): así dos posts distintos tienen series
+    // comparables y dos pases del mismo bucket escriben la misma fila. El
+    // ancho lo decide la edad del post, ver frescura.ts.
+    snapshotAt: timestamp("snapshot_at", { withTimezone: true }).notNull(),
+    // Cuándo lo leímos nosotros. No es lo mismo que snapshot_at y no es
+    // redundante: dice en qué momento DENTRO del bucket se tomó la medición.
     capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
     // Hora de publicación del post. Copiada acá y no leída por join con la
     // card: las filas sin card (backfill) también la necesitan, y es la
@@ -555,7 +560,7 @@ export const postMetrics = pgTable(
   (t) => [
     // El invariante del DoD: un segundo pase el mismo día actualiza la fila,
     // no crea otra.
-    uniqueIndex("post_metrics_snapshot").on(t.userId, t.network, t.platformPostId, t.snapshotDate),
+    uniqueIndex("post_metrics_snapshot").on(t.userId, t.network, t.platformPostId, t.snapshotAt),
     // Para el join de Analíticas (F12) y para saber qué cards ya tienen datos.
     index("post_metrics_by_card").on(t.cardId),
   ],

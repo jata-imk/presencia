@@ -22,7 +22,7 @@ const BASE: Omit<UpsertSnapshotInput, "userId" | "platformPostId"> = {
   socialAccountId: null,
   network: "linkedin",
   cardId: null,
-  snapshotDate: "2026-09-17",
+  snapshotAt: new Date("2026-09-17T00:00:00.000Z"),
   capturedAt: new Date("2026-09-17T06:00:00.000Z"),
   publishedAt: new Date("2026-09-16T18:00:00.000Z"),
   impressions: 84,
@@ -66,32 +66,36 @@ describe("MetricsRepository.upsertSnapshot", () => {
   }, 30_000);
 
   // El DoD de la fase, literal: "un segundo pase no duplica filas".
-  it("un segundo pase el mismo día actualiza en vez de insertar", { timeout: 15_000 }, async () => {
-    const postId = `urn:li:share:${randomUUID()}`;
-    await dbService.runWithTenant(userA, (tx) =>
-      repo.upsertSnapshot(tx, { ...BASE, userId: userA, platformPostId: postId }),
-    );
-    await dbService.runWithTenant(userA, (tx) =>
-      repo.upsertSnapshot(tx, {
-        ...BASE,
-        userId: userA,
-        platformPostId: postId,
-        impressions: 210,
-        likes: 9,
-        capturedAt: new Date("2026-09-17T18:00:00.000Z"),
-      }),
-    );
+  it(
+    "un segundo pase del mismo bucket actualiza en vez de insertar",
+    { timeout: 15_000 },
+    async () => {
+      const postId = `urn:li:share:${randomUUID()}`;
+      await dbService.runWithTenant(userA, (tx) =>
+        repo.upsertSnapshot(tx, { ...BASE, userId: userA, platformPostId: postId }),
+      );
+      await dbService.runWithTenant(userA, (tx) =>
+        repo.upsertSnapshot(tx, {
+          ...BASE,
+          userId: userA,
+          platformPostId: postId,
+          impressions: 210,
+          likes: 9,
+          capturedAt: new Date("2026-09-17T18:00:00.000Z"),
+        }),
+      );
 
-    const filas = await filasDe(postId);
-    expect(filas).toHaveLength(1);
-    expect(filas[0]?.impressions).toBe(210);
-    expect(filas[0]?.likes).toBe(9);
-    expect(filas[0]?.capturedAt).toEqual(new Date("2026-09-17T18:00:00.000Z"));
-  });
+      const filas = await filasDe(postId);
+      expect(filas).toHaveLength(1);
+      expect(filas[0]?.impressions).toBe(210);
+      expect(filas[0]?.likes).toBe(9);
+      expect(filas[0]?.capturedAt).toEqual(new Date("2026-09-17T18:00:00.000Z"));
+    },
+  );
 
   // La contracara: si el upsert pisara siempre la misma fila, no habría serie
   // y "cuánto creció en las primeras 24 h" sería incontestable.
-  it("otro día del mismo post es una fila nueva", { timeout: 15_000 }, async () => {
+  it("otro bucket del mismo post es una fila nueva", { timeout: 15_000 }, async () => {
     const postId = `urn:li:share:${randomUUID()}`;
     await dbService.runWithTenant(userA, (tx) =>
       repo.upsertSnapshot(tx, { ...BASE, userId: userA, platformPostId: postId }),
@@ -101,14 +105,17 @@ describe("MetricsRepository.upsertSnapshot", () => {
         ...BASE,
         userId: userA,
         platformPostId: postId,
-        snapshotDate: "2026-09-18",
+        snapshotAt: new Date("2026-09-18T00:00:00.000Z"),
         impressions: 300,
       }),
     );
 
     const filas = await filasDe(postId);
     expect(filas).toHaveLength(2);
-    expect(filas.map((f) => f.snapshotDate).sort()).toEqual(["2026-09-17", "2026-09-18"]);
+    expect(filas.map((f) => f.snapshotAt.toISOString()).sort()).toEqual([
+      "2026-09-17T00:00:00.000Z",
+      "2026-09-18T00:00:00.000Z",
+    ]);
   });
 
   // Por esto la llave NO incluye social_account_id. Reconectar normalmente

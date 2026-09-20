@@ -1,67 +1,99 @@
 import { describe, expect, it } from "vitest";
-import { debeMedirse, diaUtc } from "./frescura.js";
+import { bucketDe, debeMedirse } from "./frescura.js";
 
-// Función pura y sin red: la política se prueba con fechas fijas, que es la
+// Función pura y sin red: la escalera se prueba con fechas fijas, que es la
 // única forma de cubrir los cuatro tramos sin esperar semanas.
 
-const AHORA = new Date("2026-09-18T06:00:00.000Z");
+const AHORA = new Date("2026-09-18T06:40:00.000Z");
+const HORA = 60 * 60 * 1000;
+const DIA = 24 * HORA;
 
-function haceDias(dias: number): Date {
-  return new Date(AHORA.getTime() - dias * 24 * 60 * 60 * 1000);
+function haceHoras(horas: number): Date {
+  return new Date(AHORA.getTime() - horas * HORA);
 }
+
+describe("bucketDe", () => {
+  it("en las primeras 12 h el bucket es de una hora", () => {
+    expect(bucketDe(haceHoras(3), AHORA)).toEqual(new Date("2026-09-18T06:00:00.000Z"));
+  });
+
+  it("entre 12 y 48 h el bucket es de seis horas", () => {
+    expect(bucketDe(haceHoras(20), AHORA)).toEqual(new Date("2026-09-18T06:00:00.000Z"));
+    // Y a las 11:40 seguiría siendo el mismo bucket de las 06:00.
+    const masTarde = new Date("2026-09-18T11:40:00.000Z");
+    expect(bucketDe(new Date(masTarde.getTime() - 20 * HORA), masTarde)).toEqual(
+      new Date("2026-09-18T06:00:00.000Z"),
+    );
+  });
+
+  it("entre 2 y 14 días el bucket es el día", () => {
+    expect(bucketDe(haceHoras(5 * 24), AHORA)).toEqual(new Date("2026-09-18T00:00:00.000Z"));
+  });
+
+  it("entre 14 y 30 días el bucket es de tres días", () => {
+    const bucket = bucketDe(haceHoras(20 * 24), AHORA);
+    expect(bucket).not.toBeNull();
+    // Alineado a múltiplos de 3 días desde la época, no a "hace 3 días".
+    expect((bucket as Date).getTime() % (3 * DIA)).toBe(0);
+    expect((bucket as Date).getTime()).toBeLessThanOrEqual(AHORA.getTime());
+    expect(AHORA.getTime() - (bucket as Date).getTime()).toBeLessThan(3 * DIA);
+  });
+
+  it("pasados 30 días no hay bucket", () => {
+    expect(bucketDe(haceHoras(31 * 24), AHORA)).toBeNull();
+  });
+
+  // Un published_at en el futuro (reloj torcido) daría edad negativa. No debe
+  // caerse de la ventana por el lado equivocado.
+  it("un published_at futuro se trata como recién publicado", () => {
+    expect(bucketDe(new Date(AHORA.getTime() + 2 * HORA), AHORA)).toEqual(
+      new Date("2026-09-18T06:00:00.000Z"),
+    );
+  });
+
+  // Los bordes se alinean al reloj UTC y no a la hora de publicación: de otro
+  // modo dos posts del mismo día tendrían series que no se pueden comparar.
+  it("los bordes no dependen de la hora de publicación", () => {
+    const a = bucketDe(new Date("2026-09-18T06:05:00.000Z"), AHORA);
+    const b = bucketDe(new Date("2026-09-18T06:35:00.000Z"), AHORA);
+    expect(a).toEqual(b);
+  });
+});
 
 describe("debeMedirse", () => {
   it("un post nunca medido entra siempre, esté donde esté de la ventana", () => {
-    for (const dias of [0, 1, 10, 29]) {
-      expect(debeMedirse({ publishedAt: haceDias(dias), ultimoSnapshot: null, ahora: AHORA })).toBe(
+    for (const horas of [0, 3, 30, 10 * 24, 29 * 24]) {
+      expect(debeMedirse({ publishedAt: haceHoras(horas), ultimoBucket: null, ahora: AHORA })).toBe(
         true,
       );
     }
   });
 
-  // Las primeras horas son las que traen la señal, así que ahí se paga la
-  // cuota de medir en cada pase aunque ya haya fila de hoy.
-  it("en las primeras 48 h entra en cada pase, aunque ya se haya medido hoy", () => {
-    expect(
-      debeMedirse({
-        publishedAt: haceDias(1),
-        ultimoSnapshot: diaUtc(AHORA),
-        ahora: AHORA,
-      }),
-    ).toBe(true);
+  // El bucket ES la política: si ya hay fila para este bucket, volver a pedir
+  // gastaría una request para sobrescribirla con casi lo mismo.
+  it("no se vuelve a medir dentro del mismo bucket", () => {
+    const publishedAt = haceHoras(3);
+    const bucket = bucketDe(publishedAt, AHORA);
+    expect(debeMedirse({ publishedAt, ultimoBucket: bucket, ahora: AHORA })).toBe(false);
   });
 
-  it("entre 2 y 14 días, una vez al día", () => {
-    const publishedAt = haceDias(5);
-    expect(debeMedirse({ publishedAt, ultimoSnapshot: diaUtc(AHORA), ahora: AHORA })).toBe(false);
-    expect(debeMedirse({ publishedAt, ultimoSnapshot: "2026-09-17", ahora: AHORA })).toBe(true);
+  it("una hora después, un post caliente sí entra de nuevo", () => {
+    const publishedAt = haceHoras(3);
+    const bucketPrevio = bucketDe(publishedAt, new Date(AHORA.getTime() - HORA));
+    expect(debeMedirse({ publishedAt, ultimoBucket: bucketPrevio, ahora: AHORA })).toBe(true);
   });
 
-  it("entre 14 y 30 días, una vez por semana", () => {
-    const publishedAt = haceDias(20);
-    expect(debeMedirse({ publishedAt, ultimoSnapshot: "2026-09-15", ahora: AHORA })).toBe(false);
-    expect(debeMedirse({ publishedAt, ultimoSnapshot: "2026-09-11", ahora: AHORA })).toBe(true);
+  // Y el mismo salto de una hora NO alcanza para un post de cinco días, que
+  // vive en buckets diarios.
+  it("una hora después, un post de cinco días no entra", () => {
+    const publishedAt = haceHoras(5 * 24);
+    const bucketPrevio = bucketDe(publishedAt, new Date(AHORA.getTime() - HORA));
+    expect(debeMedirse({ publishedAt, ultimoBucket: bucketPrevio, ahora: AHORA })).toBe(false);
   });
 
   it("pasados 30 días ya no se mide, ni siquiera si nunca se midió", () => {
-    expect(debeMedirse({ publishedAt: haceDias(31), ultimoSnapshot: null, ahora: AHORA })).toBe(
+    expect(debeMedirse({ publishedAt: haceHoras(31 * 24), ultimoBucket: null, ahora: AHORA })).toBe(
       false,
     );
-  });
-
-  // Un published_at en el futuro (reloj torcido) daría edad negativa. No
-  // debe caerse de la ventana por el lado equivocado.
-  it("un published_at futuro se trata como recién publicado", () => {
-    expect(
-      debeMedirse({ publishedAt: haceDias(-2), ultimoSnapshot: diaUtc(AHORA), ahora: AHORA }),
-    ).toBe(true);
-  });
-
-  // El día es UTC en toda la fase: si acá se usara la fecha local del
-  // servidor, el corte de "ya lo medí hoy" caería en otro momento que el que
-  // usa el índice único, y habría pases de más o de menos.
-  it("el día se calcula en UTC", () => {
-    expect(diaUtc(new Date("2026-09-18T23:30:00.000Z"))).toBe("2026-09-18");
-    expect(diaUtc(new Date("2026-09-19T00:30:00.000Z"))).toBe("2026-09-19");
   });
 });
