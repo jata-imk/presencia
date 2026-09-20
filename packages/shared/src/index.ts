@@ -7,4 +7,5 @@ export * from "./profile.js";
 export * from "./publication.js";
 export * from "./search.js";
 export * from "./text.js";
+export * from "./trends.js";
 export * from "./verticals.js";

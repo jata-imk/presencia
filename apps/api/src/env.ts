@@ -41,6 +41,15 @@ const envSchema = z
     AI_MODEL_CHAT: z.string().optional(),
     AI_MODEL_UTILITY: z.string().optional(),
     AI_MODEL_ADAPT: z.string().optional(),
+    // Tendencias de Ritmo (F9). No es un tier más de MODEL_BY_TASK: esa tabla
+    // mapea tareas a modelos intercambiables, y esta llamada necesita una
+    // capacidad concreta —búsqueda con grounding— que hoy solo tiene Google.
+    // Sin setear cae a DEFAULT_TRENDS_MODEL_ID, que es de Google — NO a
+    // AI_MODEL: apuntar el chat a otro proveedor es una decisión sobre el chat
+    // y no debería apagar las tendencias. Si el modelo resuelto no es de
+    // Google, el job falla con un motivo escrito en vez de producir tendencias
+    // sin fuente.
+    AI_MODEL_TRENDS: z.string().optional(),
     ZEPTOMAIL_TOKEN: z.string().min(1),
     MAIL_FROM: z.email(),
     PORT: z.coerce.number().int().positive().default(3000),
@@ -119,6 +128,7 @@ const envSchema = z
       const modelId = value[path];
       if (modelId) validateModelEnv(path, modelId);
     }
+    if (value.AI_MODEL_TRENDS) validateModelEnv("AI_MODEL_TRENDS", value.AI_MODEL_TRENDS);
 
     // Fail-fast (mismo criterio que el modelo de IA): pedir el provider real
     // sin key es un boot roto, no un fallback silencioso a datos falsos.

@@ -450,6 +450,56 @@ export const creditLedger = pgTable(
   ],
 );
 
+// ── Tendencias de nicho (F9) ─────────────────────────────────────────
+// La ÚNICA tabla del dominio sin `user_id` y sin RLS, y es a propósito: no
+// es dato de un tenant, es una caché compartida. Ver ADR-023.
+//
+// Las tendencias dependen de la tupla (vertical, país, región), no de la
+// persona: diez creators de "fitness en CDMX" tienen exactamente la misma
+// respuesta. Llavearla por usuario multiplicaría por diez el gasto de
+// búsqueda para producir diez copias del mismo texto.
+//
+// La escribe SOLO el worker; todos los tenants la leen.
+
+export const nicheTrends = pgTable(
+  "niche_trends",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Los tres van como `text` y no como enum de Postgres: el catálogo vive
+    // en packages/shared y se ajusta con el uso. Un enum obligaría a una
+    // migración por cada vertical nueva, y el costo de un valor viejo acá es
+    // una fila que nadie vuelve a pedir — no una fila corrupta.
+    vertical: text("vertical").notNull(),
+    marketCountry: text("market_country").notNull(),
+    region: text("region").notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+    // Cuándo deja de servir. Explícito y no derivado de generated_at + TTL:
+    // así una tanda mala se puede invalidar a mano sin tocar código.
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // El array de TrendItem (packages/shared/src/trends.ts). Se valida con
+    // Zod al leer: es jsonb, así que el motor no lo garantiza.
+    items: jsonb("items").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    // Tokens y duración de la llamada que produjo esta fila.
+    //
+    // No van a `ai_usage_events` porque esa tabla es por tenant y esta
+    // llamada no tiene tenant: atribuírsela a alguien inventaría consumo de
+    // un usuario y sesgaría la calibración de la rate card, que es
+    // exactamente lo que esa tabla existe para medir bien. Pero el gasto es
+    // real y alguien tiene que poder verlo, así que viaja con su resultado.
+    usage: jsonb("usage").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Una sola fila vigente por tupla: el refresco es un upsert, no un
+    // insert. Sin historial a propósito — nadie pidió "las tendencias de la
+    // semana pasada" y guardarlas obligaría a decidir cuándo podarlas.
+    uniqueIndex("niche_trends_key").on(t.vertical, t.marketCountry, t.region),
+  ],
+);
+
 // ── Telemetría de IA ─────────────────────────────────────────────────
 // Append-only (F4.5): guarda el usage crudo del proveedor por turno, no una
 // unidad derivada — la normalización a créditos es trabajo de F5. RLS +

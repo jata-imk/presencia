@@ -204,6 +204,13 @@
       "when": 1789896752758,
       "tag": "0028_brand_voices_vertical",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1789898298258,
+      "tag": "0029_niche_trends",
+      "breakpoints": true
     }
   ]
 }

@@ -198,6 +198,8 @@ export const MACRO_REGION_IDS = [
 
 export type MacroRegionId = (typeof MACRO_REGION_IDS)[number];
 
+export const macroRegionIdSchema = z.enum(MACRO_REGION_IDS);
+
 /**
  * Las macro-regiones de México, con los estados que las reconocen.
  *
