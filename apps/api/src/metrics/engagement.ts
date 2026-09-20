@@ -184,13 +184,19 @@ export function calcularHorarios(
   base: BaseDeCalculo,
 ): ResultadoHorarios {
   const nTotal = posts.length;
-  if (nTotal === 0) return { modo: "cold", base, nTotal, celdas: [] };
-  if (nTotal < N_MINIMO_RED) return { modo: "poca", base, nTotal, celdas: [] };
+  const vacio = (modo: ModoHorarios): ResultadoHorarios => ({
+    modo,
+    base,
+    nTotal,
+    celdas: [],
+  });
+  if (nTotal === 0) return vacio("cold");
+  if (nTotal < N_MINIMO_RED) return vacio("poca");
 
   const promedioGeneral = media(posts.map((post) => post.valor));
   // Un promedio general de 0 significa que nadie interactuó con nada. No es un
   // error, pero dividir entre él daría infinito: no hay "+%" contra la nada.
-  if (promedioGeneral <= 0) return { modo: "poca", base, nTotal, celdas: [] };
+  if (promedioGeneral <= 0) return vacio("poca");
 
   const porFranja = agrupar(posts, (post) => `${post.franja}`);
   const porCelda = agrupar(posts, (post) => `${post.diaSemana}:${post.franja}`);
@@ -203,7 +209,7 @@ export function calcularHorarios(
 
   // Si ninguna franja alcanzó el umbral, hay datos pero no hay nada honesto que
   // decir todavía: es el estado "poca", no un heatmap de ceros.
-  if (promedioDeFranja.size === 0) return { modo: "poca", base, nTotal, celdas: [] };
+  if (promedioDeFranja.size === 0) return vacio("poca");
 
   /**
    * El promedio del que sale TODO lo que la celda dice: su color y su número.

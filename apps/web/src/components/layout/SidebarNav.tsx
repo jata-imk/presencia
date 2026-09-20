@@ -39,7 +39,7 @@ import { useSidebarStore } from "../../stores/sidebar-store.js";
 const MODULES = [
   { icon: MessageSquare, label: "Chats", to: "/chats" },
   { icon: Calendar, label: "Calendario", to: "/calendario" },
-  { icon: Activity, label: "Ritmo", to: null },
+  { icon: Activity, label: "Ritmo", to: "/ritmo" },
   { icon: BarChart2, label: "Analíticas", to: null },
   { icon: BookOpen, label: "Biblioteca", to: null },
 ] as const;
