@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { normalizeExpression, type BrandVoiceDto } from "@presencia/shared";
+import {
+  macroRegionLabel,
+  normalizeExpression,
+  resolveMacroRegion,
+  verticalDeNicho,
+  verticalLabel,
+  VERTICALS,
+  type BrandVoiceDto,
+  type VerticalId,
+} from "@presencia/shared";
 import { FormalitySlider } from "../../components/ui/FormalitySlider.js";
 import { Textarea } from "../../components/ui/Textarea.js";
 import { TagInput } from "../../components/ui/TagInput.js";
+import { Select } from "../../components/ui/Select.js";
 import { TextInput } from "../../components/ui/TextInput.js";
 import { Toggle } from "../../components/ui/Toggle.js";
 import { Field } from "../../components/ui/Field.js";
@@ -23,6 +33,8 @@ export function VozDeMarcaPage() {
   const [marketCountry, setMarketCountry] = useState("");
   const [marketRegion, setMarketRegion] = useState("");
   const [niche, setNiche] = useState<string[]>([]);
+  // "" en el <select> representa el NULL de la DB: "derívala de mi nicho".
+  const [vertical, setVertical] = useState<VerticalId | "">("");
   const [audience, setAudience] = useState("");
 
   // Bloque B
@@ -45,6 +57,7 @@ export function VozDeMarcaPage() {
         setMarketCountry(data.marketCountry);
         setMarketRegion(data.marketRegion ?? "");
         setNiche(data.niche);
+        setVertical(data.vertical ?? "");
         setAudience(data.audience ?? "");
         setFormality(data.formality);
         setAllowedExpressions(data.allowedExpressions);
@@ -70,6 +83,16 @@ export function VozDeMarcaPage() {
     return allowedExpressions.find((term) => bannedSet.has(normalizeExpression(term)));
   }, [allowedExpressions, bannedExpressions]);
 
+  // Lo que el servidor va a usar si el select queda en automático. Se calcula
+  // con las MISMAS funciones que usa la API para armar la llave de caché
+  // (shared/verticals.ts): si la pantalla derivara por su cuenta, podría
+  // decirle al usuario que buscamos en una vertical y buscar en otra.
+  const verticalDerivada = useMemo(() => verticalDeNicho(niche), [niche]);
+  const regionEfectiva = useMemo(
+    () => resolveMacroRegion(marketCountry, marketRegion.trim() || null),
+    [marketCountry, marketRegion],
+  );
+
   function updateExample(slot: number, value: string) {
     setExamples((prev) => {
       const next = [...prev];
@@ -91,6 +114,8 @@ export function VozDeMarcaPage() {
           // PATCH interpretaría como "no tocar" y dejaría el valor viejo).
           marketRegion: marketRegion.trim() || null,
           niche,
+          // "" -> null: vuelve a la derivación automática por nicho.
+          vertical: vertical || null,
           audience: audience.trim() || null,
           // register no se manda: el servidor lo recalcula desde formality
           // (brand-voice.service.ts::reconcileFormality, doc §4).
@@ -107,6 +132,7 @@ export function VozDeMarcaPage() {
         },
       });
       setVoice(updated);
+      setVertical(updated.vertical ?? "");
       setAllowedExpressions(updated.allowedExpressions);
       setBannedExpressions(updated.bannedExpressions);
       setSaved(true);
@@ -151,6 +177,30 @@ export function VozDeMarcaPage() {
         </Field>
         <Field label="Nicho" htmlFor="niche">
           <TagInput id="niche" value={niche} onChange={setNiche} maxItems={20} maxLength={40} />
+        </Field>
+        <Field
+          label="Categoría"
+          htmlFor="vertical"
+          hint={
+            vertical === ""
+              ? verticalDerivada
+                ? `Por tu nicho buscamos tendencias de ${verticalLabel(verticalDerivada)}, en ${macroRegionLabel(regionEfectiva)}. Cámbiala si no es lo tuyo.`
+                : `Tu nicho no cayó en ninguna categoría, así que buscamos tendencias generales de ${macroRegionLabel(regionEfectiva)}. Elige una para afinarlas.`
+              : `Buscamos tendencias de esta categoría en ${macroRegionLabel(regionEfectiva)}.`
+          }
+        >
+          <Select
+            id="vertical"
+            value={vertical}
+            onChange={(e) => setVertical(e.target.value as VerticalId | "")}
+          >
+            <option value="">Detectar por mi nicho</option>
+            {VERTICALS.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field
           label="Audiencia"

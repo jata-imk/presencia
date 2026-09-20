@@ -1,0 +1,19 @@
+-- F9: la vertical del catálogo cerrado, en la voz de marca.
+--
+-- De esta columna cuelga la caché compartida de tendencias. Las tendencias se
+-- buscan por `(vertical, país, región)` y no por `user_id`, porque diez
+-- creators de "fitness en CDMX" comparten la misma búsqueda: cien usuarios
+-- repartidos en quince nichos pagan quince refrescos, no cien.
+--
+-- `niche` sigue siendo texto libre y sigue siendo lo que hace que la voz suene
+-- a la persona. Lo que no puede ser texto libre es la LLAVE: si cada usuario
+-- escribiera su propia consulta, la caché dejaría de compartirse sin que nada
+-- fallara — solo se encarecería, en silencio.
+--
+-- Nullable, y no es un descuido: NULL significa "el usuario no la ha
+-- corregido", y entonces se deriva de `niche` al leer. Así, mejorar el
+-- diccionario de derivación beneficia también a quien se registró antes, en
+-- vez de dejarlo congelado en la adivinanza de ese día. Por eso tampoco hay
+-- backfill: rellenar la columna ahora convertiría a cada usuario existente en
+-- alguien que "ya eligió".
+ALTER TABLE "brand_voices" ADD COLUMN "vertical" text;

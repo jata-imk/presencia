@@ -186,6 +186,17 @@ export const brandVoices = pgTable(
     marketCountry: text("market_country").notNull().default("MX"),
     marketRegion: text("market_region"),
     niche: text("niche").array().notNull().default([]),
+    // F9: la vertical del catálogo cerrado (packages/shared/verticals.ts), de
+    // la que cuelga la caché compartida de tendencias. NULL no es "sin
+    // vertical": es "el usuario no la ha corregido", y entonces se deriva de
+    // `niche` al leer. Guardarla solo cuando la elige a mano hace que mejorar
+    // el diccionario de derivación siga beneficiando a quien nunca la tocó,
+    // en vez de dejarlo congelado en la adivinanza del día que se registró.
+    //
+    // La macro-región NO se guarda: se deriva de `market_region` con una
+    // función pura. Un valor derivado guardado al lado de su fuente, sin nada
+    // que los sincronice, se vuelve mentira en cuanto alguien edita la fuente.
+    vertical: text("vertical"),
     audience: text("audience"),
     register: voiceRegister("register").notNull().default("neutro_profesional"),
     // Posición fina 0-100 sobre el slider de formalidad (doc §4); `register`
