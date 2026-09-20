@@ -31,6 +31,7 @@ function makeRow(overrides: Partial<BrandVoiceRow> = {}): BrandVoiceRow {
     marketCountry: "MX",
     marketRegion: "Yucatán",
     niche: ["comida"],
+    vertical: null,
     audience: null,
     register: "neutro_profesional",
     formality: 55,

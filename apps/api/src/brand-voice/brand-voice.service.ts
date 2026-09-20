@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
+  asVerticalId,
   formalityToRegister,
   normalizeExpression,
   REGISTER_FORMALITY_ANCHORS,
@@ -119,6 +120,9 @@ export class BrandVoiceService {
       isDefault: row.isDefault,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      // La columna es `text`, no un enum de Postgres: se valida contra el
+      // catálogo al leer, para que una vertical retirada no viaje al cliente.
+      vertical: asVerticalId(row.vertical),
       ...this.toPromptShape(row),
     };
   }

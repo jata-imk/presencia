@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { verticalIdSchema, type VerticalId } from "./verticals.js";
 
 // Contratos de brand_voices (docs/reference/modelo-de-datos.md,
 // docs/explanation/product/presencia-configuracion-voz-de-marca.md).
@@ -99,6 +100,10 @@ export const updateBrandVoiceBodySchema = z.object({
   // voz-de-marca.tsx::handleSave.
   marketRegion: z.string().trim().min(1).max(80).nullable().optional(),
   niche: tagList(20).min(1).optional(),
+  // `null` = "vuelve a derivarla de mi nicho", no "no tengo vertical". Es la
+  // única forma que tiene el usuario de deshacer una elección manual y volver
+  // al default automático.
+  vertical: verticalIdSchema.nullable().optional(),
   audience: z.string().trim().max(500).nullable().optional(),
   register: brandVoiceRegisterSchema.optional(),
   formality: z.number().int().min(0).max(100).optional(),
@@ -124,6 +129,15 @@ export interface BrandVoiceDto {
   marketCountry: string;
   marketRegion: string | null;
   niche: string[];
+  /**
+   * La vertical que el usuario ELIGIÓ, o `null` si nunca la tocó. No es la
+   * efectiva: para esa se llama a `resolveVertical(vertical, niche)`, que es
+   * la misma función que usa el servidor al armar la llave de caché. Exponer
+   * la cruda y no la resuelta es lo que le permite a la UI decir "esto lo
+   * adivinamos por tu nicho" en vez de presentarlo como una decisión del
+   * usuario que nunca tomó.
+   */
+  vertical: VerticalId | null;
   audience: string | null;
   register: BrandVoiceRegister;
   formality: number;
@@ -140,19 +154,14 @@ export interface BrandVoiceDto {
 // Shape plano que consume chat/system-prompt.ts y la suite cultural
 // (scripts/cultural-suite/run.ts) para ensamblar el prompt — nunca la fila
 // de Drizzle, para que ese módulo siga sin depender de Nest/DB.
+//
+// `vertical` queda fuera a propósito, aunque sea un campo de identidad: es un
+// cubo grueso para compartir caché entre usuarios, y el prompt ya recibe
+// `niche`, que es el texto que el usuario escribió y lo que hace que su
+// contenido suene a él. Meter "design" junto a "Diseño & IA para creators de
+// Mérida" no agrega información y sí invita al modelo a escribir para la
+// categoría en vez de para la persona.
 export type BrandVoiceForPrompt = Omit<
   BrandVoiceDto,
-  "id" | "name" | "isDefault" | "createdAt" | "updatedAt"
+  "id" | "name" | "isDefault" | "createdAt" | "updatedAt" | "vertical"
 >;
-
-// Quita acentos vía descomposición Unicode: "café" y "cafe" cuentan como el
-// mismo modismo. Vive en shared (no en brand-voice.service.ts) porque dos
-// consumidores sin relación de dependencia la necesitan: el service
-// (prohibido gana sobre permitido) y scripts/cultural-suite/prohibited-word.ts
-// (cuenta ocurrencias del modismo prohibido en las generaciones de prueba)
-// — este último no puede importar de apps/api/src sin arrastrar Nest.
-const COMBINING_DIACRITICS = /[\u0300-\u036f]/g;
-
-export function normalizeExpression(term: string): string {
-  return term.trim().toLowerCase().normalize("NFD").replace(COMBINING_DIACRITICS, "");
-}

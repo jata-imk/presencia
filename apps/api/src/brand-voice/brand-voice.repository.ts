@@ -31,6 +31,7 @@ export type UpdateBrandVoicePatch = Partial<{
   marketCountry: string;
   marketRegion: string | null;
   niche: string[];
+  vertical: string | null;
   audience: string | null;
   register: BrandVoiceRegister;
   formality: number;
