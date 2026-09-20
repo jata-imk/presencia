@@ -16,9 +16,14 @@ import type { MetricsService as MetricsServiceType } from "./metrics.service.js"
 // —barrido global, lectura por tenant, escritura con RLS y el upsert— y eso no
 // lo ejercita un mock de repositorio.
 //
-// OJO: `ingestAll` es GLOBAL, así que ve también las cards de otros specs
-// corriendo contra la misma base. Todas las aserciones son sobre las filas del
-// usuario de este spec.
+// OJO: `ingestAll` es GLOBAL, así que ve también las cards de OTROS usuarios de
+// la base — y la de dev es la del VPS, con los datos reales de Jose. Por eso
+// `ProviderFijo` solo contesta por los posts que este spec registró: con un
+// proveedor que contestara por todos, correr la suite le inyectaría métricas
+// inventadas a tenants reales, y ahí se quedarían (el upsert conserva lo no
+// nulo, así que un pase posterior no las corrige).
+//
+// Las aserciones, además, son siempre sobre las filas del usuario del spec.
 
 let dbService: DbServiceType;
 let cardsRepo: CardsRepositoryType;
@@ -36,15 +41,23 @@ let provider: ProviderFijo;
 let userA: string;
 let accountA: string;
 
-/** Números fijos, para poder afirmar sobre ellos; y guarda los lotes pedidos. */
+/**
+ * Números fijos, para poder afirmar sobre ellos; y guarda los lotes pedidos.
+ *
+ * Contesta SOLO por los posts que el spec registró en `mios`. Todo lo demás
+ * queda ausente del Map, que es un resultado legítimo del puerto ("no se
+ * llegó a preguntar") y deja intactos los datos de los otros tenants.
+ */
 class ProviderFijo extends FakePublishingProvider {
   readonly lotes: PostMetricsQuery[][] = [];
+  static readonly mios = new Set<string>();
   override getPostMetrics(
     posts: readonly PostMetricsQuery[],
   ): Promise<Map<string, PostMetricsSnapshot>> {
     this.lotes.push([...posts]);
     const result = new Map<string, PostMetricsSnapshot>();
     for (const post of posts) {
+      if (!ProviderFijo.mios.has(post.platformPostId)) continue;
       result.set(post.platformPostId, {
         capturedAt: new Date(),
         impressions: 84,
@@ -60,6 +73,7 @@ class ProviderFijo extends FakePublishingProvider {
 }
 
 async function nuevaCardPublicada(platformPostId: string, publishedAt: Date): Promise<string> {
+  ProviderFijo.mios.add(platformPostId);
   return dbService.runWithTenant(userA, async (tx) => {
     const [card] = await tx
       .insert(publicationCards)
@@ -204,6 +218,38 @@ describe("MetricsService.ingestAll", () => {
     await service.ingestAll();
 
     expect(await metricasDe(postId)).toHaveLength(0);
+  });
+
+  // El tope del adapter es por LLAMADA, y getPostMetrics se llama una vez por
+  // usuario: sin un presupuesto del pase, N usuarios harían N×60 requests
+  // contra la ventana de 100/5min que comparte con cards.reconcile.
+  it("el presupuesto del pase recorta, y deja lo más nuevo", { timeout: 30_000 }, async () => {
+    const viejo = `fb_${randomUUID()}`;
+    const medio = `fb_${randomUUID()}`;
+    const nuevo = `fb_${randomUUID()}`;
+    const dia = 24 * 60 * 60 * 1000;
+    // Los tres fuera del tramo "cada pase" para que el orden lo decida la
+    // prioridad y no la política de frescura.
+    await nuevaCardPublicada(viejo, new Date(Date.now() - 12 * dia));
+    await nuevaCardPublicada(medio, new Date(Date.now() - 8 * dia));
+    await nuevaCardPublicada(nuevo, new Date(Date.now() - 4 * dia));
+
+    // Uno solo de los tres entra: el presupuesto del pase se reparte entre
+    // TODOS los usuarios con algo que medir, y la base de dev tiene varios.
+    // Por eso se afirma la prioridad, no un conteo exacto: cuántos entran
+    // depende de cuántos tenants haya, cuál entra no.
+    await service.ingestAll(2);
+
+    // La query del barrido no ordena y el índice parcial la sirve por
+    // published_at ascendente: sin la prioridad explícita, el recorte se
+    // comería siempre las publicaciones recientes, que son justo las que
+    // todavía se mueven y cuya primera medición no se recupera después.
+    expect(await metricasDe(nuevo)).toHaveLength(1);
+    expect(await metricasDe(viejo)).toHaveLength(0);
+    // Y el del medio nunca puede entrar sin el más nuevo.
+    const medioMedido = (await metricasDe(medio)).length > 0;
+    const nuevoMedido = (await metricasDe(nuevo)).length > 0;
+    expect(medioMedido && !nuevoMedido).toBe(false);
   });
 
   // El pase es global: un usuario que truena no puede dejar sin medir a los

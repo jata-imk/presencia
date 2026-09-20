@@ -16,8 +16,14 @@ const JOB_QUEUE = "metrics.ingest";
 const INGEST_CRON = "0 */6 * * *";
 
 // Techo del pase. Más generoso que el de reconciliación porque este sí hace
-// red por post: 60 requests secuenciales con timeout de 30 s cada una dan un
-// peor caso teórico de 30 minutos.
+// red por post.
+//
+// El peor caso sale del presupuesto de POSTS_POR_PASE (60, del pase entero y
+// no por usuario): 60 requests secuenciales con el timeout de 30 s del
+// cliente HTTP. Si ese presupuesto sube, esto sube con él — pg-boss no mata
+// al handler cuando expira, solo marca el job como fallido y libera el slot
+// `exclusive`, así que un expire corto de más deja dos pases corriendo
+// encima (ver RecurringJob.expireInSeconds en boss.service.ts).
 const INGEST_EXPIRE_SECONDS = 30 * 60;
 
 /**

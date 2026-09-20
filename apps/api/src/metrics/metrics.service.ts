@@ -24,6 +24,20 @@ import { MetricsRepository } from "./metrics.repository.js";
 /** Margen sobre la ventana de la política: la policy es el techo, no el filtro fino. */
 const VENTANA_BARRIDO_DIAS = EDAD_MAXIMA_DIAS + 5;
 
+// Presupuesto de posts de TODO el pase, repartido entre los usuarios que
+// tengan algo que medir.
+//
+// Tiene que vivir acá y no en el adapter, aunque el adapter también se
+// proteja: su tope es por LLAMADA, y `getPostMetrics` se llama una vez por
+// usuario (Upload-Post pregunta por perfil, no hay lote global del lado del
+// proveedor). Con el tope solo allá, N usuarios harían N×60 requests contra
+// una ventana de 100 cada 5 minutos — el pase se autoestrangularía y, peor,
+// le quitaría la cuota a `cards.reconcile`, que usa la MISMA API key cada
+// minuto y sí es de cara al usuario.
+//
+// 60 y no 100: la reconciliación necesita aire en esa misma ventana.
+const POSTS_POR_PASE = 60;
+
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
 
 @Injectable()
@@ -43,8 +57,11 @@ export class MetricsService {
    * Un usuario que falla no tumba a los demás — se acumula y se relanza al
    * final, para que el job quede marcado como fallido en `pgboss.job` y el
    * error diga quiénes fueron (patrón de ADR-008).
+   *
+   * `presupuestoDelPase` es parámetro y no solo constante para poder probar
+   * el recorte sin fabricar 60 publicaciones. El job lo llama sin argumentos.
    */
-  async ingestAll(): Promise<void> {
+  async ingestAll(presupuestoDelPase: number = POSTS_POR_PASE): Promise<void> {
     const ahora = new Date();
     const desde = new Date(ahora.getTime() - VENTANA_BARRIDO_DIAS * MS_POR_DIA);
     const cards = await this.dbService.runWorkerScan((tx) =>
@@ -53,9 +70,25 @@ export class MetricsService {
     if (cards.length === 0) return;
 
     const failed = new Set<string>();
-    for (const [userId, delUsuario] of groupByUser(cards)) {
+    const porUsuario = groupByUser(cards);
+    let presupuesto = presupuestoDelPase;
+    let usuariosRestantes = porUsuario.size;
+    for (const [userId, delUsuario] of porUsuario) {
+      // Reparto parejo de lo que queda. Sin esto, el primer usuario del mapa
+      // se comería el presupuesto entero todos los pases y los demás no se
+      // medirían nunca — y el orden del mapa no es una prioridad, es el orden
+      // en que Postgres devolvió las filas.
+      const cupo = Math.max(1, Math.ceil(presupuesto / usuariosRestantes));
+      usuariosRestantes -= 1;
+      if (presupuesto <= 0) {
+        console.warn(
+          `[metrics] Presupuesto del pase agotado; ${usuariosRestantes + 1} usuario(s) quedan para el siguiente.`,
+        );
+        break;
+      }
       try {
-        await this.ingestForUser(userId, delUsuario, ahora);
+        const medidos = await this.ingestForUser(userId, delUsuario, ahora, cupo);
+        presupuesto -= medidos;
       } catch (error) {
         failed.add(userId);
         console.error(`[metrics] No se pudieron ingestar las métricas de ${userId}:`, error);
@@ -64,7 +97,13 @@ export class MetricsService {
     if (failed.size > 0) throw new Error(summarizeFailures("La ingesta de métricas", [...failed]));
   }
 
-  private async ingestForUser(userId: string, cards: CardRow[], ahora: Date): Promise<void> {
+  /** Devuelve cuántos posts consumió del presupuesto del pase. */
+  private async ingestForUser(
+    userId: string,
+    cards: CardRow[],
+    ahora: Date,
+    cupo: number,
+  ): Promise<number> {
     const porPost = new Map<string, CardRow>();
     for (const card of cards) {
       // La policy ya exige platform_post_id y published_at, pero el tipo de la
@@ -72,7 +111,7 @@ export class MetricsService {
       // cards de otra procedencia. El narrowing es de verdad, no ceremonia.
       if (card.platformPostId && card.publishedAt) porPost.set(card.platformPostId, card);
     }
-    if (porPost.size === 0) return;
+    if (porPost.size === 0) return 0;
 
     // Dos lecturas en la misma transacción del tenant: cuándo se midió cada
     // post, y con qué cuenta se publicó.
@@ -115,13 +154,26 @@ export class MetricsService {
         publishedAt,
       });
     }
-    if (pedidos.length === 0) return;
+    if (pedidos.length === 0) return 0;
+
+    // Prioridad ANTES de recortar por cupo, y este orden importa: la query no
+    // ordena, así que el índice parcial la sirve por `published_at` — o sea
+    // de la más vieja a la más nueva. Recortar ahí dejaría afuera siempre a
+    // las recién publicadas, que son justo las del tramo de 48 h que la
+    // política prioriza y cuya primera medición no se recupera después.
+    pedidos.sort((a, b) => {
+      const nuncaA = medidos.has(a.platformPostId) ? 1 : 0;
+      const nuncaB = medidos.has(b.platformPostId) ? 1 : 0;
+      if (nuncaA !== nuncaB) return nuncaA - nuncaB;
+      return b.publishedAt.getTime() - a.publishedAt.getTime();
+    });
+    const delPase = pedidos.slice(0, cupo);
 
     // FUERA de transacción: hace red, y puede tardar (una request por post en
     // Upload-Post). Mantener abierta una transacción mientras tanto agarraría
     // el pool por minutos.
-    const snapshots = await this.provider.getPostMetrics(pedidos);
-    if (snapshots.size === 0) return;
+    const snapshots = await this.provider.getPostMetrics(delPase);
+    if (snapshots.size === 0) return delPase.length;
 
     await this.dbService.runWithTenant(userId, async (tx) => {
       for (const [platformPostId, snapshot] of snapshots) {
@@ -151,6 +203,7 @@ export class MetricsService {
         });
       }
     });
+    return delPase.length;
   }
 }
 
