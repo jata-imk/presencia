@@ -216,12 +216,25 @@ export const MACRO_REGIONS: ReadonlyArray<{
   {
     id: "sureste",
     label: "Sureste",
-    keywords: ["yucatan", "merida", "quintana roo", "cancun", "campeche", "tabasco", "sureste"],
+    keywords: [
+      "sureste",
+      "yucatan",
+      "merida",
+      "quintana roo",
+      "cancun",
+      "playa del carmen",
+      "tulum",
+      "campeche",
+      "tabasco",
+      "villahermosa",
+      "veracruz",
+      "xalapa",
+    ],
   },
   {
     id: "sur",
     label: "Sur",
-    keywords: ["oaxaca", "chiapas", "guerrero", "acapulco", "sur"],
+    keywords: ["sur", "oaxaca", "chiapas", "guerrero", "acapulco", "tuxtla"],
   },
   {
     id: "cdmx",
@@ -231,35 +244,59 @@ export const MACRO_REGIONS: ReadonlyArray<{
   {
     id: "centro",
     label: "Centro",
-    keywords: ["puebla", "morelos", "tlaxcala", "hidalgo", "estado de mexico", "edomex", "centro"],
+    keywords: [
+      "centro",
+      "puebla",
+      "morelos",
+      "cuernavaca",
+      "tlaxcala",
+      "hidalgo",
+      "pachuca",
+      "estado de mexico",
+      "edomex",
+      "toluca",
+    ],
   },
   {
     id: "bajio",
     label: "Bajío",
-    keywords: ["bajio", "guanajuato", "queretaro", "aguascalientes", "san luis potosi", "leon"],
+    keywords: [
+      "bajio",
+      "guanajuato",
+      "leon",
+      "queretaro",
+      "aguascalientes",
+      "san luis potosi",
+      "zacatecas",
+    ],
   },
   {
     id: "occidente",
     label: "Occidente",
-    keywords: ["jalisco", "guadalajara", "michoacan", "colima", "nayarit", "occidente"],
+    keywords: ["occidente", "jalisco", "guadalajara", "michoacan", "morelia", "colima", "nayarit"],
   },
   {
     id: "norte",
     label: "Norte",
-    keywords: [
-      "nuevo leon",
-      "monterrey",
-      "coahuila",
-      "tamaulipas",
-      "durango",
-      "zacatecas",
-      "norte",
-    ],
+    keywords: ["norte", "nuevo leon", "monterrey", "coahuila", "saltillo", "tamaulipas", "tampico"],
   },
   {
     id: "noroeste",
     label: "Noroeste",
-    keywords: ["sonora", "sinaloa", "baja california", "tijuana", "hermosillo", "noroeste"],
+    keywords: [
+      "noroeste",
+      "sonora",
+      "hermosillo",
+      "sinaloa",
+      "culiacan",
+      "baja california",
+      "tijuana",
+      "mexicali",
+      "la paz",
+      "chihuahua",
+      "ciudad juarez",
+      "durango",
+    ],
   },
   {
     id: "nacional",
@@ -315,6 +352,21 @@ export function resolveVertical(elegida: VerticalId | null, niche: readonly stri
 }
 
 /**
+ * Las formas en que alguien escribe "México" en un campo de texto libre.
+ *
+ * El país es un input abierto, así que "México", "Mexico" y "MX" son todas
+ * respuestas correctas de un usuario. Comparar contra el literal `"mx"` dejaba
+ * a quien escribiera el nombre del país —lo natural en una app en español— con
+ * `nacional` para siempre: perdía la mitad regional de la llave sin un solo
+ * error en pantalla.
+ */
+const NOMBRES_DE_MEXICO = new Set(["mx", "mex", "mexico", "estados unidos mexicanos"]);
+
+function esMexico(marketCountry: string): boolean {
+  return NOMBRES_DE_MEXICO.has(normalizeExpression(marketCountry));
+}
+
+/**
  * La macro-región de un texto libre de región.
  *
  * Fuera de México siempre es `nacional`: las macro-regiones de abajo son
@@ -325,14 +377,24 @@ export function resolveMacroRegion(
   marketCountry: string,
   marketRegion: string | null,
 ): MacroRegionId {
-  if (normalizeExpression(marketCountry) !== "mx") return "nacional";
+  if (!esMexico(marketCountry)) return "nacional";
   if (!marketRegion) return "nacional";
   const texto = normalizeExpression(marketRegion);
   if (texto.length === 0) return "nacional";
+
+  // Gana la clave MÁS LARGA que aplique, no la primera de la lista. Con el
+  // orden de la lista mandando, "Nuevo León" caía en Bajío —porque `leon` se
+  // probaba antes que `nuevo leon`— y "Baja California Sur" caía en Sur. Dos
+  // de los mercados más grandes del país en la caché equivocada, y sin forma
+  // de notarlo: la región no da error, solo trae las tendencias de otra parte.
+  let mejor: { id: MacroRegionId; largo: number } | null = null;
   for (const region of MACRO_REGIONS) {
-    if (region.keywords.some((palabra) => reconoce(texto, palabra))) return region.id;
+    for (const palabra of region.keywords) {
+      if (!reconoce(texto, palabra)) continue;
+      if (!mejor || palabra.length > mejor.largo) mejor = { id: region.id, largo: palabra.length };
+    }
   }
-  return "nacional";
+  return mejor?.id ?? "nacional";
 }
 
 export function verticalLabel(id: VerticalId): string {

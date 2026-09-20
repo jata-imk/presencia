@@ -94,6 +94,36 @@ describe("resolveMacroRegion", () => {
     expect(resolveMacroRegion("MX", "Mérida, Yucatán")).toBe("sureste");
   });
 
+  it("gana la clave más específica, no la primera de la lista", () => {
+    // Con el orden de la lista mandando, `leon` (Bajío) se probaba antes que
+    // `nuevo leon` (Norte) y `sur` antes que `baja california`. Dos de los
+    // mercados más grandes del país terminaban en la caché equivocada, sin un
+    // solo error: la región no falla, solo trae tendencias de otra parte.
+    expect(resolveMacroRegion("MX", "Nuevo León")).toBe("norte");
+    expect(resolveMacroRegion("MX", "Baja California Sur")).toBe("noroeste");
+    // Y León de Guanajuato sigue siendo Bajío.
+    expect(resolveMacroRegion("MX", "León, Guanajuato")).toBe("bajio");
+  });
+
+  it("acepta las formas en que alguien escribe México en un campo libre", () => {
+    // El país es un TextInput abierto: escribir el nombre del país es lo
+    // natural en una app en español. Comparar contra el literal "mx" dejaba a
+    // esa gente en `nacional` para siempre, perdiendo la mitad regional de la
+    // llave sin ninguna señal en pantalla.
+    expect(resolveMacroRegion("México", "Yucatán")).toBe("sureste");
+    expect(resolveMacroRegion("Mexico", "Monterrey")).toBe("norte");
+    expect(resolveMacroRegion("mx", "CDMX")).toBe("cdmx");
+  });
+
+  it("cubre los estados grandes que no son capital", () => {
+    // Sin entrada propia caían en `nacional`, y la macro-región no tiene
+    // selector: el usuario solo la corrige reescribiendo su región.
+    expect(resolveMacroRegion("MX", "Veracruz")).toBe("sureste");
+    expect(resolveMacroRegion("MX", "Chihuahua")).toBe("noroeste");
+    expect(resolveMacroRegion("MX", "Jalisco")).toBe("occidente");
+    expect(resolveMacroRegion("MX", "Puebla")).toBe("centro");
+  });
+
   it("fuera de México siempre es nacional", () => {
     // Las macro-regiones de abajo son mexicanas: aplicarlas a Colombia daría
     // una llave con cara de válida y sin ningún significado.

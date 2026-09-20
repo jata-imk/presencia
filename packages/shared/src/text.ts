@@ -10,7 +10,7 @@
 // scripts/cultural-suite/prohibited-word.ts (cuenta ocurrencias del modismo
 // prohibido en las generaciones de prueba) — este último no puede importar de
 // apps/api/src sin arrastrar Nest.
-const COMBINING_DIACRITICS = /[̀-ͯ]/g;
+const COMBINING_DIACRITICS = /[\u0300-\u036f]/g;
 
 export function normalizeExpression(term: string): string {
   return term.trim().toLowerCase().normalize("NFD").replace(COMBINING_DIACRITICS, "");
