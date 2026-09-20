@@ -183,6 +183,13 @@
       "when": 1789710040986,
       "tag": "0025_rls_post_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1789710040987,
+      "tag": "0026_worker_metrics_scan",
+      "breakpoints": true
     }
   ]
 }

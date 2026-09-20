@@ -203,6 +203,8 @@ La llave es `(user_id, network, platform_post_id, snapshot_date)` — **no** la 
 
 Sin RLS ahí — no es superficie de la API. Regla: los payloads de jobs llevan `user_id` explícito y el worker lo fija en su transacción (ver abajo).
 
+Colas agendadas hoy: `cards.reconcile` (cada minuto), `credits.cycle` (diaria, 09:00 UTC), `backups.daily` (diaria, 08:00 UTC) y `metrics.ingest` (cada 6 h, F8.7). La cadencia de esta última la fijan las redes, no nosotros: reportan con horas de retraso y los proveedores refrescan cada 6 h por su cuenta, así que preguntar más seguido gasta cuota para traer el mismo número.
+
 ## Dónde muerde el RLS
 
 ### Mecánica
@@ -248,6 +250,25 @@ La salvedad: el `cutoff` de la consulta lo calcula el proceso y este `now()` lo 
 **Por qué un UUID centinela y no "cuando `app.user_id` no está fijado"**, que era lo natural: las policies permisivas se combinan con OR, pero Postgres **las evalúa todas**, y `tenant_isolation` lee la variable sin `missing_ok`. Sin fijarla, esa expresión lanza `42704 unrecognized configuration parameter` y tumba la query entera antes de que el OR pueda salvarla — verificado contra la base, no deducido. Con el nil fijado, `tenant_isolation` evalúa a falso limpiamente y la del worker decide.
 
 El centinela además conserva la red de seguridad que da ese error: una query que se **olvide** de fijar tenant sigue fallando ruidosamente en vez de devolver cero filas en silencio. El modo barrido hay que pedirlo a propósito (`DbService.runWorkerScan`). Y escribir ahí es inocuo por construcción: con el nil, `tenant_isolation` no matchea ninguna fila, así que un `UPDATE` en modo barrido toca cero filas.
+
+### La segunda del worker: `worker_metrics_scan` (F8.7)
+
+El barrido de métricas necesita lo contrario que el de reconciliación: cards **publicadas**. Va en una policy **aparte** (migración `0026`) y no ampliando `worker_scan`, porque ese recorte a `scheduled` es deliberado y el pase que lo usa corre cada minuto — cuanto menos ve, menos puede romper. En Postgres las policies permisivas de un mismo comando se combinan con OR, así que cada barrido ve lo suyo y nada más.
+
+```sql
+CREATE POLICY worker_metrics_scan ON publication_cards
+  FOR SELECT TO presencia_app
+  USING (
+    current_setting('app.user_id', true) = '00000000-0000-0000-0000-000000000000'
+    AND status = 'published'
+    AND platform_post_id IS NOT NULL
+    AND published_at > now() - interval '35 days'
+  );
+```
+
+`platform_post_id IS NOT NULL` no es defensivo: sin id nativo no hay a quién preguntarle, y las publicaciones anteriores a la migración `0023` se quedaron sin él. Los 35 días son el **techo** del barrido, no la política fina: cada cuándo se vuelve a medir cada post lo decide `frescura.ts` (30 días de ventana, escalonados por edad), y la policy va cinco días más ancha a propósito — el mismo criterio que el `now()` a secas de `worker_scan`.
+
+Lo que **no** se puede leer así: `social_accounts` no tiene policy de barrido, así que un join desde el pase global devolvería cero filas sin avisar. El `provider_ref` de la cuenta —que es lo que el adapter parte en perfil y plataforma— se lee dentro de `runWithTenant`, junto con el último snapshot de cada post.
 
 ### Tablas cubiertas
 
