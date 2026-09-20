@@ -22,6 +22,7 @@ import { useSidebarStore } from "../../stores/sidebar-store.js";
 const SECTION_LABEL: Record<string, string> = {
   chats: "Chats",
   calendario: "Calendario",
+  ritmo: "Ritmo",
   configuracion: "Configuración",
 };
 

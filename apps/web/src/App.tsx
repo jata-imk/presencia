@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
 import { useThemeSync } from "./lib/use-theme.js";
 import { ArchivedChatsPage } from "./routes/archived-chats.js";
 import { CalendarioPage } from "./routes/calendario.js";
+import { RitmoPage } from "./routes/ritmo.js";
 import { ChatPage } from "./routes/chat.js";
 import { ChatsPage } from "./routes/chats.js";
 import { AparienciaPage } from "./routes/configuracion/apariencia.js";
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
       // contexto nuevo: es información estática de la pantalla, y react-router
       // ya la propaga con useMatches(). Ver ADR-018.
       { path: "/calendario", element: <CalendarioPage />, handle: { ownScroll: true } },
+      { path: "/ritmo", element: <RitmoPage /> },
       { path: "/onboarding", element: <OnboardingPage /> },
       {
         path: "/configuracion",

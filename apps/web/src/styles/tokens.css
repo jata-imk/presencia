@@ -234,6 +234,42 @@
   --cal-drop-conflict: color-mix(in srgb, var(--status-warning) 18%, var(--bg-card));
   --cal-drop-past-veil: color-mix(in srgb, var(--bg-app) 55%, transparent);
 
+  /* ── Ritmo (F9) ────────────────────────────────────────────────────
+     Las dos escalas de los heatmaps. Se derivan por color-mix contra
+     --bg-card, que YA voltea con el tema: así no necesitan override en
+     oscuro y no pueden quedar desincronizadas de la paleta de marca.
+     Mezclar contra --bg-card y no contra transparent es el mismo motivo que
+     en --cal-drop-*: la celda trae su propio fondo y un tinte translúcido
+     encima se lee distinto en cada tema.
+
+     El paso 0 no es "malo", es "acá no hay historia" — por eso queda casi
+     pegado al fondo de la tarjeta en vez de ser el primer tono de la rampa.
+     La distinción importa: una celda donde se publicó y rindió mal se pinta
+     con el paso 1, y confundirlas haría que el heatmap mienta sobre dónde
+     hubo actividad. */
+  --ritmo-heat-0: color-mix(in srgb, var(--color-pink-orchid) 8%, var(--bg-card));
+  --ritmo-heat-1: color-mix(in srgb, var(--color-pink-orchid) 30%, var(--bg-card));
+  --ritmo-heat-2: color-mix(in srgb, var(--color-pink-orchid) 62%, var(--bg-card));
+  --ritmo-heat-3: color-mix(in srgb, var(--color-blush-pop) 68%, var(--bg-card));
+  --ritmo-heat-4: var(--color-blush-pop);
+
+  /* Engagement por franja: arranca frío y termina en la marca, para que la
+     escala se lea como intensidad y no como semáforo — un rojo/verde diría
+     "bien/mal" y lo que la celda mide es "acá te escuchan más". */
+  --ritmo-engage-0: color-mix(in srgb, var(--color-icy-blue) 8%, var(--bg-card));
+  --ritmo-engage-1: color-mix(in srgb, var(--color-icy-blue) 38%, var(--bg-card));
+  --ritmo-engage-2: color-mix(in srgb, var(--color-icy-blue) 78%, var(--bg-card));
+  --ritmo-engage-3: color-mix(in srgb, var(--color-pink-orchid) 70%, var(--bg-card));
+  --ritmo-engage-4: var(--color-blush-pop);
+
+  /* Texto sobre una celda pintada. Los pasos altos de las dos rampas son
+     pasteles saturados que NO se invierten entre temas (son color de marca),
+     así que su foreground tampoco puede invertirse: con un --fg-primary
+     normal, en oscuro saldría texto claro sobre rosa claro. Es la regla
+     escrita en design-tokens.md §"un fondo que no invierte necesita un
+     foreground que tampoco invierta". */
+  --ritmo-cell-fg: var(--color-plum-950);
+
   /* Layout. --sidebar-width es el DEFAULT, no la ley: desde F6.5 el
      usuario puede arrastrar el borde del sidebar y el valor elegido se
      escribe inline sobre <html> (origen inline gana a :root sin pelear
@@ -382,6 +418,18 @@
   --color-cal-drop-target: var(--cal-drop-target);
   --color-cal-drop-conflict: var(--cal-drop-conflict);
   --color-cal-drop-past: var(--cal-drop-past-veil);
+
+  --color-ritmo-heat-0: var(--ritmo-heat-0);
+  --color-ritmo-heat-1: var(--ritmo-heat-1);
+  --color-ritmo-heat-2: var(--ritmo-heat-2);
+  --color-ritmo-heat-3: var(--ritmo-heat-3);
+  --color-ritmo-heat-4: var(--ritmo-heat-4);
+  --color-ritmo-engage-0: var(--ritmo-engage-0);
+  --color-ritmo-engage-1: var(--ritmo-engage-1);
+  --color-ritmo-engage-2: var(--ritmo-engage-2);
+  --color-ritmo-engage-3: var(--ritmo-engage-3);
+  --color-ritmo-engage-4: var(--ritmo-engage-4);
+  --color-ritmo-cell-fg: var(--ritmo-cell-fg);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);
