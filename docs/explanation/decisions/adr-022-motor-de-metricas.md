@@ -1,0 +1,32 @@
+# ADR-022 · Un solo motor de métricas: la fórmula vive fuera de los módulos
+
+**Decisión:** toda conclusión derivada de `post_metrics` —promedios, "+%", rachas, cadencia— se calcula en un único módulo (`apps/api/src/metrics/`, con la aritmética pura en `engagement.ts`) que no pertenece a ninguna pantalla. Ritmo lo consume primero y Analíticas después; ninguno de los dos calcula lo suyo. El motor devuelve números y un `modo`, nunca copy ni formato.
+
+Con la fórmula vienen cuatro reglas, y son parte de la decisión, no detalles de implementación:
+
+1. **`NULL` no entra al promedio.** Un post cuyos `likes`, `comments` y `shares` son los tres nulos queda fuera de toda agregación. Los nulos individuales se saltan; nunca se traducen a `0`.
+2. **Una sola base por red y por ventana.** Si todos los posts con datos traen `reach`, la base es la tasa (`interacciones / reach`); si a uno le falta, la red entera se calcula en interacciones absolutas. La base elegida viaja en la respuesta.
+3. **Edad de referencia de 24 h (±6 h).** De la serie de cada post se elige el snapshot tomado más cerca de sus primeras 24 horas de vida. Los posts que no la cumplieron todavía no entran; los que solo tienen mediciones fuera de la tolerancia, tampoco.
+4. **Umbral y herencia.** Un "+%" se publica con N ≥ 5 en el grupo y N ≥ 10 del usuario en esa red. Se calcula primero por franja horaria (8 grupos de 3 h) y luego por día×franja donde haya muestra; la celda fina que no llega hereda el lift de su franja y queda marcada como heredada.
+
+**Razón:** las cuatro reglas son la diferencia entre un número y una mentira con formato de número, y las cuatro se pueden incumplir de maneras que nadie nota.
+
+- **Dos módulos con la misma fórmula divergen.** Ritmo ("qué hacer") y Analíticas ("qué pasó") son vistas opuestas de la misma materia prima. Si cada uno agrega por su cuenta, el día que alguien ajuste el filtrado de nulos en uno, el otro se queda viejo: Ritmo diría "+18%" y Analíticas "+12%" para exactamente lo mismo, los dos con cara de dato, y no habría forma de saber cuál está mal. Es el modo de falla clásico de la lógica duplicada, y acá el costo no es un bug de render: es que el producto se contradiga sobre su propio diferenciador.
+- **`NULL ≠ 0` es inútil si solo se respeta al guardar.** ADR-021 ya lo declaró para la escritura. Un `AVG()` que mezcle ausencias con ceros lo deshace en la lectura, y el resultado es exactamente el que ese ADR describe: le dice al usuario que su mejor horario es el peor. La regla tiene que vivir donde se promedia.
+- **La base mixta produce un número sin unidad.** Promediar tasas con conteos no falla ni avisa; da un número plausible. Y quedarse solo con los posts que traen `reach` sería peor: cambiaría la muestra según la red y la hora, que es justo la dimensión que se está midiendo.
+- **Sin edad de referencia se mide el calendario, no el horario.** El último snapshot de un post de ayer y el de uno de hace tres semanas no miden lo mismo: el segundo tuvo veinte días más para acumular. Compararlos concluye que publicar hace tres semanas fue mejor idea.
+- **Sin herencia, el "+%" no aparece nunca.** La rejilla es de 7 días × 8 franjas = 56 celdas. Pedirle N ≥ 5 a cada una exige 280 publicaciones dentro de una ventana de 30 días: diez diarias. El DoD de F9 promete que el "+%" aparece pasado el umbral, y con granularidad fija esa promesa sería inalcanzable por aritmética. Calcular primero por franja lo vuelve alcanzable con ~40 publicaciones, y marcar la celda como heredada mantiene la honestidad: la UI dice de dónde salió el número.
+
+El umbral de 5 no es nuevo: es el mismo que se fijó para los hallazgos de Analíticas el 2026-09-18. Dos umbrales distintos para la misma pregunta ("¿alcanza la muestra?") serían dos respuestas distintas sobre el mismo dato.
+
+**Descartado:**
+
+- **Las queries dentro del servicio de Ritmo**, extrayéndolas cuando llegue Analíticas. Es más rápido hoy y es exactamente el escenario que la decisión de producto del 2026-09-18 pidió evitar por escrito, antes de que existiera el código. Extraer después significa hacerlo con dos consumidores vivos y un comportamiento que ya nadie recuerda por qué es así.
+- **Construir ya las tres unidades de análisis de Analíticas** (por post, por red, por concepto multi-red). Es infra sin consumidor: nadie la ejercita, nada la valida y el primer uso real la va a cambiar. Lo que se fija ahora es la **frontera** —dónde vive la fórmula— no el catálogo de agregaciones.
+- **Vista materializada o tabla de agregados.** La ventana es de 30 días y las filas por usuario son decenas: la query en vivo cuesta milisegundos. Un agregado precalculado agrega una cosa que puede quedar rancia y otra que hay que invalidar, sin resolver ningún problema que exista.
+- **`AVG()` directo en SQL sobre las cinco columnas.** Tentador y corto. Postgres ignora los `NULL` en `AVG`, lo cual suena bien hasta que se nota que eso cambia el denominador por columna: el promedio de `likes` se calcula sobre otros posts que el de `shares`, y sumarlos después mezcla muestras distintas. La suma por post, y solo después el promedio, es la que mantiene una sola muestra.
+- **Comparar redes entre sí.** Facebook e Instagram reportan alcance, YouTube y TikTok reportan vistas. Un "engagement" que las cruce compara peras con manzanas. El "+%" es siempre contra el propio promedio del usuario **dentro de una red**.
+
+**Lo que esta decisión NO cubre:** de dónde salen los números (ADR-009, ADR-021), cómo se presentan, ni el cold-start — con qué se llena la pantalla cuando el motor devuelve `cold` o `poca`. Esa heurística genérica por vertical es contenido, no cálculo, y vive en su propio lugar. Tampoco el backfill del historial previo, que cambiaría cuán seguido el motor puede contestar `full` sin cambiar nada de la fórmula.
+
+**Contexto:** F9, 2026-09-20. Sale de una decisión de producto tomada dos días antes: Analíticas muestra la evidencia, Ritmo muestra la decisión, y las dos hablan del mismo número. El motor nace sin pantalla y con su consumidor a un PR de distancia, que es la única ventana en la que esta frontera se puede trazar gratis. Los cuatro modos que devuelve (`cold`, `poca`, `full`, `no_reporta`) son estados distintos del mundo y no grados de un mismo vacío: `no_reporta` —LinkedIn personal, X— es un hecho sobre la red, y decirle ahí al usuario "seguí publicando para desbloquear tus horarios" sería prometerle algo que nunca va a llegar.
