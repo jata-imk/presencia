@@ -10,12 +10,19 @@
  * métrica, el valor es `null` y así llega a la columna. `0` es "nadie lo vio"
  * y `null` es "no sabemos" — confundirlos haría que Ritmo promediara ceros
  * inventados (ADR-021).
+ *
+ * Y se exige ENTERO, no solo finito. Las cinco columnas normalizadas son
+ * `bigint`: un `0.07` —PostFast manda las tasas de Instagram como number y
+ * Facebook devuelve promedios— haría que Postgres rechazara el INSERT, y ese
+ * INSERT vive en la única transacción del usuario, así que se llevaría
+ * puestos todos los snapshots ya juntados para él, en cada pase. Un valor
+ * fraccionario no es un contador; su lugar es `raw`, donde sigue estando.
  */
 export function parseMetricNumber(raw: unknown): number | null {
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (typeof raw === "number") return Number.isInteger(raw) ? raw : null;
   if (typeof raw === "string" && raw.trim() !== "") {
     const parsed = Number(raw);
-    return Number.isFinite(parsed) ? parsed : null;
+    return Number.isInteger(parsed) ? parsed : null;
   }
   return null;
 }

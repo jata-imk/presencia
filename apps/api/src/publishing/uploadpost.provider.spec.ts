@@ -952,10 +952,15 @@ describe("UploadPostProvider", () => {
       expect(String(raw.post_metrics_error)).toContain("Page");
     });
 
-    // X está conectada en la cuenta real, y su endpoint de métricas no la
-    // cubre. Ausente del Map ≠ snapshot vacío: no preguntamos, así que no
-    // afirmamos nada sobre esa publicación.
-    it("una red que el endpoint no cubre no se pregunta ni se inventa", async () => {
+    // X está conectada en la cuenta real y este endpoint no la cubre. Deja
+    // fila con los cinco en null y el motivo en `raw`, SIN gastar request.
+    //
+    // Antes quedaba ausente del Map, que parecía lo honesto ("no
+    // preguntamos") y era una trampa: sin fila, la política de frescura la
+    // trata como "nunca medida" —máxima prioridad— en todos los pases para
+    // siempre, y tres posts de X bastaban para que los de Facebook del mismo
+    // usuario no se midieran nunca.
+    it("una red que el endpoint no cubre deja fila con el motivo, sin request", async () => {
       const provider = makeProvider();
 
       const metrics = await provider.getPostMetrics([
@@ -967,8 +972,13 @@ describe("UploadPostProvider", () => {
         },
       ]);
 
-      expect(metrics.size).toBe(0);
       expect(fetchMock).not.toHaveBeenCalled();
+      const snapshot = metrics.get("2100328881571942536");
+      expect(snapshot).toBeDefined();
+      expect(snapshot?.impressions).toBeNull();
+      const raw = snapshot?.raw as { motivo?: unknown; platform?: unknown };
+      expect(String(raw.motivo)).toContain("no cubre");
+      expect(raw.platform).toBe("x");
     });
 
     // Una request por post contra un tope de 100 cada 5 minutos, con la misma
@@ -1069,6 +1079,62 @@ describe("UploadPostProvider", () => {
       // Un bigint serializado como string sí se acepta: PostFast los manda así.
       expect(snapshot?.likes).toBe(2);
       expect(snapshot?.reach).toBeNull();
+    });
+
+    // Si TODO lo que se pidió falló, el pase no fue exitoso sin datos: es el
+    // proveedor caído o la key revocada. Tragárselo dejaría el job marcado
+    // como completado cada 6 h mientras la tabla no crece — indistinguible de
+    // "no había nada que medir".
+    it("si falla todo el lote, propaga en vez de devolver un Map vacío", async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(503, { error: "down" }))
+        .mockResolvedValueOnce(jsonResponse(503, { error: "down" }));
+      const provider = makeProvider();
+
+      await expect(
+        provider.getPostMetrics([
+          { ...FACEBOOK_POST, platformPostId: "fb_1" },
+          { ...FACEBOOK_POST, platformPostId: "fb_2" },
+        ]),
+      ).rejects.toBeInstanceOf(PublishingUnavailableError);
+    });
+
+    // Pero un fallo entre varios NO propaga: ahí sí hay datos que salvar.
+    it("si falla solo una parte, devuelve lo que sí trajo", async () => {
+      fetchMock
+        .mockResolvedValueOnce(respuestaConMetricas())
+        .mockResolvedValueOnce(jsonResponse(503, { error: "down" }));
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([
+        { ...FACEBOOK_POST, platformPostId: "fb_1" },
+        { ...FACEBOOK_POST, platformPostId: "fb_2" },
+      ]);
+
+      expect(metrics.size).toBe(1);
+    });
+
+    // Las cinco columnas son bigint. Un promedio o una tasa reventaría el
+    // INSERT, y ese INSERT vive en la única transacción del usuario: se
+    // llevaría puestos todos los snapshots ya juntados para él.
+    it("una métrica fraccionaria no llega a la columna bigint", async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          success: true,
+          platforms: {
+            facebook: { success: true, post_metrics: { impressions: 12.5, likes: 3 } },
+          },
+        }),
+      );
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([FACEBOOK_POST]);
+
+      const snapshot = metrics.get(FACEBOOK_POST.platformPostId);
+      expect(snapshot?.impressions).toBeNull();
+      expect(snapshot?.likes).toBe(3);
+      // El valor no se pierde: sigue en el crudo, que es su lugar.
+      expect(snapshot?.raw).toMatchObject({ post_metrics: { impressions: 12.5 } });
     });
 
     it("sin posts no llama a fetch", async () => {

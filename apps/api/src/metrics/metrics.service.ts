@@ -36,6 +36,11 @@ const VENTANA_BARRIDO_DIAS = EDAD_MAXIMA_DIAS + 5;
 // minuto y sí es de cara al usuario.
 //
 // 60 y no 100: la reconciliación necesita aire en esa misma ventana.
+//
+// Cuenta POSTS pedidos, que no es exactamente requests: en Upload-Post es 1:1
+// salvo las redes que su endpoint no cubre (ahí deja fila sin preguntar), y en
+// PostFast un lote entero cuesta una sola request. Las dos desviaciones van
+// hacia el lado seguro — se mide de menos, nunca de más.
 const POSTS_POR_PASE = 60;
 
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
@@ -71,9 +76,17 @@ export class MetricsService {
 
     const failed = new Set<string>();
     const porUsuario = groupByUser(cards);
+    // Orden al azar, a propósito. `listPublishedForMetrics` no ordena y el
+    // índice parcial la sirve siempre igual, así que con más usuarios con algo
+    // que medir que presupuesto del pase, los del final de la lista se
+    // quedarían sin medir SIEMPRE los mismos. Barajar no arregla que el
+    // presupuesto no alcance —eso se arregla subiéndolo o pasando a un
+    // proveedor que pregunte en lote— pero reparte el faltante en vez de
+    // castigar a los mismos.
+    const usuarios = [...porUsuario.entries()].sort(() => Math.random() - 0.5);
     let presupuesto = presupuestoDelPase;
-    let usuariosRestantes = porUsuario.size;
-    for (const [userId, delUsuario] of porUsuario) {
+    let usuariosRestantes = usuarios.length;
+    for (const [userId, delUsuario] of usuarios) {
       // Reparto parejo de lo que queda. Sin esto, el primer usuario del mapa
       // se comería el presupuesto entero todos los pases y los demás no se
       // medirían nunca — y el orden del mapa no es una prioridad, es el orden
