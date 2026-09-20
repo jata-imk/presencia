@@ -74,7 +74,15 @@ export class MetricsReadRepository {
         and(
           isNotNull(postMetrics.publishedAt),
           gte(postMetrics.publishedAt, desde),
-          lte(postMetrics.publishedAt, hasta),
+          // El piso de edad va explícito y no delegado a la tolerancia. Sin
+          // él, un post de 19 h entra con su medición de 18.5 h —cae dentro de
+          // la ventana simétrica— y compite contra otros medidos a las 24: su
+          // franja sale castigada por la sola razón de ser reciente. La
+          // tolerancia existe para los huecos de ingesta, no para esto.
+          lte(
+            postMetrics.publishedAt,
+            new Date(hasta.getTime() - EDAD_REFERENCIA_HORAS * 3600_000),
+          ),
           sql`${distancia} <= ${TOLERANCIA_HORAS * 3600}`,
         ),
       )

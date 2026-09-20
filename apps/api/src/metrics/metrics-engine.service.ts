@@ -86,22 +86,26 @@ export class MetricsEngineService {
     const filas = await this.lecturas.postsComparables(tx, desde, ahora);
     const deLaRed: PostComparable[] = filas.filter((fila) => fila.network === network);
 
-    const vacio = (modo: ModoHorarios): HorariosDeRed => ({
+    // `nTotal` va con las publicaciones que SÍ hubo, no con las que trajeron
+    // números: en `no_reporta` el usuario publicó veinte veces y decir que
+    // analizamos cero lo devuelve al mismo lugar del que `no_reporta` existe
+    // para sacarlo ("todavía no tienes historial" cuando sí lo tiene).
+    const vacio = (modo: ModoHorarios, nTotal: number): HorariosDeRed => ({
       network,
       ventanaDias: VENTANA_HORARIOS_DIAS,
       modo,
       base: "interacciones",
-      nTotal: 0,
+      nTotal,
       celdas: [],
     });
 
-    if (deLaRed.length === 0) return vacio("cold");
+    if (deLaRed.length === 0) return vacio("cold", 0);
 
     const conNumeros = deLaRed.filter((post) => interaccionesDe(post) !== null);
     // Publicó y ninguna de sus publicaciones trajo un solo número: la red no
     // reporta. Se distingue de `cold` porque la respuesta al usuario es otra —
     // "seguí publicando" sería mentira, acá no hay nada que esperar.
-    if (conNumeros.length === 0) return vacio("no_reporta");
+    if (conNumeros.length === 0) return vacio("no_reporta", deLaRed.length);
 
     const base = baseDeRed(deLaRed);
     const ubicados = conNumeros.flatMap((post) => {
@@ -130,10 +134,12 @@ export class MetricsEngineService {
     // La rejilla arranca en el lunes de la semana de hace N semanas, para que
     // cada columna del heatmap sea una semana completa.
     const primerDia = sumarDias(hoy.dia, -(hoy.diaSemana + (SEMANAS_CADENCIA - 1) * 7));
-    // Un día de colchón hacia atrás: el instante de la medianoche local del
-    // primer día cae en el día UTC anterior para cualquier zona al oeste de
-    // Greenwich. Traer de más es inocuo — el agrupado por día local descarta
-    // lo que sobre.
+    // Un día de colchón hacia atrás. Lo necesitan las zonas al ESTE de
+    // Greenwich: la medianoche local del primer día en Tokio es las 15:00Z del
+    // día ANTERIOR, así que sin colchón se perderían sus primeras horas. Al
+    // oeste el problema no existe (en Mérida esa medianoche son las 06:00Z del
+    // mismo día, ya cubiertas). Traer de más es inocuo — el agrupado por día
+    // local descarta lo que sobre.
     const desde = new Date(Date.parse(`${primerDia}T00:00:00Z`) - MS_POR_DIA);
 
     const filas = await this.lecturas.publicacionesPublicadas(tx, desde, ahora);

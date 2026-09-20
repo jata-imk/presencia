@@ -97,24 +97,23 @@ export interface PostComparable {
 /**
  * Interacciones del post, o `null` si la red no reportó ninguna de las tres.
  *
- * La suma ignora los `null` individuales en vez de anular todo: Facebook puede
- * dar likes y shares pero no comments, y tirar ese post entero perdería datos
- * reales. Lo que no se hace nunca es convertir esos `null` en 0 y presentarlo
- * como un total — por eso el valor viaja junto a `camposReportados`, para que
- * quien compare sepa que no todos los posts suman lo mismo.
+ * La suma ignora los `null` individuales en vez de anular todo el post:
+ * Facebook puede dar likes y shares pero no comments, y descartarlo entero
+ * perdería datos reales. Lo que no se hace nunca es convertir esos `null` en 0.
+ *
+ * **Limitación conocida:** dos posts con distinta cobertura de campos se
+ * promedian como si fueran comparables, y el que reporta menos campos suma
+ * menos por construcción. Dentro de una misma red el sesgo es parejo (la
+ * cobertura la fija la plataforma, no el post), que es el único ámbito en el
+ * que este número se usa. Si alguna vez varía post a post dentro de una red,
+ * acá es donde hay que dejar de sumar peras con manzanas.
  */
-export function interaccionesDe(post: PostComparable): {
-  total: number;
-  camposReportados: number;
-} | null {
+export function interaccionesDe(post: PostComparable): number | null {
   const campos = [post.likes, post.comments, post.shares].filter(
     (valor): valor is number => valor !== null,
   );
   if (campos.length === 0) return null;
-  return {
-    total: campos.reduce((suma, valor) => suma + valor, 0),
-    camposReportados: campos.length,
-  };
+  return campos.reduce((suma, valor) => suma + valor, 0);
 }
 
 /**
@@ -137,12 +136,12 @@ export function baseDeRed(posts: readonly PostComparable[]): BaseDeCalculo {
 /** El valor que entra a los promedios, o `null` si este post no aporta. */
 export function valorDe(post: PostComparable, base: BaseDeCalculo): number | null {
   const interacciones = interaccionesDe(post);
-  if (!interacciones) return null;
-  if (base === "interacciones") return interacciones.total;
+  if (interacciones === null) return null;
+  if (base === "interacciones") return interacciones;
   // `baseDeRed` ya garantizó que acá reach existe y no es 0, pero la guardia se
   // queda: esta función es pública y alguien puede llamarla con otra base.
   if (post.reach === null || post.reach <= 0) return null;
-  return interacciones.total / post.reach;
+  return interacciones / post.reach;
 }
 
 /** Un post ya ubicado en el calendario local del usuario. */
@@ -158,7 +157,11 @@ export interface CeldaHorario {
   diaSemana: number;
   franja: number;
   n: number;
-  /** 0–4, para pintar el heatmap. `0` es "sin datos", no "malo". */
+  /**
+   * 1–4 para pintar el heatmap, y `0` cuando la celda no afirma nada: o nadie
+   * publicó ahí, o ni ella ni su franja alcanzan el umbral. `0` nunca
+   * significa "rindió mal" — eso es el tono 1.
+   */
   intensidad: number;
   /** Porcentaje entero contra el promedio del usuario en esa red. */
   lift: number | null;
@@ -212,34 +215,60 @@ export function calcularHorarios(
   const porFranja = agrupar(posts, (post) => `${post.franja}`);
   const porCelda = agrupar(posts, (post) => `${post.diaSemana}:${post.franja}`);
 
-  const liftDeFranja = new Map<number, number>();
+  const promedioDeFranja = new Map<number, number>();
   for (const [clave, grupo] of porFranja) {
     if (grupo.length < N_MINIMO_GRUPO) continue;
-    liftDeFranja.set(Number(clave), lift(media(grupo.map((p) => p.valor)), promedioGeneral));
+    promedioDeFranja.set(Number(clave), media(grupo.map((p) => p.valor)));
   }
 
   // Si ninguna franja alcanzó el umbral, hay datos pero no hay nada honesto que
   // decir todavía: es el estado "poca", no un heatmap de ceros.
-  if (liftDeFranja.size === 0) return { modo: "poca", base, nTotal, celdas: [] };
+  if (promedioDeFranja.size === 0) return { modo: "poca", base, nTotal, celdas: [] };
 
+  /**
+   * El promedio del que sale TODO lo que la celda dice: su color y su número.
+   *
+   * Que sea uno solo es la parte que importa. Con dos fuentes distintas una
+   * celda podía pintarse al máximo por un único post viral y a la vez mostrar
+   * un "+%" heredado y modesto — el color gritando "tu mejor horario" y el
+   * tooltip diciendo "esto es el promedio de la franja". Dos afirmaciones
+   * contradictorias de la misma celda.
+   */
+  const promedioDeCelda = (diaSemana: number, franja: number): number | null => {
+    const grupo = porCelda.get(`${diaSemana}:${franja}`) ?? [];
+    if (grupo.length >= N_MINIMO_GRUPO) return media(grupo.map((p) => p.valor));
+    return promedioDeFranja.get(franja) ?? null;
+  };
+
+  /**
+   * La escala del color se calibra solo con grupos que pasaron el umbral.
+   *
+   * Sin esto, una celda de un solo post que se hizo viral fija el máximo y
+   * aplasta a todas las bien muestreadas contra el tono más bajo: el heatmap
+   * terminaría recomendando la hora del accidente.
+   */
   const maximo = Math.max(
-    ...[...porCelda.values()].map((grupo) => media(grupo.map((p) => p.valor))),
+    ...[...porCelda.values()]
+      .filter((grupo) => grupo.length >= N_MINIMO_GRUPO)
+      .map((grupo) => media(grupo.map((p) => p.valor))),
+    ...promedioDeFranja.values(),
   );
 
   const celdas: CeldaHorario[] = [];
   for (let diaSemana = 0; diaSemana < 7; diaSemana++) {
     for (let franja = 0; franja < FRANJAS.length; franja++) {
       const grupo = porCelda.get(`${diaSemana}:${franja}`) ?? [];
-      const promedioCelda = grupo.length > 0 ? media(grupo.map((p) => p.valor)) : 0;
-      const propio = grupo.length >= N_MINIMO_GRUPO ? lift(promedioCelda, promedioGeneral) : null;
-      const heredadoDeFranja = liftDeFranja.get(franja) ?? null;
+      const referencia = promedioDeCelda(diaSemana, franja);
       celdas.push({
         diaSemana,
         franja,
         n: grupo.length,
-        intensidad: intensidadDe(promedioCelda, maximo, grupo.length),
-        lift: propio ?? heredadoDeFranja,
-        heredado: propio === null && heredadoDeFranja !== null,
+        // Una celda donde nunca se publicó queda en 0 aunque su franja tenga
+        // número: el color dice "acá no hay historia", el "+%" dice "si
+        // publicas acá, esto es lo que la franja rinde". No es lo mismo.
+        intensidad: grupo.length === 0 || referencia === null ? 0 : escalaDe(referencia, maximo),
+        lift: referencia === null ? null : lift(referencia, promedioGeneral),
+        heredado: grupo.length < N_MINIMO_GRUPO && referencia !== null,
       });
     }
   }
@@ -258,15 +287,15 @@ function lift(promedioGrupo: number, promedioGeneral: number): number {
 }
 
 /**
- * Escala 0–4 para el color de la celda.
+ * Escala 1–4 para el color de la celda.
  *
- * `0` se reserva para "sin publicaciones acá": una celda con posts que
- * rindieron mal se pinta con el primer tono, no con el de vacío. Son cosas
- * distintas y el heatmap no debe confundirlas.
+ * El `0` no se produce acá: lo reserva el llamador para "sin publicaciones".
+ * Una celda con posts que rindieron mal se pinta con el primer tono, no con el
+ * de vacío — son cosas distintas y el heatmap no debe confundirlas.
  */
-function intensidadDe(promedioCelda: number, maximo: number, n: number): number {
-  if (n === 0 || maximo <= 0) return 0;
-  return Math.max(1, Math.min(4, Math.ceil((promedioCelda / maximo) * 4)));
+function escalaDe(promedio: number, maximo: number): number {
+  if (maximo <= 0) return 1;
+  return Math.max(1, Math.min(4, Math.ceil((promedio / maximo) * 4)));
 }
 
 function agrupar<T>(items: readonly T[], clave: (item: T) => string): Map<string, T[]> {

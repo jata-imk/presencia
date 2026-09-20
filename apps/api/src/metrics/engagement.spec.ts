@@ -37,18 +37,12 @@ describe("interaccionesDe", () => {
     // LinkedIn personal no reporta: null. Un post que nadie tocó: 0. El
     // primero no entra al promedio, el segundo sí y lo baja — y esa diferencia
     // es justo la que ADR-021 declara regla dura.
-    expect(interaccionesDe(post({ likes: 0, comments: 0, shares: 0 }))).toEqual({
-      total: 0,
-      camposReportados: 3,
-    });
+    expect(interaccionesDe(post({ likes: 0, comments: 0, shares: 0 }))).toBe(0);
     expect(interaccionesDe(post({ likes: null, comments: null, shares: null }))).toBeNull();
   });
 
-  it("suma solo los campos reportados y dice cuántos fueron", () => {
-    expect(interaccionesDe(post({ likes: 5, comments: null, shares: 2 }))).toEqual({
-      total: 7,
-      camposReportados: 2,
-    });
+  it("suma solo los campos reportados", () => {
+    expect(interaccionesDe(post({ likes: 5, comments: null, shares: 2 }))).toBe(7);
   });
 });
 
@@ -171,6 +165,44 @@ describe("calcularHorarios", () => {
     // se calcula contra el promedio general y ese promedio es 0.
     const planos = ubicados(6, 0, [0, 1, 2, 3, 4, 5, 6, 0, 1, 2]);
     expect(calcularHorarios(planos, "interacciones").modo).toBe("poca");
+  });
+
+  it("un post viral solitario no fija la escala del color", () => {
+    // El hallazgo que motivó separar el umbral del color: con la escala
+    // calibrada sobre TODAS las celdas, una de un solo post excepcional se
+    // pinta al máximo y aplasta a las bien muestreadas contra el tono más
+    // bajo. El heatmap terminaría recomendando la hora del accidente.
+    const posts: PostUbicado[] = [
+      ...ubicados(6, 20, [0, 1, 2, 3, 4, 5, 6, 0, 1, 2]),
+      ...ubicados(2, 10, [0, 1, 2, 3, 4, 5, 6, 0, 1, 2]),
+      { diaSemana: 3, franja: 1, valor: 5000 },
+    ];
+    const celdas = calcularHorarios(posts, "interacciones").celdas;
+
+    // Un post solo, en una franja que tampoco llega al umbral: la celda no
+    // afirma nada. Ni "+%", ni color, ni herencia.
+    const viral = celdas.find((c) => c.diaSemana === 3 && c.franja === 1);
+    expect(viral).toMatchObject({ n: 1, lift: null, heredado: false, intensidad: 0 });
+    // Y la franja bien muestreada conserva el tono más alto: la escala no se
+    // la llevó el accidente.
+    expect(celdas.find((c) => c.diaSemana === 0 && c.franja === 6)?.intensidad).toBe(4);
+  });
+
+  it("el color y el número de una celda salen del mismo promedio", () => {
+    // Si divergieran, una celda podría gritar "tu mejor horario" en color y
+    // decir "esto es el promedio de la franja" en el tooltip.
+    const posts = [
+      ...ubicados(6, 30, [1, 1, 1, 1, 1]),
+      ...ubicados(6, 10, [2, 3, 4, 5, 6]),
+      ...ubicados(2, 10, [0, 1, 2, 3, 4, 5, 6, 0, 1, 2]),
+    ];
+    const celdas = calcularHorarios(posts, "interacciones").celdas;
+    const propia = celdas.find((c) => c.diaSemana === 1 && c.franja === 6);
+    const hermana = celdas.find((c) => c.diaSemana === 2 && c.franja === 6);
+    // La celda con muestra propia rinde más que su franja, y el color lo dice.
+    expect(propia?.heredado).toBe(false);
+    expect(hermana?.heredado).toBe(true);
+    expect(propia?.intensidad).toBeGreaterThan(hermana?.intensidad ?? 0);
   });
 
   it("devuelve la rejilla completa de 7 días por 8 franjas", () => {

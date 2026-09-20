@@ -26,10 +26,12 @@
  * Determinista: el generador va con semilla fija, así que dos corridas dan el
  * mismo historial y una aserción sobre "la mejor franja" no se vuelve floja.
  */
+import { eq } from "drizzle-orm";
 import type { SocialNetwork } from "@presencia/shared";
 import type { Tx } from "../src/db/db.service.js";
-import { postMetrics, publicationCards } from "../src/db/schema.js";
+import { postMetrics, publicationCards, users } from "../src/db/schema.js";
 import { bucketDe, EDAD_MAXIMA_DIAS } from "../src/metrics/frescura.js";
+import { fechaLocal } from "../src/metrics/hora-local.js";
 
 const HORA = 60 * 60 * 1000;
 const DIA = 24 * HORA;
@@ -65,6 +67,51 @@ const RENDIMIENTO_POR_HORA: Record<number, number> = {
 };
 const HORAS: number[] = Object.keys(RENDIMIENTO_POR_HORA).map(Number);
 
+/**
+ * Cuántos milisegundos va adelantada `timezone` respecto a UTC en ese instante.
+ */
+function desfaseDe(instante: number, timezone: string): number {
+  const partes = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(instante));
+  const valor = (tipo: string) => Number(partes.find((parte) => parte.type === tipo)?.value ?? "0");
+  const comoSiFueraUtc = Date.UTC(
+    valor("year"),
+    valor("month") - 1,
+    valor("day"),
+    valor("hour") % 24,
+    valor("minute"),
+    valor("second"),
+  );
+  return comoSiFueraUtc - instante;
+}
+
+/**
+ * El instante en el que, en `timezone`, el reloj marca ese día y esa hora.
+ *
+ * Existe porque `Date.setHours` usa la zona del PROCESO, y el motor agrupa por
+ * `users.timezone`. Las dos coinciden solo si el seed corre en una máquina
+ * puesta en hora del centro de México: dentro del contenedor o en el VPS (UTC)
+ * todas las horas se corrían seis, la franja sembrada como ganadora caía en
+ * otra, y la verificación habría confirmado una franja que nadie sembró.
+ *
+ * Dos pasadas: la primera corrige el grueso del desfase y la segunda atrapa el
+ * caso en que esa corrección cruza un cambio de horario de verano.
+ */
+function instanteLocal(dia: string, hora: number, minuto: number, timezone: string): Date {
+  const deseado = Date.parse(`${dia}T00:00:00Z`) + hora * HORA + minuto * 60_000;
+  let instante = deseado;
+  for (let i = 0; i < 2; i++) instante = deseado - desfaseDe(instante, timezone);
+  return new Date(instante);
+}
+
 /** Congruencial lineal: alcanza para variar los números y es reproducible. */
 function generador(semilla: number): () => number {
   let estado = semilla % 2147483647;
@@ -90,7 +137,7 @@ interface PostSembrado {
  * el heatmap tiene que saber contar. Y los últimos cuatro días van llenos
  * siempre, para que la racha actual exista y se pueda mirar.
  */
-function planearPosts(ahora: Date): PostSembrado[] {
+function planearPosts(ahora: Date, timezone: string): PostSembrado[] {
   const azar = generador(20260920);
   const posts: PostSembrado[] = [];
 
@@ -107,8 +154,9 @@ function planearPosts(ahora: Date): PostSembrado[] {
     for (let i = 0; i < cuantos; i++) {
       const hora = HORAS[Math.floor(azar() * HORAS.length)] ?? 19;
       const red = elegirRed(azar());
-      const publishedAt = new Date(ahora.getTime() - diasAtras * DIA);
-      publishedAt.setHours(hora, Math.floor(azar() * 50), 0, 0);
+      // El día se resuelve en el calendario del usuario, no en el del proceso.
+      const dia = fechaLocal(new Date(ahora.getTime() - diasAtras * DIA), timezone).dia;
+      const publishedAt = instanteLocal(dia, hora, Math.floor(azar() * 50), timezone);
       // Un post "publicado" en el futuro sería una card vencida para el
       // reconciliador. Con horas altas y diasAtras 0 puede pasar.
       if (publishedAt.getTime() >= ahora.getTime()) continue;
@@ -177,7 +225,14 @@ export async function seedRitmo(
   cuentaDe: (network: SocialNetwork) => string | null,
 ): Promise<{ posts: number; snapshots: number }> {
   const ahora = new Date();
-  const posts = planearPosts(ahora);
+  // La zona sale de la fila, no de una constante: es la misma que va a usar el
+  // motor para agrupar, así que no pueden separarse.
+  const [fila] = await tx
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId));
+  const timezone = fila?.timezone ?? "America/Mexico_City";
+  const posts = planearPosts(ahora, timezone);
 
   const cards = posts.map((post) => ({
     userId,
