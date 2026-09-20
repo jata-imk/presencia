@@ -27,5 +27,6 @@ Formato: **Decisión** → **Razón** → **Descartado**.
 | [019](./adr-019-repositorio-publico.md)          | Repositorio público, con la receta cultural adentro       |
 | [020](./adr-020-topologia-de-deploy.md)          | Deploy: CloudPanel + imagen única, sin Caddy              |
 | [021](./adr-021-metricas-de-publicacion.md)      | Métricas: un snapshot por post y día                      |
+| [022](./adr-022-motor-de-metricas.md)            | Motor de métricas: una sola fórmula, fuera de los módulos |
 
 Decisiones pendientes de cerrar: proveedor(es) de generación de imágenes; modelo default por acción (según suite de regresión cultural).

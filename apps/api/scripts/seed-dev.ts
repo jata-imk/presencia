@@ -33,6 +33,7 @@ import {
   users,
 } from "../src/db/schema.js";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
+import { seedRitmo } from "./seed-ritmo.js";
 
 const dbService = new DbService();
 
@@ -160,17 +161,25 @@ async function seed(): Promise<void> {
       ]);
     }
 
-    await seedCalendar(tx, user.id, {
+    const cuentaDe = await seedCalendar(tx, user.id, {
       sueltoId: rows[0]?.id,
       enCarpetaId: rows[3]?.id,
     });
+    const ritmo = await seedRitmo(tx, user.id, cuentaDe);
 
-    return rows;
+    return { rows, ritmo };
   });
 
-  console.log(`· Usuario creado con ${String(creados.length)} chats, 1 carpeta y 1 voz de marca.`);
+  console.log(
+    `· Usuario creado con ${String(creados.rows.length)} chats, 1 carpeta y 1 voz de marca.`,
+  );
   console.log("· Calendario sembrado: publicados, programados, un grupo multi-red, un conflicto");
   console.log("  de horario, un día saturado (+N más) y borradores sin fecha.");
+  console.log(
+    `· Ritmo sembrado: ${String(creados.ritmo.posts)} publicaciones en 16 semanas y ` +
+      `${String(creados.ritmo.snapshots)} mediciones en los últimos 30 días.`,
+  );
+  console.log("  LinkedIn va sin números a propósito: es el caso 'la red no reporta'.");
   printCredentials();
 }
 
@@ -216,11 +225,13 @@ function visualDe(caption: string): CardContent {
   return { archetype: "visual_first", caption, hashtags: [], assetIds: [crypto.randomUUID()] };
 }
 
+type CuentaDe = (network: SocialNetwork) => string | null;
+
 async function seedCalendar(
   tx: Tx,
   userId: string,
   chatIds: { sueltoId?: string; enCarpetaId?: string },
-): Promise<void> {
+): Promise<CuentaDe> {
   const redes: SocialNetwork[] = ["linkedin", "instagram", "x", "facebook"];
   const cuentas = await tx
     .insert(socialAccounts)
@@ -401,6 +412,11 @@ async function seedCalendar(
       postUrl: semilla.published ? `https://ejemplo.local/p/${crypto.randomUUID()}` : null,
     })),
   );
+
+  // Las cuentas conectadas las crea esta función; Ritmo cuelga su historial
+  // de las mismas en vez de inventar otras, para que el usuario de dev tenga
+  // una sola cuenta por red como tendría uno real.
+  return cuentaDe;
 }
 
 function printCredentials(): void {
