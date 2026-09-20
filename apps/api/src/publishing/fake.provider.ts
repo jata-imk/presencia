@@ -113,7 +113,7 @@ export class FakePublishingProvider implements PublishingProvider {
   /**
    * Métricas inventadas pero DETERMINISTAS: el mismo post devuelve siempre lo
    * mismo, y crece con los días que lleva publicado. Es lo que permite probar
-   * el job y el upsert —incluido "el segundo pase del mismo día no duplica"—
+   * el job y el upsert —incluido "el segundo pase del mismo bucket no duplica"—
    * sin proveedor real ni cuota que gastar.
    *
    * Un post de cada cinco (por hash) devuelve los cinco números en `null` con

@@ -110,7 +110,7 @@ export class MetricsRepository {
    *
    * `provider` NO es parte de la llave. Hoy no puede serlo sin romper el
    * invariante del DoD: dos proveedores para la misma red darían dos filas
-   * del mismo día. Y hoy tampoco hace falta — `PUBLISHING_PROVIDER` es una
+   * del mismo bucket. Y hoy tampoco hace falta — `PUBLISHING_PROVIDER` es una
    * sola variable global, así que en un momento dado hay exactamente un
    * proveedor por instalación. Si eso cambiara (un proveedor por red, por
    * ejemplo), hay que volver acá: la serie de un post mezclaría números que

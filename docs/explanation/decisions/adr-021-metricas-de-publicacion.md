@@ -1,6 +1,6 @@
 # ADR-021 · Métricas de publicación: un snapshot por post y día
 
-**Decisión:** las métricas de una publicación viven en `post_metrics`, una fila por **post y día**, llaveada por `(user_id, network, platform_post_id, snapshot_date)`. La card es una referencia opcional, no la llave. Cada fila guarda las métricas dos veces: normalizadas en columnas (`impressions`, `reach`, `likes`, `comments`, `shares`) y crudas en `raw`. `NULL` significa "la red no lo reportó" y nunca se traduce a `0`.
+**Decisión:** las métricas de una publicación viven en `post_metrics`, una fila por **post y día**, llaveada por `(user_id, network, platform_post_id, snapshot_date)`. _(La parte temporal de esa llave quedó superada por el addendum del 2026-09-20, al final: el día pasó a ser un bucket de ancho variable. Todo lo demás de abajo sigue vigente.)_ La card es una referencia opcional, no la llave. Cada fila guarda las métricas dos veces: normalizadas en columnas (`impressions`, `reach`, `likes`, `comments`, `shares`) y crudas en `raw`. `NULL` significa "la red no lo reportó" y nunca se traduce a `0`.
 
 **Razón:** las tres partes de la llave están elegidas contra un modo de falla concreto.
 

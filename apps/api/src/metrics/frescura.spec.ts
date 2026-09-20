@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bucketDe, debeMedirse } from "./frescura.js";
+import { bucketAMedir, bucketDe } from "./frescura.js";
 
 // Función pura y sin red: la escalera se prueba con fechas fijas, que es la
 // única forma de cubrir los cuatro tramos sin esperar semanas.
@@ -60,12 +60,12 @@ describe("bucketDe", () => {
   });
 });
 
-describe("debeMedirse", () => {
+describe("bucketAMedir", () => {
   it("un post nunca medido entra siempre, esté donde esté de la ventana", () => {
     for (const horas of [0, 3, 30, 10 * 24, 29 * 24]) {
-      expect(debeMedirse({ publishedAt: haceHoras(horas), ultimoBucket: null, ahora: AHORA })).toBe(
-        true,
-      );
+      expect(
+        bucketAMedir({ publishedAt: haceHoras(horas), ultimoBucket: null, ahora: AHORA }),
+      ).not.toBeNull();
     }
   });
 
@@ -74,13 +74,15 @@ describe("debeMedirse", () => {
   it("no se vuelve a medir dentro del mismo bucket", () => {
     const publishedAt = haceHoras(3);
     const bucket = bucketDe(publishedAt, AHORA);
-    expect(debeMedirse({ publishedAt, ultimoBucket: bucket, ahora: AHORA })).toBe(false);
+    expect(bucketAMedir({ publishedAt, ultimoBucket: bucket, ahora: AHORA })).toBeNull();
   });
 
   it("una hora después, un post caliente sí entra de nuevo", () => {
     const publishedAt = haceHoras(3);
     const bucketPrevio = bucketDe(publishedAt, new Date(AHORA.getTime() - HORA));
-    expect(debeMedirse({ publishedAt, ultimoBucket: bucketPrevio, ahora: AHORA })).toBe(true);
+    expect(bucketAMedir({ publishedAt, ultimoBucket: bucketPrevio, ahora: AHORA })).toEqual(
+      new Date("2026-09-18T06:00:00.000Z"),
+    );
   });
 
   // Y el mismo salto de una hora NO alcanza para un post de cinco días, que
@@ -88,12 +90,35 @@ describe("debeMedirse", () => {
   it("una hora después, un post de cinco días no entra", () => {
     const publishedAt = haceHoras(5 * 24);
     const bucketPrevio = bucketDe(publishedAt, new Date(AHORA.getTime() - HORA));
-    expect(debeMedirse({ publishedAt, ultimoBucket: bucketPrevio, ahora: AHORA })).toBe(false);
+    expect(bucketAMedir({ publishedAt, ultimoBucket: bucketPrevio, ahora: AHORA })).toBeNull();
+  });
+
+  // El ancho del bucket CRECE con la edad, así que al cruzar un escalón el
+  // borde truncado puede quedar ATRÁS del último medido. Sin la guardia de
+  // "solo avanzar", acá se pagaría una request para pisar el punto de las
+  // 12:00 con números de las 14:00 — y otra vez a las 15, 16 y 17.
+  it("al cruzar un escalón no retrocede a un bucket ya medido", () => {
+    const publishedAt = new Date("2026-09-18T01:00:00.000Z");
+    const alasTrece = new Date("2026-09-18T13:00:00.000Z");
+    const ultimoBucket = bucketDe(publishedAt, alasTrece);
+    expect(ultimoBucket).toEqual(alasTrece);
+
+    for (const hora of [14, 15, 16, 17]) {
+      const ahora = new Date(`2026-09-18T${String(hora)}:00:00.000Z`);
+      expect(bucketDe(publishedAt, ahora)).toEqual(new Date("2026-09-18T12:00:00.000Z"));
+      expect(bucketAMedir({ publishedAt, ultimoBucket, ahora })).toBeNull();
+    }
+
+    // Y al borde siguiente del tramo nuevo sí avanza.
+    const alasDieciocho = new Date("2026-09-18T18:00:00.000Z");
+    expect(bucketAMedir({ publishedAt, ultimoBucket, ahora: alasDieciocho })).toEqual(
+      alasDieciocho,
+    );
   });
 
   it("pasados 30 días ya no se mide, ni siquiera si nunca se midió", () => {
-    expect(debeMedirse({ publishedAt: haceHoras(31 * 24), ultimoBucket: null, ahora: AHORA })).toBe(
-      false,
-    );
+    expect(
+      bucketAMedir({ publishedAt: haceHoras(31 * 24), ultimoBucket: null, ahora: AHORA }),
+    ).toBeNull();
   });
 });

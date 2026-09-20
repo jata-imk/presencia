@@ -170,25 +170,25 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 ### Métricas de publicación
 
-**`post_metrics`** — un snapshot por post y día (F8.7, **ADR-021**, migraciones `0024_post_metrics` / `0025_rls_post_metrics`). Lo llena el job de ingesta; no hay UI que la lea hasta F12.
+**`post_metrics`** — un snapshot por post y bucket de tiempo (F8.7, **ADR-021**, migraciones `0024_post_metrics` / `0025_rls_post_metrics`). Lo llena el job de ingesta; no hay UI que la lea hasta F12.
 
 La llave es `(user_id, network, platform_post_id, snapshot_at)` — **no** la card y **no** la cuenta conectada. La card porque un post puede existir en la red sin haber nacido en Presencia (historial previo del creator); la cuenta porque es nullable (un `NULL` no colisiona en un índice único) y porque su fila cambia de id si la cuenta se borra y se vuelve a conectar.
 
-| Columna                                               | Tipo              | Nota                                                                                                          |
-| ----------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------- |
-| `id`                                                  | uuid PK           |                                                                                                               |
-| `user_id`                                             | uuid FK           | RLS                                                                                                           |
-| `social_account_id`                                   | uuid FK, nullable | `SET NULL` — desconectar la cuenta no borra el historial del que Ritmo aprende; no es parte de la llave       |
-| `network`                                             | enum              | denormalizada: sobrevive al `SET NULL` y un id nativo solo es único dentro de su red                          |
-| `platform_post_id`                                    | text              | id del post en la red (espejo de `publication_cards.platform_post_id`)                                        |
-| `card_id`                                             | uuid FK, nullable | `SET NULL`; nullable = post que no nació en Presencia                                                         |
-| `snapshot_date`                                       | date              | día del snapshot **en UTC** — coincide a propósito con el `date` que usa la caché de Upload-Post              |
-| `captured_at`                                         | timestamptz       | cuándo lo leímos; dice qué tan fresco es el número dentro del día                                             |
-| `published_at`                                        | timestamptz null  | copiada, no leída por join: las filas sin card también la necesitan. Materia prima de "mejores horarios" (F9) |
-| `impressions`, `reach`, `likes`, `comments`, `shares` | bigint nullable   | normalizadas. **`NULL` no es `0`**: `0` es "nadie lo vio", `NULL` es "la red no lo reportó"                   |
-| `raw`                                                 | jsonb             | lo que devolvió el proveedor, incluido el **motivo** cuando no hubo métricas                                  |
-| `provider`                                            | text              | qué adapter lo trajo: dos proveedores no siempre cuentan lo mismo con el mismo nombre                         |
-| `created_at` / `updated_at`                           | timestamptz       | `updated_at` con `clock_timestamp()`                                                                          |
+| Columna                                               | Tipo              | Nota                                                                                                               |
+| ----------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `id`                                                  | uuid PK           |                                                                                                                    |
+| `user_id`                                             | uuid FK           | RLS                                                                                                                |
+| `social_account_id`                                   | uuid FK, nullable | `SET NULL` — desconectar la cuenta no borra el historial del que Ritmo aprende; no es parte de la llave            |
+| `network`                                             | enum              | denormalizada: sobrevive al `SET NULL` y un id nativo solo es único dentro de su red                               |
+| `platform_post_id`                                    | text              | id del post en la red (espejo de `publication_cards.platform_post_id`)                                             |
+| `card_id`                                             | uuid FK, nullable | `SET NULL`; nullable = post que no nació en Presencia                                                              |
+| `snapshot_at`                                         | timestamptz       | inicio del **bucket** de la medición, alineado al reloj UTC; el ancho lo decide la edad del post (ver la escalera) |
+| `captured_at`                                         | timestamptz       | cuándo lo leímos; dice en qué momento **dentro** del bucket se tomó la medición                                    |
+| `published_at`                                        | timestamptz null  | copiada, no leída por join: las filas sin card también la necesitan. Materia prima de "mejores horarios" (F9)      |
+| `impressions`, `reach`, `likes`, `comments`, `shares` | bigint nullable   | normalizadas. **`NULL` no es `0`**: `0` es "nadie lo vio", `NULL` es "la red no lo reportó"                        |
+| `raw`                                                 | jsonb             | lo que devolvió el proveedor, incluido el **motivo** cuando no hubo métricas                                       |
+| `provider`                                            | text              | qué adapter lo trajo: dos proveedores no siempre cuentan lo mismo con el mismo nombre                              |
+| `created_at` / `updated_at`                           | timestamptz       | `updated_at` con `clock_timestamp()`                                                                               |
 
 - Índice único `post_metrics_snapshot (user_id, network, platform_post_id, snapshot_at)`: es lo que hace que un segundo pase **del mismo bucket** actualice en vez de insertar (DoD de F8.7).
 
@@ -206,7 +206,7 @@ Los bordes se alinean al **reloj UTC**, no a la hora de publicación: así dos p
 
 Con una sola fila por día —como estaba hasta `0027`— medir un post ocho veces en su primer día costaba ocho requests y guardaba un punto, el último. La escalera existe para que eso no pueda pasar.
 
-- A diferencia de `ai_usage_events`, **no** es append-only: el upsert diario necesita `UPDATE`.
+- A diferencia de `ai_usage_events`, **no** es append-only: el upsert del bucket necesita `UPDATE`.
 
 ### Jobs
 

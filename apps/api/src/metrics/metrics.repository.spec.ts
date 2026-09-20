@@ -122,7 +122,7 @@ describe("MetricsRepository.upsertSnapshot", () => {
   // REUTILIZA la fila (ChannelsService.claimConnectIntent captura la violación
   // de unicidad de provider_ref y llama a reactivateAccount), pero borrar la
   // cuenta y volver a conectarla sí crea una fila nueva — y con la cuenta en
-  // la llave, el mismo post del mismo día se guardaría dos veces. Este test
+  // la llave, el mismo post del mismo bucket se guardaría dos veces. Este test
   // reproduce ESE camino: misma cuenta de la red, fila distinta.
   it(
     "una cuenta borrada y reconectada no duplica el snapshot del día",

@@ -23,16 +23,23 @@ import { MetricsService } from "./metrics.service.js";
 const JOB_QUEUE = "metrics.ingest";
 const INGEST_CRON = "0 * * * *";
 
-// Techo del pase. Más generoso que el de reconciliación porque este sí hace
-// red por post.
+// Techo del pase, y su margen es de las dos puntas.
 //
-// El peor caso sale del presupuesto de POSTS_POR_PASE (60, del pase entero y
-// no por usuario): 60 requests secuenciales con el timeout de 30 s del
-// cliente HTTP. Sigue cabiendo con holgura en la hora que separa dos pases. Si ese presupuesto sube, esto sube con él — pg-boss no mata
-// al handler cuando expira, solo marca el job como fallido y libera el slot
-// `exclusive`, así que un expire corto de más deja dos pases corriendo
-// encima (ver RecurringJob.expireInSeconds en boss.service.ts).
-const INGEST_EXPIRE_SECONDS = 30 * 60;
+// Por abajo: el peor caso del presupuesto son 60 requests secuenciales con el
+// timeout de 30 s del cliente HTTP, o sea 30 minutos. El expire tiene que
+// quedar POR ENCIMA de eso, porque pg-boss NO mata al handler cuando expira —
+// marca el job como fallido y libera el slot `exclusive` (ver
+// RecurringJob.expireInSeconds en boss.service.ts). Si expirara justo en el
+// peor caso, un pase lento seguiría corriendo con su slot ya libre.
+//
+// Por arriba: tiene que quedar POR DEBAJO de la hora que separa dos pases. Si
+// no, el pase siguiente arrancaría encima del anterior y los dos estarían
+// pidiéndole a la misma API key que comparte `cards.reconcile`.
+//
+// 50 minutos deja 20 de colchón sobre el peor caso y 10 antes del pase
+// siguiente. Si sube POSTS_POR_PASE, esto se recalcula: el peor caso crece
+// medio minuto por post.
+const INGEST_EXPIRE_SECONDS = 50 * 60;
 
 /**
  * El disparador de la ingesta de métricas (F8.7). La lógica vive entera en

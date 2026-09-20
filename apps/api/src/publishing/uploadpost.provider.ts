@@ -630,7 +630,7 @@ export class UploadPostProvider implements PublishingProvider {
       // cinco en null y el motivo en `raw`.
       //
       // Dejarla ausente era lo que parecía honesto —"no preguntamos"— pero
-      // creaba una trampa: sin fila, `lastSnapshotDates` no la conoce nunca,
+      // creaba una trampa: sin fila, `lastBuckets` no la conoce nunca,
       // así que la política de frescura la trata como "nunca medida", que es
       // la MÁXIMA prioridad, en todos los pases para siempre. Tres posts de X
       // bastaban para llenar el cupo de un usuario y dejar sus posts de
@@ -715,7 +715,7 @@ export class UploadPostProvider implements PublishingProvider {
     const capturedAt = new Date();
     if (!metrics) {
       // Preguntamos y la red contestó que no. Eso ES un dato sobre la
-      // publicación, y guardarlo evita volver a gastar la cuota el mismo día
+      // publicación, y guardarlo evita volver a gastar la cuota en el mismo bucket
       // preguntando lo mismo.
       return {
         capturedAt,

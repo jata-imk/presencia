@@ -10,7 +10,7 @@ import {
   type PostMetricsQuery,
   type PublishingProvider,
 } from "../publishing/publishing.provider.js";
-import { bucketDe, debeMedirse, EDAD_MAXIMA_DIAS } from "./frescura.js";
+import { bucketAMedir, EDAD_MAXIMA_DIAS } from "./frescura.js";
 import { MetricsRepository } from "./metrics.repository.js";
 
 // La ingesta de métricas (F8.7, ADR-021). Estructura de ADR-008: enumerar →
@@ -45,6 +45,13 @@ const POSTS_POR_PASE = 60;
 
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
 
+export interface OpcionesDePase {
+  /** Tope de posts de todo el pase. Default: POSTS_POR_PASE. */
+  presupuesto?: number;
+  /** Instante que fija los buckets. Default: ahora. Solo lo pasan los tests. */
+  ahora?: Date;
+}
+
 @Injectable()
 export class MetricsService {
   constructor(
@@ -57,17 +64,26 @@ export class MetricsService {
 
   /**
    * Un pase completo: enumera lo publicado, filtra por frescura, le pregunta
-   * al proveedor y guarda un snapshot por post y día.
+   * al proveedor y guarda un snapshot por post y bucket.
    *
    * Un usuario que falla no tumba a los demás — se acumula y se relanza al
    * final, para que el job quede marcado como fallido en `pgboss.job` y el
    * error diga quiénes fueron (patrón de ADR-008).
    *
-   * `presupuestoDelPase` es parámetro y no solo constante para poder probar
-   * el recorte sin fabricar 60 publicaciones. El job lo llama sin argumentos.
+   * Las dos opciones son parámetros y no solo constantes para poder probar el
+   * recorte sin fabricar 60 publicaciones, y la escalera sin esperar horas. El
+   * job lo llama sin argumentos.
    */
-  async ingestAll(presupuestoDelPase: number = POSTS_POR_PASE): Promise<void> {
-    const ahora = new Date();
+  async ingestAll(opciones: OpcionesDePase = {}): Promise<void> {
+    const presupuestoDelPase = opciones.presupuesto ?? POSTS_POR_PASE;
+    // Un solo reloj para todo el pase. El bucket de cada post se decide con
+    // ESTE instante y no con el `captured_at` de su respuesta: un pase largo
+    // (hasta 60 requests secuenciales) puede cruzar el borde de la hora, y
+    // entonces la fila quedaría llaveada al bucket siguiente. El pase del cron
+    // siguiente vería ese bucket ya medido, lo saltaría, y el punto de esta
+    // hora no existiría nunca — justo en el tramo que la escalera existe para
+    // resolver.
+    const ahora = opciones.ahora ?? new Date();
     const desde = new Date(ahora.getTime() - VENTANA_BARRIDO_DIAS * MS_POR_DIA);
     const cards = await this.dbService.runWorkerScan((tx) =>
       this.cardsRepo.listPublishedForMetrics(tx, desde),
@@ -148,11 +164,17 @@ export class MetricsService {
     });
 
     const pedidos: PostMetricsQuery[] = [];
+    // El bucket con el que se decidió medir es el mismo con el que se escribe.
+    const bucketPorPost = new Map<string, Date>();
     for (const [platformPostId, card] of porPost) {
       const publishedAt = card.publishedAt;
       if (!publishedAt) continue;
-      if (!debeMedirse({ publishedAt, ultimoBucket: medidos.get(platformPostId) ?? null, ahora }))
-        continue;
+      const bucket = bucketAMedir({
+        publishedAt,
+        ultimoBucket: medidos.get(platformPostId) ?? null,
+        ahora,
+      });
+      if (!bucket) continue;
       // Una card cuya cuenta se borró (SET NULL) no tiene por dónde
       // preguntar. Queda fuera del pase: no se inventa un destino, y sus
       // métricas viejas siguen en la tabla intactas.
@@ -166,6 +188,7 @@ export class MetricsService {
         platformPostId,
         publishedAt,
       });
+      bucketPorPost.set(platformPostId, bucket);
     }
     if (pedidos.length === 0) return 0;
 
@@ -191,19 +214,21 @@ export class MetricsService {
     await this.dbService.runWithTenant(userId, async (tx) => {
       for (const [platformPostId, snapshot] of snapshots) {
         const card = porPost.get(platformPostId);
-        if (!card) continue;
+        const snapshotAt = bucketPorPost.get(platformPostId);
+        // Sin bucket no se escribe: el proveedor contestó por un post que este
+        // pase no pidió. Inventarle una llave dejaría una fila cuyo
+        // `snapshot_at` no es el inicio de ningún bucket, y la agregación de
+        // F12 descansa en que siempre lo sea.
+        if (!card || !snapshotAt) continue;
         await this.repo.upsertSnapshot(tx, {
           userId,
           socialAccountId: card.socialAccountId,
           network: card.network,
           platformPostId,
           cardId: card.id,
-          // El bucket sale de la edad del post y del momento en que LEÍMOS.
-          // Es lo que hace que dos pases del mismo bucket caigan en la misma
-          // fila, y lo que fija la resolución de la serie.
-          snapshotAt:
-            bucketDe(card.publishedAt ?? snapshot.capturedAt, snapshot.capturedAt) ??
-            snapshot.capturedAt,
+          // Decidido al abrir el pase, no al volver la respuesta: ver el
+          // comentario del reloj único en ingestAll.
+          snapshotAt,
           capturedAt: snapshot.capturedAt,
           publishedAt: card.publishedAt,
           impressions: snapshot.impressions,

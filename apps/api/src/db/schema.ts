@@ -472,7 +472,7 @@ export const aiUsageEvents = pgTable(
   (t) => [index("usage_by_user").on(t.userId, t.createdAt)],
 );
 
-// F8.7: métricas de una publicación, un snapshot por día.
+// F8.7: métricas de una publicación, un snapshot por bucket de tiempo.
 //
 // La llave NO es la card, es `(user_id, network, platform_post_id,
 // snapshot_at)`, y cada parte está elegida:
@@ -487,7 +487,7 @@ export const aiUsageEvents = pgTable(
 //    una fila nueva cada pase. La otra es que la fila no es estable — borrar
 //    una cuenta y volver a conectarla crea una FILA NUEVA (reconectar sin
 //    borrar sí reutiliza la vieja, ver ChannelsService.claimConnectIntent),
-//    y entonces el mismo post del mismo día se guardaría dos veces.
+//    y entonces el mismo post del mismo bucket se guardaría dos veces.
 //    `(user_id, network, platform_post_id)` identifica la publicación sin
 //    depender de por cuál conexión se llegó a ella.
 //  - Un snapshot por BUCKET DE TIEMPO, no una fila viva por post. Una sola
@@ -558,8 +558,8 @@ export const postMetrics = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    // El invariante del DoD: un segundo pase el mismo día actualiza la fila,
-    // no crea otra.
+    // El invariante del DoD: un segundo pase dentro del mismo bucket actualiza
+    // la fila, no crea otra.
     uniqueIndex("post_metrics_snapshot").on(t.userId, t.network, t.platformPostId, t.snapshotAt),
     // Para el join de Analíticas (F12) y para saber qué cards ya tienen datos.
     index("post_metrics_by_card").on(t.cardId),

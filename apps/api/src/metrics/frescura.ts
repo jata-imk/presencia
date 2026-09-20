@@ -60,18 +60,32 @@ export function bucketDe(publishedAt: Date, ahora: Date): Date | null {
 }
 
 /**
- * Decide si este post entra en el pase.
+ * El bucket que este post debe escribir en el pase de `ahora`, o `null` si no
+ * hay nada nuevo que medir.
+ *
+ * Es UNA función y no dos ("¿lo mido?" + "¿con qué llave?") a propósito: si el
+ * bucket con el que se decide medir no fuera el mismo con el que se escribe,
+ * se podría pagar una request para pisar un punto que ya existía.
  *
  * Un post nunca medido entra siempre (mientras esté dentro de la ventana): la
  * primera medición es la que no se puede recuperar después.
+ *
+ * **Solo avanza**, y esa es la parte que no es obvia. El ancho del bucket
+ * CRECE con la edad del post, así que al cruzar un escalón el borde truncado
+ * puede quedar ATRÁS del último que se midió: un post de las 01:00 tiene
+ * bucket `13:00` a las 13:00 (tramo horario) y `12:00` a las 14:00 (tramo de
+ * 6 h, truncado). Sin esta guardia, a las 14:00 se pagaría una request para
+ * sobrescribir el punto de las 12:00 con números de las 14:00 —perdiendo el
+ * punto real de las 12:00— y se repetiría a las 15, 16 y 17, porque el máximo
+ * guardado seguiría siendo 13:00. Con la guardia, el post espera al borde de
+ * las 18:00, que es el primer bucket del tramo nuevo que de verdad es
+ * posterior a lo ya medido.
  */
-export function debeMedirse({ publishedAt, ultimoBucket, ahora }: FrescuraInput): boolean {
+export function bucketAMedir({ publishedAt, ultimoBucket, ahora }: FrescuraInput): Date | null {
   const bucket = bucketDe(publishedAt, ahora);
-  if (!bucket) return false;
-  if (!ultimoBucket) return true;
-  // Distinto bucket = punto nuevo que guardar. Igual = la fila ya existe y
-  // volver a pedirla gastaría cuota para sobrescribirla con casi lo mismo.
-  return bucket.getTime() !== ultimoBucket.getTime();
+  if (!bucket) return null;
+  if (!ultimoBucket) return bucket;
+  return bucket.getTime() > ultimoBucket.getTime() ? bucket : null;
 }
 
 /**
