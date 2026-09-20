@@ -1,5 +1,9 @@
 import type { SocialNetwork } from "@presencia/shared";
-import { PublishingRejectedError, PublishingUnavailableError } from "./errors.js";
+import {
+  PublishingRateLimitError,
+  PublishingRejectedError,
+  PublishingUnavailableError,
+} from "./errors.js";
 import { isStatus, ProviderHttpClient } from "./http-client.js";
 import { parseHttpUrl } from "./http-url.js";
 import { parseMetricNumber, parseTimestamp } from "./metric-values.js";
@@ -608,30 +612,71 @@ export class UploadPostProvider implements PublishingProvider {
     let pedidos = 0;
     for (const post of posts) {
       if (pedidos >= METRICS_MAX_POSTS_POR_PASE) break;
-      const { profile, platform } = parseAccountRef(post.accountProviderRef);
-      // Una red que este endpoint no cubre se queda AUSENTE del Map, que no
-      // es lo mismo que "no hay métricas": no se preguntó. Escribir una fila
-      // vacía ahí afirmaría algo sobre la publicación que no comprobamos.
-      if (!METRICS_PLATFORMS.has(platform)) continue;
-      pedidos += 1;
-      const query = new URLSearchParams({
-        user: profile,
-        platform,
-        platform_post_id: post.platformPostId,
-      });
-      const body = await this.http.request<UploadPostAnalyticsResponse>(
-        "GET",
-        `/uploadposts/post-analytics?${query.toString()}`,
-      );
-      const porPlataforma = body.platforms?.[platform];
-      if (!porPlataforma) continue;
-      const metrics = porPlataforma.post_metrics;
-      const capturedAt = new Date();
-      if (!metrics) {
-        // Preguntamos y la red contestó que no. Eso ES un dato sobre la
-        // publicación, y guardarlo evita volver a gastar la cuota el mismo
-        // día preguntando lo mismo.
-        result.set(post.platformPostId, {
+      // Un post que truena NO puede tirar el pase: son requests
+      // independientes y lo ya recolectado es trabajo pagado con cuota que no
+      // vuelve. Un post borrado de la red (404), una cuenta desconectada (403)
+      // o el propio tope de 100/5min (429) se llevarían por delante los
+      // snapshots de los otros 59 — y el pase siguiente arrancaría de cero
+      // para tropezar con la misma fila.
+      try {
+        const { pidio, snapshot } = await this.leerMetricas(post);
+        // Se cuenta la REQUEST, no el resultado: una respuesta sin el bloque
+        // de la plataforma igual gastó cuota, y no contarla dejaría el tope
+        // por encima del límite real del proveedor.
+        if (pidio) pedidos += 1;
+        if (snapshot) result.set(post.platformPostId, snapshot);
+      } catch (error) {
+        if (error instanceof PublishingRateLimitError) {
+          // Acá sí se corta, pero devolviendo lo que ya se juntó: seguir
+          // pidiendo contra una ventana agotada gasta requests que el resto
+          // de la app necesita (la reconciliación usa la misma API key cada
+          // minuto).
+          console.warn("[publishing] Upload-Post cortó el pase de métricas por rate limit.");
+          break;
+        }
+        console.warn(`[publishing] No se pudieron leer métricas de ${post.platformPostId}:`, error);
+        pedidos += 1;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Una lectura, un post.
+   *
+   * `snapshot: null` significa que el post queda AUSENTE del Map, que no es
+   * lo mismo que "no hay métricas": no sabemos nada de esa publicación.
+   * `pidio` dice si se gastó una request, que es lo que cuenta contra el tope
+   * del pase — y no coincide con `snapshot`: una respuesta sin el bloque de
+   * la plataforma cuesta cuota y no deja dato.
+   */
+  private async leerMetricas(
+    post: PostMetricsQuery,
+  ): Promise<{ pidio: boolean; snapshot: PostMetricsSnapshot | null }> {
+    const { profile, platform } = parseAccountRef(post.accountProviderRef);
+    // Una red que este endpoint no cubre no se pregunta. Escribir una fila
+    // vacía ahí afirmaría algo sobre la publicación que no comprobamos.
+    if (!METRICS_PLATFORMS.has(platform)) return { pidio: false, snapshot: null };
+    const query = new URLSearchParams({
+      user: profile,
+      platform,
+      platform_post_id: post.platformPostId,
+    });
+    const body = await this.http.request<UploadPostAnalyticsResponse>(
+      "GET",
+      `/uploadposts/post-analytics?${query.toString()}`,
+    );
+    const porPlataforma = body.platforms?.[platform];
+    if (!porPlataforma) return { pidio: true, snapshot: null };
+    const metrics = porPlataforma.post_metrics;
+    const capturedAt = new Date();
+    if (!metrics) {
+      // Preguntamos y la red contestó que no. Eso ES un dato sobre la
+      // publicación, y guardarlo evita volver a gastar la cuota el mismo día
+      // preguntando lo mismo.
+      return {
+        pidio: true,
+        snapshot: {
           capturedAt,
           impressions: null,
           reach: null,
@@ -639,10 +684,12 @@ export class UploadPostProvider implements PublishingProvider {
           comments: null,
           shares: null,
           raw: porPlataforma,
-        });
-        continue;
-      }
-      result.set(post.platformPostId, {
+        },
+      };
+    }
+    return {
+      pidio: true,
+      snapshot: {
         capturedAt,
         impressions: parseMetricNumber(metrics.impressions),
         reach: parseMetricNumber(metrics.reach),
@@ -653,19 +700,10 @@ export class UploadPostProvider implements PublishingProvider {
         // `primary_impressions_field` no caben en las cinco columnas y son
         // justo lo que F12 va a querer para etiquetar bien cada número.
         raw: porPlataforma,
-      });
-    }
-    return result;
+      },
+    };
   }
 }
-
-/**
- * Una fecha inválida NO es null, así que sobreviviría al `publishedAt ?? new
- * Date()` de reconcileDueCards y llegaría hasta el UPDATE, que tronaría y
- * abortaría el batch entero — incluidas las cards que ya estaban listas para
- * escribirse. Ante un timestamp que no se entiende, mejor null: el caller
- * cae a "ahora".
- */
 
 /**
  * El tope de perfiles del plan, y SOLO eso: se exige el `error_code` del

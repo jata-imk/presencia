@@ -990,6 +990,64 @@ describe("UploadPostProvider", () => {
       expect(metrics.size).toBeLessThanOrEqual(60);
     });
 
+    // Son requests independientes: un post que truena no puede llevarse por
+    // delante los snapshots ya recolectados, que costaron cuota que no
+    // vuelve. Un post borrado de la red responde 404.
+    it("un post que falla no tira el pase ni descarta lo ya recolectado", async () => {
+      fetchMock
+        .mockResolvedValueOnce(respuestaConMetricas())
+        .mockResolvedValueOnce(jsonResponse(404, { error: "Post not found" }))
+        .mockResolvedValueOnce(respuestaConMetricas());
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([
+        { ...FACEBOOK_POST, platformPostId: "fb_1" },
+        { ...FACEBOOK_POST, platformPostId: "fb_borrado" },
+        { ...FACEBOOK_POST, platformPostId: "fb_3" },
+      ]);
+
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      // El que falló queda ausente; los otros dos sobreviven.
+      expect(metrics.has("fb_borrado")).toBe(false);
+      expect(metrics.size).toBe(2);
+    });
+
+    // El 429 sí corta —seguir pidiendo contra una ventana agotada gasta
+    // requests que la reconciliación necesita—, pero devolviendo lo que ya
+    // se juntó.
+    it("un rate limit corta el pase pero devuelve lo recolectado", async () => {
+      fetchMock
+        .mockResolvedValueOnce(respuestaConMetricas())
+        .mockResolvedValueOnce(jsonResponse(429, { error: "Too many requests" }))
+        .mockResolvedValueOnce(respuestaConMetricas());
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([
+        { ...FACEBOOK_POST, platformPostId: "fb_1" },
+        { ...FACEBOOK_POST, platformPostId: "fb_2" },
+        { ...FACEBOOK_POST, platformPostId: "fb_3" },
+      ]);
+
+      expect(metrics.size).toBe(1);
+      // No se intentó el tercero.
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    // Una fila con provider_ref corrupto tumbaría a todos los demás, en cada
+    // pase, para siempre.
+    it("una cuenta con ref malformado no arrastra al resto del lote", async () => {
+      fetchMock.mockResolvedValueOnce(respuestaConMetricas());
+      const provider = makeProvider();
+
+      const metrics = await provider.getPostMetrics([
+        { ...FACEBOOK_POST, accountProviderRef: "sin-separador", platformPostId: "fb_malo" },
+        { ...FACEBOOK_POST, platformPostId: "fb_bueno" },
+      ]);
+
+      expect(metrics.has("fb_malo")).toBe(false);
+      expect(metrics.get("fb_bueno")?.impressions).toBe(84);
+    });
+
     it("una métrica que no es número no se propaga como NaN", async () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse(200, {

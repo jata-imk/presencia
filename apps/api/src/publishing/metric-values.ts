@@ -21,8 +21,12 @@ export function parseMetricNumber(raw: unknown): number | null {
 }
 
 /**
- * Una fecha inválida NO es null, así que sobreviviría a un `?? new Date()` y
- * llegaría hasta el UPDATE, que tronaría y abortaría el pase entero.
+ * Una fecha inválida NO es null: `new Date("no-es-fecha")` da un objeto Date
+ * que sobrevive a cualquier `?? new Date()` y llega hasta el UPDATE, donde
+ * Postgres lo rechaza y se lleva por delante el batch entero — incluidas las
+ * filas que ya estaban listas para escribirse. Fue el motivo original en
+ * `reconcileDueCards` y vale igual para el pase de métricas. Ante un
+ * timestamp que no se entiende, mejor `null`: el caller cae a "ahora".
  */
 export function parseTimestamp(raw: string | null | undefined): Date | null {
   if (!raw) return null;

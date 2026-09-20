@@ -1,7 +1,7 @@
 import type { SocialNetwork } from "@presencia/shared";
 import { PublishingRejectedError, PublishingUnavailableError } from "./errors.js";
 import { isStatus, ProviderHttpClient } from "./http-client.js";
-import { parseMetricNumber, parseTimestamp } from "./metric-values.js";
+import { parseMetricNumber } from "./metric-values.js";
 import { parsePlatformPostId } from "./platform-post-id.js";
 import { buildPostText } from "./post-text.js";
 import type {
@@ -53,6 +53,11 @@ const POSTFAST_WORKSPACE: WorkspaceRef = { ref: "postfast:workspace" };
 const CONNECT_LINK_EXPIRY_DAYS = 7;
 
 const MILISEGUNDOS_POR_DIA = 24 * 60 * 60 * 1000;
+
+// Tope de la ventana que se le pide a `/social-posts/analytics`. Coincide con
+// lo que el job considera "todavía vale la pena medir", pero se aplica acá
+// porque la consecuencia de pasarse es de este endpoint: no pagina.
+const METRICS_VENTANA_MAXIMA_DIAS = 35;
 
 // SocialNetwork (nuestro enum) → platform de PostFast. 1:1, siempre
 // mayúsculas. No mapeamos youtube/threads porque nunca se llama a este
@@ -302,8 +307,20 @@ export class PostFastProvider implements PublishingProvider {
     // La ventana del lote, con un día de margen a cada lado: `publishedAt`
     // nuestro y el del proveedor pueden no coincidir al segundo, y un post
     // justo en el borde no debería caerse del rango por eso.
-    const tiempos = posts.map((post) => post.publishedAt.getTime());
-    const desde = new Date(Math.min(...tiempos) - MILISEGUNDOS_POR_DIA);
+    // `reduce` y no `Math.min(...)`: el spread pone un argumento por post en
+    // el stack, y un lote grande (un backfill) tumbaría la llamada con
+    // RangeError en vez de devolver algo.
+    const masViejo = posts.reduce(
+      (min, post) => Math.min(min, post.publishedAt.getTime()),
+      Number.POSITIVE_INFINITY,
+    );
+    // La ventana se acota ACÁ, no por contrato con el caller: este endpoint
+    // NO pagina (su doc pide "keep date ranges reasonable"), así que un solo
+    // post viejo en el lote traería meses de publicaciones y las filas que sí
+    // se pidieron podrían caerse del final en silencio, sin ninguna señal de
+    // truncamiento.
+    const tope = Date.now() - METRICS_VENTANA_MAXIMA_DIAS * MILISEGUNDOS_POR_DIA;
+    const desde = new Date(Math.max(masViejo, tope) - MILISEGUNDOS_POR_DIA);
     const hasta = new Date(Date.now() + MILISEGUNDOS_POR_DIA);
     const cuentas = [...new Set(posts.map((post) => post.accountProviderRef))];
     const query = new URLSearchParams({
@@ -323,11 +340,33 @@ export class PostFastProvider implements PublishingProvider {
       // que nadie preguntó. Se ignoran: el caller mapea por el id que pidió.
       if (!platformPostId || !pedidos.has(platformPostId)) continue;
       const metric = fila.latestMetric;
-      if (!metric) continue;
+      if (!metric) {
+        // La fila VINO en la respuesta, o sea que preguntamos y el proveedor
+        // contestó que de ese post no tiene números — es la forma
+        // documentada para LinkedIn personal. Mismo trato que en Upload-Post:
+        // snapshot con los cinco en null y el motivo en `raw`. Omitirlo
+        // dejaría esos posts pendientes para siempre, re-preguntados en cada
+        // pase y sin que nunca se registre nada sobre ellos.
+        result.set(platformPostId, {
+          capturedAt: new Date(),
+          impressions: null,
+          reach: null,
+          likes: null,
+          comments: null,
+          shares: null,
+          raw: fila,
+        });
+        continue;
+      }
       result.set(platformPostId, {
-        // `fetchedAt` es cuándo PostFast le preguntó a la red, que es más
-        // honesto que "ahora": sus datos se refrescan cada 6 h.
-        capturedAt: parseTimestamp(metric.fetchedAt) ?? new Date(),
+        // Cuándo lo leímos NOSOTROS, que es lo que significa la columna —y de
+        // donde el job saca el día del snapshot. Usar el `fetchedAt` del
+        // proveedor (puede ser de hace 6 h) haría que un pase de las 02:00
+        // escribiera en la fila de AYER, pisando sus números finales, y que
+        // otro pase del mismo día creara la de hoy: dos filas el mismo día,
+        // que es justo lo que el índice único existe para impedir. La edad
+        // real del número no se pierde: `fetchedAt` viaja entero en `raw`.
+        capturedAt: new Date(),
         impressions: parseMetricNumber(metric.impressions),
         reach: parseMetricNumber(metric.reach),
         likes: parseMetricNumber(metric.likes),
