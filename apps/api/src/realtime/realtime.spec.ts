@@ -44,6 +44,18 @@ class FakeClient implements StreamClient {
   }
 }
 
+/**
+ * Los eventos de la pestaña sin los latidos.
+ *
+ * El heartbeat corre cada 20 s con reloj real en el bloque contra la DB, así
+ * que una corrida lenta —la suite completa contra el VPS— mete un `ping` en
+ * medio y tumba cualquier aserción sobre el arreglo entero. El latido es ruido
+ * ambiental, no parte de lo que estas pruebas afirman.
+ */
+function sinPing(tab: { events: () => { event: string }[] }): { event: string }[] {
+  return tab.events().filter((evento) => evento.event !== "ping");
+}
+
 const TEXT: CardContent = {
   archetype: "text_first",
   body: "Mañana publico el guion del reel.",
@@ -217,7 +229,7 @@ describe("NOTIFY → LISTEN → stream", { timeout: 30_000 }, () => {
       cardsRepo.insertCard(tx, { userId: userA, chatId: chatA, network: "x", content: TEXT }),
     );
     await until(() => tab.events().some((e) => e.data.id === witness.id));
-    expect(tab.events()).toHaveLength(1);
+    expect(sinPing(tab)).toHaveLength(1);
     registry.remove(userA, tab);
   });
 
@@ -326,7 +338,7 @@ describe("NOTIFY → LISTEN → stream", { timeout: 30_000 }, () => {
     const tab = connect(userA);
     const ghost = randomUUID();
     await listener.handle(encodeCardChanged({ userId: userA, cardId: ghost }));
-    expect(tab.events()).toEqual([{ event: "card-deleted", data: { id: ghost } }]);
+    expect(sinPing(tab)).toEqual([{ event: "card-deleted", data: { id: ghost } }]);
     registry.remove(userA, tab);
   });
 

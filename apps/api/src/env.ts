@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   DEFAULT_MODEL_ID,
+  DEFAULT_TRENDS_MODEL_ID,
   MODEL_TIER_ENV_VARS,
   parseModelId,
   PROVIDERS,
@@ -41,6 +42,15 @@ const envSchema = z
     AI_MODEL_CHAT: z.string().optional(),
     AI_MODEL_UTILITY: z.string().optional(),
     AI_MODEL_ADAPT: z.string().optional(),
+    // Tendencias de Ritmo (F9). No es un tier más de MODEL_BY_TASK: esa tabla
+    // mapea tareas a modelos intercambiables, y esta llamada necesita una
+    // capacidad concreta —búsqueda con grounding— que hoy solo tiene Google.
+    // Sin setear cae a DEFAULT_TRENDS_MODEL_ID, que es de Google — NO a
+    // AI_MODEL: apuntar el chat a otro proveedor es una decisión sobre el chat
+    // y no debería apagar las tendencias. Si el modelo resuelto no es de
+    // Google, el job falla con un motivo escrito en vez de producir tendencias
+    // sin fuente.
+    AI_MODEL_TRENDS: z.string().optional(),
     ZEPTOMAIL_TOKEN: z.string().min(1),
     MAIL_FROM: z.email(),
     PORT: z.coerce.number().int().positive().default(3000),
@@ -119,6 +129,11 @@ const envSchema = z
       const modelId = value[path];
       if (modelId) validateModelEnv(path, modelId);
     }
+    // Se valida el id EFECTIVO, no solo el que alguien escribió: sin setear,
+    // la variable cae a un modelo de Google, y si no hay key de Google eso es
+    // un job que truena cada 6 h con la única señal en `pgboss.job`. Un boot
+    // roto se ve; un job que falla en silencio, no.
+    validateModelEnv("AI_MODEL_TRENDS", value.AI_MODEL_TRENDS ?? DEFAULT_TRENDS_MODEL_ID);
 
     // Fail-fast (mismo criterio que el modelo de IA): pedir el provider real
     // sin key es un boot roto, no un fallback silencioso a datos falsos.

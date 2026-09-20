@@ -1,6 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createGoogleGenerativeAI, google } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createProviderRegistry, type LanguageModel } from "ai";
@@ -97,6 +97,37 @@ export const MODEL_BY_TASK: Record<AiTaskKind, ModelTierEnvVar> = {
   voice_distill: "AI_MODEL_ADAPT",
   analytics_narration: "AI_MODEL_UTILITY",
 };
+
+/**
+ * La búsqueda web con grounding, que hoy solo Google ofrece.
+ *
+ * Vive detrás de esta capa por la misma razón que los modelos (ADR-004): el
+ * resto de la app no importa un proveedor concreto. Pero a diferencia de un
+ * modelo, esto NO es intercambiable — la tool devuelve `groundingMetadata` con
+ * las páginas que de verdad visitó, y de ese metadata sale la fuente citada de
+ * cada tendencia. Un proveedor sin esa capacidad no daría "lo mismo más
+ * barato": daría tendencias sin procedencia, que el producto define como algo
+ * que no se publica.
+ *
+ * Por eso el llamador verifica que el modelo resuelto sea de Google antes de
+ * usarla, en vez de degradar en silencio.
+ */
+export const GOOGLE_SEARCH_TOOL = google.tools.googleSearch({});
+
+/** El proveedor que sabe hacer búsqueda con grounding. */
+export const SEARCH_PROVIDER: ProviderId = "google";
+
+/**
+ * El modelo con el que se buscan tendencias cuando nadie configuró
+ * AI_MODEL_TRENDS.
+ *
+ * Tiene su propio default en vez de caer a AI_MODEL —como sí hacen los tiers
+ * de MODEL_BY_TASK— porque esta llamada no pide "un modelo", pide una
+ * capacidad. Un despliegue que apunte AI_MODEL a OpenAI es una decisión
+ * legítima sobre el chat que no dice nada sobre las tendencias, y heredarla
+ * acá apagaría el módulo entero por un cambio que no tenía que ver con él.
+ */
+export const DEFAULT_TRENDS_MODEL_ID = "google:gemini-3.6-flash";
 
 export type EnvSource = Record<string, string | undefined>;
 export type ModelResolver = (modelId?: string) => LanguageModel;

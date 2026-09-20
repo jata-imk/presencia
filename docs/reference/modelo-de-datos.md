@@ -288,7 +288,7 @@ Lo que **no** se puede leer así: `social_accounts` no tiene policy de barrido, 
 
 ### Tablas cubiertas
 
-RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`, `post_metrics`. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
+RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`, `post_metrics`. **`niche_trends` no lo lleva y es la única excepción** (F9, ADR-023): no es dato de un tenant sino una caché compartida por `(vertical, país, macro-región)`, idéntica para todos los usuarios de esa tupla. Nada derivado del contenido, el historial o las métricas de un usuario puede vivir ahí — si una fila dependiera de quién la pidió, dejaría de ser caché y pasaría a ser dato de tenant sin aislamiento. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
 
 ## Diagrama ER
 
