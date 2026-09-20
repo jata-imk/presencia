@@ -1,7 +1,8 @@
 import { Inject, Injectable, type OnApplicationBootstrap } from "@nestjs/common";
 import { BossService } from "../jobs/boss.service.js";
 import { enProcesoWorker } from "../jobs/process-role.js";
-import { TrendsService } from "./trends.service.js";
+import type { TuplaDeTendencias } from "./trends.repository.js";
+import { COLA_SEMILLA, SEMILLA_EXPIRE_SECONDS, TrendsService } from "./trends.service.js";
 
 // Cada seis horas, y la cadencia no la fija cuánto cambian las tendencias
 // —eso lo fija el TTL de 24 h de cada tanda— sino cuánto puede tardar una
@@ -60,6 +61,16 @@ export class TrendsJobs implements OnApplicationBootstrap {
       cron: REFRESH_CRON,
       expireInSeconds: REFRESH_EXPIRE_SECONDS,
       handler: () => this.trends.barrer(),
+    });
+    // La cola de la PRIMERA búsqueda, que encola el camino de lectura. El
+    // barrido periódico no puede cubrir esto: solo refresca filas que ya
+    // existen, así que una tupla nueva no entraría nunca a su pase.
+    await this.boss.registerOnDemand<TuplaDeTendencias>({
+      queue: COLA_SEMILLA,
+      expireInSeconds: SEMILLA_EXPIRE_SECONDS,
+      handler: async (tupla) => {
+        await this.trends.refrescarSiHaceFalta(tupla);
+      },
     });
   }
 }

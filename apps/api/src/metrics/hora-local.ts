@@ -68,3 +68,18 @@ export function fechaLocal(instante: Date, timezone: string): FechaLocal {
     dia: `${buscar("year")}-${buscar("month")}-${buscar("day")}`,
   };
 }
+
+/**
+ * Suma días a un `YYYY-MM-DD` tratándolo como fecha de calendario, no instante.
+ *
+ * Vive junto a `fechaLocal` porque sus dos consumidores dependen de que hagan
+ * lo mismo: el heatmap calcula el primer día de su rejilla así, y el contador
+ * "vas 8/14" calcula el lunes de la semana así. Con una copia en cada lado,
+ * arreglar uno dejaría a los dos discrepando sobre dónde empieza la semana.
+ */
+export function sumarDias(dia: string, cantidad: number): string {
+  const MS_POR_DIA = 24 * 60 * 60 * 1000;
+  return new Date(Date.parse(`${dia}T00:00:00Z`) + cantidad * MS_POR_DIA)
+    .toISOString()
+    .slice(0, 10);
+}

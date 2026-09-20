@@ -26,6 +26,41 @@ const PGBOSS_POOL_SIZE = 4;
 // largo corre, y al terminar se ejecutan todos seguidos.
 const RECURRING_QUEUE_POLICY = "exclusive";
 
+// `short`: como mucho un job por `singletonKey` ESPERANDO. Diez usuarios del
+// mismo nicho abriendo Ritmo a la vez dejan un solo trabajo encolado, que es
+// la misma palanca de sublinealidad por la que la caché no se llavea por
+// usuario (ADR-023).
+//
+// Dos cosas verificadas en dev el 2026-09-20, ninguna obvia desde la
+// documentación:
+//
+// - `standard` + `singletonKey` NO deduplica. La opción se acepta sin
+//   quejarse y los jobs se encolan todos igual: cuatro requests dejaron
+//   cuatro jobs. El filtro lo hace la POLICY, no la opción suelta.
+// - `stately` sí deduplica, pero acota por estado, así que un job en estado
+//   terminal conserva la llave. No es lo que se quiere acá: un fallo dejaría
+//   la tupla sin poder reintentar hasta que pg-boss archive.
+//
+// Que quede uno esperando mientras otro corre es aceptable porque el handler
+// es idempotente: `refrescarSiHaceFalta` no vuelve a buscar si la tanda ya
+// está vigente.
+const ON_DEMAND_QUEUE_POLICY = "short";
+
+/**
+ * Cola de trabajos puntuales: los encola alguien (un request) y los ejecuta el
+ * worker. A diferencia de una recurrente, acá no hay cron.
+ *
+ * La policy es `standard` y no `exclusive` porque el filtro de duplicados es
+ * por TRABAJO, no por cola: dos tuplas distintas sí pueden buscarse a la vez,
+ * dos veces la misma no. Eso lo resuelve `singletonKey` al encolar.
+ */
+export interface OnDemandJob<T> {
+  queue: string;
+  retryLimit?: number;
+  expireInSeconds: number;
+  handler: (data: T) => Promise<void>;
+}
+
 export interface RecurringJob {
   /** Nombre de la cola. Convención: `<dominio>.<acción>`, p.ej. `cards.reconcile`. */
   queue: string;
@@ -58,6 +93,9 @@ export interface RecurringJob {
  */
 @Injectable()
 export class BossService implements OnModuleInit, OnModuleDestroy {
+  /** Colas cuyo `createQueue` ya corrió en este proceso. */
+  private readonly colasListas = new Set<string>();
+
   private readonly boss: PgBoss;
   /** Si el arranque falló, no hay cola: registrar o parar no tienen sentido. */
   private started = false;
@@ -158,5 +196,80 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
     });
     await this.boss.schedule(job.queue, job.cron, null, job.tz ? { tz: job.tz } : undefined);
     console.info(`[jobs] ${job.queue} agendado (${job.cron})`);
+  }
+
+  /**
+   * Deja una cola de trabajos puntuales lista y su worker escuchando.
+   *
+   * Lo llama el proceso que EJECUTA (el worker). Quien encola usa `enqueue`,
+   * que puede vivir en otro proceso.
+   */
+  async registerOnDemand<T>(job: OnDemandJob<T>): Promise<void> {
+    if (!this.started) {
+      console.error(`[jobs] ${job.queue} no quedó escuchando: pg-boss no arrancó.`);
+      return;
+    }
+    const retryLimit = job.retryLimit ?? 0;
+    const { expireInSeconds } = job;
+    await this.boss.createQueue(job.queue, {
+      policy: ON_DEMAND_QUEUE_POLICY,
+      retryLimit,
+      expireInSeconds,
+    });
+    await this.boss.updateQueue(job.queue, { retryLimit, expireInSeconds });
+    // La policy es lo único que updateQueue no puede cambiar, y acá es
+    // justamente la que decide si el filtro de duplicados existe. En silencio
+    // se vería como "el nicho se busca de más".
+    const existente = await this.boss.getQueue(job.queue);
+    if (existente && existente.policy !== ON_DEMAND_QUEUE_POLICY) {
+      console.error(
+        `[jobs] ${job.queue} existe con policy "${existente.policy}" y el código pide ` +
+          `"${ON_DEMAND_QUEUE_POLICY}". createQueue no la cambia: hay que recrear la cola.`,
+      );
+    }
+    await this.boss.work<T>(job.queue, async ([trabajo]) => {
+      if (trabajo) await job.handler(trabajo.data);
+    });
+    this.colasListas.add(job.queue);
+    console.info(`[jobs] ${job.queue} escuchando`);
+  }
+
+  /**
+   * Encola un trabajo puntual, descartándolo si ya hay uno igual pendiente.
+   *
+   * El filtro lo hace la POLICY de la cola (`stately`), no la opción suelta:
+   * `singletonKey` sobre una cola `standard` se acepta sin quejarse y encola
+   * todo igual. Con `stately` hay a lo más un job por llave en cada estado, así
+   * que una búsqueda encolada y otra en vuelo no se duplican — que es la misma
+   * palanca de sublinealidad por la que la caché no se llavea por usuario
+   * (ADR-023).
+   *
+   * Devuelve `false` si no se encoló (por duplicado o porque la cola no está).
+   * Nunca lanza: esto se llama desde un request de lectura, y no poder encolar
+   * un refresco no puede tumbar la pantalla.
+   */
+  async enqueue<T extends object>(
+    queue: string,
+    data: T,
+    options: { singletonKey: string; expireInSeconds: number },
+  ): Promise<boolean> {
+    if (!this.started) return false;
+    try {
+      // La cola puede no existir todavía en ESTE proceso: quien encola es la
+      // API y quien la registra es el worker. `createQueue` es idempotente
+      // (INSERT ... ON CONFLICT DO NOTHING) y se hace una sola vez por proceso.
+      if (!this.colasListas.has(queue)) {
+        await this.boss.createQueue(queue, { policy: ON_DEMAND_QUEUE_POLICY });
+        this.colasListas.add(queue);
+      }
+      const id = await this.boss.send(queue, data, {
+        singletonKey: options.singletonKey,
+        expireInSeconds: options.expireInSeconds,
+      });
+      return id !== null;
+    } catch (error) {
+      console.error(`[jobs] no se pudo encolar ${queue}:`, error);
+      return false;
+    }
   }
 }

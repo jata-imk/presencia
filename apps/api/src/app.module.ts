@@ -12,6 +12,7 @@ import { HealthController } from "./health.controller.js";
 import { ScheduledJobsModule } from "./jobs/scheduled-jobs.module.js";
 import { ProfileModule } from "./profile/profile.module.js";
 import { RealtimeModule } from "./realtime/realtime.module.js";
+import { RitmoModule } from "./ritmo/ritmo.module.js";
 import { SearchModule } from "./search/search.module.js";
 
 @Module({
@@ -24,6 +25,7 @@ import { SearchModule } from "./search/search.module.js";
     ChannelsModule,
     FoldersModule,
     SearchModule,
+    RitmoModule,
     RealtimeModule,
     // WORKER_INLINE: en dev la cola vive en este mismo proceso (ADR-008
     // addendum F8). Con el flag apagado, quien la consume es worker.ts.

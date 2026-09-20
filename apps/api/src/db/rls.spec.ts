@@ -7,6 +7,7 @@ import {
   chats,
   folders,
   messages,
+  cadenceTargets,
   postMetrics,
   publicationCards,
   socialAccounts,
@@ -725,6 +726,40 @@ describe("RLS tenant_isolation", () => {
         tx.select().from(postMetrics).where(eq(postMetrics.platformPostId, "urn:li:share:rls-a")),
       );
       expect(rows[0]?.impressions).toBe(120);
+    });
+  });
+
+  // F9: las metas semanales. No son números de negocio como las métricas,
+  // pero sí dicen qué tan seguido publica alguien y en qué redes — el perfil
+  // de actividad de un creator no es público por default.
+  describe("cadence_targets", () => {
+    beforeAll(async () => {
+      await dbService.runWithTenant(userA, (tx) =>
+        tx.insert(cadenceTargets).values({ userId: userA, network: "linkedin", target: 3 }),
+      );
+    }, 15_000);
+
+    it("el dueño ve sus propias metas", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userA, (tx) => tx.select().from(cadenceTargets));
+      expect(rows.map((t) => t.network)).toContain("linkedin");
+    });
+
+    it("otro tenant no lee metas ajenas", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userB, (tx) => tx.select().from(cadenceTargets));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("otro tenant no puede escribir metas a nombre ajeno", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx.insert(cadenceTargets).values({ userId: userA, network: "x", target: 9 }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(error).toBeInstanceOf(Error);
+      expect(String((error as Error).cause)).toMatch(/row-level security/);
     });
   });
 });
