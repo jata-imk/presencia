@@ -157,27 +157,10 @@ export interface CeldaHorario {
  */
 export type ModoHorarios = "cold" | "poca" | "full" | "no_reporta";
 
-/**
- * El "+%" de una franja completa, que es el nivel al que casi siempre hay
- * muestra suficiente.
- *
- * Viaja aparte y no solo dentro de las celdas porque es información de OTRA
- * unidad: la UI lo pinta en la etiqueta de la fila, donde se lee como lo que
- * es. Derivarlo en el cliente buscando una celda heredada funcionaría hoy,
- * pero metería en la vista una suposición sobre cómo el motor arma la
- * herencia.
- */
-export interface FranjaHorario {
-  franja: number;
-  n: number;
-  lift: number | null;
-}
-
 export interface ResultadoHorarios {
   modo: ModoHorarios;
   base: BaseDeCalculo;
   nTotal: number;
-  franjas: FranjaHorario[];
   celdas: CeldaHorario[];
 }
 
@@ -205,7 +188,6 @@ export function calcularHorarios(
     modo,
     base,
     nTotal,
-    franjas: [],
     celdas: [],
   });
   if (nTotal === 0) return vacio("cold");
@@ -277,16 +259,7 @@ export function calcularHorarios(
     }
   }
 
-  const franjas: FranjaHorario[] = FRANJAS.map((_, franja) => {
-    const promedio = promedioDeFranja.get(franja);
-    return {
-      franja,
-      n: (porFranja.get(`${String(franja)}`) ?? []).length,
-      lift: promedio === undefined ? null : lift(promedio, promedioGeneral),
-    };
-  });
-
-  return { modo: "full", base, nTotal, franjas, celdas };
+  return { modo: "full", base, nTotal, celdas };
 }
 
 function media(valores: readonly number[]): number {

@@ -36,8 +36,6 @@ function etiquetaDe(dia: string): string {
 
 interface Props {
   dias: RitmoDiaDto[];
-  /** En `cold` el mapa se pinta apagado y sin tooltips: no hay qué inspeccionar. */
-  apagado?: boolean;
   /**
    * Una sola red en vez del total.
    *
@@ -50,7 +48,7 @@ interface Props {
   compacto?: boolean;
 }
 
-export function CadenciaHeatmap({ dias, apagado = false, network, compacto = false }: Props) {
+export function CadenciaHeatmap({ dias, network, compacto = false }: Props) {
   const lado = compacto ? "h-3 w-3" : "h-[22px] w-[22px]";
   const totalDe = (dia: RitmoDiaDto) => (network ? (dia.porRed[network] ?? 0) : dia.total);
   const [foco, setFoco] = useState<string | null>(null);
@@ -81,11 +79,11 @@ export function CadenciaHeatmap({ dias, apagado = false, network, compacto = fal
   return (
     <div className="overflow-x-auto pb-1">
       <div className={`inline-flex flex-col ${compacto ? "gap-0.5" : "gap-1"}`}>
-        <div className={`flex gap-1 pl-8 ${compacto ? "hidden" : ""}`}>
+        <div className={`flex gap-1 pl-9 ${compacto ? "hidden" : ""}`}>
           {meses.map((mes, indice) => (
             <span
               key={semanas[indice]?.[0]?.dia ?? indice}
-              className="w-[26px] shrink-0 text-[10px] font-semibold text-fg-muted"
+              className="w-[22px] shrink-0 text-[10px] font-semibold text-fg-muted"
             >
               {mes}
             </span>
@@ -115,7 +113,7 @@ export function CadenciaHeatmap({ dias, apagado = false, network, compacto = fal
                 <Tooltip
                   key={dia.dia}
                   label={
-                    apagado || totalDe(dia) === 0
+                    totalDe(dia) === 0
                       ? undefined
                       : `${String(totalDe(dia))} ${totalDe(dia) === 1 ? "publicación" : "publicaciones"} · ${etiquetaDe(dia.dia)}`
                   }
@@ -125,7 +123,7 @@ export function CadenciaHeatmap({ dias, apagado = false, network, compacto = fal
                     onMouseLeave={() => setFoco(null)}
                     className={`${lado} ${compacto ? "rounded-sm" : "rounded-md"} ${tono(totalDe(dia))} ${
                       totalDe(dia) === 0 ? "border border-line-subtle" : ""
-                    } ${!compacto && foco === dia.dia ? "ring-interactive-primary ring-2" : ""}`}
+                    } ${!compacto && foco === dia.dia ? "ring-2 ring-primary" : ""}`}
                   />
                 </Tooltip>
               ))}

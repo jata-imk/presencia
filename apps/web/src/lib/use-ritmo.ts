@@ -29,6 +29,8 @@ function mensajeDe(error: unknown): string {
 export interface EstadoResumen {
   resumen: RitmoResumenDto | null;
   error: string | null;
+  /** Fallo al guardar una meta. Aparte de `error`: la vista sigue en pie. */
+  errorGuardado: string | null;
   guardando: boolean;
   recargar: () => void;
   cambiarMeta: (network: SocialNetwork, meta: number) => Promise<void>;
@@ -38,6 +40,7 @@ export function useRitmoResumen(): EstadoResumen {
   const [resumen, setResumen] = useState<RitmoResumenDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
 
   const recargar = useCallback(() => {
     setError(null);
@@ -51,15 +54,18 @@ export function useRitmoResumen(): EstadoResumen {
   const cambiarMeta = useCallback(
     async (network: SocialNetwork, meta: number) => {
       setGuardando(true);
+      setErrorGuardado(null);
       try {
         // El PATCH devuelve el resumen completo: la meta cambia el "vas 8/14"
         // de la cabecera, y recalcularlo acá sería una segunda aritmética del
         // mismo número.
         setResumen(await saveMetaSemanal(network, meta));
-      } catch {
+      } catch (e: unknown) {
         // El servidor tiene el estado bueno. Recargar deja la fila como quedó
         // de verdad, en vez de dejar la UI afirmando un número que no se
-        // guardó.
+        // guardó. Y se DICE que falló: sin aviso, el usuario ve que el número
+        // no se mueve y sigue picándole al botón.
+        setErrorGuardado(mensajeDe(e));
         recargar();
       } finally {
         setGuardando(false);
@@ -68,12 +74,13 @@ export function useRitmoResumen(): EstadoResumen {
     [recargar],
   );
 
-  return { resumen, error, guardando, recargar, cambiarMeta };
+  return { resumen, error, errorGuardado, guardando, recargar, cambiarMeta };
 }
 
 export function useHorarios(network: SocialNetwork | null) {
   const [horarios, setHorarios] = useState<RitmoHorariosDto | null>(null);
-  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [intento, setIntento] = useState(0);
   // Guarda de carrera del mismo tipo que cards-store: la respuesta de una red
   // que el usuario ya abandonó no puede pisar la de la pestaña actual.
   const pedido = useRef(0);
@@ -82,23 +89,34 @@ export function useHorarios(network: SocialNetwork | null) {
     if (!network) return;
     const token = ++pedido.current;
     const abort = new AbortController();
-    setCargando(true);
+    setError(null);
+    // Se limpia el resultado anterior al cambiar de red. Sin esto, mientras la
+    // nueva petición viaja seguía en pantalla el heatmap de la red anterior
+    // bajo la pestaña nueva — y si la nueva resulta `no_reporta`, el estado
+    // vacío llegaba a nombrar la red equivocada.
+    setHorarios(null);
     fetchHorarios(network, abort.signal)
       .then((datos) => {
         if (token === pedido.current) setHorarios(datos);
       })
-      .catch(() => {
-        if (token === pedido.current) setHorarios(null);
-      })
-      .finally(() => {
-        if (token === pedido.current) setCargando(false);
+      .catch((e: unknown) => {
+        // Un fallo NO es "todavía no tienes datos": decirle eso a alguien con
+        // meses de historial es el código mintiendo. Va a su propio estado,
+        // con reintento.
+        if (token === pedido.current && !abort.signal.aborted) setError(mensajeDe(e));
       });
+
     return () => {
       abort.abort();
     };
-  }, [network]);
+  }, [network, intento]);
 
-  return { horarios, cargando };
+  const reintentar = useCallback(() => setIntento((n) => n + 1), []);
+
+  // Sin bandera de "cargando": el resultado se limpia al cambiar de red, así
+  // que `!horarios && !error` ya dice exactamente eso. Dos fuentes para el
+  // mismo estado es una que se puede desincronizar.
+  return { horarios, error, reintentar };
 }
 
 export function useTendencias() {

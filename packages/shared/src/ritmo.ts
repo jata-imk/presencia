@@ -71,28 +71,12 @@ export interface RitmoCeldaDto {
   heredado: boolean;
 }
 
-/**
- * El "+%" de una franja completa.
- *
- * Es el nivel al que casi siempre hay muestra: con 30 días de ventana, una
- * celda día×franja rara vez junta las publicaciones que el umbral pide, pero
- * la franja sí. La UI lo pinta en la etiqueta de la fila, donde pertenece —
- * repetirlo en las siete celdas se leería como si cada una tuviera su propia
- * medición.
- */
-export interface RitmoFranjaDto {
-  franja: number;
-  n: number;
-  lift: number | null;
-}
-
 export interface RitmoHorariosDto {
   network: SocialNetwork;
   modo: ModoRitmo;
   base: BaseDeCalculoDto;
   ventanaDias: number;
   nTotal: number;
-  franjas: RitmoFranjaDto[];
   celdas: RitmoCeldaDto[];
 }
 

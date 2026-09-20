@@ -95,7 +95,6 @@ export class MetricsEngineService {
       modo,
       base: "interacciones",
       nTotal,
-      franjas: [],
       celdas: [],
     });
 

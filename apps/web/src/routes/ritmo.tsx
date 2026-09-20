@@ -37,7 +37,7 @@ function primerNombre(nombre: string | null | undefined): string {
 
 export function RitmoPage() {
   const { data: session } = authClient.useSession();
-  const { resumen, error, guardando, recargar, cambiarMeta } = useRitmoResumen();
+  const { resumen, error, errorGuardado, guardando, recargar, cambiarMeta } = useRitmoResumen();
   const { tendencias, recargar: recargarTendencias } = useTendencias();
 
   // `null` hasta que el resumen diga qué redes hay. La elección del usuario
@@ -48,7 +48,7 @@ export function RitmoPage() {
     setRed((actual) => actual ?? primeraRed);
   }, [primeraRed]);
 
-  const { horarios, cargando: cargandoHorarios } = useHorarios(red);
+  const { horarios, error: errorHorarios, reintentar: reintentarHorarios } = useHorarios(red);
 
   // "Agregado" o "Por red" para el heatmap de cadencia. Vive en la página y no
   // en el componente del mapa porque el control que lo cambia está en la
@@ -136,7 +136,10 @@ export function RitmoPage() {
                 <span className="text-xs text-fg-muted">
                   Mejor racha: {resumen.cadencia.mejorRacha}{" "}
                   {resumen.cadencia.mejorRacha === 1 ? "día" : "días"} · {resumen.cadencia.total}{" "}
-                  publicaciones en 16 semanas
+                  {/* El tamaño sale de la rejilla que mandó el servidor, no de
+                      una constante repetida acá: la ventana la fija el motor y
+                      el cliente no tiene por qué saber cuánto vale. */}
+                  publicaciones en {Math.round(resumen.cadencia.dias.length / 7)} semanas
                 </span>
               </div>
               <LeyendaHeatmap />
@@ -152,6 +155,11 @@ export function RitmoPage() {
             titulo="Cadencia objetivo por red"
             sub="Ajusta cuántas veces quieres publicar. Mientras no la cambies, usamos una sugerencia."
           />
+          {errorGuardado && (
+            <p role="alert" className="mb-3 text-[13px] text-error">
+              {errorGuardado}
+            </p>
+          )}
           {resumen.objetivos.map((objetivo) => (
             <FilaObjetivo
               key={objetivo.network}
@@ -196,9 +204,11 @@ export function RitmoPage() {
               </div>
             }
           />
-          {cargandoHorarios && !horarios ? (
+          {errorHorarios ? (
+            <RitmoError mensaje={errorHorarios} onReintentar={reintentarHorarios} />
+          ) : !horarios ? (
             <div className="h-[320px] animate-pulse rounded-xl bg-secondary" aria-hidden />
-          ) : !horarios || horarios.modo === "cold" ? (
+          ) : horarios.modo === "cold" ? (
             <HorariosSinData />
           ) : horarios.modo === "no_reporta" ? (
             <HorariosNoReporta red={nombreDeRed(horarios.network)} />
