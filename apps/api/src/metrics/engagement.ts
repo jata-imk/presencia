@@ -157,10 +157,27 @@ export interface CeldaHorario {
  */
 export type ModoHorarios = "cold" | "poca" | "full" | "no_reporta";
 
+/**
+ * El "+%" de una franja completa, que es el nivel al que casi siempre hay
+ * muestra suficiente.
+ *
+ * Viaja aparte y no solo dentro de las celdas porque es información de OTRA
+ * unidad: la UI lo pinta en la etiqueta de la fila, donde se lee como lo que
+ * es. Derivarlo en el cliente buscando una celda heredada funcionaría hoy,
+ * pero metería en la vista una suposición sobre cómo el motor arma la
+ * herencia.
+ */
+export interface FranjaHorario {
+  franja: number;
+  n: number;
+  lift: number | null;
+}
+
 export interface ResultadoHorarios {
   modo: ModoHorarios;
   base: BaseDeCalculo;
   nTotal: number;
+  franjas: FranjaHorario[];
   celdas: CeldaHorario[];
 }
 
@@ -184,13 +201,20 @@ export function calcularHorarios(
   base: BaseDeCalculo,
 ): ResultadoHorarios {
   const nTotal = posts.length;
-  if (nTotal === 0) return { modo: "cold", base, nTotal, celdas: [] };
-  if (nTotal < N_MINIMO_RED) return { modo: "poca", base, nTotal, celdas: [] };
+  const vacio = (modo: ModoHorarios): ResultadoHorarios => ({
+    modo,
+    base,
+    nTotal,
+    franjas: [],
+    celdas: [],
+  });
+  if (nTotal === 0) return vacio("cold");
+  if (nTotal < N_MINIMO_RED) return vacio("poca");
 
   const promedioGeneral = media(posts.map((post) => post.valor));
   // Un promedio general de 0 significa que nadie interactuó con nada. No es un
   // error, pero dividir entre él daría infinito: no hay "+%" contra la nada.
-  if (promedioGeneral <= 0) return { modo: "poca", base, nTotal, celdas: [] };
+  if (promedioGeneral <= 0) return vacio("poca");
 
   const porFranja = agrupar(posts, (post) => `${post.franja}`);
   const porCelda = agrupar(posts, (post) => `${post.diaSemana}:${post.franja}`);
@@ -203,7 +227,7 @@ export function calcularHorarios(
 
   // Si ninguna franja alcanzó el umbral, hay datos pero no hay nada honesto que
   // decir todavía: es el estado "poca", no un heatmap de ceros.
-  if (promedioDeFranja.size === 0) return { modo: "poca", base, nTotal, celdas: [] };
+  if (promedioDeFranja.size === 0) return vacio("poca");
 
   /**
    * El promedio del que sale TODO lo que la celda dice: su color y su número.
@@ -253,7 +277,16 @@ export function calcularHorarios(
     }
   }
 
-  return { modo: "full", base, nTotal, celdas };
+  const franjas: FranjaHorario[] = FRANJAS.map((_, franja) => {
+    const promedio = promedioDeFranja.get(franja);
+    return {
+      franja,
+      n: (porFranja.get(`${String(franja)}`) ?? []).length,
+      lift: promedio === undefined ? null : lift(promedio, promedioGeneral),
+    };
+  });
+
+  return { modo: "full", base, nTotal, franjas, celdas };
 }
 
 function media(valores: readonly number[]): number {

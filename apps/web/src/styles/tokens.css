@@ -235,32 +235,64 @@
   --cal-drop-past-veil: color-mix(in srgb, var(--bg-app) 55%, transparent);
 
   /* ── Ritmo (F9) ────────────────────────────────────────────────────
-     Las dos escalas de los heatmaps. Se derivan por color-mix contra
-     --bg-card, que YA voltea con el tema: así no necesitan override en
-     oscuro y no pueden quedar desincronizadas de la paleta de marca.
-     Mezclar contra --bg-card y no contra transparent es el mismo motivo que
-     en --cal-drop-*: la celda trae su propio fondo y un tinte translúcido
-     encima se lee distinto en cada tema.
+     Las dos escalas de los heatmaps, más el marcador de "mejor ventana".
 
-     El paso 0 no es "malo", es "acá no hay historia" — por eso queda casi
-     pegado al fondo de la tarjeta en vez de ser el primer tono de la rampa.
-     La distinción importa: una celda donde se publicó y rindió mal se pinta
-     con el paso 1, y confundirlas haría que el heatmap mienta sobre dónde
-     hubo actividad. */
-  --ritmo-heat-0: color-mix(in srgb, var(--color-pink-orchid) 8%, var(--bg-card));
-  --ritmo-heat-1: color-mix(in srgb, var(--color-pink-orchid) 30%, var(--bg-card));
-  --ritmo-heat-2: color-mix(in srgb, var(--color-pink-orchid) 62%, var(--bg-card));
-  --ritmo-heat-3: color-mix(in srgb, var(--color-blush-pop) 68%, var(--bg-card));
-  --ritmo-heat-4: var(--color-blush-pop);
+     A diferencia de --cal-drop-*, estas NO se derivan por color-mix contra
+     --bg-card: van escritas paso a paso en cada tema. El motivo es que la
+     rampa tiene que ser MONÓTONA en los dos, y con un solo token eso es
+     imposible cuando cambia de tono a media rampa — en claro más mezcla es
+     más oscuro, en oscuro es más claro, y el orden entre dos tonos distintos
+     se invierte con el fondo. Se midió: orquídea→blush se aclaraba del paso 2
+     al 3 en claro (un día con tres publicaciones salía MÁS claro que uno con
+     dos) y icy→orquídea hacía lo mismo en oscuro. Un heatmap invertido justo
+     donde más actividad hay, y no se ve revisando el CSS.
 
-  /* Engagement por franja: arranca frío y termina en la marca, para que la
-     escala se lea como intensidad y no como semáforo — un rojo/verde diría
-     "bien/mal" y lo que la celda mide es "acá te escuchan más". */
-  --ritmo-engage-0: color-mix(in srgb, var(--color-icy-blue) 8%, var(--bg-card));
-  --ritmo-engage-1: color-mix(in srgb, var(--color-icy-blue) 38%, var(--bg-card));
-  --ritmo-engage-2: color-mix(in srgb, var(--color-icy-blue) 78%, var(--bg-card));
-  --ritmo-engage-3: color-mix(in srgb, var(--color-pink-orchid) 70%, var(--bg-card));
-  --ritmo-engage-4: var(--color-blush-pop);
+     El precio de escribirlas a mano es que hay que mantener los dos bloques.
+     Vale la pena: el mapa es el hero del módulo y la rampa de marca
+     (lavanda → púrpura → rosa) es lo que lo hace verse de Presencia y no de
+     GitHub.
+
+     Si alguien toca estos valores, hay que volver a medir la luminancia de
+     los cinco pasos en los DOS temas.
+
+     Verificado 2026-09-20 (luminancia relativa por paso):
+       cadencia  claro 0.885 0.750 0.507 0.478 0.333
+                 oscuro 0.015 0.051 0.147 0.252 0.333
+       engage    claro 0.945 0.851 0.764 0.684 0.610
+                 oscuro 0.022 0.084 0.197 0.370 0.610
+       mejor ventana 0.507 en los dos temas
+
+     El salto de orquídea a rosa en cadencia es chico en luminancia (0.03) y
+     aun así se distingue: ahí el cambio de TONO carga la diferencia, que es
+     el mismo recurso que usa el mock. Los demás pasos van por luminancia. */
+  --ritmo-heat-0: var(--color-plum-50);
+  --ritmo-heat-1: var(--color-plum-100);
+  --ritmo-heat-2: var(--color-pink-orchid);
+  --ritmo-heat-3: var(--color-pink-200);
+  --ritmo-heat-4: var(--color-pink-300);
+
+  /* Engagement por franja: azul, para que no se confunda con la cadencia y
+     para que ninguna escala se lea como semáforo — un rojo/verde diría
+     "bien/mal" y lo que la celda mide es "acá te escuchan más".
+
+     Deliberadamente CLARA de punta a punta. La primera versión llegaba hasta
+     un azul fuerte y el resultado era que las celdas mediocres gritaban más
+     que las marcadas como mejor ventana: el morado quedaba más claro que el
+     azul del paso 4, así que lo que el módulo quiere señalar era lo que menos
+     se veía. Acá sí conviene color-mix contra --bg-card, porque un solo tono
+     se ordena solo en los dos temas. */
+  --ritmo-engage-0: color-mix(in srgb, var(--color-sky-blue) 12%, var(--bg-card));
+  --ritmo-engage-1: color-mix(in srgb, var(--color-sky-blue) 34%, var(--bg-card));
+  --ritmo-engage-2: color-mix(in srgb, var(--color-sky-blue) 56%, var(--bg-card));
+  --ritmo-engage-3: color-mix(in srgb, var(--color-sky-blue) 78%, var(--bg-card));
+  --ritmo-engage-4: var(--color-sky-blue);
+
+  /* "Marcamos tus mejores ventanas" (subtítulo del módulo). La ventana buena
+     NO es el paso 4 de la rampa: es una capa aparte, porque responde a otra
+     pregunta. La rampa dice cuánto engagement hubo; esto dice dónde conviene
+     publicar. Una franja puede tener poco volumen y aun así ser la mejor. */
+  --ritmo-mejor-bg: var(--color-pink-orchid);
+  --ritmo-mejor-border: var(--color-plum-700);
 
   /* Texto sobre una celda pintada. Los pasos altos de las dos rampas son
      pasteles saturados que NO se invierten entre temas (son color de marca),
@@ -361,6 +393,19 @@
   --cal-published-fg: #7fd6a4;
   --cal-draft-fg: var(--color-plum-200);
   --cal-day-out-bg: #120b16;
+
+  /* Ritmo: la rampa se invierte entera. En oscuro "más" es MÁS CLARO, así que
+     los cinco pasos suben de luminancia en vez de bajar. Ver el bloque de
+     claro para por qué estas escalas no se derivan con color-mix. */
+  --ritmo-heat-0: var(--color-plum-900);
+  --ritmo-heat-1: var(--color-plum-700);
+  --ritmo-heat-2: var(--color-plum-500);
+  --ritmo-heat-3: var(--color-pink-400);
+  --ritmo-heat-4: var(--color-pink-300);
+  /* La de engage NO se repite acá: su color-mix contra --bg-card ya voltea
+     sola, porque es de un solo tono. */
+  --ritmo-mejor-bg: var(--color-pink-orchid);
+  --ritmo-mejor-border: var(--color-plum-200);
   --cal-group-bg: color-mix(in srgb, var(--color-pink-orchid) 16%, transparent);
 }
 
@@ -430,6 +475,8 @@
   --color-ritmo-engage-3: var(--ritmo-engage-3);
   --color-ritmo-engage-4: var(--ritmo-engage-4);
   --color-ritmo-cell-fg: var(--ritmo-cell-fg);
+  --color-ritmo-mejor: var(--ritmo-mejor-bg);
+  --color-ritmo-mejor-border: var(--ritmo-mejor-border);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);

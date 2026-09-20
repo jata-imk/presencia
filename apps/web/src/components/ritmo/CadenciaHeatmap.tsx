@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import type { RitmoDiaDto } from "@presencia/shared";
+import type { RitmoDiaDto, SocialNetwork } from "@presencia/shared";
+import { Flame } from "lucide-react";
 import { Tooltip } from "../ui/Tooltip.js";
 
 // El heatmap de cadencia: una celda por día, 16 semanas en columnas.
@@ -37,9 +38,21 @@ interface Props {
   dias: RitmoDiaDto[];
   /** En `cold` el mapa se pinta apagado y sin tooltips: no hay qué inspeccionar. */
   apagado?: boolean;
+  /**
+   * Una sola red en vez del total.
+   *
+   * El conteo sale de `porRed`, que el servidor ya manda por día: filtrar acá
+   * evita una segunda llamada por red y evita que el cliente y el servidor
+   * cuenten distinto.
+   */
+  network?: SocialNetwork;
+  /** La variante chica es para la rejilla de cuatro mapas de "Por red". */
+  compacto?: boolean;
 }
 
-export function CadenciaHeatmap({ dias, apagado = false }: Props) {
+export function CadenciaHeatmap({ dias, apagado = false, network, compacto = false }: Props) {
+  const lado = compacto ? "h-3 w-3" : "h-[22px] w-[22px]";
+  const totalDe = (dia: RitmoDiaDto) => (network ? (dia.porRed[network] ?? 0) : dia.total);
   const [foco, setFoco] = useState<string | null>(null);
 
   // Las semanas son columnas de 7. La rejilla llega completa desde el
@@ -67,23 +80,23 @@ export function CadenciaHeatmap({ dias, apagado = false }: Props) {
 
   return (
     <div className="overflow-x-auto pb-1">
-      <div className="inline-flex flex-col gap-1">
-        <div className="flex gap-[3px] pl-8">
+      <div className={`inline-flex flex-col ${compacto ? "gap-0.5" : "gap-1"}`}>
+        <div className={`flex gap-1 pl-8 ${compacto ? "hidden" : ""}`}>
           {meses.map((mes, indice) => (
             <span
               key={semanas[indice]?.[0]?.dia ?? indice}
-              className="w-[14px] shrink-0 text-[9px] font-semibold text-fg-muted"
+              className="w-[26px] shrink-0 text-[10px] font-semibold text-fg-muted"
             >
               {mes}
             </span>
           ))}
         </div>
-        <div className="flex gap-[3px]">
-          <div className="flex w-8 shrink-0 flex-col gap-[3px] pr-1">
+        <div className={`flex ${compacto ? "gap-0.5" : "gap-1"}`}>
+          <div className={`flex w-8 shrink-0 flex-col gap-1 pr-1 ${compacto ? "hidden" : ""}`}>
             {DIAS.map((dia, indice) => (
               <span
                 key={dia}
-                className="flex h-[14px] items-center justify-end text-[9px] text-fg-muted"
+                className="flex h-[22px] items-center justify-end text-[10px] text-fg-muted"
               >
                 {/* Una de cada dos, como el mock: con las siete el eje compite
                     con las celdas y el mapa se lee peor. */}
@@ -92,24 +105,27 @@ export function CadenciaHeatmap({ dias, apagado = false }: Props) {
             ))}
           </div>
           {semanas.map((semana, indice) => (
-            <div key={semana[0]?.dia ?? indice} className="flex flex-col gap-[3px]">
+            <div
+              key={semana[0]?.dia ?? indice}
+              className={`flex flex-col ${compacto ? "gap-0.5" : "gap-1"}`}
+            >
               {semana.map((dia) => (
                 // `label` vacío apaga el tooltip, así que un día sin publicar
                 // no ofrece nada que inspeccionar sin necesitar dos ramas.
                 <Tooltip
                   key={dia.dia}
                   label={
-                    apagado || dia.total === 0
+                    apagado || totalDe(dia) === 0
                       ? undefined
-                      : `${String(dia.total)} ${dia.total === 1 ? "publicación" : "publicaciones"} · ${etiquetaDe(dia.dia)}`
+                      : `${String(totalDe(dia))} ${totalDe(dia) === 1 ? "publicación" : "publicaciones"} · ${etiquetaDe(dia.dia)}`
                   }
                 >
                   <div
                     onMouseEnter={() => setFoco(dia.dia)}
                     onMouseLeave={() => setFoco(null)}
-                    className={`h-[14px] w-[14px] rounded-[3px] border border-line-subtle ${tono(dia.total)} ${
-                      foco === dia.dia ? "ring-interactive-primary ring-1" : ""
-                    }`}
+                    className={`${lado} ${compacto ? "rounded-sm" : "rounded-md"} ${tono(totalDe(dia))} ${
+                      totalDe(dia) === 0 ? "border border-line-subtle" : ""
+                    } ${!compacto && foco === dia.dia ? "ring-interactive-primary ring-2" : ""}`}
                   />
                 </Tooltip>
               ))}
@@ -125,12 +141,31 @@ export function LeyendaHeatmap() {
   return (
     <div className="flex items-center gap-1.5 text-[10px] text-fg-muted">
       <span>menos</span>
-      <span className="h-3 w-3 rounded-[3px] border border-line-subtle bg-ritmo-heat-0" />
-      <span className="h-3 w-3 rounded-[3px] bg-ritmo-heat-1" />
-      <span className="h-3 w-3 rounded-[3px] bg-ritmo-heat-2" />
-      <span className="h-3 w-3 rounded-[3px] bg-ritmo-heat-3" />
-      <span className="h-3 w-3 rounded-[3px] bg-ritmo-heat-4" />
+      <span className="h-3.5 w-3.5 rounded-sm bg-ritmo-heat-0" />
+      <span className="h-3.5 w-3.5 rounded-sm bg-ritmo-heat-1" />
+      <span className="h-3.5 w-3.5 rounded-sm bg-ritmo-heat-2" />
+      <span className="h-3.5 w-3.5 rounded-sm bg-ritmo-heat-3" />
+      <span className="h-3.5 w-3.5 rounded-sm bg-ritmo-heat-4" />
       <span>más</span>
     </div>
+  );
+}
+
+/**
+ * La racha, en píldora y debajo del mapa.
+ *
+ * Vive acá y no en la cabecera porque es una lectura DEL heatmap: son las
+ * celdas encendidas de la derecha, contadas. Separarla la convertía en un
+ * número suelto que el usuario no puede rastrear a nada de lo que ve.
+ */
+export function RachaPill({ dias }: { dias: number }) {
+  if (dias === 0) return null;
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-line bg-tint-plum px-3.5 py-1.5">
+      <Flame size={15} className="text-accent" />
+      <span className="font-display text-[13px] font-semibold text-fg">
+        Racha actual: {dias} {dias === 1 ? "día" : "días"}
+      </span>
+    </span>
   );
 }

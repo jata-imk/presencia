@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ExternalLink, Flame, Minus, Plus } from "lucide-react";
+import { CalendarCheck, ExternalLink, Minus, Plus } from "lucide-react";
 import {
   TREND_FORMAT_LABELS,
   TREND_SIGNAL_LABELS,
@@ -37,46 +37,39 @@ export function TituloBloque({
 }
 
 /**
- * La cabecera: saludo, racha y avance de la semana.
+ * La cabecera: saludo y avance de la semana.
  *
- * El texto de arriba sale de plantilla y no de un modelo. Los números los
- * calcula SQL, así que redactarlos con IA costaría créditos para decir lo
- * mismo — y con poca data no habría nada que narrar. Cuando exista el botón
- * de narración, vive aparte y bajo demanda.
+ * El texto sale de plantilla y no de un modelo. Los números los calcula SQL,
+ * así que redactarlos con IA costaría créditos para decir lo mismo — y con
+ * poca data no habría nada que narrar. Cuando exista el botón de narración,
+ * vive aparte y bajo demanda.
+ *
+ * La racha NO está acá: vive junto al heatmap de cadencia, que es de donde se
+ * lee. Un número suelto en la cabecera no se puede rastrear a nada de lo que
+ * el usuario ve.
  */
 export function CabeceraRitmo({
   nombre,
-  racha,
   objetivos,
 }: {
   nombre: string;
-  racha: number;
   objetivos: RitmoObjetivoDto[];
 }) {
   const hechas = objetivos.reduce((suma, o) => suma + o.hechas, 0);
   const meta = objetivos.reduce((suma, o) => suma + o.meta, 0);
   return (
-    <header className="flex flex-wrap items-center justify-between gap-4">
+    <header className="flex flex-col gap-3">
       <div>
-        <h1 className="font-display text-2xl font-bold text-fg">Hola, {nombre}</h1>
-        <p className="mt-1.5 max-w-[440px] text-sm text-fg-secondary">
-          {meta === 0
-            ? "Aquí va a vivir tu estrategia: cuándo publicar y sobre qué."
-            : hechas >= meta
-              ? `Vas ${String(hechas)} de ${String(meta)} publicaciones esta semana. Ya cumpliste tu meta.`
-              : `Vas ${String(hechas)} de ${String(meta)} publicaciones esta semana.`}
+        <h1 className="font-display text-3xl font-bold text-fg">Hola, {nombre}</h1>
+        <p className="mt-2 max-w-[440px] text-[15px] text-fg-secondary">
+          Esta es tu estrategia: cuándo publicar y sobre qué.
         </p>
       </div>
-      {racha > 0 && (
-        <div className="flex items-center gap-3 rounded-2xl border border-line bg-tint-plum px-5 py-4">
-          <Flame size={26} className="text-accent" />
-          <div>
-            <p className="font-display text-3xl leading-none font-bold text-fg">{racha}</p>
-            <p className="mt-1 text-xs text-fg-secondary">
-              {racha === 1 ? "día publicando" : "días seguidos publicando"}
-            </p>
-          </div>
-        </div>
+      {meta > 0 && (
+        <span className="flex items-center gap-2 text-sm text-fg-secondary">
+          <CalendarCheck size={16} className="text-accent" />
+          Vas {hechas}/{meta} publicaciones esta semana
+        </span>
       )}
     </header>
   );

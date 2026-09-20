@@ -1,11 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type {
-  RitmoHorariosDto,
-  RitmoResumenDto,
-  SocialNetwork,
-  TrendsDto,
-} from "@presencia/shared";
-import { CadenciaHeatmap, LeyendaHeatmap } from "../components/ritmo/CadenciaHeatmap.js";
+import { useEffect, useState } from "react";
+import type { SocialNetwork } from "@presencia/shared";
+import { CadenciaHeatmap, LeyendaHeatmap, RachaPill } from "../components/ritmo/CadenciaHeatmap.js";
 import { HorariosHeatmap } from "../components/ritmo/HorariosHeatmap.js";
 import {
   Bloque,
@@ -25,18 +20,14 @@ import {
   TendenciasVacias,
 } from "../components/ritmo/RitmoStates.js";
 import { NETWORK_META } from "../components/cards/NetworkLogos.js";
-import { ApiError } from "../lib/api.js";
-import { fetchHorarios, fetchResumen, fetchTendencias, saveMetaSemanal } from "../lib/ritmo-api.js";
 import { authClient } from "../lib/auth-client.js";
+import { useHorarios, useRitmoResumen, useTendencias } from "../lib/use-ritmo.js";
 
-// La pantalla de Ritmo.
+// La pantalla de Ritmo: compone, no calcula.
 //
-// Tres cargas independientes a propósito: el resumen, los horarios de la red
-// elegida y las tendencias fallan por su cuenta. Que la fuente de tendencias
-// se caiga no puede dejar al usuario sin su heatmap, y que una red no reporte
-// no apaga el resto de la vista.
-
-const ERROR_GENERICO = "No pudimos cargar tu ritmo. Inténtalo de nuevo.";
+// Los tres recursos viven en sus propios hooks (lib/use-ritmo.ts) porque
+// fallan por su cuenta — que la fuente de tendencias se caiga no puede dejar
+// al usuario sin su heatmap.
 
 /** "Jose Tejero" → "Jose". El saludo tutea; el apellido lo vuelve formal. */
 function primerNombre(nombre: string | null | undefined): string {
@@ -46,80 +37,28 @@ function primerNombre(nombre: string | null | undefined): string {
 
 export function RitmoPage() {
   const { data: session } = authClient.useSession();
-  const [resumen, setResumen] = useState<RitmoResumenDto | null>(null);
-  const [errorResumen, setErrorResumen] = useState<string | null>(null);
-  const [guardando, setGuardando] = useState(false);
+  const { resumen, error, guardando, recargar, cambiarMeta } = useRitmoResumen();
+  const { tendencias, recargar: recargarTendencias } = useTendencias();
 
+  // `null` hasta que el resumen diga qué redes hay. La elección del usuario
+  // sobrevive a las recargas del resumen (guardar una meta lo devuelve entero).
   const [red, setRed] = useState<SocialNetwork | null>(null);
-  const [horarios, setHorarios] = useState<RitmoHorariosDto | null>(null);
-  const [cargandoHorarios, setCargandoHorarios] = useState(false);
-
-  const [tendencias, setTendencias] = useState<TrendsDto | null>(null);
-
-  const cargarResumen = useCallback(() => {
-    setErrorResumen(null);
-    fetchResumen()
-      .then((datos) => {
-        setResumen(datos);
-        // La primera red conectada manda; si el usuario ya eligió pestaña, se
-        // respeta aunque el resumen se recargue al guardar una meta.
-        setRed((actual) => actual ?? datos.redesConectadas[0] ?? null);
-      })
-      .catch((e: unknown) => setErrorResumen(e instanceof ApiError ? e.message : ERROR_GENERICO));
-  }, []);
-
-  useEffect(cargarResumen, [cargarResumen]);
-
-  // Las tendencias no tumban la pantalla si fallan: se quedan en null y la
-  // sección no se pinta. Es información secundaria de la vista.
-  const cargarTendencias = useCallback(() => {
-    fetchTendencias()
-      .then(setTendencias)
-      .catch(() => setTendencias(null));
-  }, []);
-
-  useEffect(cargarTendencias, [cargarTendencias]);
-
-  // Guarda de carrera del mismo tipo que cards-store: la respuesta de una red
-  // que el usuario ya abandonó no puede pisar la de la pestaña actual.
-  const pedido = useRef(0);
+  const primeraRed = resumen?.redesConectadas[0] ?? null;
   useEffect(() => {
-    if (!red) return;
-    const token = ++pedido.current;
-    const abort = new AbortController();
-    setCargandoHorarios(true);
-    fetchHorarios(red, abort.signal)
-      .then((datos) => {
-        if (token === pedido.current) setHorarios(datos);
-      })
-      .catch(() => {
-        if (token === pedido.current) setHorarios(null);
-      })
-      .finally(() => {
-        if (token === pedido.current) setCargandoHorarios(false);
-      });
-    return () => {
-      abort.abort();
-    };
-  }, [red]);
+    setRed((actual) => actual ?? primeraRed);
+  }, [primeraRed]);
 
-  async function cambiarMeta(network: SocialNetwork, meta: number) {
-    setGuardando(true);
-    try {
-      setResumen(await saveMetaSemanal(network, meta));
-    } catch {
-      // El servidor manda el estado bueno; recargar deja la fila como quedó
-      // de verdad en vez de dejar la UI afirmando un número que no se guardó.
-      cargarResumen();
-    } finally {
-      setGuardando(false);
-    }
-  }
+  const { horarios, cargando: cargandoHorarios } = useHorarios(red);
 
-  if (errorResumen) {
+  // "Agregado" o "Por red" para el heatmap de cadencia. Vive en la página y no
+  // en el componente del mapa porque el control que lo cambia está en la
+  // cabecera del bloque, no dentro del mapa.
+  const [vistaCadencia, setVistaCadencia] = useState<"agregado" | "red">("agregado");
+
+  if (error) {
     return (
       <div className="mx-auto flex max-w-[1120px] flex-col gap-6 px-6 py-7">
-        <RitmoError mensaje={errorResumen} onReintentar={cargarResumen} />
+        <RitmoError mensaje={error} onReintentar={recargar} />
       </div>
     );
   }
@@ -136,9 +75,7 @@ export function RitmoPage() {
   return (
     <div className="mx-auto flex max-w-[1120px] flex-col gap-6 px-6 py-7">
       <CabeceraRitmo
-        // Mismo orden que el sidebar: displayName gana al nombre de la cuenta.
         nombre={primerNombre(session?.user.displayName ?? session?.user.name)}
-        racha={resumen.cadencia.rachaActual}
         objetivos={resumen.objetivos}
       />
 
@@ -147,18 +84,63 @@ export function RitmoPage() {
           kicker="El pulso de tu constancia"
           titulo="Cadencia de publicación"
           sub="Cada celda es un día. Mientras más publicas, más fuerte el color."
-          derecha={sinPublicaciones ? undefined : <LeyendaHeatmap />}
+          derecha={
+            sinPublicaciones || resumen.redesConectadas.length < 2 ? undefined : (
+              <div
+                role="tablist"
+                aria-label="Vista de la cadencia"
+                className="inline-flex gap-1 rounded-full bg-secondary p-1"
+              >
+                {(["agregado", "red"] as const).map((vista) => (
+                  <button
+                    key={vista}
+                    role="tab"
+                    aria-selected={vistaCadencia === vista}
+                    onClick={() => setVistaCadencia(vista)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      vistaCadencia === vista
+                        ? "bg-card text-fg shadow-sm"
+                        : "text-fg-secondary hover:text-fg"
+                    }`}
+                  >
+                    {vista === "agregado" ? "Agregado" : "Por red"}
+                  </button>
+                ))}
+              </div>
+            )
+          }
         />
         {sinPublicaciones ? (
           <CadenciaVacia />
+        ) : vistaCadencia === "red" ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {resumen.redesConectadas.map((network) => {
+              const meta = NETWORK_META[network];
+              return (
+                <div key={network} className="rounded-xl border border-line-subtle p-3">
+                  <div className="mb-2.5 flex items-center gap-2">
+                    <meta.Logo size={16} />
+                    <span className="text-[13px] font-semibold text-fg">{meta.label}</span>
+                  </div>
+                  <CadenciaHeatmap dias={resumen.cadencia.dias} network={network} compacto />
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <>
             <CadenciaHeatmap dias={resumen.cadencia.dias} />
-            <p className="mt-4 text-xs text-fg-muted">
-              Mejor racha: {resumen.cadencia.mejorRacha}{" "}
-              {resumen.cadencia.mejorRacha === 1 ? "día" : "días"} · {resumen.cadencia.total}{" "}
-              publicaciones en 16 semanas
-            </p>
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-4">
+                <RachaPill dias={resumen.cadencia.rachaActual} />
+                <span className="text-xs text-fg-muted">
+                  Mejor racha: {resumen.cadencia.mejorRacha}{" "}
+                  {resumen.cadencia.mejorRacha === 1 ? "día" : "días"} · {resumen.cadencia.total}{" "}
+                  publicaciones en 16 semanas
+                </span>
+              </div>
+              <LeyendaHeatmap />
+            </div>
           </>
         )}
       </Bloque>
@@ -186,7 +168,7 @@ export function RitmoPage() {
           <TituloBloque
             kicker="Cuándo te escuchan"
             titulo="Mejores horarios"
-            sub="Intensidad = engagement promedio de tus publicaciones."
+            sub="Intensidad = engagement promedio. Marcamos tus mejores ventanas."
             derecha={
               <div
                 role="tablist"
@@ -215,13 +197,11 @@ export function RitmoPage() {
             }
           />
           {cargandoHorarios && !horarios ? (
-            <div className="h-[300px] animate-pulse rounded-xl bg-secondary" aria-hidden />
-          ) : !horarios ? (
+            <div className="h-[320px] animate-pulse rounded-xl bg-secondary" aria-hidden />
+          ) : !horarios || horarios.modo === "cold" ? (
             <HorariosSinData />
           ) : horarios.modo === "no_reporta" ? (
             <HorariosNoReporta red={nombreDeRed(horarios.network)} />
-          ) : horarios.modo === "cold" ? (
-            <HorariosSinData />
           ) : horarios.modo === "poca" ? (
             <HorariosPocaData n={horarios.nTotal} />
           ) : (
@@ -238,7 +218,7 @@ export function RitmoPage() {
             sub="Temas moviéndose ahora. Citamos siempre la fuente."
           />
           {tendencias.items.length === 0 ? (
-            <TendenciasVacias datos={tendencias} onReintentar={cargarTendencias} />
+            <TendenciasVacias datos={tendencias} onReintentar={recargarTendencias} />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {tendencias.items.map((item) => (
