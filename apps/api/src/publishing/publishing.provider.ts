@@ -165,15 +165,22 @@ export interface PublishingProvider {
    * Tres resultados posibles, y los tres son normales:
    *
    *  1. **Snapshot con números.** El caso feliz.
-   *  2. **Snapshot con los cinco en `null` y el motivo en `raw`.** "Publicó
-   *     pero la red no da métricas para esta cuenta" — LinkedIn solo las da
-   *     de páginas de empresa, nunca de perfiles personales, y un token
-   *     vencido responde parecido. NO es un error: es un hecho sobre esa
-   *     publicación, y guardarlo evita volver a preguntar lo mismo el mismo
-   *     día.
-   *  3. **Ausente del Map.** No se llegó a preguntar (tope del pase, red que
-   *     el proveedor no cubre). El caller no escribe nada y el siguiente pase
-   *     vuelve a intentar.
+   *  2. **Snapshot con los cinco en `null` y el motivo en `raw`.** Cubre dos
+   *     hechos distintos, los dos permanentes o casi: "la red no da métricas
+   *     para esta cuenta" (LinkedIn solo las da de páginas de empresa) y "el
+   *     proveedor no cubre esta red". Ninguno es un error: son hechos sobre
+   *     esa publicación, y guardarlos es lo que evita volver a preguntar lo
+   *     mismo. Un adapter que los dejara ausentes haría que la política de
+   *     frescura los tratara como "nunca medidos" —máxima prioridad— en todos
+   *     los pases, para siempre.
+   *  3. **Ausente del Map.** No se llegó a preguntar, o se preguntó y no se
+   *     entendió la respuesta. Es TRANSITORIO: el caller no escribe nada y el
+   *     siguiente pase vuelve a intentar.
+   *
+   * Y un cuarto camino que no es un resultado: si TODO lo que se pidió falló,
+   * el adapter lanza. Un Map vacío significaría "no había nada", y eso es
+   * indistinguible de "el proveedor está caído" — que es justo lo que hay que
+   * poder ver.
    *
    * El troceo y el respeto de los límites de tasa son del adapter, no del
    * caller: cada proveedor tiene el suyo y pregunta distinto (Upload-Post una

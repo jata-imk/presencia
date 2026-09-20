@@ -610,20 +610,59 @@ export class UploadPostProvider implements PublishingProvider {
   ): Promise<Map<string, PostMetricsSnapshot>> {
     const result = new Map<string, PostMetricsSnapshot>();
     let pedidos = 0;
+    let fallos = 0;
+    let ultimoError: unknown;
     for (const post of posts) {
       if (pedidos >= METRICS_MAX_POSTS_POR_PASE) break;
+
+      // El parseo va ANTES del contador y fuera del try de la red: una fila
+      // con `provider_ref` corrupto no gastó ninguna request, y cobrársela al
+      // tope achicaría la cuota real del pase por cada fila mala que haya.
+      let destino: { profile: string; platform: string };
+      try {
+        destino = parseAccountRef(post.accountProviderRef);
+      } catch (error) {
+        console.warn(`[publishing] Cuenta con ref inválido en ${post.platformPostId}:`, error);
+        continue;
+      }
+
+      // Una red que este endpoint no cubre (X, hoy) SÍ deja fila, con los
+      // cinco en null y el motivo en `raw`.
+      //
+      // Dejarla ausente era lo que parecía honesto —"no preguntamos"— pero
+      // creaba una trampa: sin fila, `lastSnapshotDates` no la conoce nunca,
+      // así que la política de frescura la trata como "nunca medida", que es
+      // la MÁXIMA prioridad, en todos los pases para siempre. Tres posts de X
+      // bastaban para llenar el cupo de un usuario y dejar sus posts de
+      // Facebook sin medir indefinidamente.
+      //
+      // Y la fila no miente: que el proveedor no cubra esa red es un hecho
+      // que sabemos, distinto de "la red contestó que no" y distinto de "no
+      // llegamos a preguntar" (que sigue siendo la ausencia del Map).
+      if (!METRICS_PLATFORMS.has(destino.platform)) {
+        result.set(post.platformPostId, {
+          capturedAt: new Date(),
+          impressions: null,
+          reach: null,
+          likes: null,
+          comments: null,
+          shares: null,
+          raw: {
+            motivo: "El endpoint de métricas de Upload-Post no cubre esta red.",
+            platform: destino.platform,
+          },
+        });
+        continue;
+      }
+
       // Un post que truena NO puede tirar el pase: son requests
       // independientes y lo ya recolectado es trabajo pagado con cuota que no
-      // vuelve. Un post borrado de la red (404), una cuenta desconectada (403)
-      // o el propio tope de 100/5min (429) se llevarían por delante los
-      // snapshots de los otros 59 — y el pase siguiente arrancaría de cero
-      // para tropezar con la misma fila.
+      // vuelve. Un post borrado de la red (404) o una cuenta desconectada
+      // (403) se llevarían por delante los snapshots de los otros 59 — y el
+      // pase siguiente arrancaría de cero para tropezar con la misma fila.
+      pedidos += 1;
       try {
-        const { pidio, snapshot } = await this.leerMetricas(post);
-        // Se cuenta la REQUEST, no el resultado: una respuesta sin el bloque
-        // de la plataforma igual gastó cuota, y no contarla dejaría el tope
-        // por encima del límite real del proveedor.
-        if (pidio) pedidos += 1;
+        const snapshot = await this.leerMetricas(post, destino);
         if (snapshot) result.set(post.platformPostId, snapshot);
       } catch (error) {
         if (error instanceof PublishingRateLimitError) {
@@ -635,28 +674,32 @@ export class UploadPostProvider implements PublishingProvider {
           break;
         }
         console.warn(`[publishing] No se pudieron leer métricas de ${post.platformPostId}:`, error);
-        pedidos += 1;
+        fallos += 1;
+        ultimoError = error;
       }
     }
+
+    // Si TODO lo que se pidió falló, esto no es un pase exitoso sin datos: es
+    // el proveedor caído o la API key revocada. Tragárselo dejaría el job
+    // marcado como completado cada 6 h mientras la tabla no crece, que es
+    // indistinguible de "no había nada que medir" — el modo de falla más caro
+    // de esta fase, porque la deuda de datos no se rebobina.
+    if (pedidos > 0 && fallos === pedidos) throw ultimoError;
     return result;
   }
 
   /**
-   * Una lectura, un post.
+   * Una lectura, un post. Siempre gasta una request.
    *
-   * `snapshot: null` significa que el post queda AUSENTE del Map, que no es
-   * lo mismo que "no hay métricas": no sabemos nada de esa publicación.
-   * `pidio` dice si se gastó una request, que es lo que cuenta contra el tope
-   * del pase — y no coincide con `snapshot`: una respuesta sin el bloque de
-   * la plataforma cuesta cuota y no deja dato.
+   * `null` significa que el post queda AUSENTE del Map: la respuesta no trajo
+   * el bloque de esa plataforma, así que no sabemos nada de esa publicación y
+   * el pase siguiente vuelve a intentar.
    */
   private async leerMetricas(
     post: PostMetricsQuery,
-  ): Promise<{ pidio: boolean; snapshot: PostMetricsSnapshot | null }> {
-    const { profile, platform } = parseAccountRef(post.accountProviderRef);
-    // Una red que este endpoint no cubre no se pregunta. Escribir una fila
-    // vacía ahí afirmaría algo sobre la publicación que no comprobamos.
-    if (!METRICS_PLATFORMS.has(platform)) return { pidio: false, snapshot: null };
+    destino: { profile: string; platform: string },
+  ): Promise<PostMetricsSnapshot | null> {
+    const { profile, platform } = destino;
     const query = new URLSearchParams({
       user: profile,
       platform,
@@ -667,7 +710,7 @@ export class UploadPostProvider implements PublishingProvider {
       `/uploadposts/post-analytics?${query.toString()}`,
     );
     const porPlataforma = body.platforms?.[platform];
-    if (!porPlataforma) return { pidio: true, snapshot: null };
+    if (!porPlataforma) return null;
     const metrics = porPlataforma.post_metrics;
     const capturedAt = new Date();
     if (!metrics) {
@@ -675,32 +718,26 @@ export class UploadPostProvider implements PublishingProvider {
       // publicación, y guardarlo evita volver a gastar la cuota el mismo día
       // preguntando lo mismo.
       return {
-        pidio: true,
-        snapshot: {
-          capturedAt,
-          impressions: null,
-          reach: null,
-          likes: null,
-          comments: null,
-          shares: null,
-          raw: porPlataforma,
-        },
+        capturedAt,
+        impressions: null,
+        reach: null,
+        likes: null,
+        comments: null,
+        shares: null,
+        raw: porPlataforma,
       };
     }
     return {
-      pidio: true,
-      snapshot: {
-        capturedAt,
-        impressions: parseMetricNumber(metrics.impressions),
-        reach: parseMetricNumber(metrics.reach),
-        likes: parseMetricNumber(metrics.likes),
-        comments: parseMetricNumber(metrics.comments),
-        shares: parseMetricNumber(metrics.shares),
-        // Crudo entero: `reactions` de Facebook, `available_metrics` y
-        // `primary_impressions_field` no caben en las cinco columnas y son
-        // justo lo que F12 va a querer para etiquetar bien cada número.
-        raw: porPlataforma,
-      },
+      capturedAt,
+      impressions: parseMetricNumber(metrics.impressions),
+      reach: parseMetricNumber(metrics.reach),
+      likes: parseMetricNumber(metrics.likes),
+      comments: parseMetricNumber(metrics.comments),
+      shares: parseMetricNumber(metrics.shares),
+      // Crudo entero: `reactions` de Facebook, `available_metrics` y
+      // `primary_impressions_field` no caben en las cinco columnas y son
+      // justo lo que F12 va a querer para etiquetar bien cada número.
+      raw: porPlataforma,
     };
   }
 }
