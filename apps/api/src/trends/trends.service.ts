@@ -10,6 +10,7 @@ import {
   type TrendItem,
 } from "@presencia/shared";
 import { AiService } from "../ai/ai.service.js";
+import { BossService } from "../jobs/boss.service.js";
 import {
   DEFAULT_TRENDS_MODEL_ID,
   GOOGLE_SEARCH_TOOL,
@@ -38,6 +39,16 @@ import { TrendsRepository, type TuplaDeTendencias } from "./trends.repository.js
 
 /** Cuánto dura una tanda antes de pedir refresco. */
 const TTL_HORAS = 24;
+
+/** La cola de la primera búsqueda de una tupla, disparada desde la lectura. */
+export const COLA_SEMILLA = "trends.seed";
+
+/**
+ * Techo de una búsqueda suelta. La llamada con grounding navega de verdad y
+ * puede tardar decenas de segundos; dos minutos dejan margen sin que un job
+ * colgado ocupe la cola indefinidamente.
+ */
+export const SEMILLA_EXPIRE_SECONDS = 120;
 
 /**
  * Tuplas por pase del barrido.
@@ -91,7 +102,52 @@ export class TrendsService {
     @Inject(DbService) private readonly dbService: DbService,
     @Inject(AiService) private readonly ai: AiService,
     @Inject(TrendsRepository) private readonly repo: TrendsRepository,
+    @Inject(BossService) private readonly boss: BossService,
   ) {}
+
+  /**
+   * Pide la PRIMERA búsqueda de una tupla que nunca se ha buscado.
+   *
+   * Sin esto el módulo no arranca nunca, y el hueco es fácil de no ver: el
+   * barrido periódico solo refresca filas que YA existen (`porRefrescar` lee
+   * de `niche_trends`), así que una tupla sin fila no entra jamás al pase. Un
+   * usuario con una vertical que nadie más tiene vería el estado vacío para
+   * siempre, con el cron corriendo cada seis horas sin tocarla.
+   *
+   * Va por cola y no en el request porque la búsqueda tarda decenas de
+   * segundos: el usuario ve su estado vacío ahora y sus tendencias en el
+   * siguiente refresco, en vez de esperar con la pantalla en blanco.
+   */
+  async pedirPrimeraBusqueda(tupla: TuplaDeTendencias): Promise<void> {
+    await this.boss.enqueue(COLA_SEMILLA, tupla, {
+      // Una búsqueda por tupla, aunque diez usuarios del mismo nicho abran
+      // Ritmo a la vez. Es la misma palanca por la que la caché no se llavea
+      // por usuario.
+      singletonKey: claveDe(tupla),
+      expireInSeconds: SEMILLA_EXPIRE_SECONDS,
+    });
+  }
+
+  /**
+   * Busca solo si la tupla no tiene una tanda vigente.
+   *
+   * Es el handler de la cola de semilla, y existe porque la policy `stately`
+   * acota los duplicados pero no los elimina: deja a lo más uno corriendo y
+   * uno esperando por llave. Sin esta guardia, una ráfaga de aperturas dejaba
+   * un segundo job que salía a buscar de nuevo un nicho que el primero acababa
+   * de llenar — pagando la llamada cara para sobrescribir lo mismo.
+   */
+  async refrescarSiHaceFalta(tupla: TuplaDeTendencias): Promise<void> {
+    const vigente = await this.dbService.db.transaction(async (tx) => {
+      const guardadas = await this.repo.find(tx, tupla);
+      return guardadas !== null && guardadas.expiresAt.getTime() > Date.now();
+    });
+    if (vigente) {
+      console.info(`[trends] ${claveDe(tupla)} ya tenía tanda vigente; no se busca de nuevo`);
+      return;
+    }
+    await this.refrescar(tupla);
+  }
 
   /**
    * Refresca una tupla: busca, ensambla y guarda.

@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
+import { asc, ne, sql } from "drizzle-orm";
 import type { SocialNetwork } from "@presencia/shared";
 import { cadenceTargets, socialAccounts } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
@@ -39,18 +39,30 @@ export class RitmoRepository {
   }
 
   /**
-   * Las redes con cuenta conectada y activa.
+   * Las redes con cuenta conectada.
    *
    * De acá salen las pestañas de horarios, y por eso NO es una lista fija: el
    * diseño dibuja instagram/tiktok/facebook/linkedin, pero mostrarle a alguien
    * una pestaña de una red que no conectó es prometerle datos que nunca van a
    * existir.
+   *
+   * "Conectada" es `status != 'disconnected'`, la MISMA definición que usa
+   * Canales, y eso incluye a las que están en `error`. Con un `= 'active'`,
+   * una cuenta con el token vencido seguía apareciendo en Canales con su aviso
+   * y desaparecía de Ritmo sin explicación: el usuario perdía su meta semanal
+   * de esa red mientras el heatmap seguía contando sus publicaciones, así que
+   * los conteos por red dejaban de sumar el total.
+   *
+   * El orden es fijo porque la respuesta pinta pestañas: sin `ORDER BY`,
+   * Postgres puede devolverlas en otro orden entre dos requests y las pestañas
+   * bailarían al guardar una meta.
    */
   async redesConectadas(tx: Tx): Promise<SocialNetwork[]> {
     const filas = await tx
       .selectDistinct({ network: socialAccounts.network })
       .from(socialAccounts)
-      .where(eq(socialAccounts.status, "active"));
+      .where(ne(socialAccounts.status, "disconnected"))
+      .orderBy(asc(socialAccounts.network));
     return filas.map((fila) => fila.network);
   }
 }

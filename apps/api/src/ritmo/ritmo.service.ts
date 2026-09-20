@@ -14,9 +14,10 @@ import {
 import { BrandVoiceRepository } from "../brand-voice/brand-voice.repository.js";
 import { DbService } from "../db/db.service.js";
 import { MetricsEngineService } from "../metrics/metrics-engine.service.js";
-import { fechaLocal } from "../metrics/hora-local.js";
+import { fechaLocal, sumarDias } from "../metrics/hora-local.js";
 import { ProfileRepository } from "../profile/profile.repository.js";
 import { TrendsRepository } from "../trends/trends.repository.js";
+import { TrendsService } from "../trends/trends.service.js";
 import { RitmoRepository } from "./ritmo.repository.js";
 
 // El módulo Ritmo por HTTP: junta lo que el motor calcula, lo que el usuario
@@ -35,6 +36,7 @@ export class RitmoService {
     @Inject(BrandVoiceRepository) private readonly voiceRepo: BrandVoiceRepository,
     @Inject(ProfileRepository) private readonly profileRepo: ProfileRepository,
     @Inject(TrendsRepository) private readonly trendsRepo: TrendsRepository,
+    @Inject(TrendsService) private readonly trendsService: TrendsService,
   ) {}
 
   /**
@@ -96,6 +98,17 @@ export class RitmoService {
         marketCountry: voz.marketCountry,
         region,
       });
+      // Nunca buscada: se pide la primera búsqueda. Sin esto el módulo no
+      // arranca jamás para un nicho nuevo — el barrido periódico solo refresca
+      // filas que ya existen, así que una tupla sin fila no entra a su pase.
+      if (!guardadas) {
+        await this.trendsService.pedirPrimeraBusqueda({
+          vertical,
+          marketCountry: voz.marketCountry,
+          region,
+        });
+      }
+
       return {
         vertical,
         region,
@@ -156,12 +169,4 @@ export class RitmoService {
     if (!fila) throw new NotFoundException("No encontramos tu perfil.");
     return fila.timezone;
   }
-}
-
-const MS_POR_DIA = 24 * 60 * 60 * 1000;
-
-function sumarDias(dia: string, cantidad: number): string {
-  return new Date(Date.parse(`${dia}T00:00:00Z`) + cantidad * MS_POR_DIA)
-    .toISOString()
-    .slice(0, 10);
 }

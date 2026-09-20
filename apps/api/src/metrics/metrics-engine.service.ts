@@ -10,7 +10,7 @@ import {
   type PostComparable,
   type ResultadoHorarios,
 } from "./engagement.js";
-import { fechaLocal } from "./hora-local.js";
+import { fechaLocal, sumarDias } from "./hora-local.js";
 import { MetricsReadRepository } from "./metrics.read.repository.js";
 
 // El motor de métricas: la única capa que convierte filas en conclusiones.
@@ -164,12 +164,6 @@ export class MetricsEngineService {
       mejorRacha: mejorRacha(dias),
     };
   }
-}
-
-/** Suma días a un `YYYY-MM-DD` tratándolo como fecha de calendario, no instante. */
-function sumarDias(dia: string, cantidad: number): string {
-  const fecha = new Date(Date.parse(`${dia}T00:00:00Z`) + cantidad * MS_POR_DIA);
-  return fecha.toISOString().slice(0, 10);
 }
 
 /**

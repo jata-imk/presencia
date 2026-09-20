@@ -32,9 +32,11 @@ export class RitmoController {
     return this.service.horarios(user.id, parsed.data.network);
   }
 
-  // Siempre 200 con cuerpo, aunque no haya tendencias: no falta un recurso,
-  // el módulo existe y todavía no tiene qué mostrar. Un `null` pelón acá
-  // mandaba `Content-Length: 0` y el cliente tronaba al parsearlo.
+  // Caché vacía = 200 con cuerpo, no 404: no falta un recurso, el módulo
+  // existe y todavía no tiene qué mostrar. Un `null` pelón acá mandaba
+  // `Content-Length: 0` y el cliente tronaba al parsearlo. (Sí hay un 404,
+  // pero por otra cosa: quien no terminó el onboarding no tiene voz de marca
+  // y por lo tanto no tiene nicho del cual buscar.)
   @Get("tendencias")
   tendencias(@CurrentUser() user: SessionUser): Promise<TrendsDto> {
     return this.service.tendencias(user.id);
