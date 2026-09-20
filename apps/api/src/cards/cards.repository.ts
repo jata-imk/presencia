@@ -503,6 +503,36 @@ export class CardsRepository {
       );
   }
 
+  /**
+   * Las cards publicadas que podrían necesitar una lectura de métricas
+   * (F8.7). Se llama desde `runWorkerScan`, así que devuelve las de TODOS los
+   * usuarios: lo que se ve lo decide la policy `worker_metrics_scan`
+   * (migración 0026), que ya filtra por estado, por tener id nativo y por la
+   * ventana de 35 días.
+   *
+   * Las condiciones se repiten igual acá aunque la policy ya las aplique. No
+   * es redundancia por las dudas: sin ellas, la query pediría un índice
+   * distinto del parcial que existe, y sobre todo este repositorio se lee
+   * también desde `runWithTenant`, donde la policy del worker NO aplica y el
+   * filtro tiene que estar en el SQL.
+   *
+   * La política fina (cada cuándo volver a preguntar) NO vive acá: necesita
+   * el último snapshot de cada post, que es una tabla con RLS por tenant.
+   * Ver `frescura.ts`.
+   */
+  async listPublishedForMetrics(tx: Tx, desde: Date): Promise<CardRow[]> {
+    return tx
+      .select()
+      .from(publicationCards)
+      .where(
+        and(
+          eq(publicationCards.status, "published"),
+          isNotNull(publicationCards.platformPostId),
+          gte(publicationCards.publishedAt, desde),
+        ),
+      );
+  }
+
   async findConflicts(tx: Tx, from: Date, to: Date): Promise<CardRow[]> {
     return tx
       .select()

@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { sql } from "drizzle-orm";
+import { desc, inArray, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import type { SocialNetwork } from "@presencia/shared";
 import { postMetrics } from "../db/schema.js";
@@ -64,6 +64,34 @@ function conservaSiFalta(columna: PgColumn) {
 
 @Injectable()
 export class MetricsRepository {
+  /**
+   * Último día medido de cada post, para la política de frescura.
+   *
+   * Se lee DENTRO del tenant (la tabla tiene RLS), así que solo devuelve los
+   * posts de ese usuario aunque la lista venga de un barrido global. Un post
+   * ausente del Map es uno que nunca se midió.
+   */
+  async lastSnapshotDates(
+    tx: Tx,
+    platformPostIds: readonly string[],
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    if (platformPostIds.length === 0) return result;
+    const filas = await tx
+      .select({
+        platformPostId: postMetrics.platformPostId,
+        snapshotDate: postMetrics.snapshotDate,
+      })
+      .from(postMetrics)
+      .where(inArray(postMetrics.platformPostId, [...platformPostIds]))
+      .orderBy(desc(postMetrics.snapshotDate));
+    // Orden descendente + primer gana: el máximo por post sin GROUP BY.
+    for (const fila of filas) {
+      if (!result.has(fila.platformPostId)) result.set(fila.platformPostId, fila.snapshotDate);
+    }
+    return result;
+  }
+
   /**
    * Un snapshot por post y día. El segundo pase del mismo día ACTUALIZA la
    * fila — es el invariante del DoD de F8.7 ("un segundo pase no duplica

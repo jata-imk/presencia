@@ -185,3 +185,15 @@ spec `jobs/boss-ownership.spec.ts`: su camino de dev reaplica `0020`, que nombra
 recrea dentro de la misma transacción con `ROLLBACK` antes de reaplicarla. La aserción sigue mirando a
 los dos roles, porque `presencia_worker` sigue siendo el que prueba que los `REVOKE` de `0020` hacen su
 trabajo.
+
+## Addendum (2026-09-19, F8.7) — `metrics.ingest`, la cuarta cola
+
+La ingesta de métricas (ADR-021) sigue el patrón de este ADR sin novedad: enumerar con `runWorkerScan` → agrupar por usuario → `try/catch` por tenant → `summarizeFailures` y relanzar. Tres cosas que sí son propias de esta cola:
+
+**La cadencia la fijan las redes, no el producto.** `0 */6 * * *`. Las plataformas reportan con horas de retraso (Instagram hasta 48 h según su propia documentación) y los proveedores refrescan por su cuenta cada 6 h — PostFast lo documenta explícitamente. Preguntar más seguido gasta cuota para traer el mismo número. Y la cuota acá no es abstracta: Upload-Post pide **una request por post** contra un tope de 100 cada 5 minutos, con la misma API key que la reconciliación usa cada minuto.
+
+**La política de frescura es una función pura, y está afuera del job a propósito.** `frescura.ts` decide por edad del post: ≤48 h en cada pase, ≤14 días una vez al día, ≤30 días una vez por semana, después nunca. Vive separada porque es la parte que tiene casos de borde reales (un `published_at` futuro por un reloj torcido, el corte del día en UTC) y porque probarla no debería pedir base ni red — la lección de F8 fue justamente que un bucle global es difícil de probar y que conviene extraerle las reglas.
+
+**El barrido lee cards pero no puede leer cuentas.** `worker_metrics_scan` (migración `0026`) da acceso cross-tenant a las cards publicadas, pero `social_accounts` no tiene policy de barrido: un join ahí devolvería cero filas **en silencio**, que es el peor modo de fallo posible. El `provider_ref` de la cuenta se resuelve dentro de `runWithTenant`, en la misma transacción que lee el último snapshot de cada post. Es la misma asimetría de siempre: el barrido enumera, el tenant decide.
+
+Una diferencia con `cards.reconcile` que conviene tener escrita: **la llamada al proveedor acá es por usuario, no por lote global**. No es descuido ni copia incompleta del otro pase — Upload-Post pregunta por perfil (`user=<perfil>`), así que un lote global no existe del lado del proveedor. El barrido sigue siendo global; lo que se agrupa por usuario es la pregunta.
