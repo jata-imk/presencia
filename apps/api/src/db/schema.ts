@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -80,6 +81,10 @@ export const creditReason = pgEnum("credit_reason", [
   "multi_adapt",
   "image_generation",
   "weekly_calendar",
+  // F9: la narración de Ritmo bajo demanda. Se cobra por tokens (no tiene
+  // tarifa fija en `flat`) porque su costo depende del texto que produce,
+  // igual que un turno de chat.
+  "ritmo_narration",
   "refund",
   "adjustment",
 ]);
@@ -475,6 +480,44 @@ export const cadenceTargets = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("cadence_targets_user_network").on(t.userId, t.network)],
+);
+
+// ── Narración de Ritmo (F9) ──────────────────────────────────────────
+// El texto que el modelo redacta a partir de los números del motor.
+//
+// Se guarda, y no se regenera en cada click, por dos motivos que apuntan al
+// mismo lugar. El cobro se deduplica por día con el índice `ledger_dedup`, que
+// necesita un `reference_id` uuid: sin una fila, no hay a qué apuntar. Y sin
+// guardar el texto, el segundo click del día pagaría la llamada al modelo sin
+// cobrarla — el usuario no lo nota y el gasto sí.
+//
+// `generated_at` viaja a la UI junto al texto: la narración es una foto de un
+// momento, y si el usuario publica después, lo que dice deja de cuadrar con lo
+// que tiene en pantalla. Fechada, es una foto; sin fecha, sería el código
+// afirmando algo que ya no es cierto.
+
+export const ritmoNarrations = pgTable(
+  "ritmo_narrations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Día LOCAL del usuario (`users.timezone`), no UTC: la ventana de cobro
+    // tiene que coincidir con el día que la persona está viviendo. Con UTC, a
+    // alguien en Mérida el "día" se le cortaría a las 18:00.
+    day: date("day").notNull(),
+    body: text("body").notNull(),
+    // Los números con los que se redactó. No es telemetría: es lo que permite
+    // saber, ante un texto que suena raro, si el modelo se lo inventó o si
+    // recibió eso.
+    payload: jsonb("payload").notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Una narración por día. Es la misma llave que deduplica el cobro, y estar
+  // en la tabla es lo que hace que dos clicks simultáneos no puedan cobrar
+  // dos veces: el segundo choca contra el índice, no contra un `if`.
+  (t) => [uniqueIndex("ritmo_narrations_user_day").on(t.userId, t.day)],
 );
 
 // ── Tendencias de nicho (F9) ─────────────────────────────────────────

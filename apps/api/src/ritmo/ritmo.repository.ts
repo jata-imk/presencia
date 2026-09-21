@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
-import { asc, ne, sql } from "drizzle-orm";
+import { asc, eq, ne, sql } from "drizzle-orm";
 import type { SocialNetwork } from "@presencia/shared";
-import { cadenceTargets, socialAccounts } from "../db/schema.js";
+import { cadenceTargets, ritmoNarrations, socialAccounts } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
 // Lo propio de Ritmo que no es cálculo: las metas semanales y las redes
@@ -10,6 +10,16 @@ import type { Tx } from "../db/db.service.js";
 // Las queries no filtran por user_id: el RLS de la transacción es el filtro.
 
 const WRITTEN_AT = sql`clock_timestamp()`;
+
+export type NarracionRow = typeof ritmoNarrations.$inferSelect;
+
+export interface GuardarNarracionInput {
+  userId: string;
+  /** `YYYY-MM-DD` en la zona del usuario. */
+  dia: string;
+  body: string;
+  payload: unknown;
+}
 
 @Injectable()
 export class RitmoRepository {
@@ -64,5 +74,33 @@ export class RitmoRepository {
       .where(ne(socialAccounts.status, "disconnected"))
       .orderBy(asc(socialAccounts.network));
     return filas.map((fila) => fila.network);
+  }
+
+  /** La narración de un día, si ya se generó. */
+  async narracionDe(tx: Tx, dia: string): Promise<NarracionRow | null> {
+    const [fila] = await tx.select().from(ritmoNarrations).where(eq(ritmoNarrations.day, dia));
+    return fila ?? null;
+  }
+
+  /**
+   * Guarda la narración del día, o no hace nada si ya había una.
+   *
+   * `onConflictDoNothing` y no `onConflictDoUpdate`: el conflicto significa que
+   * otro click ganó la carrera, y sobrescribir su texto dejaría al usuario con
+   * una narración distinta de la que ya está leyendo. Devuelve `null` en ese
+   * caso, y es lo que le dice al servicio que NO cobre.
+   */
+  async guardarNarracion(tx: Tx, input: GuardarNarracionInput): Promise<NarracionRow | null> {
+    const [fila] = await tx
+      .insert(ritmoNarrations)
+      .values({
+        userId: input.userId,
+        day: input.dia,
+        body: input.body,
+        payload: input.payload,
+      })
+      .onConflictDoNothing({ target: [ritmoNarrations.userId, ritmoNarrations.day] })
+      .returning();
+    return fila ?? null;
   }
 }

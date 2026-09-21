@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { SocialNetwork } from "@presencia/shared";
 import { CadenciaHeatmap, LeyendaHeatmap, RachaPill } from "../components/ritmo/CadenciaHeatmap.js";
+import { Narracion } from "../components/ritmo/Narracion.js";
 import { HorariosHeatmap } from "../components/ritmo/HorariosHeatmap.js";
 import {
   Bloque,
@@ -20,8 +21,9 @@ import {
   TendenciasVacias,
 } from "../components/ritmo/RitmoStates.js";
 import { NETWORK_META } from "../components/cards/NetworkLogos.js";
+import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
 import { authClient } from "../lib/auth-client.js";
-import { useHorarios, useRitmoResumen, useTendencias } from "../lib/use-ritmo.js";
+import { useHorarios, useNarracion, useRitmoResumen, useTendencias } from "../lib/use-ritmo.js";
 
 // La pantalla de Ritmo: compone, no calcula.
 //
@@ -39,6 +41,7 @@ export function RitmoPage() {
   const { data: session } = authClient.useSession();
   const { resumen, error, errorGuardado, guardando, recargar, cambiarMeta } = useRitmoResumen();
   const { tendencias, recargar: recargarTendencias } = useTendencias();
+  const narracion = useNarracion();
 
   // `null` hasta que el resumen diga qué redes hay. La elección del usuario
   // sobrevive a las recargas del resumen (guardar una meta lo devuelve entero).
@@ -78,6 +81,19 @@ export function RitmoPage() {
         nombre={primerNombre(session?.user.displayName ?? session?.user.name)}
         objetivos={resumen.objetivos}
       />
+
+      {/* Sin publicaciones no hay nada que narrar: el modelo solo podría
+          decirle que no ha publicado, cobrando por la frase. El estado vacío
+          de la cadencia ya dice eso, gratis y sin inventar. */}
+      {!sinPublicaciones && (
+        <Narracion
+          narracion={narracion.narracion}
+          generando={narracion.generando}
+          error={narracion.error}
+          timezone={resumen.timezone}
+          onPedir={narracion.pedir}
+        />
+      )}
 
       <Bloque>
         <TituloBloque
@@ -237,6 +253,10 @@ export function RitmoPage() {
             </div>
           )}
         </section>
+      )}
+
+      {narracion.cuotaAgotada && (
+        <QuotaExhaustedModal quota={narracion.cuotaAgotada} onDismiss={narracion.descartarCuota} />
       )}
     </div>
   );

@@ -7,6 +7,14 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /**
+     * El cuerpo crudo de la respuesta, cuando parseó.
+     *
+     * Existe porque no todos los errores de la API son una frase: el 402 de
+     * cuota manda `{code, quota}` sin `message`, y quien lo atrapa necesita el
+     * objeto contable para abrir el modal, no un texto genérico.
+     */
+    readonly body?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -29,7 +37,7 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
 
   if (!res.ok) {
     const parsed = (await res.json().catch(() => null)) as { message?: string } | null;
-    throw new ApiError(parsed?.message ?? DEFAULT_ERROR, res.status);
+    throw new ApiError(parsed?.message ?? DEFAULT_ERROR, res.status, parsed);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

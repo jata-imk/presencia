@@ -218,6 +218,13 @@
       "when": 1789926620072,
       "tag": "0030_cadence_targets",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1789952277852,
+      "tag": "0031_ritmo_narrations",
+      "breakpoints": true
     }
   ]
 }

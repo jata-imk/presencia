@@ -62,9 +62,11 @@ export const RATE_CARDS: Record<number, RateCard> = {
       multi_adapt: 900,
       image_generation: 700,
       weekly_calendar: 1800,
-      // Ritmo entra con costo 0 a propósito: las tendencias se cachean por
-      // (vertical, región), no por user_id — no tiene reason propio de
-      // credit_reason todavía porque ningún call site lo consume aún.
+      // `ritmo_narration` NO está acá, y no es un olvido: se cobra por tokens
+      // (perThousandTokens.analytics_narration), no con tarifa fija, porque su
+      // costo depende del texto que produce. Las tendencias, en cambio, siguen
+      // costando 0 para el usuario: se cachean por (vertical, región) y no por
+      // user_id, así que no hay a quién cobrárselas.
     },
   },
 };

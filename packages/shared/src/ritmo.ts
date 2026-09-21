@@ -135,6 +135,24 @@ export interface RitmoResumenDto {
   timezone: string;
 }
 
+/**
+ * La narración de "Explícame mi ritmo".
+ *
+ * `generatedAt` viaja siempre y la UI lo muestra, porque la narración es una
+ * foto de un momento: si el usuario publica después de generarla, lo que dice
+ * deja de cuadrar con lo que tiene en pantalla. Fechada es una foto; sin
+ * fecha, sería el producto afirmando algo que ya no es cierto.
+ *
+ * Se genera una por día y la segunda pulsada devuelve la misma sin cobrar, así
+ * que no hay campo de "cacheada": para el usuario no son dos estados
+ * distintos, es el resumen de hoy.
+ */
+export interface RitmoNarracionDto {
+  body: string;
+  /** ISO. Cuándo se redactó. */
+  generatedAt: string;
+}
+
 export const updateCadenceTargetBodySchema = z.object({
   network: socialNetworkSchema,
   // Tope alto pero existente: sin él, un `target` de 10.000 rompería el

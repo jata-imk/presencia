@@ -39,6 +39,12 @@ export interface ChargeInput {
   userId: string;
   usage: ChatTurnUsage;
   taskKind: AiTaskKind;
+  /**
+   * Por qué se cobra. Obligatorio y sin default a propósito: mientras estuvo
+   * hardcodeado en `chat_message`, el segundo call site habría escrito
+   * asientos mintiendo sobre su origen y el ledger no lo habría notado.
+   */
+  reason: CreditReason;
   referenceType?: string;
   referenceId?: string;
 }
@@ -83,7 +89,7 @@ export class CreditsService {
   }
 
   /**
-   * Cobro post-hoc con el usage real de un turno de chat. A propósito puede
+   * Cobro post-hoc con el usage real de una llamada al modelo. A propósito puede
    * dejar saldo negativo — el asiento registra el costo real, nunca lo
    * recorta al saldo disponible (el gate de `assertHasQuota` es lo que
    * evita que esto ocurra seguido, no esto).
@@ -95,7 +101,7 @@ export class CreditsService {
     await this.repo.insertEntry(tx, {
       userId: input.userId,
       delta: -units,
-      reason: "chat_message",
+      reason: input.reason,
       referenceType: input.referenceType,
       referenceId: input.referenceId,
       rateCardVersion: CURRENT_RATE_CARD_VERSION,

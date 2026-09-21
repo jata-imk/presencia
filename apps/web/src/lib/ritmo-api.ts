@@ -1,5 +1,6 @@
 import type {
   RitmoHorariosDto,
+  RitmoNarracionDto,
   RitmoMetaDto,
   RitmoResumenDto,
   SocialNetwork,
@@ -47,4 +48,15 @@ export function saveMetaSemanal(network: SocialNetwork, meta: number): Promise<R
     method: "PATCH",
     body: { network, meta },
   });
+}
+
+/**
+ * Pide la narración de hoy.
+ *
+ * POST y no GET aunque a veces solo devuelva lo guardado: la primera del día
+ * llama al modelo y cobra, y un GET que cobra es un GET que un prefetch o un
+ * reintento del navegador pueden disparar solos.
+ */
+export function pedirNarracion(signal?: AbortSignal): Promise<RitmoNarracionDto> {
+  return apiFetch<RitmoNarracionDto>("/api/ritmo/narracion", { method: "POST", signal });
 }

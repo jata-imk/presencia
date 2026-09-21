@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  QuotaStatusDto,
   RitmoHorariosDto,
   RitmoMetaDto,
+  RitmoNarracionDto,
   RitmoResumenDto,
   SocialNetwork,
   TrendsDto,
@@ -14,6 +16,7 @@ import {
   fetchResumen,
   fetchTendencias,
   fetchVentanas,
+  pedirNarracion,
   saveMetaSemanal,
 } from "./ritmo-api.js";
 
@@ -218,4 +221,65 @@ export function useVentanasDelDia(diaSemana: number | null) {
   }, [diaSemana]);
 
   return ventanas;
+}
+
+export interface EstadoNarracion {
+  narracion: RitmoNarracionDto | null;
+  generando: boolean;
+  error: string | null;
+  /** El 402: no es un error de red, es una pantalla propia. */
+  cuotaAgotada: QuotaStatusDto | null;
+  pedir: () => void;
+  descartarCuota: () => void;
+}
+
+/**
+ * "Explícame mi ritmo".
+ *
+ * Bajo demanda y nunca al montar: la primera del día llama al modelo y cobra.
+ * Un `useEffect` acá convertiría un botón en un cargo automático por abrir la
+ * pantalla.
+ *
+ * La segunda pulsada del mismo día devuelve la misma narración sin cobrar (lo
+ * resuelve el servidor), así que el botón no se bloquea después de la primera:
+ * bloquearlo implicaría que volver a pedirla cuesta, y no cuesta.
+ */
+export function useNarracion(): EstadoNarracion {
+  const [narracion, setNarracion] = useState<RitmoNarracionDto | null>(null);
+  const [generando, setGenerando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [cuotaAgotada, setCuotaAgotada] = useState<QuotaStatusDto | null>(null);
+  // Guarda contra la doble pulsada: sin ella, dos clicks seguidos mandan dos
+  // POST y el segundo paga una llamada al modelo que la base va a descartar.
+  const enVuelo = useRef(false);
+
+  const pedir = useCallback(() => {
+    if (enVuelo.current) return;
+    enVuelo.current = true;
+    setGenerando(true);
+    setError(null);
+    pedirNarracion()
+      .then(setNarracion)
+      .catch((e: unknown) => {
+        const quota = cuotaDe(e);
+        if (quota) setCuotaAgotada(quota);
+        else setError(mensajeDe(e));
+      })
+      .finally(() => {
+        enVuelo.current = false;
+        setGenerando(false);
+      });
+  }, []);
+
+  const descartarCuota = useCallback(() => setCuotaAgotada(null), []);
+
+  return { narracion, generando, error, cuotaAgotada, pedir, descartarCuota };
+}
+
+/** El 402 del gate de cuota, si es lo que llegó. Mismo shape que el chat. */
+function cuotaDe(error: unknown): QuotaStatusDto | null {
+  if (!(error instanceof ApiError) || error.status !== 402) return null;
+  const body = error.body as { code?: unknown; quota?: unknown } | null;
+  if (body?.code !== "quota_exhausted" || !body.quota) return null;
+  return body.quota as QuotaStatusDto;
 }

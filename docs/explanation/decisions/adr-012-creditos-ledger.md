@@ -48,3 +48,17 @@ Entonces el job no es la fuente de verdad del ciclo, es un **adelanto**: hace qu
 
 `0022_drop_presencia_worker` eliminó `presencia_worker`, que nunca se usó. El `REVOKE UPDATE, DELETE` de
 `0008` sigue vigente sobre `presencia_app`, el único rol de datos que queda (API y worker).
+
+## Addendum (2026-09-20, F9 PR7) — el segundo call site de `charge()`
+
+Hasta F9, `charge()` **hardcodeaba** `reason: "chat_message"`. Con un solo call site eso era invisible; con el segundo se vuelve un asiento que miente sobre su origen, y el ledger no tiene cómo notarlo. Ahora `reason` es un campo obligatorio de `ChargeInput`, sin default: un call site nuevo tiene que declarar por qué cobra o no compila.
+
+**`ritmo_narration` cobra por tokens, no con tarifa fija**, y por eso no está en `RATE_CARDS.flat`. Es la misma distinción de F5 entre `spend()` y `charge()`: una imagen cuesta lo mismo siempre, un texto cuesta lo que ocupa. Narrar usa el tier `AI_MODEL_UTILITY` (`MODEL_BY_TASK.analytics_narration`), así que un cobro típico es de unas pocas unidades contra las 30.000 del tier más chico.
+
+**La deduplicación por día no la hace un `if`, la hace una tabla.** El índice `ledger_dedup` necesita un `reference_id` **uuid**, así que la llave `'<userId>:<YYYY-MM-DD>'` que se había anotado en el plan no cabía en la columna. La narración se guarda en `ritmo_narrations`, única por `(user_id, day)`, y el asiento apunta a esa fila. Esto resuelve además un problema que la llave sintética no resolvía: sin guardar el texto, el segundo click del día habría pagado la llamada al modelo para después descubrir que no debía cobrarla — el usuario no lo nota y el gasto sí.
+
+Dos clicks simultáneos chocan contra el índice único, no contra una condición que puede perder la carrera: el que pierde devuelve la narración del ganador y **no cobra**. Se pierde una llamada al modelo en ese caso raro, que es preferible a cobrar dos veces el mismo día.
+
+**El `day` es el día local del usuario** (`users.timezone`), no UTC. Con UTC, a alguien en Mérida la ventana de cobro se le cortaría a las 18:00 y el botón volvería a cobrarle esa misma tarde.
+
+**El gate es de 1 unidad, no de `minimumTurnUnits`.** Ese piso es de un turno de chat, que cuesta un orden de magnitud más; acá la pregunta no es "¿te alcanza?" sino "¿te queda algo?". Sin ningún gate, una cuenta agotada seguiría generando texto gratis, una vez por día, indefinidamente.
