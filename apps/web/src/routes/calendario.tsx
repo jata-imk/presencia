@@ -54,6 +54,7 @@ import { useTimezone } from "../lib/calendar/use-timezone.js";
 import { parseView, type CalendarView } from "../lib/calendar/view.js";
 import { useChannels } from "../lib/use-channels.js";
 import { useMediaQuery } from "../lib/use-media-query.js";
+import { useMetasSemanales } from "../lib/use-ritmo.js";
 import { useCardsStore, useDraftCards, useRangeCards } from "../stores/cards-store.js";
 import { useFoldersStore } from "../stores/folders-store.js";
 import { useChatsStore } from "../stores/chats-store.js";
@@ -70,6 +71,8 @@ import { useToastStore } from "../stores/toast-store.js";
 
 export function CalendarioPage() {
   const timeZone = useTimezone();
+  // Las metas de Ritmo, para el denominador de la barra de cadencia.
+  const metasSemanales = useMetasSemanales();
   const [params, setParams] = useSearchParams();
 
   const view = parseView(params.get("v"));
@@ -768,6 +771,7 @@ export function CalendarioPage() {
           weekOf={view === "mes" ? (todayIsVisible ? today : month) : focusedDay}
           today={today}
           timeZone={timeZone}
+          metas={metasSemanales}
           filtered={activeCount > 0}
         />
       )}

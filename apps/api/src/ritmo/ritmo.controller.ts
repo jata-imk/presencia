@@ -1,9 +1,12 @@
 import { BadRequestException, Body, Controller, Get, Inject, Patch, Query } from "@nestjs/common";
 import {
   ritmoHorariosQuerySchema,
+  ritmoVentanasQuerySchema,
   updateCadenceTargetBodySchema,
   type RitmoHorariosDto,
+  type RitmoMetaDto,
   type RitmoResumenDto,
+  type VentanaDeRedDto,
   type TrendsDto,
 } from "@presencia/shared";
 import { CurrentUser } from "../auth/current-user.decorator.js";
@@ -37,9 +40,30 @@ export class RitmoController {
   // `Content-Length: 0` y el cliente tronaba al parsearlo. (Sí hay un 404,
   // pero por otra cosa: quien no terminó el onboarding no tiene voz de marca
   // y por lo tanto no tiene nicho del cual buscar.)
+  // Las ventanas de un día, de todas las redes. Vive aparte de /horarios
+  // porque responde otra pregunta: aquél es "cómo te va en esta red", éste es
+  // "cuándo publico este día". Y en un solo viaje porque quien lo pide es un
+  // estado vacío del Calendario, que no es de una red en particular.
+  @Get("ventanas")
+  ventanas(
+    @CurrentUser() user: SessionUser,
+    @Query("diaSemana") diaSemana: string,
+  ): Promise<VentanaDeRedDto[]> {
+    const parsed = ritmoVentanasQuerySchema.safeParse({ diaSemana });
+    if (!parsed.success) throw new BadRequestException("Ese día de la semana no existe.");
+    return this.service.ventanas(user.id, parsed.data.diaSemana);
+  }
+
   @Get("tendencias")
   tendencias(@CurrentUser() user: SessionUser): Promise<TrendsDto> {
     return this.service.tendencias(user.id);
+  }
+
+  // Sin el avance de la semana: quien lo pide (la barra del Calendario) ya
+  // tiene el numerador delante en sus propias cards.
+  @Get("objetivos")
+  metas(@CurrentUser() user: SessionUser): Promise<RitmoMetaDto[]> {
+    return this.service.metas(user.id);
   }
 
   @Patch("objetivos")

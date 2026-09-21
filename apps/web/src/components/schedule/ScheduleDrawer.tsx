@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Link } from "react-router";
 import { Button } from "../ui/Button.js";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
+import { useHorariosDeRed } from "../../lib/use-ritmo.js";
 import { MiniCalendar } from "./MiniCalendar.js";
 import { NetworkScheduleRow } from "./NetworkScheduleRow.js";
 import { TimeChips } from "./TimeChips.js";
@@ -369,6 +370,17 @@ function ScheduleDrawerInner({
 
   const displayRows = sameTime ? effectiveRows : rows;
   const [leader] = displayRows;
+  // Los mejores horarios de la red que se está programando, para los chips.
+  //
+  // SOLO cuando el lote es de una sola red. Con "mismo horario" activado la
+  // hora del líder se aplica a todas, así que mostrar el lift de su red
+  // afirmaría un dato medido en Instagram para una publicación de LinkedIn —
+  // justo el "no fabricar porcentajes" que este drawer viene respetando desde
+  // F6. Con varias redes, los chips vuelven a ser los atajos de siempre.
+  const redUnica = displayRows.every((fila) => fila.network === leader?.network)
+    ? (leader?.network ?? null)
+    : null;
+  const horariosDeLaRed = useHorariosDeRed(redUnica);
   const anyReschedule = cards.some((c) => c.status === "scheduled" || c.status === "failed");
 
   const drawerContent = (
@@ -458,6 +470,9 @@ function ScheduleDrawerInner({
             <TimeChips
               selectedTime={leader.time}
               onSelectTime={(t) => handleTimeChange(leader.cardId, t)}
+              horarios={horariosDeLaRed}
+              // El motor cuenta 0 = lunes; `getDay()` cuenta 0 = domingo.
+              diaSemana={(leader.date.getDay() + 6) % 7}
             />
             <p className="text-[11px] font-bold tracking-wide text-fg-secondary uppercase">
               Tu semana

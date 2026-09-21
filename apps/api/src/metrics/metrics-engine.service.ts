@@ -79,10 +79,39 @@ export class MetricsEngineService {
   async horariosDe(
     tx: Tx,
     network: SocialNetwork,
-    { timezone, ahora }: ContextoUsuario,
+    contexto: ContextoUsuario,
   ): Promise<HorariosDeRed> {
-    const desde = new Date(ahora.getTime() - VENTANA_HORARIOS_DIAS * MS_POR_DIA);
-    const filas = await this.lecturas.postsComparables(tx, desde, ahora);
+    const desde = new Date(contexto.ahora.getTime() - VENTANA_HORARIOS_DIAS * MS_POR_DIA);
+    const filas = await this.lecturas.postsComparables(tx, desde, contexto.ahora);
+    return this.horariosCon(filas, network, contexto);
+  }
+
+  /**
+   * Los horarios de VARIAS redes con una sola lectura.
+   *
+   * `postsComparables` no filtra por red —trae la ventana completa del tenant
+   * y el filtrado es en memoria—, así que llamar a `horariosDe` en un bucle
+   * repetía la misma query pesada una vez por red y tiraba todos los
+   * resultados menos uno. Con cuatro redes conectadas eran cuatro lecturas
+   * idénticas.
+   */
+  async horariosDeVarias(
+    tx: Tx,
+    redes: readonly SocialNetwork[],
+    contexto: ContextoUsuario,
+  ): Promise<HorariosDeRed[]> {
+    if (redes.length === 0) return [];
+    const desde = new Date(contexto.ahora.getTime() - VENTANA_HORARIOS_DIAS * MS_POR_DIA);
+    const filas = await this.lecturas.postsComparables(tx, desde, contexto.ahora);
+    return redes.map((network) => this.horariosCon(filas, network, contexto));
+  }
+
+  /** El cálculo, ya con las filas leídas. Sin DB: es la parte reutilizable. */
+  private horariosCon(
+    filas: readonly PostComparable[],
+    network: SocialNetwork,
+    { timezone }: ContextoUsuario,
+  ): HorariosDeRed {
     const deLaRed: PostComparable[] = filas.filter((fila) => fila.network === network);
 
     // `nTotal` va con las publicaciones que SÍ hubo, no con las que trajeron

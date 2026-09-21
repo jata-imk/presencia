@@ -1,8 +1,10 @@
 import type {
   RitmoHorariosDto,
+  RitmoMetaDto,
   RitmoResumenDto,
   SocialNetwork,
   TrendsDto,
+  VentanaDeRedDto,
 } from "@presencia/shared";
 import { apiFetch } from "./api.js";
 
@@ -22,6 +24,18 @@ export function fetchHorarios(
   signal?: AbortSignal,
 ): Promise<RitmoHorariosDto> {
   return apiFetch<RitmoHorariosDto>(`/api/ritmo/horarios?network=${network}`, { signal });
+}
+
+/** Solo las metas: lo que el Calendario necesita para su denominador. */
+export function fetchMetas(signal?: AbortSignal): Promise<RitmoMetaDto[]> {
+  return apiFetch<RitmoMetaDto[]>("/api/ritmo/objetivos", { signal });
+}
+
+/** Las mejores ventanas de un día, de todas las redes, en un solo viaje. */
+export function fetchVentanas(diaSemana: number, signal?: AbortSignal): Promise<VentanaDeRedDto[]> {
+  return apiFetch<VentanaDeRedDto[]>(`/api/ritmo/ventanas?diaSemana=${String(diaSemana)}`, {
+    signal,
+  });
 }
 
 export function fetchTendencias(signal?: AbortSignal): Promise<TrendsDto> {

@@ -4,6 +4,8 @@ import { parseDate } from "@internationalized/date";
 import { Composer } from "../components/chat/Composer.js";
 import { ContextChip } from "../components/chat/ContextChip.js";
 import { SuggestionCard } from "../components/chat/SuggestionCard.js";
+import type { TrendSignal } from "@presencia/shared";
+import { useTendencias } from "../lib/use-ritmo.js";
 import { formatDayLong } from "../lib/calendar/tz.js";
 import { authClient } from "../lib/auth-client.js";
 import { useChatsStore } from "../stores/chats-store.js";
@@ -15,9 +17,19 @@ import { useChatsStore } from "../stores/chats-store.js";
 // El mockup rota el subtítulo entre 3 variantes ("Tienes 3 posts
 // programados esta semana", "Hace 2 días que no creas contenido") — se
 // fabricarían con datos que no existen sin Calendario/Ritmo reales, así
-// que queda solo la primera, siempre. Mismo motivo por el que las 2
-// tarjetas "Tendencia" con métrica no están en SUGGESTIONS: no hay datos
-// reales que respalden un "+24%".
+// que queda solo la primera, siempre.
+//
+// Las dos últimas tarjetas SÍ son dinámicas desde F9: salen de las tendencias
+// de Ritmo, con su fuente citada y sin el "+24%" del mockup, que Ritmo §8
+// prohíbe para tendencias por no tener de dónde salir.
+// Un emoji por señal, como el doc de Chat: el 🔥 para todas dejaba a "estable"
+// y "nueva" gritando lo mismo que "subiendo".
+const EMOJI_DE_SENAL: Record<TrendSignal, string> = {
+  rising: "🔥",
+  stable: "📈",
+  new: "✨",
+};
+
 const SUGGESTIONS = [
   {
     emoji: "✨",
@@ -52,6 +64,9 @@ export function ChatsPage() {
   const createChat = useChatsStore((s) => s.create);
   const [input, setInput] = useState("");
   const [starting, setStarting] = useState(false);
+  // Las tendencias del nicho, para las dos últimas tarjetas. Si no cargan, el
+  // estado vacío se queda con las cuatro genéricas y no pasa nada.
+  const { tendencias } = useTendencias();
   const [error, setError] = useState<string | null>(null);
 
   const name = session?.user.displayName ?? session?.user.name ?? "";
@@ -111,6 +126,23 @@ export function ChatsPage() {
               title={s.title}
               description={s.description}
               onClick={() => void startChat(s.prompt)}
+            />
+          ))}
+          {/* Dos, no más: son un acompañamiento del estado vacío, no el
+              módulo de tendencias. Ese vive en Ritmo. */}
+          {(tendencias?.items ?? []).slice(0, 2).map((item) => (
+            <SuggestionCard
+              key={item.topic}
+              emoji={EMOJI_DE_SENAL[item.signal]}
+              title={item.topic}
+              description={item.blurb}
+              senal={item.signal}
+              fuente={item.sourceTitle}
+              onClick={() =>
+                void startChat(
+                  `Quiero crear contenido sobre esto que está moviéndose en mi nicho: ${item.topic}. ${item.blurb}`,
+                )
+              }
             />
           ))}
         </div>
