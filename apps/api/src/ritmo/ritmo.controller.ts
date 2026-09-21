@@ -1,21 +1,35 @@
-import { BadRequestException, Body, Controller, Get, Inject, Patch, Query } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Patch,
+  Post,
+  Query,
+} from "@nestjs/common";
 import {
   ritmoHorariosQuerySchema,
   ritmoVentanasQuerySchema,
   updateCadenceTargetBodySchema,
   type RitmoHorariosDto,
   type RitmoMetaDto,
+  type RitmoNarracionDto,
   type RitmoResumenDto,
   type VentanaDeRedDto,
   type TrendsDto,
 } from "@presencia/shared";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { SessionUser } from "../auth/auth.js";
+import { NarracionService } from "./narracion.service.js";
 import { RitmoService } from "./ritmo.service.js";
 
 @Controller("ritmo")
 export class RitmoController {
-  constructor(@Inject(RitmoService) private readonly service: RitmoService) {}
+  constructor(
+    @Inject(RitmoService) private readonly service: RitmoService,
+    @Inject(NarracionService) private readonly narraciones: NarracionService,
+  ) {}
 
   @Get("resumen")
   resumen(@CurrentUser() user: SessionUser): Promise<RitmoResumenDto> {
@@ -64,6 +78,14 @@ export class RitmoController {
   @Get("objetivos")
   metas(@CurrentUser() user: SessionUser): Promise<RitmoMetaDto[]> {
     return this.service.metas(user.id);
+  }
+
+  // POST y no GET aunque a veces solo devuelva lo guardado: la primera del día
+  // llama al modelo y cobra. Un GET que cobra es un GET que un prefetch, un
+  // reintento del navegador o un crawler pueden disparar solos.
+  @Post("narracion")
+  narracion(@CurrentUser() user: SessionUser): Promise<RitmoNarracionDto> {
+    return this.narraciones.narrar(user.id);
   }
 
   @Patch("objetivos")

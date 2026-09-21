@@ -10,6 +10,7 @@ import {
   cadenceTargets,
   postMetrics,
   publicationCards,
+  ritmoNarrations,
   socialAccounts,
   socialConnectIntents,
   users,
@@ -760,6 +761,65 @@ describe("RLS tenant_isolation", () => {
         );
       expect(error).toBeInstanceOf(Error);
       expect(String((error as Error).cause)).toMatch(/row-level security/);
+    });
+  });
+
+  // F9: la narración de "Explícame mi ritmo". Es un texto sobre los números
+  // de una persona —cuánto publica, en qué redes, qué tan seguido falla su
+  // meta— redactado en prosa, que es el formato más fácil de leer de un
+  // vistazo si se filtrara.
+  describe("ritmo_narrations", () => {
+    beforeAll(async () => {
+      await dbService.runWithTenant(userA, (tx) =>
+        tx.insert(ritmoNarrations).values({
+          userId: userA,
+          day: "2026-09-20",
+          body: "Vas bien esta semana.",
+          payload: { totalPublicaciones: 12 },
+        }),
+      );
+    }, 15_000);
+
+    it("el dueño ve su propia narración", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userA, (tx) => tx.select().from(ritmoNarrations));
+      expect(rows.map((n) => n.day)).toContain("2026-09-20");
+    });
+
+    it("otro tenant no lee narraciones ajenas", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userB, (tx) => tx.select().from(ritmoNarrations));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("otro tenant no puede escribir a nombre ajeno", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx.insert(ritmoNarrations).values({
+            userId: userA,
+            day: "2026-09-21",
+            body: "intruso",
+            payload: {},
+          }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(error).toBeInstanceOf(Error);
+      expect(String((error as Error).cause)).toMatch(/row-level security/);
+    });
+
+    // El cobro se deduplica con este índice: si desapareciera, el segundo
+    // click del día generaría una segunda narración y un segundo asiento.
+    it("una sola narración por día y usuario", { timeout: 15_000 }, async () => {
+      const segunda = dbService.runWithTenant(userA, (tx) =>
+        tx.insert(ritmoNarrations).values({
+          userId: userA,
+          day: "2026-09-20",
+          body: "otra del mismo día",
+          payload: {},
+        }),
+      );
+      await expect(segunda).rejects.toThrow();
     });
   });
 });

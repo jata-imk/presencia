@@ -41,8 +41,9 @@ export function TituloBloque({
  *
  * El texto sale de plantilla y no de un modelo. Los números los calcula SQL,
  * así que redactarlos con IA costaría créditos para decir lo mismo — y con
- * poca data no habría nada que narrar. Cuando exista el botón de narración,
- * vive aparte y bajo demanda.
+ * poca data no habría nada que narrar. La narración sí existe, pero vive
+ * aparte y bajo demanda (components/ritmo/Narracion.tsx): esta cabecera se
+ * pinta sola en cada carga y por eso no puede costar nada.
  *
  * La racha NO está acá: vive junto al heatmap de cadencia, que es de donde se
  * lee. Un número suelto en la cabecera no se puede rastrear a nada de lo que

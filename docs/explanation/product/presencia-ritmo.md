@@ -261,6 +261,45 @@ lo demás. Una cadencia de "3 por semana" sin un para-qué es un
 número arbitrario. Atarla a un objetivo ("Crecer", "Mantener",
 "Lanzar algo") le da sentido a la sugerencia.
 
+### La narración bajo demanda ("Explícame mi ritmo")
+
+**Qué es:** un botón en la parte alta de Ritmo que devuelve
+tres o cuatro frases sobre cómo va el usuario: su cadencia, sus
+metas y su mejor ventana de publicación, en prosa.
+
+**Por qué bajo demanda y no automática:** porque cuesta. Narrar
+el ritmo de todos los usuarios cada mañana sería pagar por texto
+que casi nadie abre. El botón es exactamente la señal de que a
+esta persona le interesa.
+
+**Por qué una por día:** el segundo click del mismo día devuelve
+la misma narración y no vuelve a cobrar. La alternativa
+—regenerar cada vez— le daría al usuario un texto distinto para
+los mismos números, que es la forma más rápida de que deje de
+creerle al módulo.
+
+**De dónde salen los números:** de SQL, nunca del modelo. El
+motor de métricas calcula, el payload lleva solo números ya
+cerrados, y el prompt prohíbe explícitamente mencionar cualquier
+cifra que no esté en él. Esto es la misma regla de la sección 4
+aplicada a otra superficie: el modelo redacta, no averigua.
+
+**Por qué el payload es un resumen y no todo:** darle la rejilla
+completa y las 56 celdas del heatmap lo invitaría a encontrar
+patrones que nadie calculó ("los martes rindes mejor") y que
+nadie puede defender si el usuario pregunta.
+
+**Por qué siempre lleva su fecha:** porque es una foto de un
+momento. Si el usuario publica después de pedirla, lo que dice
+deja de cuadrar con los números que tiene alrededor en la misma
+pantalla. Fechada, es una foto; sin fecha, sería el producto
+afirmando algo que ya no es cierto.
+
+**Cuándo no aparece:** sin publicaciones en la ventana no hay
+nada que narrar. El modelo solo podría decirle que no ha
+publicado, cobrando por la frase — y el estado vacío de la
+cadencia ya dice eso, gratis y sin inventar.
+
 ### El heatmap de cadencia (el hero visual)
 
 **Qué es:** la grilla estilo contribuciones de GitHub que

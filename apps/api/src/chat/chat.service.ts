@@ -414,6 +414,7 @@ export class ChatService {
                 cachedInputTokens: usage.inputTokenDetails.cacheReadTokens ?? null,
               },
               taskKind: "chat",
+              reason: "chat_message",
               referenceType: "message",
               referenceId: saved.id,
             });
