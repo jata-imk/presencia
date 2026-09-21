@@ -172,7 +172,14 @@ export interface VentanaDeRedDto extends VentanaRecomendada {
 }
 
 export const ritmoVentanasQuerySchema = z.object({
-  diaSemana: z.coerce.number().int().min(0).max(6),
+  // Regex sobre el string y no `z.coerce.number()`: con coerce, un
+  // `?diaSemana=` vacío se convierte en 0 —`Number("")` es 0— y pasa la
+  // validación, así que una petición rota devolvía los horarios del lunes en
+  // vez de un 400.
+  diaSemana: z
+    .string()
+    .regex(/^[0-6]$/)
+    .transform(Number),
 });
 
 /** Una ventana recomendada para publicar: la franja y cuánto rinde. */

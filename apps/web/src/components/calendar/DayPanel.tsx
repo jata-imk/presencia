@@ -85,7 +85,12 @@ export function DayPanel({
   // con contenido no aportan nada, y en el pasado sugerir cuándo publicar es
   // un consejo que ya no sirve. `null` apaga la petición.
   const vacioFuturo = entries.length === 0 && !isPast;
-  const ventanas = useVentanasDelDia(vacioFuturo ? (day.toDate("UTC").getDay() + 6) % 7 : null);
+  // `getUTCDay` y no `getDay`: `toDate("UTC")` construye la medianoche UTC del
+  // día, y leerla con `getDay()` la interpreta en la zona del NAVEGADOR. Al
+  // oeste de Greenwich —Mérida, el beachhead— esa medianoche cae en la tarde
+  // del día anterior, así que el lunes se pedía como domingo. Los chips salían
+  // igual de plausibles: es el tipo de error que no se ve, solo se mide.
+  const ventanas = useVentanasDelDia(vacioFuturo ? (day.toDate("UTC").getUTCDay() + 6) % 7 : null);
   const total = entries.reduce((count, entry) => count + entry.cards.length, 0);
   const published = entries
     .flatMap((entry) => entry.cards)

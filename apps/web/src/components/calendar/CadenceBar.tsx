@@ -65,7 +65,10 @@ export function CadenceBar({
     counts.set(card.network, (counts.get(card.network) ?? 0) + 1);
   }
 
-  const metaDe = new Map((metas ?? []).map((m) => [m.network, m.meta]));
+  // Con filtros activos el "/N" se apaga: los conteos son de lo que se VE, y
+  // la meta es de la semana entera. Filtrar a una cuenta dejaba "1/5", que se
+  // lee como ir atrasado cuando el usuario puede estar en 5/5.
+  const metaDe = new Map(filtered ? [] : (metas ?? []).map((m) => [m.network, m.meta]));
   const isCurrentWeek = weekStart(today).compare(start) === 0;
   const label = isCurrentWeek ? "esta semana" : `semana del ${String(start.day)}`;
 

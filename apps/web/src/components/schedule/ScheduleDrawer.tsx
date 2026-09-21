@@ -371,8 +371,16 @@ function ScheduleDrawerInner({
   const displayRows = sameTime ? effectiveRows : rows;
   const [leader] = displayRows;
   // Los mejores horarios de la red que se está programando, para los chips.
-  // Si no cargan, TimeChips vuelve a sus atajos de siempre.
-  const horariosDeLaRed = useHorariosDeRed(leader?.network ?? null);
+  //
+  // SOLO cuando el lote es de una sola red. Con "mismo horario" activado la
+  // hora del líder se aplica a todas, así que mostrar el lift de su red
+  // afirmaría un dato medido en Instagram para una publicación de LinkedIn —
+  // justo el "no fabricar porcentajes" que este drawer viene respetando desde
+  // F6. Con varias redes, los chips vuelven a ser los atajos de siempre.
+  const redUnica = displayRows.every((fila) => fila.network === leader?.network)
+    ? (leader?.network ?? null)
+    : null;
+  const horariosDeLaRed = useHorariosDeRed(redUnica);
   const anyReschedule = cards.some((c) => c.status === "scheduled" || c.status === "failed");
 
   const drawerContent = (

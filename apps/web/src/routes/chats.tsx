@@ -4,6 +4,7 @@ import { parseDate } from "@internationalized/date";
 import { Composer } from "../components/chat/Composer.js";
 import { ContextChip } from "../components/chat/ContextChip.js";
 import { SuggestionCard } from "../components/chat/SuggestionCard.js";
+import type { TrendSignal } from "@presencia/shared";
 import { useTendencias } from "../lib/use-ritmo.js";
 import { formatDayLong } from "../lib/calendar/tz.js";
 import { authClient } from "../lib/auth-client.js";
@@ -21,6 +22,14 @@ import { useChatsStore } from "../stores/chats-store.js";
 // Las dos últimas tarjetas SÍ son dinámicas desde F9: salen de las tendencias
 // de Ritmo, con su fuente citada y sin el "+24%" del mockup, que Ritmo §8
 // prohíbe para tendencias por no tener de dónde salir.
+// Un emoji por señal, como el doc de Chat: el 🔥 para todas dejaba a "estable"
+// y "nueva" gritando lo mismo que "subiendo".
+const EMOJI_DE_SENAL: Record<TrendSignal, string> = {
+  rising: "🔥",
+  stable: "📈",
+  new: "✨",
+};
+
 const SUGGESTIONS = [
   {
     emoji: "✨",
@@ -124,7 +133,7 @@ export function ChatsPage() {
           {(tendencias?.items ?? []).slice(0, 2).map((item) => (
             <SuggestionCard
               key={item.topic}
-              emoji="🔥"
+              emoji={EMOJI_DE_SENAL[item.signal]}
               title={item.topic}
               description={item.blurb}
               senal={item.signal}
