@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { generateText } from "ai";
 import type { RitmoNarracionDto } from "@presencia/shared";
-import { AiService } from "../ai/ai.service.js";
+import { AiService, type ResolvedModel } from "../ai/ai.service.js";
 import { AiUsageRepository } from "../ai/ai-usage.repository.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { InsufficientQuotaError } from "../credits/errors.js";
@@ -36,6 +36,12 @@ import { RitmoService } from "./ritmo.service.js";
 //
 // 3. **El número sale de SQL.** El modelo recibe el payload ya calculado y el
 //    prompt le prohíbe producir cifras que no estén en él (narracion.ts).
+
+/** Lo que `registrarUsage` necesita de `generateText`, y nada más. */
+type RespuestaDeModelo = Pick<
+  Awaited<ReturnType<typeof generateText>>,
+  "usage" | "finishReason" | "providerMetadata"
+>;
 
 const TASK_KIND = "analytics_narration" as const;
 
@@ -101,7 +107,12 @@ export class NarracionService {
     const body = respuesta.text.trim();
     // Sin texto no hay nada que guardar ni que cobrar. Guardar el vacío
     // gastaría la única narración del día del usuario en una fila en blanco.
+    //
+    // El usage SÍ se registra: la llamada se pagó igual. Sin esta línea, un
+    // proveedor devolviendo vacío en serie sería invisible justo en la tabla
+    // con la que se calibra el rate card.
     if (body.length === 0) {
+      await this.registrarUsage(userId, modelo, respuesta, arranque);
       throw new ServiceUnavailableException("No pudimos redactar tu resumen. Inténtalo de nuevo.");
     }
 
@@ -136,38 +147,51 @@ export class NarracionService {
       throw new ServiceUnavailableException("No pudimos guardar tu resumen. Inténtalo de nuevo.");
     }
 
-    // Try/catch propio (patrón de F4.5 en chat.service.ts): un fallo al
-    // registrar usage nunca puede costar la narración ni el cobro, que ya se
-    // persistieron arriba. Solo se registra lo que de verdad se llamó y cobró:
-    // el perdedor de la carrera no tiene tokens propios que reportar.
-    if (guardado.cobrada) {
-      try {
-        await this.dbService.runWithTenant(userId, (tx) =>
-          this.usageRepo.insertEvent(tx, {
-            userId,
-            chatId: null,
-            taskKind: TASK_KIND,
-            provider: modelo.provider,
-            model: modelo.modelName,
-            inputTokens: respuesta.usage.inputTokens ?? 0,
-            outputTokens: respuesta.usage.outputTokens ?? 0,
-            cachedInputTokens: respuesta.usage.inputTokenDetails.cacheReadTokens ?? null,
-            // Una llamada, sin tools: no hay pasos que contar.
-            stepsCount: 1,
-            durationMs: Date.now() - arranque,
-            providerRaw: {
-              usage: respuesta.usage,
-              finishReason: respuesta.finishReason,
-              providerMetadata: respuesta.providerMetadata,
-            },
-          }),
-        );
-      } catch (error) {
-        console.error(`[ritmo] No se pudo registrar el usage de la narración de ${userId}:`, error);
-      }
-    }
+    // Se registra SIEMPRE que hubo llamada, gane o pierda la carrera: el
+    // perdedor no cobra, pero sus tokens se consumieron igual y `ai_usage_events`
+    // es telemetría de gasto, no de cobro. Si solo se registrara lo cobrado, la
+    // tabla con la que se calibra el rate card subestimaría el costo real.
+    await this.registrarUsage(userId, modelo, respuesta, arranque);
 
     return aDto(guardado.fila);
+  }
+
+  /**
+   * La fila de `ai_usage_events`.
+   *
+   * Try/catch propio (patrón de F4.5 en chat.service.ts): un fallo al registrar
+   * usage nunca puede costar la narración ni el cobro, que ya se persistieron.
+   */
+  private async registrarUsage(
+    userId: string,
+    modelo: ResolvedModel,
+    respuesta: RespuestaDeModelo,
+    arranque: number,
+  ): Promise<void> {
+    try {
+      await this.dbService.runWithTenant(userId, (tx) =>
+        this.usageRepo.insertEvent(tx, {
+          userId,
+          chatId: null,
+          taskKind: TASK_KIND,
+          provider: modelo.provider,
+          model: modelo.modelName,
+          inputTokens: respuesta.usage.inputTokens ?? 0,
+          outputTokens: respuesta.usage.outputTokens ?? 0,
+          cachedInputTokens: respuesta.usage.inputTokenDetails.cacheReadTokens ?? null,
+          // Una llamada, sin tools: no hay pasos que contar.
+          stepsCount: 1,
+          durationMs: Date.now() - arranque,
+          providerRaw: {
+            usage: respuesta.usage,
+            finishReason: respuesta.finishReason,
+            providerMetadata: respuesta.providerMetadata,
+          },
+        }),
+      );
+    } catch (error) {
+      console.error(`[ritmo] No se pudo registrar el usage de la narración de ${userId}:`, error);
+    }
   }
 
   /** 402 con el mismo QuotaStatusDto que consume la UI, igual que el chat. */

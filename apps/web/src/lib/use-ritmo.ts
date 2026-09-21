@@ -252,22 +252,34 @@ export function useNarracion(): EstadoNarracion {
   // Guarda contra la doble pulsada: sin ella, dos clicks seguidos mandan dos
   // POST y el segundo paga una llamada al modelo que la base va a descartar.
   const enVuelo = useRef(false);
+  const aborto = useRef<AbortController | null>(null);
+
+  // La petición se corta al desmontar, como en el resto de este archivo. La
+  // narración que ya se estaba generando en el servidor se guarda igual y el
+  // próximo click la devuelve sin cobrar: lo que se evita acá es el `setState`
+  // sobre una pantalla que el usuario ya dejó.
+  useEffect(() => () => aborto.current?.abort(), []);
 
   const pedir = useCallback(() => {
     if (enVuelo.current) return;
     enVuelo.current = true;
+    const abort = new AbortController();
+    aborto.current = abort;
     setGenerando(true);
     setError(null);
-    pedirNarracion()
-      .then(setNarracion)
+    pedirNarracion(abort.signal)
+      .then((datos) => {
+        if (!abort.signal.aborted) setNarracion(datos);
+      })
       .catch((e: unknown) => {
+        if (abort.signal.aborted) return;
         const quota = cuotaDe(e);
         if (quota) setCuotaAgotada(quota);
         else setError(mensajeDe(e));
       })
       .finally(() => {
         enVuelo.current = false;
-        setGenerando(false);
+        if (!abort.signal.aborted) setGenerando(false);
       });
   }, []);
 

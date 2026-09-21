@@ -39,10 +39,15 @@ export function Narracion({
         <Button variant="secondary" onClick={onPedir} disabled={generando}>
           <span className="flex items-center gap-2">
             <Sparkles size={15} className="text-accent" aria-hidden />
-            {/* "Volver a leerlo" y no "Generar de nuevo": el servidor devuelve
+            {/* `generando` se pregunta PRIMERO: con la narración ya en
+                pantalla, el segundo click deshabilitaba el botón sin cambiar
+                nada más, así que en una petición lenta el usuario veía un
+                botón muerto.
+
+                "Volver a leerlo" y no "Generar de nuevo": el servidor devuelve
                 la misma narración del día sin cobrar, y ofrecer regenerar
                 prometería algo que no pasa. */}
-            {narracion ? "Volver a leerlo" : generando ? "Leyendo tus números…" : "Explícamelo"}
+            {generando ? "Leyendo tus números…" : narracion ? "Volver a leerlo" : "Explícamelo"}
           </span>
         </Button>
       </div>
