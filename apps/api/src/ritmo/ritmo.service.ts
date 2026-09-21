@@ -1,13 +1,16 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   asVerticalId,
+  mejoresVentanas,
   META_SEMANAL_SUGERIDA,
   resolveMacroRegion,
   resolveVertical,
   type RitmoCadenciaDto,
   type RitmoHorariosDto,
+  type RitmoMetaDto,
   type RitmoObjetivoDto,
   type RitmoResumenDto,
+  type VentanaDeRedDto,
   type SocialNetwork,
   type TrendsDto,
 } from "@presencia/shared";
@@ -63,12 +66,63 @@ export class RitmoService {
     });
   }
 
+  /**
+   * Solo las metas, sin el avance ni la rejilla de cadencia.
+   *
+   * Lo pide el Calendario para el denominador de su barra: el numerador ya lo
+   * tiene delante, son las cards que está pintando. Devolverle el resumen
+   * completo lo obligaría a calcular 16 semanas de historial para tirarlas.
+   */
+  async metas(userId: string): Promise<RitmoMetaDto[]> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const elegidas = await this.repo.metas(tx);
+      const redes = await this.repo.redesConectadas(tx);
+      return redes.map((network) => {
+        const propia = elegidas.get(network);
+        return {
+          network,
+          meta: propia ?? META_SEMANAL_SUGERIDA[network],
+          sugerido: propia === undefined,
+        };
+      });
+    });
+  }
+
   async horarios(userId: string, network: SocialNetwork): Promise<RitmoHorariosDto> {
     const timezone = await this.timezoneDe(userId);
     const ahora = new Date();
     return this.dbService.runWithTenant(userId, (tx) =>
       this.motor.horariosDe(tx, network, { timezone, ahora }),
     );
+  }
+
+  /**
+   * Las mejores ventanas de un día, across todas las redes conectadas.
+   *
+   * En un solo viaje porque quien lo pide es un estado vacío: el panel del día
+   * del Calendario no es de una red en particular, y pedirle al cliente una
+   * llamada por red convertiría un panel ambiental en cuatro requests.
+   *
+   * Por dentro sí recorre red por red: cada una tiene su propia base de
+   * cálculo y su propio promedio, así que no se pueden mezclar en una sola
+   * agregación. Son consultas sobre una ventana de 30 días, no un barrido.
+   */
+  async ventanas(userId: string, diaSemana: number): Promise<VentanaDeRedDto[]> {
+    const timezone = await this.timezoneDe(userId);
+    const ahora = new Date();
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const redes = await this.repo.redesConectadas(tx);
+      const todas: VentanaDeRedDto[] = [];
+      for (const network of redes) {
+        const horarios = await this.motor.horariosDe(tx, network, { timezone, ahora });
+        for (const ventana of mejoresVentanas(horarios, diaSemana, 2)) {
+          todas.push({ ...ventana, network });
+        }
+      }
+      // Las mejores primero, y pocas: es una sugerencia al pasar, no un
+      // informe. Cuatro chips ya llenan la fila del panel.
+      return todas.sort((a, b) => b.lift - a.lift).slice(0, 4);
+    });
   }
 
   /**

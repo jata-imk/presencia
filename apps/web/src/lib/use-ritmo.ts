@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   RitmoHorariosDto,
+  RitmoMetaDto,
   RitmoResumenDto,
   SocialNetwork,
   TrendsDto,
+  VentanaDeRedDto,
 } from "@presencia/shared";
 import { ApiError } from "./api.js";
-import { fetchHorarios, fetchResumen, fetchTendencias, saveMetaSemanal } from "./ritmo-api.js";
+import {
+  fetchHorarios,
+  fetchMetas,
+  fetchResumen,
+  fetchTendencias,
+  fetchVentanas,
+  saveMetaSemanal,
+} from "./ritmo-api.js";
 
 // Los tres recursos de Ritmo, cada uno con su propio ciclo de vida.
 //
@@ -133,4 +142,80 @@ export function useTendencias() {
   useEffect(recargar, [recargar]);
 
   return { tendencias, recargar };
+}
+
+/**
+ * Las metas semanales, para quien solo necesita el denominador.
+ *
+ * Silencioso al fallar: lo consume la barra de cadencia del Calendario, que es
+ * información ambiental. Sin metas la barra vuelve a mostrar solo los conteos,
+ * que siguen siendo verdad — degradar es correcto acá, tumbar el Calendario
+ * por no poder pintar un "/5" no lo sería.
+ */
+export function useMetasSemanales() {
+  const [metas, setMetas] = useState<RitmoMetaDto[] | null>(null);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    fetchMetas(abort.signal)
+      .then(setMetas)
+      .catch(() => setMetas(null));
+    return () => {
+      abort.abort();
+    };
+  }, []);
+
+  return metas;
+}
+
+/**
+ * Los mejores horarios de una red, para los chips de sugerencia.
+ *
+ * Silencioso igual: un chip que no aparece es una sugerencia menos, no un
+ * error que el usuario tenga que resolver.
+ */
+export function useHorariosDeRed(network: SocialNetwork | null) {
+  const [horarios, setHorarios] = useState<RitmoHorariosDto | null>(null);
+
+  useEffect(() => {
+    if (!network) {
+      setHorarios(null);
+      return;
+    }
+    const abort = new AbortController();
+    fetchHorarios(network, abort.signal)
+      .then(setHorarios)
+      .catch(() => setHorarios(null));
+    return () => {
+      abort.abort();
+    };
+  }, [network]);
+
+  return horarios;
+}
+
+/**
+ * Las mejores ventanas de un día, para los estados vacíos.
+ *
+ * `null` apaga la petición: el panel del día solo la pide cuando de verdad
+ * está vacío, no en cada click sobre una celda con contenido.
+ */
+export function useVentanasDelDia(diaSemana: number | null) {
+  const [ventanas, setVentanas] = useState<VentanaDeRedDto[]>([]);
+
+  useEffect(() => {
+    if (diaSemana === null) {
+      setVentanas([]);
+      return;
+    }
+    const abort = new AbortController();
+    fetchVentanas(diaSemana, abort.signal)
+      .then(setVentanas)
+      .catch(() => setVentanas([]));
+    return () => {
+      abort.abort();
+    };
+  }, [diaSemana]);
+
+  return ventanas;
 }

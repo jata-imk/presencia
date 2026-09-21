@@ -94,6 +94,22 @@ export interface RitmoCadenciaDto {
   mejorRacha: number;
 }
 
+/**
+ * La meta de una red, sin el avance de la semana.
+ *
+ * Existe aparte de `RitmoObjetivoDto` porque el Calendario solo necesita el
+ * denominador: el numerador lo tiene delante, son las cards que ya está
+ * pintando. Pedirle el resumen completo lo obligaría a calcular 16 semanas de
+ * cadencia para tirarlas.
+ */
+export interface RitmoMetaDto {
+  network: SocialNetwork;
+  /** Publicaciones por semana. */
+  meta: number;
+  /** `true` mientras el usuario no haya puesto la suya. */
+  sugerido: boolean;
+}
+
 export interface RitmoObjetivoDto {
   network: SocialNetwork;
   /** Publicaciones por semana. */
@@ -149,3 +165,58 @@ export const META_SEMANAL_SUGERIDA: Record<SocialNetwork, number> = {
   youtube: 1,
   threads: 3,
 };
+
+/** Una ventana recomendada, ya con la red a la que pertenece. */
+export interface VentanaDeRedDto extends VentanaRecomendada {
+  network: SocialNetwork;
+}
+
+export const ritmoVentanasQuerySchema = z.object({
+  diaSemana: z.coerce.number().int().min(0).max(6),
+});
+
+/** Una ventana recomendada para publicar: la franja y cuánto rinde. */
+export interface VentanaRecomendada {
+  /** Índice en FRANJAS. */
+  franja: number;
+  /** `HH:MM` con el que se prellena un selector de hora. */
+  hora: string;
+  /** Porcentaje contra el promedio del usuario en esa red. */
+  lift: number;
+  /** El número es de la franja completa, no de ese día en particular. */
+  heredado: boolean;
+}
+
+/**
+ * Las mejores ventanas de un día de la semana, de mejor a peor.
+ *
+ * La hora que devuelve es el INICIO de la franja, no un minuto exacto: el
+ * motor agrupa en bloques de tres horas y fingir "18:47" sería una precisión
+ * que no existe. Por eso quien pinte esto tiene que mostrar el rango —
+ * "18–21", no "18:00"— y usar la hora solo para prellenar el campo.
+ *
+ * Solo ventanas con lift positivo: una recomendación de dónde te va PEOR no
+ * es una recomendación.
+ */
+export function mejoresVentanas(
+  horarios: RitmoHorariosDto,
+  diaSemana: number,
+  maximo = 3,
+): VentanaRecomendada[] {
+  if (horarios.modo !== "full") return [];
+  return horarios.celdas
+    .filter((celda) => celda.diaSemana === diaSemana && celda.lift !== null && celda.lift > 0)
+    .sort((a, b) => (b.lift ?? 0) - (a.lift ?? 0))
+    .slice(0, maximo)
+    .map((celda) => ({
+      franja: celda.franja,
+      hora: `${String(FRANJAS[celda.franja]?.desde ?? 0).padStart(2, "0")}:00`,
+      lift: celda.lift ?? 0,
+      heredado: celda.heredado,
+    }));
+}
+
+/** "18–21" para una franja, tal como se le muestra al usuario. */
+export function etiquetaDeFranja(franja: number): string {
+  return FRANJAS[franja]?.etiqueta ?? "";
+}

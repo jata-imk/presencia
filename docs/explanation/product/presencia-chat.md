@@ -102,13 +102,23 @@ primeras 4 son fijas (siempre las mismas):
 Las últimas 2 cards son dinámicas, vienen del módulo Ritmo,
 y se diferencian visualmente con un badge "🔥 Tendencia":
 
-- 🔥 **Tendencia · Agentes de IA autónomos · +24%**
-- 🔥 **Tendencia · Personal branding sin esfuerzo · +18%**
+- 🔥 **Tendencia · Subiendo** · Agentes de IA autónomos
+  _Visto en tecnologia.mx_
+- 🔥 **Tendencia · Nuevo** · Personal branding sin esfuerzo
+  _Visto en marketingdirecto.com_
 
 Estas dos cards cambian según el nicho del usuario y qué
 está creciendo en su industria. Es una integración cross-
 módulo que conecta Ritmo (estrategia) con Chat (ejecución)
 sin obligar al usuario a navegar entre módulos.
+
+> **Corregido en F9 (2026-09-20).** Este doc pedía un "+24%"
+> en las cards de tendencia. `presencia-ritmo.md` §4 y §8 lo
+> prohíben: para una tendencia no existe fuente real de la
+> que salga ese número, y por eso Ritmo usa señal cualitativa
+> (🔥 subiendo / 📈 estable / ✨ nueva). Lo que sí llevan, y
+> es obligatorio, es la **fuente citada**. Este doc es
+> anterior a esa decisión; manda Ritmo.
 
 Debajo de las cards, un chip sutil de contexto:
 
@@ -393,16 +403,26 @@ Arriba del calendario, chips de shortcuts:
 Selector de hora estándar. Pero acá viene la magia de la
 integración con Ritmo:
 
-> 🎯 **Tus mejores horarios para LinkedIn**
-> [10:00 +18% engagement] [18:00 🔥 Top horario]
-> [12:00 +12%] [20:00 Buen horario]
+> 🎯 **Tus mejores horarios para este día**
+> [18–21 +58%] [12–15 +22%] [9–12 +11%]
 
 Estos chips son clickeables. Cada uno prellena el selector
-de hora. Hover muestra explicación: _"Tus posts a esta hora
-tienen 18% más engagement promedio"_.
+de hora con el inicio de su franja. Hover muestra la
+explicación: _"Tus publicaciones de esta franja rinden 58%
+más"_, o de dónde sale el número cuando es el promedio de la
+franja y no el de ese día en particular.
 
-Indicador sutil: _"Basado en tu data de los últimos 30 días"_
-con link "Ver más en Ritmo" que lleva al módulo Ritmo.
+> **Precisado en F9 (2026-09-20).** El doc pedía horas
+> exactas ("10:00 +18%"). El motor agrupa en **franjas de
+> tres horas** porque con menos no hay muestra que sostenga
+> el número, así que los chips muestran el **rango** y usan
+> la hora solo para prellenar. Un "10:00" a secas fingiría
+> una precisión al minuto que el dato no tiene.
+>
+> Los chips solo aparecen con historial suficiente en esa
+> red; si no, se quedan los atajos de hora comunes, que no
+> pretenden ser una recomendación y por eso no llevan
+> porcentaje.
 
 **Sección "Tu semana":**
 Mini-calendario horizontal mostrando los 7 días con sus

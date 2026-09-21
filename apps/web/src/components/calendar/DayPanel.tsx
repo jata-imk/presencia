@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { CalendarPlus, Plus, X } from "lucide-react";
 import { motion } from "motion/react";
+import { Link } from "react-router";
 import type { CalendarDate } from "@internationalized/date";
 import { useInspector } from "../../lib/floating/use-inspector.js";
 import { sheetRight } from "../../lib/motion.js";
@@ -9,6 +10,9 @@ import type { CalendarEntry } from "../../lib/calendar/group.js";
 import { formatDayLong, formatRelativeDay } from "../../lib/calendar/tz.js";
 import { DayPanelCard, type DayCardActions } from "./DayPanelCard.js";
 import { Tooltip } from "../ui/Tooltip.js";
+import { NETWORK_META } from "../cards/NetworkLogos.js";
+import { etiquetaDeFranja } from "@presencia/shared";
+import { useVentanasDelDia } from "../../lib/use-ritmo.js";
 
 // Panel de detalle del día. Overlay NO modal y sin backdrop: flota sobre el
 // borde derecho de la grilla con sombra, se cierra con Escape o con un click
@@ -77,6 +81,11 @@ export function DayPanel({
   }, [highlightedCardId]);
 
   const isPast = day.compare(today) < 0;
+  // Las ventanas solo se piden cuando el día está vacío y es futuro: en un día
+  // con contenido no aportan nada, y en el pasado sugerir cuándo publicar es
+  // un consejo que ya no sirve. `null` apaga la petición.
+  const vacioFuturo = entries.length === 0 && !isPast;
+  const ventanas = useVentanasDelDia(vacioFuturo ? (day.toDate("UTC").getDay() + 6) % 7 : null);
   const total = entries.reduce((count, entry) => count + entry.cards.length, 0);
   const published = entries
     .flatMap((entry) => entry.cards)
@@ -154,14 +163,50 @@ export function DayPanel({
           <h3 className="mt-4 font-display text-base font-semibold text-fg">
             Sin publicaciones este día
           </h3>
-          {/* Los chips de horarios sugeridos que pide la spec salen del
-              Ritmo, que es F9. Prometer "tus mejores horarios" sin nada
-              detrás sería inventarle datos al usuario. */}
           <p className="mt-1.5 max-w-[300px] text-[13px] leading-relaxed text-fg-secondary">
             {isPast
               ? "No publicaste nada este día."
               : "Cuando crees contenido en Chat y lo programes para esta fecha, aparecerá aquí."}
           </p>
+          {/* Los chips que pedía la spec, ahora que Ritmo tiene de dónde
+              sacarlos. Si no hay historial suficiente no aparece nada: la
+              alternativa sería prometer "tus mejores horarios" sin nada
+              detrás. */}
+          {ventanas.length > 0 && (
+            <>
+              <p className="mt-5 text-[13px] font-semibold text-fg">
+                Tus mejores horarios para este día
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {ventanas.map((ventana) => {
+                  const meta = NETWORK_META[ventana.network];
+                  return (
+                    <span
+                      key={`${ventana.network}-${String(ventana.franja)}`}
+                      className="flex items-center gap-1.5 rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs"
+                      title={
+                        ventana.heredado
+                          ? `Promedio de la franja ${etiquetaDeFranja(ventana.franja)} en ${meta.label}, no solo de este día`
+                          : `Tus publicaciones de esta franja en ${meta.label} rinden ${String(ventana.lift)}% más`
+                      }
+                    >
+                      <meta.Logo size={13} />
+                      <span className="font-semibold text-fg">
+                        {etiquetaDeFranja(ventana.franja)}
+                      </span>
+                      <span className="font-semibold text-accent">+{ventana.lift}%</span>
+                    </span>
+                  );
+                })}
+              </div>
+              <Link
+                to="/ritmo"
+                className="mt-3 text-xs text-fg-muted underline-offset-2 hover:underline"
+              >
+                Ver tu estrategia en Ritmo
+              </Link>
+            </>
+          )}
         </div>
       )}
     </>

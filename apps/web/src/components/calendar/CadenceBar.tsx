@@ -1,6 +1,6 @@
 import { Activity } from "lucide-react";
 import type { CalendarDate } from "@internationalized/date";
-import type { PublicationCardDto, SocialNetwork } from "@presencia/shared";
+import type { PublicationCardDto, RitmoMetaDto, SocialNetwork } from "@presencia/shared";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
 import { dayKey, weekStart, zonedFromIso } from "../../lib/calendar/tz.js";
 
@@ -8,11 +8,13 @@ import { dayKey, weekStart, zonedFromIso } from "../../lib/calendar/tz.js";
 // ambiental, no acción. El usuario la mira de reojo — si compitiera
 // visualmente con la grilla, estaría mal.
 //
-// SIN metas todavía. El diseño muestra "●●●○○ 3/5", pero el 5 sale de los
-// objetivos semanales que se configuran en Ritmo, que es F9. Los conteos, en
-// cambio, son datos que ya tenemos y son verdad. Cuando llegue Ritmo, esta
-// barra gana los dots y el denominador; hasta entonces no inventa un
-// objetivo ni pinta un progreso contra la nada.
+// El denominador llega con F9: el "5" de "3/5" sale de los objetivos
+// semanales de Ritmo. Si esas metas no cargan, la barra vuelve a mostrar solo
+// los conteos —que siguen siendo verdad— en vez de inventar un objetivo.
+//
+// Los dots del mockup no están: con metas de hasta 50 la tira se vuelve
+// ilegible, y esa representación ya vive en Ritmo, donde hay espacio. Acá la
+// barra es información ambiental que el usuario mira de reojo.
 //
 // Solo en vista mes y semana: en vista día no tiene sentido medir cadencia
 // (un día no es una semana) y sería ruido sin valor.
@@ -22,6 +24,7 @@ export function CadenceBar({
   weekOf,
   today,
   timeZone,
+  metas,
   filtered = false,
 }: {
   cards: PublicationCardDto[];
@@ -35,6 +38,11 @@ export function CadenceBar({
   weekOf: CalendarDate;
   today: CalendarDate;
   timeZone: string;
+  /**
+   * Metas semanales por red, o `null` si no se pudieron cargar. `null` no es
+   * "meta cero": es "no sabemos", y sin saberla la barra no pinta el "/N".
+   */
+  metas?: RitmoMetaDto[] | null;
   /**
    * Hay filtros activos. Los conteos son siempre de lo que se ve —si no,
    * dirían una cosa y la grilla otra— pero el mensaje de "no hay nada"
@@ -57,6 +65,7 @@ export function CadenceBar({
     counts.set(card.network, (counts.get(card.network) ?? 0) + 1);
   }
 
+  const metaDe = new Map((metas ?? []).map((m) => [m.network, m.meta]));
   const isCurrentWeek = weekStart(today).compare(start) === 0;
   const label = isCurrentWeek ? "esta semana" : `semana del ${String(start.day)}`;
 
@@ -83,6 +92,11 @@ export function CadenceBar({
               </span>
               <span className="font-display text-[11px] font-bold text-fg tabular-nums">
                 {count}
+                {/* El denominador solo aparece si de verdad hay meta: sin
+                    ella, un "/0" diría que el objetivo es no publicar. */}
+                {metaDe.has(network) && (
+                  <span className="font-medium text-fg-muted">/{metaDe.get(network)}</span>
+                )}
               </span>
             </span>
           );
