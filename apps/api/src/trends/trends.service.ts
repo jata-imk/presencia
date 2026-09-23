@@ -9,7 +9,7 @@ import {
   verticalLabel,
   type TrendItem,
 } from "@presencia/shared";
-import { AiService } from "../ai/ai.service.js";
+import { AiService, type ResolvedModel } from "../ai/ai.service.js";
 import { BossService } from "../jobs/boss.service.js";
 import {
   DEFAULT_TRENDS_MODEL_ID,
@@ -131,11 +131,12 @@ export class TrendsService {
   /**
    * Busca solo si la tupla no tiene una tanda vigente.
    *
-   * Es el handler de la cola de semilla, y existe porque la policy `stately`
-   * acota los duplicados pero no los elimina: deja a lo más uno corriendo y
-   * uno esperando por llave. Sin esta guardia, una ráfaga de aperturas dejaba
-   * un segundo job que salía a buscar de nuevo un nicho que el primero acababa
-   * de llenar — pagando la llamada cara para sobrescribir lo mismo.
+   * Es el handler de la cola de semilla, y existe porque la policy `short`
+   * acota los duplicados pero no los elimina: deja a lo más uno por llave en
+   * estado `created`, así que mientras uno corre se puede encolar otro. Sin
+   * esta guardia, una ráfaga de aperturas dejaba un segundo job que salía a
+   * buscar de nuevo un nicho que el primero acababa de llenar — pagando la
+   * llamada cara para sobrescribir lo mismo.
    */
   async refrescarSiHaceFalta(tupla: TuplaDeTendencias): Promise<void> {
     const vigente = await this.dbService.db.transaction(async (tx) => {
@@ -152,12 +153,15 @@ export class TrendsService {
   /**
    * Refresca una tupla: busca, ensambla y guarda.
    *
-   * **No escribe si no encontró nada.** Ni una fila vacía, ni una fila con lo
-   * que el modelo recordaba de su entrenamiento. Dejar intacta la tanda
-   * anterior es mejor que reemplazarla por el vacío: el usuario ve tendencias
-   * de ayer con su fecha, en vez de un módulo que se apagó sin explicación. Y
-   * si nunca hubo tanda, la ausencia de fila es lo que hace que la pantalla
-   * muestre su estado vacío honesto.
+   * **Nunca pisa una tanda buena con el vacío**, ni con lo que el modelo
+   * recordara de su entrenamiento: el usuario ve tendencias de ayer con su
+   * fecha, en vez de un módulo que se apagó sin explicación.
+   *
+   * Pero si NO había tanda, sí anota el vacío (`registrarVacio`). La ausencia
+   * de fila no es un estado neutro: es lo que hace que la lectura vuelva a
+   * pedir la búsqueda en la visita siguiente, y una tupla que nunca produce
+   * nada terminaba pagando una llamada con grounding por cada carga de
+   * pantalla.
    */
   async refrescar(tupla: TuplaDeTendencias): Promise<ResultadoDeRefresco> {
     const arranque = Date.now();
@@ -202,6 +206,7 @@ export class TrendsService {
     // acá para no pagar la segunda llamada por un resultado que ya se sabe
     // vacío.
     if (unicas.length === 0) {
+      await this.registrarVacio(tupla, modelo);
       return { tupla, items: [], fuentes: 0 };
     }
 
@@ -224,7 +229,10 @@ export class TrendsService {
       0,
       MAX_TENDENCIAS,
     );
-    if (items.length === 0) return { tupla, items: [], fuentes: unicas.length };
+    if (items.length === 0) {
+      await this.registrarVacio(tupla, modelo);
+      return { tupla, items: [], fuentes: unicas.length };
+    }
 
     const ahora = new Date();
     await this.dbService.db.transaction((tx) =>
@@ -292,6 +300,49 @@ export class TrendsService {
     }
     if (fallidas.length > 0) {
       throw new Error(summarizeFailures("trends.refresh", fallidas, "tupla(s)"));
+    }
+  }
+
+  /**
+   * Deja constancia de que se buscó y no había nada citable.
+   *
+   * **Sin esto, una tupla improductiva se cobra una búsqueda por cada carga de
+   * pantalla, para siempre.** El encadenado es este: `refrescar` volvía sin
+   * escribir fila, así que `find` seguía en `null`, así que `tendencias()`
+   * volvía a pedir la primera búsqueda en la visita siguiente. Y `tendencias()`
+   * lo llaman DOS pantallas —Ritmo y el estado vacío del Chat— por cada usuario
+   * de esa vertical. El `singletonKey` no lo frena: solo acota lo que está en
+   * `created`, y para la visita siguiente el job anterior ya terminó.
+   *
+   * La fila vacía le da a la semilla el mismo respiro que `posponer` le da al
+   * barrido, y de paso vuelve alcanzable un estado que hoy no lo era: la
+   * pantalla distingue "todavía no buscamos" de "buscamos y no encontramos"
+   * por `generatedAt`, y por esta ruta nunca llegaba al segundo.
+   *
+   * Solo escribe si NO había fila. Si ya existía una tanda buena se conserva
+   * —tendencias de ayer fechadas le sirven más al usuario que un módulo
+   * apagado, que es la decisión que ya tomaba `refrescar`— y de moverle el
+   * vencimiento se encarga `posponer`.
+   */
+  private async registrarVacio(tupla: TuplaDeTendencias, modelo: ResolvedModel): Promise<void> {
+    const ahora = new Date();
+    try {
+      await this.dbService.db.transaction(async (tx) => {
+        if (await this.repo.find(tx, tupla)) return;
+        await this.repo.upsert(tx, {
+          ...tupla,
+          items: [],
+          generatedAt: ahora,
+          expiresAt: new Date(ahora.getTime() + REINTENTO_HORAS * MS_POR_HORA),
+          provider: modelo.provider,
+          model: modelo.modelName,
+          usage: { vacio: true },
+        });
+      });
+    } catch (error) {
+      // No se relanza: quien llama ya tiene su propio resultado que reportar, y
+      // no haber podido anotar el vacío no convierte la búsqueda en un fallo.
+      console.error(`[trends] ${claveDe(tupla)}: no se pudo registrar el vacío:`, error);
     }
   }
 

@@ -156,7 +156,13 @@ export function RitmoPage() {
                   {/* El tamaño sale de la rejilla que mandó el servidor, no de
                       una constante repetida acá: la ventana la fija el motor y
                       el cliente no tiene por qué saber cuánto vale. */}
-                  publicaciones en {Math.round(resumen.cadencia.dias.length / 7)} semanas
+                  {/* `ceil` y no `round`, por lo mismo que en narracion.ts: la
+                      rejilla arranca en el lunes de hace 16 semanas y termina
+                      hoy, así que mide entre 106 y 112 días y `round` daba 15
+                      de lunes a miércoles. La narración vive dos bloques más
+                      arriba en esta misma pantalla, así que el usuario leía 15
+                      y 16 para el mismo dato. */}
+                  publicaciones en {Math.ceil(resumen.cadencia.dias.length / 7)} semanas
                 </span>
               </div>
               <LeyendaHeatmap />

@@ -132,6 +132,23 @@ describe("TrendsRepository", () => {
     expect(guardadas?.items).toHaveLength(1);
   });
 
+  it("una tanda vacía SÍ es una fila, no una tupla sin buscar", { timeout: 15_000 }, async () => {
+    // De esto cuelga el freno de gasto de la semilla. `tendencias()` pide una
+    // búsqueda nueva cuando `find` devuelve `null`, así que si una fila con
+    // `items: []` se leyera como ausencia, una vertical que nunca produce nada
+    // citable pagaría una llamada con grounding en CADA carga de pantalla —y
+    // son dos pantallas las que la piden, Ritmo y el estado vacío del Chat.
+    const tupla = tuplaNueva();
+    await guardar(tupla, [], EN_UN_DIA);
+
+    const guardadas = await dbService.db.transaction((tx) => repo.find(tx, tupla));
+    expect(guardadas).not.toBeNull();
+    expect(guardadas?.items).toEqual([]);
+    // Y con fecha: es lo que deja a la pantalla decir "buscamos y no
+    // encontramos" en vez de "todavía no buscamos".
+    expect(guardadas?.generatedAt).toBeInstanceOf(Date);
+  });
+
   it("las vencidas vuelven igual, para poder mostrarlas con su fecha", async () => {
     // El camino de lectura prefiere tendencias de ayer fechadas que una
     // pantalla vacía mientras se refresca.
