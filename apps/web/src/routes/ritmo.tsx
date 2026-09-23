@@ -16,6 +16,7 @@ import {
   HorariosNoReporta,
   HorariosPocaData,
   HorariosSinData,
+  HorariosSkeleton,
   RitmoError,
   RitmoSkeleton,
   TendenciasVacias,
@@ -223,7 +224,7 @@ export function RitmoPage() {
           {errorHorarios ? (
             <RitmoError mensaje={errorHorarios} onReintentar={reintentarHorarios} />
           ) : !horarios ? (
-            <div className="h-[320px] animate-pulse rounded-xl bg-secondary" aria-hidden />
+            <HorariosSkeleton />
           ) : horarios.modo === "cold" ? (
             <HorariosSinData />
           ) : horarios.modo === "no_reporta" ? (

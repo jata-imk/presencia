@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
 import { CloudOff, Clock, Sprout, WifiOff } from "lucide-react";
-import { macroRegionLabel, verticalLabel, type TrendsDto } from "@presencia/shared";
+import {
+  DIAS_SEMANA,
+  FRANJAS,
+  macroRegionLabel,
+  verticalLabel,
+  type TrendsDto,
+} from "@presencia/shared";
 import { Button } from "../ui/Button.js";
 
 // Los estados vacíos del módulo.
@@ -244,7 +250,7 @@ export function RitmoSkeleton() {
           conSubtitulo
           derecha={<Barra alto="h-9" ancho="w-[290px]" redondeo="rounded-full" />}
         />
-        <Barra alto="h-[320px]" ancho="w-full" redondeo="rounded-xl" />
+        <HorariosSkeleton />
       </BloqueVacio>
     </div>
   );
@@ -252,6 +258,50 @@ export function RitmoSkeleton() {
 
 /** Las mismas 16 semanas que manda el servidor (SEMANAS_CADENCIA). */
 const SEMANAS_VISIBLES = 16;
+
+/**
+ * El hueco del heatmap de horarios, con su forma real.
+ *
+ * Reemplaza un rectángulo de 320px que se quedó corto: el mapa mide 378 —ocho
+ * franjas de 36px, su cabecera de días y el pie que explica contra qué se
+ * compara— así que al llegar los datos la sección crecía 58px y empujaba las
+ * tendencias hacia abajo. Se pinta también al cambiar de pestaña de red, que
+ * es cuando más se nota.
+ *
+ * Las medidas salen de HorariosHeatmap, no de una constante aparte: mismas
+ * `w-[78px]`, mismo `h-9`, mismo `gap-1`.
+ */
+export function HorariosSkeleton() {
+  return (
+    <div className="overflow-x-auto" aria-hidden>
+      <div className="inline-flex animate-pulse flex-col gap-1">
+        <div className="flex gap-1">
+          <div className="w-[76px] shrink-0" />
+          {DIAS_SEMANA.map((dia) => (
+            <div key={dia} className="flex h-5 w-[78px] shrink-0 items-center justify-center">
+              <div className="h-3 w-7 rounded bg-secondary" />
+            </div>
+          ))}
+        </div>
+        {FRANJAS.map((franja) => (
+          <div key={franja.id} className="flex gap-1">
+            <div className="flex w-[76px] shrink-0 flex-col items-end justify-center gap-1 pr-2">
+              <div className="h-3 w-10 rounded bg-secondary" />
+              <div className="h-2 w-14 rounded bg-secondary" />
+            </div>
+            {DIAS_SEMANA.map((dia) => (
+              <div
+                key={`${franja.id}-${dia}`}
+                className="h-9 w-[78px] shrink-0 rounded-lg bg-secondary"
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 h-[22px] w-full max-w-[620px] animate-pulse rounded bg-secondary" />
+    </div>
+  );
+}
 
 function Barra({
   alto,
