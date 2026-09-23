@@ -87,17 +87,17 @@ está pidiéndole que escriba.
 El input tiene un placeholder cálido: _"Cuéntame qué quieres
 crear hoy..."_
 
-Debajo del input, una grilla de 6 cards de sugerencias. Las
-primeras 4 son fijas (siempre las mismas):
+Debajo del input, una grilla de 4 cards de sugerencias. Las
+dos primeras son fijas (siempre las mismas):
 
 - ✨ **Ideas para esta semana** — Genera 5 conceptos basados
   en mis tendencias
-- 🔄 **Adaptar mi último post** — Crea versiones para cada
-  red social
-- 📅 **Calendario del mes** — Plan editorial completo para
-  30 días
 - ✍️ **Hilo viral** — Estructura un thread o carrusel paso a
   paso
+
+Y hay dos de reserva —📅 **Calendario del mes** y 🔄 **Adaptar
+mi último post**— que solo aparecen cuando no hay tendencias
+que mostrar, para que la grilla siempre tenga cuatro.
 
 Las últimas 2 cards son dinámicas, vienen del módulo Ritmo,
 y se diferencian visualmente con un badge "🔥 Tendencia":
@@ -701,7 +701,7 @@ plan" de Configuración, no por mensaje.
 
 ### Las cards de sugerencias en el estado vacío
 
-**Qué son:** Las 6 cards que aparecen debajo del input cuando
+**Qué son:** Las 4 cards que aparecen debajo del input cuando
 el chat está vacío.
 
 **Por qué existen:** Para combatir la "blank page anxiety".
@@ -711,17 +711,39 @@ ideas concretas para arrancar.
 
 **Por qué son una mezcla de fijas y dinámicas:**
 
-- **4 fijas:** sugerencias evergreen que sirven siempre
-  (ideas semanales, adaptar último post, calendario del mes,
-  hilo viral)
+- **2 fijas:** sugerencias evergreen que sirven siempre y
+  funcionan desde el día 1 (ideas semanales, hilo viral)
 - **2 dinámicas:** vienen del módulo Ritmo, marcadas con
-  badge "🔥 Tendencia". Razón estratégica: integran
+  badge de tendencia. Razón estratégica: integran
   cross-módulo sin obligar al usuario a navegar. El usuario
   ve oportunidades concretas sin tener que ir a buscarlas.
 
-**Por qué solo 6 y no 12:** Demasiadas opciones generan
-parálisis de elección. 6 es el sweet spot entre "tengo
-opciones" y "no me abruma elegir".
+**Por qué las fijas no proponen temas:** porque las dinámicas
+ya lo hacen. Una card fija de "sobre qué escribir" compite con
+la tendencia que tiene al lado y gasta uno de los cuatro
+lugares diciendo lo mismo. La excepción es "Ideas para esta
+semana", que se queda porque es la entrada canónica del
+producto y la única que sirve cuando el usuario no tiene nada.
+
+**Por qué siempre son cuatro, pase lo que pase:** mientras las
+tendencias viajan, su lugar lo ocupan dos esqueletos del mismo
+alto; si no llegan —nicho recién buscado, o búsqueda sin
+resultados— entran dos de reserva (calendario del mes, adaptar
+último post). Todas las cards miden lo mismo. Así el alto de la
+pantalla no cambia entre esos tres estados: sin esa regla, el
+chip de contexto se movía bajo el pliegue justo cuando llegaban
+los datos.
+
+**Por qué solo 4 y no 12:** Demasiadas opciones generan
+parálisis de elección, y el estado vacío completo tiene que
+caber sin scroll en una pantalla de portátil.
+
+**Qué pasa al elegir una:** su prompt se escribe en la caja de
+texto, con el cursor al final, y **no se envía nada**. La card
+es un punto de partida que el usuario puede ajustar antes de
+mandar. Antes creaba el chat y arrancaba la generación con un
+solo click: además de quitarle la oportunidad de editar, un
+click accidental costaba un turno de verdad.
 
 ### El chip de contexto de IA
 
