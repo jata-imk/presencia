@@ -29,3 +29,7 @@ test-results/
 !.vscode/settings.json
 !.vscode/extensions.json
 .idea/
+
+# Capturas de Playwright: caen en la raíz al verificar en navegador y no son
+# del repo. Los assets de verdad viven en apps/web/public.
+/*.png
