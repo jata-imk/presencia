@@ -50,9 +50,10 @@ const ON_DEMAND_QUEUE_POLICY = "short";
  * Cola de trabajos puntuales: los encola alguien (un request) y los ejecuta el
  * worker. A diferencia de una recurrente, acá no hay cron.
  *
- * La policy es `standard` y no `exclusive` porque el filtro de duplicados es
- * por TRABAJO, no por cola: dos tuplas distintas sí pueden buscarse a la vez,
- * dos veces la misma no. Eso lo resuelve `singletonKey` al encolar.
+ * La policy es `short` y no `exclusive` porque el filtro de duplicados es por
+ * TRABAJO, no por cola: dos tuplas distintas sí pueden buscarse a la vez, dos
+ * veces la misma no. Eso lo resuelve `singletonKey` al encolar, y el bloque de
+ * arriba explica por qué `short` y no las otras dos que sí deduplican.
  */
 export interface OnDemandJob<T> {
   queue: string;
@@ -237,12 +238,15 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
   /**
    * Encola un trabajo puntual, descartándolo si ya hay uno igual pendiente.
    *
-   * El filtro lo hace la POLICY de la cola (`stately`), no la opción suelta:
+   * El filtro lo hace la POLICY de la cola (`short`), no la opción suelta:
    * `singletonKey` sobre una cola `standard` se acepta sin quejarse y encola
-   * todo igual. Con `stately` hay a lo más un job por llave en cada estado, así
-   * que una búsqueda encolada y otra en vuelo no se duplican — que es la misma
-   * palanca de sublinealidad por la que la caché no se llavea por usuario
-   * (ADR-023).
+   * todo igual.
+   *
+   * `short` acota a un job por llave **en estado `created`**, y esa precisión
+   * importa: un job que ya está corriendo NO bloquea que se encole otro. Por
+   * eso el handler tiene que ser idempotente por su cuenta
+   * (`refrescarSiHaceFalta`), y por eso no alcanza con esta cola para sostener
+   * la palanca de sublinealidad de ADR-023.
    *
    * Devuelve `false` si no se encoló (por duplicado o porque la cola no está).
    * Nunca lanza: esto se llama desde un request de lectura, y no poder encolar
@@ -259,7 +263,17 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
       // API y quien la registra es el worker. `createQueue` es idempotente
       // (INSERT ... ON CONFLICT DO NOTHING) y se hace una sola vez por proceso.
       if (!this.colasListas.has(queue)) {
-        await this.boss.createQueue(queue, { policy: ON_DEMAND_QUEUE_POLICY });
+        // Con los MISMOS ajustes que `registerOnDemand`, no solo la policy:
+        // en una base recién creada, quien gana la carrera puede ser la API, y
+        // entonces la cola nacía con el `retryLimit` por default de pg-boss
+        // (2). Hasta que el worker arrancara y corriera su `updateQueue`, una
+        // búsqueda con grounding que fallara se reintentaba dos veces — tres
+        // llamadas pagadas por una sola semilla.
+        await this.boss.createQueue(queue, {
+          policy: ON_DEMAND_QUEUE_POLICY,
+          retryLimit: 0,
+          expireInSeconds: options.expireInSeconds,
+        });
         this.colasListas.add(queue);
       }
       const id = await this.boss.send(queue, data, {

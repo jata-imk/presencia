@@ -8,7 +8,7 @@ import { Sparkles } from "lucide-react";
 // cargó, no "tus posts recientes" en el sentido literal.
 export function ContextChip() {
   return (
-    <div className="mt-4 flex justify-center">
+    <div className="mt-3 flex justify-center">
       <div className="inline-flex items-center gap-1.5 rounded-full border border-line-subtle px-3.5 py-1">
         <Sparkles size={11} strokeWidth={1.75} className="text-pink-orchid" />
         <span className="text-[11px] text-fg-muted">Recordando tu voz de marca y tu audiencia</span>

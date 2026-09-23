@@ -133,18 +133,25 @@ export function useHorarios(network: SocialNetwork | null) {
 
 export function useTendencias() {
   const [tendencias, setTendencias] = useState<TrendsDto | null>(null);
+  // `null` no alcanza para saber en qué estado estamos: es lo mismo mientras
+  // la petición viaja que cuando falló. Quien reserva el espacio de las
+  // tarjetas necesita distinguirlos — con una sola señal, el hueco se queda
+  // para siempre o no se reserva nunca.
+  const [cargando, setCargando] = useState(true);
 
   const recargar = useCallback(() => {
+    setCargando(true);
     // Silencioso a propósito: es información secundaria de la vista y su
     // fallo no puede tumbar el resto.
     fetchTendencias()
       .then(setTendencias)
-      .catch(() => setTendencias(null));
+      .catch(() => setTendencias(null))
+      .finally(() => setCargando(false));
   }, []);
 
   useEffect(recargar, [recargar]);
 
-  return { tendencias, recargar };
+  return { tendencias, cargando, recargar };
 }
 
 /**

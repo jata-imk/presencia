@@ -1,5 +1,5 @@
 import { Mic, Paperclip, Palette, Send, Square } from "lucide-react";
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useImperativeHandle, useRef, type KeyboardEvent, type Ref } from "react";
 import { Tooltip } from "../ui/Tooltip.js";
 
 const MAX_HEIGHT_PX = 220;
@@ -22,6 +22,7 @@ export function Composer({
   onStop,
   placeholder = "Continúa la conversación…",
   large = false,
+  inputRef,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -30,9 +31,20 @@ export function Composer({
   onStop: () => void;
   placeholder?: string;
   large?: boolean;
+  /**
+   * Acceso al textarea desde afuera, solo para enfocarlo.
+   *
+   * Lo usa la pantalla de nuevo chat: al elegir una tarjeta de sugerencia, el
+   * prompt se escribe en la caja y el cursor se va ahí, para que el usuario
+   * pueda ajustarlo antes de enviar. Va por `useImperativeHandle` y no
+   * reemplazando el `ref` interno porque ese lo necesita el autosize.
+   */
+  inputRef?: Ref<HTMLTextAreaElement>;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const hasText = value.trim().length > 0;
+
+  useImperativeHandle(inputRef, () => textareaRef.current as HTMLTextAreaElement, []);
 
   useEffect(() => {
     const el = textareaRef.current;
