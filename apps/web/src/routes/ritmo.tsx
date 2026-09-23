@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { SocialNetwork } from "@presencia/shared";
-import { CadenciaHeatmap, LeyendaHeatmap, RachaPill } from "../components/ritmo/CadenciaHeatmap.js";
+import { CadenciaHeatmap, LeyendaHeatmap } from "../components/ritmo/CadenciaHeatmap.js";
 import { Narracion } from "../components/ritmo/Narracion.js";
 import { HorariosHeatmap } from "../components/ritmo/HorariosHeatmap.js";
 import {
@@ -77,10 +77,15 @@ export function RitmoPage() {
   const sinPublicaciones = resumen.cadencia.total === 0;
 
   return (
-    <div className="mx-auto flex max-w-[1120px] flex-col gap-6 px-6 py-7">
+    // `pb-16` y no `py-7`: el scroller de protected.tsx no aporta ningún
+    // padding inferior, así que el colchón del final lo pone cada ruta. Con 28px
+    // el final de la página no se distinguía de los 24 de `gap-6` entre bloques
+    // y la última fila de tendencias se leía como cortada.
+    <div className="mx-auto flex max-w-[1120px] flex-col gap-6 px-6 pt-7 pb-16">
       <CabeceraRitmo
         nombre={primerNombre(session?.user.displayName ?? session?.user.name)}
         objetivos={resumen.objetivos}
+        racha={resumen.cadencia.rachaActual}
       />
 
       {/* Sin publicaciones no hay nada que narrar: el modelo solo podría
@@ -147,9 +152,11 @@ export function RitmoPage() {
         ) : (
           <>
             <CadenciaHeatmap dias={resumen.cadencia.dias} />
+            {/* La racha actual se fue a la cabecera; "Mejor racha" se queda
+                acá, que es donde el usuario puede rastrearla contra las celdas
+                encendidas del mapa. */}
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-4">
-                <RachaPill dias={resumen.cadencia.rachaActual} />
                 <span className="text-xs text-fg-muted">
                   Mejor racha: {resumen.cadencia.mejorRacha}{" "}
                   {resumen.cadencia.mejorRacha === 1 ? "día" : "días"} · {resumen.cadencia.total}{" "}

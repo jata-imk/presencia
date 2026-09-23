@@ -8,6 +8,7 @@ import {
   type TrendItem,
 } from "@presencia/shared";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
+import { RachaPill } from "./CadenciaHeatmap.js";
 
 export function Bloque({ children }: { children: ReactNode }) {
   return <section className="rounded-2xl border border-line bg-card p-6">{children}</section>;
@@ -45,16 +46,20 @@ export function TituloBloque({
  * aparte y bajo demanda (components/ritmo/Narracion.tsx): esta cabecera se
  * pinta sola en cada carga y por eso no puede costar nada.
  *
- * La racha NO está acá: vive junto al heatmap de cadencia, que es de donde se
- * lee. Un número suelto en la cabecera no se puede rastrear a nada de lo que
- * el usuario ve.
+ * La racha SÍ está acá, y es un cambio respecto de cómo nació. Vivía junto al
+ * heatmap con el argumento de que es una lectura de él; el argumento sigue en
+ * pie pero pesa menos que el hecho de que ahí abajo no se ve, y la racha es el
+ * gancho emocional del módulo. "Mejor racha" se queda junto al mapa.
  */
 export function CabeceraRitmo({
   nombre,
   objetivos,
+  racha,
 }: {
   nombre: string;
   objetivos: RitmoObjetivoDto[];
+  /** Días consecutivos publicando. `0` pinta la píldora apagada, no la esconde. */
+  racha: number;
 }) {
   const hechas = objetivos.reduce((suma, o) => suma + o.hechas, 0);
   const meta = objetivos.reduce((suma, o) => suma + o.meta, 0);
@@ -66,12 +71,15 @@ export function CabeceraRitmo({
           Esta es tu estrategia: cuándo publicar y sobre qué.
         </p>
       </div>
-      {meta > 0 && (
-        <span className="flex items-center gap-2 text-sm text-fg-secondary">
-          <CalendarCheck size={16} className="text-accent" />
-          Vas {hechas}/{meta} publicaciones esta semana
-        </span>
-      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <RachaPill dias={racha} />
+        {meta > 0 && (
+          <span className="flex items-center gap-2 text-sm text-fg-secondary">
+            <CalendarCheck size={16} className="text-accent" />
+            Vas {hechas}/{meta} publicaciones esta semana
+          </span>
+        )}
+      </div>
     </header>
   );
 }

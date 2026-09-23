@@ -150,19 +150,37 @@ export function LeyendaHeatmap() {
 }
 
 /**
- * La racha, en píldora y debajo del mapa.
+ * La racha, en píldora.
  *
- * Vive acá y no en la cabecera porque es una lectura DEL heatmap: son las
- * celdas encendidas de la derecha, contadas. Separarla la convertía en un
- * número suelto que el usuario no puede rastrear a nada de lo que ve.
+ * Vive en la cabecera (`CabeceraRitmo`) y no debajo del mapa. El argumento que
+ * la tenía abajo era que es una lectura DEL heatmap —las celdas encendidas de
+ * la derecha, contadas— y sigue siendo cierto, pero pesa menos que lo otro: la
+ * racha es el gancho emocional del módulo y ahí abajo no se ve. "Mejor racha"
+ * sí se queda junto al mapa, que es donde se puede rastrear.
+ *
+ * **Con racha 0 se muestra apagada, no desaparece.** Antes devolvía `null`, así
+ * que el usuario sin racha no veía nada y no tenía forma de saber que existe
+ * algo que empezar. Apagada dice las dos cosas: que no la tienes y qué hacer.
+ * Lo que NO hace es inventarla — el doc es explícito en que el día 1 no hay
+ * racha.
  */
 export function RachaPill({ dias }: { dias: number }) {
-  if (dias === 0) return null;
+  const encendida = dias > 0;
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-line bg-tint-plum px-3.5 py-1.5">
-      <Flame size={15} className="text-accent" />
-      <span className="font-display text-[13px] font-semibold text-fg">
-        Racha actual: {dias} {dias === 1 ? "día" : "días"}
+    <span
+      className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 ${
+        encendida ? "border-line bg-tint-plum" : "border-line-subtle bg-secondary"
+      }`}
+    >
+      <Flame size={15} className={encendida ? "text-accent" : "text-fg-muted"} />
+      <span
+        className={`font-display text-[13px] font-semibold ${
+          encendida ? "text-fg" : "text-fg-secondary"
+        }`}
+      >
+        {encendida
+          ? `${String(dias)} ${dias === 1 ? "día seguido" : "días seguidos"} publicando`
+          : "Sin racha — publica hoy para empezarla"}
       </span>
     </span>
   );
