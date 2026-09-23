@@ -8,7 +8,7 @@ import {
   type TrendItem,
 } from "@presencia/shared";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
-import { RachaPill } from "./CadenciaHeatmap.js";
+import { RachaTile } from "./CadenciaHeatmap.js";
 
 export function Bloque({ children }: { children: ReactNode }) {
   return <section className="rounded-2xl border border-line bg-card p-6">{children}</section>;
@@ -50,6 +50,10 @@ export function TituloBloque({
  * heatmap con el argumento de que es una lectura de él; el argumento sigue en
  * pie pero pesa menos que el hecho de que ahí abajo no se ve, y la racha es el
  * gancho emocional del módulo. "Mejor racha" se queda junto al mapa.
+ *
+ * La composición sale de la variante A de `StrategyHeader` del mock de Claude
+ * Design. Lo que falta respecto de ese mock es el chip de "Modo: Crecer", que
+ * todavía no existe como dato — tiene su propio PR.
  */
 export function CabeceraRitmo({
   nombre,
@@ -58,28 +62,29 @@ export function CabeceraRitmo({
 }: {
   nombre: string;
   objetivos: RitmoObjetivoDto[];
-  /** Días consecutivos publicando. `0` pinta la píldora apagada, no la esconde. */
+  /** Días consecutivos publicando. `0` cambia el tile por el de 'aún no empieza'. */
   racha: number;
 }) {
   const hechas = objetivos.reduce((suma, o) => suma + o.hechas, 0);
   const meta = objetivos.reduce((suma, o) => suma + o.meta, 0);
   return (
-    <header className="flex flex-col gap-3">
+    // Variante A del mock: texto a la izquierda, tile de racha a la derecha.
+    <header className="flex flex-wrap items-center justify-between gap-6">
       <div>
-        <h1 className="font-display text-3xl font-bold text-fg">Hola, {nombre}</h1>
+        <h1 className="font-display text-[32px] leading-[1.02] font-bold tracking-[-0.02em] text-brand">
+          Hola, {nombre}
+        </h1>
         <p className="mt-2 max-w-[440px] text-[15px] text-fg-secondary">
           Esta es tu estrategia: cuándo publicar y sobre qué.
         </p>
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <RachaPill dias={racha} />
         {meta > 0 && (
-          <span className="flex items-center gap-2 text-sm text-fg-secondary">
+          <span className="mt-4 flex items-center gap-2 text-sm text-fg-secondary">
             <CalendarCheck size={16} className="text-accent" />
             Vas {hechas}/{meta} publicaciones esta semana
           </span>
         )}
       </div>
+      <RachaTile dias={racha} />
     </header>
   );
 }
