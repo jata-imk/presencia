@@ -300,7 +300,11 @@
      --bg-card, por lo mismo que las rampas de arriba — un degradado calculado
      contra el fondo se apaga en oscuro justo donde tiene que llamar. */
   --ritmo-racha-desde: var(--bg-tint-pink);
-  --ritmo-racha-hasta: var(--color-plum-50);
+  /* NO plum-50: ese es exactamente --bg-app, o sea el fondo sobre el que se
+     apoya el tile, así que el extremo del degradado se disolvía en la página y
+     la tarjeta quedaba sostenida solo por su borde. El mock usa plum-50 porque
+     ahí el contenido va sobre #FAFAFA, no sobre el shell. */
+  --ritmo-racha-hasta: var(--color-plum-100);
   --ritmo-racha-border: var(--color-pastel-petal);
   /* Sin racha: el mock no apaga el tile, lo cambia por uno punteado. Otra
      cosa, no la misma más gris. */

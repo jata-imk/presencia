@@ -59,11 +59,20 @@ export function CabeceraRitmo({
   nombre,
   objetivos,
   racha,
+  publico,
 }: {
   nombre: string;
   objetivos: RitmoObjetivoDto[];
-  /** Días consecutivos publicando. `0` cambia el tile por el de 'aún no empieza'. */
+  /** Días consecutivos publicando. */
   racha: number;
+  /**
+   * Si el usuario publicó alguna vez en la ventana.
+   *
+   * Con `racha` en 0 son dos mensajes distintos: "todavía no empieza" contra
+   * "se te cortó". Sin este dato el tile le diría a alguien con meses de
+   * historial que su racha empieza con su primer post.
+   */
+  publico: boolean;
 }) {
   const hechas = objetivos.reduce((suma, o) => suma + o.hechas, 0);
   const meta = objetivos.reduce((suma, o) => suma + o.meta, 0);
@@ -84,7 +93,7 @@ export function CabeceraRitmo({
           </span>
         )}
       </div>
-      <RachaTile dias={racha} />
+      <RachaTile dias={racha} publico={publico} />
     </header>
   );
 }

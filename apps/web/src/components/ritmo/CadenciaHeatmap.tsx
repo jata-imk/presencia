@@ -158,21 +158,28 @@ export function LeyendaHeatmap() {
  * parecía en nada.
  *
  * **Sin racha no es este tile en gris: es otro.** El mock no apaga la tarjeta,
- * la cambia por una punteada con un brote. Es la diferencia entre "tu racha
- * está apagada" y "tu racha todavía no empieza", que es lo que de verdad pasa
- * el día 1 — y el doc es explícito en que la racha nunca se inventa.
+ * la cambia por una punteada con un brote.
+ *
+ * Y `dias === 0` son DOS situaciones, no una. El mock solo dibujó la del día 1
+ * porque sus estados eran `cold` y `full`, pero en el producto real alguien con
+ * cuatrocientas publicaciones que dejó de publicar anteayer también llega acá
+ * con cero. Decirle "tu racha empieza con tu primer post" es falso, y es la
+ * misma regla de no inventar la racha rota hacia el otro lado. Por eso el tile
+ * necesita saber si hubo publicaciones alguna vez.
  *
  * Los emojis son emojis, no iconos: 🔥 y 🌱 salen del mock tal cual.
  */
-export function RachaTile({ dias }: { dias: number }) {
+export function RachaTile({ dias, publico }: { dias: number; publico: boolean }) {
   if (dias === 0) {
     return (
       <div className="flex max-w-[240px] items-center gap-3 rounded-2xl border border-dashed border-ritmo-sin-racha-border bg-card px-5 py-4">
         <span className="text-[22px] leading-none" aria-hidden>
-          🌱
+          {publico ? "🌤️" : "🌱"}
         </span>
         <span className="font-display text-[13px] font-medium text-accent">
-          Tu racha empieza con tu primer post.
+          {publico
+            ? "Tu racha se cortó. Publica hoy y la reinicias."
+            : "Tu racha empieza con tu primer post."}
         </span>
       </div>
     );

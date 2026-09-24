@@ -206,8 +206,15 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
 
           Con los módulos adentro, lo fijo son solo cabecera y pie, y lo que se
           encoge es lo que se puede desplazar. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <ul className={`mt-4 flex shrink-0 flex-col gap-0.5 ${collapsed ? "px-2" : "px-3"}`}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
+        {/* `sticky`: los módulos entraron al scroll para que el pie deje de ser
+            inalcanzable, pero con una lista larga de chats la navegación
+            principal se iría de vista. Pegados arriba se quedan visibles
+            mientras se desplaza la lista, y aun así ceden su espacio cuando de
+            verdad no alcanza el alto. */}
+        <ul
+          className={`sticky top-0 z-10 mt-4 flex shrink-0 flex-col gap-0.5 bg-card pb-1 ${collapsed ? "px-2" : "px-3"}`}
+        >
           {MODULES.map((mod) => {
             const active = mod.to !== null && location.pathname.startsWith(mod.to);
             if (!mod.to) {

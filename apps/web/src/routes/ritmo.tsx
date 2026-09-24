@@ -86,6 +86,7 @@ export function RitmoPage() {
         nombre={primerNombre(session?.user.displayName ?? session?.user.name)}
         objetivos={resumen.objetivos}
         racha={resumen.cadencia.rachaActual}
+        publico={!sinPublicaciones}
       />
 
       {/* Sin publicaciones no hay nada que narrar: el modelo solo podría
