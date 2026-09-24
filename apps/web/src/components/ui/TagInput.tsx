@@ -10,20 +10,49 @@ interface TagInputProps {
   // servidor no dice qué tag es el problema — ver callers.
   maxLength?: number;
   id?: string;
+  /**
+   * Convierte lo escrito en el tag que se guarda, o `null` si no sirve. Sin
+   * esto el tag es el texto recortado. Un `null` deja el borrador en el input
+   * para que se pueda corregir, y avisa por `onInvalid`.
+   */
+  normalize?: (raw: string) => string | null;
+  /**
+   * El texto que `normalize` rechazó, o `null` en cuanto el borrador cambia:
+   * quien pinta el error sabe así cuándo dejar de pintarlo.
+   */
+  onInvalid?: (raw: string | null) => void;
 }
 
 // Chips removibles + input de texto libre (Enter o coma agrega). Usado para
 // nicho (onboarding) y, en Configuración, modismos permitidos/prohibidos,
 // temas clave y CTAs preferidos — vocabulario abierto, sin presets (doc §3).
-export function TagInput({ value, onChange, placeholder, maxItems, maxLength, id }: TagInputProps) {
+export function TagInput({
+  value,
+  onChange,
+  placeholder,
+  maxItems,
+  maxLength,
+  id,
+  normalize,
+  onInvalid,
+}: TagInputProps) {
   const [draft, setDraft] = useState("");
   const atLimit = maxItems !== undefined && value.length >= maxItems;
 
   function addTag() {
     const trimmed = draft.trim().slice(0, maxLength);
+    if (!trimmed) {
+      setDraft("");
+      return;
+    }
+    const tag = normalize ? normalize(trimmed) : trimmed;
+    if (tag === null) {
+      onInvalid?.(trimmed);
+      return;
+    }
     setDraft("");
-    if (!trimmed || atLimit || value.includes(trimmed)) return;
-    onChange([...value, trimmed]);
+    if (atLimit || value.includes(tag)) return;
+    onChange([...value, tag]);
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
@@ -61,7 +90,10 @@ export function TagInput({ value, onChange, placeholder, maxItems, maxLength, id
         <input
           id={id}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            onInvalid?.(null);
+          }}
           onKeyDown={handleKeyDown}
           onBlur={addTag}
           maxLength={maxLength}

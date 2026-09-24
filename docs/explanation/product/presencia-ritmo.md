@@ -782,9 +782,11 @@ de horarios es de trabajo (compacto), para que no compitan.
   el código que miente a otro nivel. No en V1.
 - **Benchmarks contra otros creators / competidores.** Requiere
   data de terceros que no tenemos limpia. V2.
-- **Configuración fina de la fuente de tendencias** (elegir
-  manualmente qué cuentas o hashtags monitorear). V2; en V1 la
-  vertical/región del onboarding alimenta todo.
+- **Monitorear cuentas o hashtags de una red** como fuente de
+  tendencias. V2. Lo que sí está desde F9.6 es personalizar la
+  búsqueda: sitios propios, qué buscar, qué excluir e idiomas
+  (Configuración › Tendencias, `presencia-configuracion-voz-de-marca.md`
+  sección 10).
 - **Recordatorios push de "te toca publicar".** Las notifs van
   por Telegram/WhatsApp naturalmente. No hay sistema in-app de
   notificaciones en V1 (consistente con overview y calendario).

@@ -13,6 +13,8 @@ import {
   type TrendItem,
   type TrendLang,
   type TrendRefreshStateDto,
+  type TrendSettingsDto,
+  type UpdateTrendSettingsBody,
 } from "@presencia/shared";
 import { AiService } from "../ai/ai.service.js";
 import {
@@ -29,6 +31,7 @@ import { BossService } from "../jobs/boss.service.js";
 import { summarizeFailures } from "../jobs/summarize-failures.js";
 import { ensamblarTendencias, extraerFuentes } from "./grounding.js";
 import {
+  baseDeBusqueda,
   estaPersonalizada,
   MAX_TENDENCIAS,
   promptDeBusqueda,
@@ -180,6 +183,46 @@ export class TrendsService {
         langs: parseLangs(voz.trendLangs),
       };
     });
+  }
+
+  /**
+   * Configuración › Tendencias: lo que el usuario personalizó, más lo que la
+   * búsqueda usa de todos modos.
+   *
+   * Sale del mismo `contextoDe` que alimenta el prompt, así que lo que la
+   * pantalla promete es lo que se busca.
+   */
+  async ajustes(userId: string): Promise<TrendSettingsDto> {
+    const contexto = await this.contextoDe(userId);
+    if (!contexto) throw new NotFoundException("Aún no configuras tu voz de marca.");
+    return {
+      fuentes: contexto.fuentes,
+      prompt: contexto.prompt,
+      excluye: contexto.excluye,
+      langs: contexto.langs,
+      base: baseDeBusqueda(contexto),
+    };
+  }
+
+  /**
+   * Guarda la personalización entera, en una sola transacción.
+   *
+   * No dispara una búsqueda ni cambia lo que se cobra: aplica en el siguiente
+   * refresco, sea el semanal o uno adelantado. Un texto en blanco se guarda
+   * como `null`, que es "no personalicé esto" y no "busca nada".
+   */
+  async guardarAjustes(userId: string, body: UpdateTrendSettingsBody): Promise<TrendSettingsDto> {
+    await this.dbService.runWithTenant(userId, async (tx) => {
+      const voz = await this.voiceRepo.findDefault(tx);
+      if (!voz) throw new NotFoundException("Aún no configuras tu voz de marca.");
+      await this.repo.reemplazarFuentes(tx, userId, body.fuentes);
+      await this.voiceRepo.updateDefault(tx, {
+        trendPrompt: body.prompt || null,
+        trendExclude: body.excluye || null,
+        trendLangs: body.langs,
+      });
+    });
+    return this.ajustes(userId);
   }
 
   /**

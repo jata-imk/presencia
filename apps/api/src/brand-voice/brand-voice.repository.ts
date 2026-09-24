@@ -46,6 +46,12 @@ export type UpdateBrandVoicePatch = Partial<{
   keyTopics: string[];
   preferredCtas: string[];
   referenceExamples: BrandVoiceReferenceExample[];
+  // Configuración › Tendencias (F9.6). Viven en la voz porque son parte de
+  // "quién soy y qué me importa", pero las escribe TrendsService, no el PATCH
+  // de voz de marca: ver `guardarAjustes`.
+  trendPrompt: string | null;
+  trendExclude: string | null;
+  trendLangs: string[];
   // Escape hatch sin schema propio — ver comentario en
   // packages/shared/src/brand-voice.ts junto a updateBrandVoiceBodySchema.
   extras: Record<string, unknown>;

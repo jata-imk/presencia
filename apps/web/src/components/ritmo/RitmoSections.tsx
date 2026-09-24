@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { CalendarCheck, ExternalLink, Minus, Pencil, Plus } from "lucide-react";
+import { CalendarCheck, ExternalLink, Minus, Pencil, Plus, RefreshCw } from "lucide-react";
 import {
   MODO_ESTRATEGIA_META,
   TREND_FORMAT_LABELS,
@@ -9,8 +9,10 @@ import {
   type RitmoObjetivoDto,
   type SocialNetwork,
   type TrendItem,
+  type TrendsDto,
 } from "@presencia/shared";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
+import { botonDeRefresco, haceCuanto } from "../../lib/ritmo/tendencias.js";
 import { RachaTile } from "./CadenciaHeatmap.js";
 
 export function Bloque({ children }: { children: ReactNode }) {
@@ -253,6 +255,61 @@ export function TarjetaTendencia({ item }: { item: TrendItem }) {
         Visto en {item.sourceTitle}
       </a>
     </article>
+  );
+}
+
+/**
+ * Lo que va a la derecha del título de Tendencias: de cuándo es lo que se ve,
+ * el botón para adelantarlo y la entrada a personalizar la búsqueda.
+ *
+ * El botón dice su precio ANTES de cobrarlo, como porcentaje del mes, y no lo
+ * dice cuando es gratis (presencia-ritmo.md, "Actualizar ahora"). Todo eso lo
+ * decide la API: aquí solo se pinta `refresco` tal cual llega.
+ */
+export function AccionesTendencias({
+  datos,
+  onActualizar,
+  error,
+}: {
+  datos: TrendsDto;
+  onActualizar: () => void;
+  error: string | null;
+}) {
+  const boton = botonDeRefresco(datos.refresco);
+  const enCurso = datos.refresco.enCurso;
+  const nota = boton.motivo ?? boton.precio;
+  return (
+    <div className="flex flex-col items-start gap-1.5 sm:items-end">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:justify-end">
+        {datos.generatedAt && (
+          <span className="text-xs text-fg-muted italic">
+            Actualizadas {haceCuanto(datos.generatedAt)}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onActualizar}
+          disabled={boton.deshabilitado}
+          aria-busy={enCurso}
+          className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-line bg-card px-3 py-1.5 font-display text-xs font-semibold text-brand transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-card"
+        >
+          <RefreshCw size={13} className={`text-accent ${enCurso ? "animate-spin" : ""}`} />
+          {boton.etiqueta}
+        </button>
+      </div>
+      {nota && <span className="text-[11px] text-fg-muted">{nota}</span>}
+      {error && (
+        <span role="alert" className="text-[11px] text-error">
+          {error}
+        </span>
+      )}
+      <Link
+        to="/configuracion/tendencias"
+        className="text-[11px] text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+      >
+        {datos.personalizada ? "Búsqueda personalizada · Ajustar" : "Personalizar la búsqueda"}
+      </Link>
+    </div>
   );
 }
 

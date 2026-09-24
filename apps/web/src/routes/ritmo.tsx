@@ -9,6 +9,7 @@ import {
   FilaObjetivo,
   TarjetaTendencia,
   TituloBloque,
+  AccionesTendencias,
   nombreDeRed,
 } from "../components/ritmo/RitmoSections.js";
 import {
@@ -41,7 +42,13 @@ function primerNombre(nombre: string | null | undefined): string {
 export function RitmoPage() {
   const { data: session } = authClient.useSession();
   const { resumen, error, errorGuardado, guardando, recargar, cambiarMeta } = useRitmoResumen();
-  const { tendencias, recargar: recargarTendencias } = useTendencias();
+  const {
+    tendencias,
+    actualizar: actualizarTendencias,
+    errorRefresco,
+    cuotaAgotada: cuotaTendencias,
+    descartarCuota: descartarCuotaTendencias,
+  } = useTendencias();
   const narracion = useNarracion();
 
   // `null` hasta que el resumen diga qué redes hay. La elección del usuario
@@ -259,9 +266,16 @@ export function RitmoPage() {
             kicker="El corazón cultural · MX"
             titulo="Tendencias en tu nicho"
             sub="Temas moviéndose ahora. Citamos siempre la fuente."
+            derecha={
+              <AccionesTendencias
+                datos={tendencias}
+                onActualizar={actualizarTendencias}
+                error={errorRefresco}
+              />
+            }
           />
           {tendencias.items.length === 0 ? (
-            <TendenciasVacias datos={tendencias} onReintentar={recargarTendencias} />
+            <TendenciasVacias datos={tendencias} />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {tendencias.items.map((item) => (
@@ -272,6 +286,9 @@ export function RitmoPage() {
         </section>
       )}
 
+      {cuotaTendencias && (
+        <QuotaExhaustedModal quota={cuotaTendencias} onDismiss={descartarCuotaTendencias} />
+      )}
       {narracion.cuotaAgotada && (
         <QuotaExhaustedModal quota={narracion.cuotaAgotada} onDismiss={narracion.descartarCuota} />
       )}

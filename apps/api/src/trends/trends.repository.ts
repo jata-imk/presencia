@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { trendItemSchema, type TrendItem } from "@presencia/shared";
 import { sessions, trendRefreshes, trendSources, users, userTrends } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
@@ -97,6 +97,29 @@ export class TrendsRepository {
       })
       .from(trendSources)
       .orderBy(asc(trendSources.createdAt));
+  }
+
+  /**
+   * Deja las fuentes del usuario exactamente en `hosts`.
+   *
+   * Borra las que ya no están y agrega las nuevas, en vez de borrar todo y
+   * reinsertar: así las que se quedan conservan su `created_at`, que es el
+   * orden en que se muestran. Las nuevas llevan su hora explícita y separada
+   * por un milisegundo, porque un solo `INSERT` le pondría a todas el mismo
+   * `now()` y su orden quedaría al azar.
+   */
+  async reemplazarFuentes(tx: Tx, userId: string, hosts: readonly string[]): Promise<void> {
+    // Sin `where` cuando la lista viene vacía: `notInArray` con cero valores
+    // no es un filtro válido, y "ninguna fuente" es borrarlas todas.
+    await tx
+      .delete(trendSources)
+      .where(hosts.length > 0 ? notInArray(trendSources.host, [...hosts]) : undefined);
+    if (hosts.length === 0) return;
+    const base = Date.now();
+    await tx
+      .insert(trendSources)
+      .values(hosts.map((host, i) => ({ userId, host, createdAt: new Date(base + i) })))
+      .onConflictDoNothing();
   }
 
   /**

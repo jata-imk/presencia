@@ -4,6 +4,8 @@ import type {
   RitmoMetaDto,
   RitmoResumenDto,
   SocialNetwork,
+  TrendRefreshStateDto,
+  TrendSettingsDto,
   TrendsDto,
   VentanaDeRedDto,
 } from "@presencia/shared";
@@ -41,6 +43,31 @@ export function fetchVentanas(diaSemana: number, signal?: AbortSignal): Promise<
 
 export function fetchTendencias(signal?: AbortSignal): Promise<TrendsDto> {
   return apiFetch<TrendsDto>("/api/ritmo/tendencias", { signal });
+}
+
+/**
+ * Adelanta el refresco de tendencias.
+ *
+ * Devuelve el estado del botón, no tendencias: la búsqueda tarda cerca de un
+ * minuto y corre en la cola. Quien llama vuelve a pedir el GET mientras
+ * `enCurso` siga en true.
+ */
+export function solicitarRefrescoDeTendencias(): Promise<TrendRefreshStateDto> {
+  return apiFetch<TrendRefreshStateDto>("/api/ritmo/tendencias/refresco", { method: "POST" });
+}
+
+export function fetchAjustesDeTendencias(signal?: AbortSignal): Promise<TrendSettingsDto> {
+  return apiFetch<TrendSettingsDto>("/api/ritmo/tendencias/ajustes", { signal });
+}
+
+/** Guarda la personalización ENTERA: la lista de fuentes que llega es la que queda. */
+export function saveAjustesDeTendencias(
+  ajustes: Pick<TrendSettingsDto, "fuentes" | "prompt" | "excluye" | "langs">,
+): Promise<TrendSettingsDto> {
+  return apiFetch<TrendSettingsDto>("/api/ritmo/tendencias/ajustes", {
+    method: "PUT",
+    body: ajustes,
+  });
 }
 
 export function saveMetaSemanal(network: SocialNetwork, meta: number): Promise<RitmoResumenDto> {

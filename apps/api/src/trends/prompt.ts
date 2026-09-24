@@ -7,6 +7,7 @@ import {
   type MacroRegionId,
   type ModoEstrategia,
   type TrendLang,
+  type TrendSearchBaseDto,
   type VerticalId,
 } from "@presencia/shared";
 
@@ -66,7 +67,23 @@ export function estaPersonalizada(contexto: ContextoDeBusqueda): boolean {
   );
 }
 
+/**
+ * La capa 1 en palabras: nicho, lugar y objetivo, tal como llegan al prompt.
+ *
+ * Es también lo que Configuración › Tendencias le muestra al usuario como "lo
+ * que buscamos si no tocas nada". Sale de aquí, y no de una segunda redacción
+ * en la pantalla, para que la explicación y la búsqueda no puedan divergir.
+ */
+export function baseDeBusqueda(contexto: ContextoDeBusqueda): TrendSearchBaseDto {
+  return {
+    nicho: contexto.niche.length > 0 ? contexto.niche.join(", ") : verticalLabel(contexto.vertical),
+    region: `${macroRegionLabel(contexto.region)}, ${contexto.marketCountry}`,
+    objetivo: MODO_ESTRATEGIA_META[contexto.modo].label,
+  };
+}
+
 export function promptDeBusqueda(contexto: ContextoDeBusqueda): string {
+  const base = baseDeBusqueda(contexto);
   const idiomas = (contexto.langs.length > 0 ? contexto.langs : (["es"] as TrendLang[]))
     .map((lang) => NOMBRE_DE_IDIOMA[lang])
     .join(" o ");
@@ -79,10 +96,10 @@ export function promptDeBusqueda(contexto: ContextoDeBusqueda): string {
     "decida sobre qué crear.",
     "",
     "A QUIÉN LE ESTÁS BUSCANDO:",
-    `- Nicho: ${contexto.niche.length > 0 ? contexto.niche.join(", ") : verticalLabel(contexto.vertical)}`,
+    `- Nicho: ${base.nicho}`,
     `- Categoría general: ${verticalLabel(contexto.vertical)}`,
-    `- Dónde está: ${macroRegionLabel(contexto.region)}, ${contexto.marketCountry}`,
-    `- Objetivo actual: ${MODO_ESTRATEGIA_META[contexto.modo].label}`,
+    `- Dónde está: ${base.region}`,
+    `- Objetivo actual: ${base.objetivo}`,
   ];
 
   if (contexto.audience) {
