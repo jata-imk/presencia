@@ -268,6 +268,32 @@ describe("TrendsRepository", () => {
     },
   );
 
+  it(
+    "el último liquidado es el más reciente y no el que sigue en vuelo",
+    { timeout: 15_000 },
+    async () => {
+      await dbService.runWithTenant(userB, (tx) => tx.delete(trendRefreshes));
+      expect(await dbService.runWithTenant(userB, (tx) => repo.ultimoLiquidado(tx))).toBeNull();
+      const antes = new Date(Date.now() - 60 * 60 * 1000);
+      await dbService.runWithTenant(userB, (tx) =>
+        tx.insert(trendRefreshes).values([
+          {
+            userId: userB,
+            billable: false,
+            requestedAt: antes,
+            settledAt: antes,
+            outcome: "gratis",
+          },
+          { userId: userB, billable: false, settledAt: new Date(), outcome: "error" },
+          { userId: userB, billable: false },
+        ]),
+      );
+      const ultimo = await dbService.runWithTenant(userB, (tx) => repo.ultimoLiquidado(tx));
+      expect(ultimo?.outcome).toBe("error");
+      await dbService.runWithTenant(userB, (tx) => tx.delete(trendRefreshes));
+    },
+  );
+
   it("no deja abrir dos refrescos a la vez", { timeout: 15_000 }, async () => {
     // El candado es el índice parcial `trend_refreshes_en_vuelo`, no un `if`:
     // dos clicks separados por milisegundos leerían los dos "no hay ninguno".

@@ -110,7 +110,23 @@ export function TendenciasVacias({ datos }: { datos: TrendsDto }) {
       </Vacio>
     );
   }
-  const nuncaBuscado = datos.generatedAt === null;
+  // La última búsqueda tronó y no hay nada que mostrar: decir "todavía no
+  // buscamos" sería mentir, porque sí buscamos. Es lo que se veía en prod
+  // cuando la estructura fallaba (F9.6).
+  if (datos.refresco.ultimoFallo?.motivo === "error") {
+    return (
+      <Vacio
+        icono={<CloudOff size={22} className="text-fg-muted" />}
+        titulo="No pudimos traer tus tendencias"
+      >
+        La búsqueda falló de nuestro lado. No se te cobró nada; vuelve a intentarlo en un rato.
+      </Vacio>
+    );
+  }
+  // Un fallo registrado también es "sí buscamos": si `marcarIntento` no llegó a
+  // escribir la tanda vacía, `generatedAt` sigue en null y sin esto se leería
+  // "todavía no buscamos" después de una búsqueda que no encontró nada.
+  const nuncaBuscado = datos.generatedAt === null && datos.refresco.ultimoFallo === null;
   return (
     <Vacio
       icono={<CloudOff size={22} className="text-fg-muted" />}
