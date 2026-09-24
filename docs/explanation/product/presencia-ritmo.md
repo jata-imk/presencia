@@ -250,11 +250,14 @@ formato recomendado y un gancho:
 
 Jose ve una que le late. Click en **"Crear en Chat"**.
 
-**Lo que pasa:** Ritmo lo deriva al módulo Chat. Se abre un
-chat nuevo con el tema Y el formato (Reel) precargados en el
-contexto. El Chat ya está esperando para generar el guion (el
-arquetipo de video corto, ver `presencia-chat.md`). Ritmo no
-creó nada — solo prendió la chispa y pasó la estafeta.
+**Lo que pasa:** Ritmo lo deriva al módulo Chat. Se abre la
+pantalla de chat nuevo con la propuesta **ya escrita en la caja**
+—formato, red, título, gancho y la tendencia de la que sale— y
+**sin mandar nada**. Jose la lee, la ajusta si quiere y la manda
+él; recién ahí el Chat genera el guion (el arquetipo de video
+corto, ver `presencia-chat.md`). Ritmo no creó nada — solo prendió
+la chispa y pasó la estafeta. Y un click accidental no cuesta un
+turno.
 
 ### El cierre del flujo
 
@@ -458,7 +461,20 @@ fresco, no una alucinación de la IA.
 
 **Qué es:** publicaciones concretas que Ritmo arma a partir de
 los temas virales, cada una con formato recomendado (badge
-Reel/Carrusel/Post) y un gancho.
+Reel/Carrusel/Post), la red, un título y un gancho. Se muestran
+hasta tres, prefiriendo formatos distintos: tres Reels seguidos se
+leen como una sola idea repetida.
+
+**De dónde salen (F9.6):** de la misma llamada que estructura las
+tendencias, que ya corre en cada refresco. No es una llamada
+aparte ni una búsqueda nueva: esa segunda llamada no navega, así
+que no paga el fee de grounding, y escribir un título y un gancho
+por tendencia le suma unos cuantos tokens al mismo JSON
+(ADR-024). Viajan dentro de la tendencia porque no existen sin
+ella: su fuente es la de la tendencia. Son opcionales —si el
+modelo no tiene una buena, no se inventa una— y las tandas
+anteriores a F9.6 simplemente no traen propuestas hasta su
+siguiente refresco.
 
 **Por qué existe (separada de tendencias):** una tendencia es
 un _tema_ ("rutinas de productividad sin apps de pago"); una
@@ -468,10 +484,11 @@ el puente entre "qué se mueve" y "qué hago yo con eso".
 
 **Por qué el botón lleva al Chat y no crea aquí:** ley del
 producto. Una sola fuente de creación = el Chat (ver sección
-1). El botón abre Chat con tema + formato precargados.
+1). El botón abre Chat con la propuesta escrita en la caja, sin
+mandarla: generar es decisión del usuario, no del click.
 
 **Por qué la propuesta sugiere formato visual:** porque el
-público es visual-first. Proponer "escribí un post de LinkedIn"
+público es visual-first. Proponer "escribe un post de LinkedIn"
 para un creator de TikTok sería hablarle en el idioma
 equivocado. Las propuestas hablan en Reel, carrusel, gancho.
 

@@ -318,6 +318,22 @@
      foreground que tampoco invierta". */
   --ritmo-cell-fg: var(--color-plum-950);
 
+  /* Propuestas de publicación (mock de Claude Design, ProposalCard). El chip
+     de formato lleva un color por familia —video vertical, secuencia,
+     estático— para que la grilla se lea de un vistazo por formato, que es
+     como piensa un creator visual-first. Los dos foreground rosa y azul son
+     los del mock y no un paso de la paleta: pink-700 y blue-600 son bastante
+     más saturados y el chip gritaba más que el título. */
+  --ritmo-formato-reel-bg: var(--bg-tint-pink);
+  --ritmo-formato-reel-fg: #9b1d6a;
+  --ritmo-formato-carrusel-bg: var(--color-plum-50);
+  --ritmo-formato-carrusel-fg: var(--color-plum-600);
+  --ritmo-formato-post-bg: var(--bg-tint-blue);
+  --ritmo-formato-post-fg: #1d4ed8;
+  /* El bloque "Gancho": una cita dentro de la tarjeta, con filo de orquídea. */
+  --ritmo-gancho-bg: var(--color-plum-50);
+  --ritmo-gancho-border: var(--color-pink-orchid);
+
   /* Layout. --sidebar-width es el DEFAULT, no la ley: desde F6.5 el
      usuario puede arrastrar el borde del sidebar y el valor elegido se
      escribe inline sobre <html> (origen inline gana a :root sin pelear
@@ -427,6 +443,14 @@
   --ritmo-racha-hasta: var(--color-plum-900);
   --ritmo-racha-border: var(--color-plum-700);
   --ritmo-sin-racha-border: var(--color-plum-600);
+  /* Propuestas: los fondos tint-pink y tint-blue ya se voltean solos; los
+     foreground suben a un paso claro para leerse sobre ellos. */
+  --ritmo-formato-reel-fg: var(--color-pink-200);
+  --ritmo-formato-carrusel-bg: var(--color-plum-900);
+  --ritmo-formato-carrusel-fg: var(--color-plum-200);
+  --ritmo-formato-post-fg: var(--color-blue-200);
+  --ritmo-gancho-bg: var(--color-plum-900);
+  --ritmo-gancho-border: var(--color-plum-500);
   --cal-group-bg: color-mix(in srgb, var(--color-pink-orchid) 16%, transparent);
 }
 
@@ -502,6 +526,14 @@
   --color-ritmo-racha-hasta: var(--ritmo-racha-hasta);
   --color-ritmo-racha-border: var(--ritmo-racha-border);
   --color-ritmo-sin-racha-border: var(--ritmo-sin-racha-border);
+  --color-ritmo-formato-reel: var(--ritmo-formato-reel-bg);
+  --color-ritmo-formato-reel-fg: var(--ritmo-formato-reel-fg);
+  --color-ritmo-formato-carrusel: var(--ritmo-formato-carrusel-bg);
+  --color-ritmo-formato-carrusel-fg: var(--ritmo-formato-carrusel-fg);
+  --color-ritmo-formato-post: var(--ritmo-formato-post-bg);
+  --color-ritmo-formato-post-fg: var(--ritmo-formato-post-fg);
+  --color-ritmo-gancho: var(--ritmo-gancho-bg);
+  --color-ritmo-gancho-border: var(--ritmo-gancho-border);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);

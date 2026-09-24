@@ -59,6 +59,12 @@ Ese tercer caso es el que obliga a mirar los items y no solo la fecha. Cuando un
 
 **El cobro puede sobregirar, y acá corresponde.** `spend` rechaza por default porque su caso normal es cobrar _antes_ de producir el efecto, donde rechazar es gratis. Este cobro ocurre al final de una búsqueda de ~40 segundos: entre el click y ese momento, un turno de chat pudo consumir el saldo que el gate había comprobado. Sin sobregiro, `spend` lanzaría dentro de la transacción y se llevaría por delante el `upsert` de la tanda — la búsqueda ya pagada, el usuario sin tendencias **y** sin el asiento que explica el gasto. Un saldo levemente negativo dice la verdad; perder las dos cosas, no. Es la misma doctrina que `charge()`.
 
+## Las propuestas de publicación viajan en la misma tanda
+
+Título y gancho de cada propuesta los escribe la **llamada de estructura** (la segunda, sin herramientas), no una tercera. Esa llamada no busca, así que no paga fee de grounding, y ya tiene delante lo que hace falta: la prosa de la búsqueda y la tendencia que está armando. Una llamada aparte pagaría otra vez el contexto para decir lo mismo.
+
+`titulo` y `gancho` son `nullish` en el schema crudo —el prompt pide `null` cuando no hay una buena, pero un proveedor que no fuerce la salida estructurada puede omitir la llave, y eso no puede tirar la validación entera— y van **sin tope de largo** ahí, por la misma razón: un título largo tiraría la tanda después de pagar la búsqueda. El tope lo aplica `ensamblarTendencias`, que valida la propuesta aparte y, si no pasa, descarta **solo la propuesta**. En `trendItemSchema` la propuesta es opcional: las tandas guardadas antes siguen leyéndose.
+
 ## Lo que esto cuesta y se acepta
 
 - **Se pierde el arranque instantáneo.** Con caché compartida, un usuario nuevo heredaba la tanda de otro de su vertical y veía tendencias al primer login. Ahora espera al barrido (≤ 1 día) o paga un refresco inmediato. A cambio, lo que ve es suyo.

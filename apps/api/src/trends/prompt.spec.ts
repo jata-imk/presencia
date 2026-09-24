@@ -3,6 +3,7 @@ import {
   baseDeBusqueda,
   estaPersonalizada,
   promptDeBusqueda,
+  promptDeEstructura,
   type ContextoDeBusqueda,
 } from "./prompt.js";
 
@@ -126,5 +127,21 @@ describe("estaPersonalizada", () => {
     ["otro idioma", { langs: ["es", "en"] }],
   ])("cuenta %s", (_nombre, cambios) => {
     expect(estaPersonalizada(con(cambios))).toBe(true);
+  });
+});
+
+describe("promptDeEstructura", () => {
+  const prompt = promptDeEstructura("Resumen de la búsqueda.", [{ title: "xataka.com.mx" }]);
+
+  it("numera las fuentes para que el modelo cite por índice", () => {
+    expect(prompt).toContain("0. xataka.com.mx");
+  });
+
+  it("pide la propuesta de publicación y le deja decir que no tiene una", () => {
+    // La propuesta sale de ESTA llamada, que no busca: no paga fee de
+    // grounding. Y `null` es una respuesta válida, no un error.
+    expect(prompt).toContain("`titulo` y `gancho` son una PROPUESTA DE PUBLICACIÓN");
+    expect(prompt).toContain("pon los dos en null");
+    expect(prompt).toContain("tuteando");
   });
 });

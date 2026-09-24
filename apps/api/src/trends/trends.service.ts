@@ -92,6 +92,14 @@ const esquemaCrudo = z.object({
         format: z.enum(TREND_FORMATS),
         blurb: z.string(),
         sourceIndex: z.number().int(),
+        // `nullish`: el prompt pide `null` cuando no hay una buena, pero no
+        // todos los proveedores fuerzan la salida estructurada, y uno que
+        // simplemente OMITA la llave no puede tirar la validación entera —
+        // sería perder la tanda después de pagar la búsqueda. Por lo mismo el
+        // tope de largo no va acá: lo aplica `ensamblarTendencias`, que
+        // descarta solo la propuesta.
+        titulo: z.string().nullish(),
+        gancho: z.string().nullish(),
       }),
     )
     .max(MAX_TENDENCIAS * 2),

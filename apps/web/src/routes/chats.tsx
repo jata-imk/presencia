@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { parseDate } from "@internationalized/date";
 import { Composer } from "../components/chat/Composer.js";
 import { ContextChip } from "../components/chat/ContextChip.js";
@@ -128,6 +128,21 @@ export function ChatsPage() {
       el.setSelectionRange(el.value.length, el.value.length);
     });
   }
+
+  // "Crear en Chat" desde una propuesta de Ritmo llega como `state.propuesta`:
+  // se escribe en la caja, igual que una tarjeta de sugerencia, y no se manda.
+  // El state se limpia en seguida para que recargar no la vuelva a escribir
+  // encima de lo que el usuario ya editó. Mismo patrón que `initialPrompt` en
+  // chat.tsx, con la diferencia que importa: aquél sí dispara la generación.
+  const location = useLocation();
+  const propuesta = (location.state as { propuesta?: unknown } | null)?.propuesta;
+  useEffect(() => {
+    if (typeof propuesta !== "string" || propuesta.length === 0) return;
+    proponer(propuesta);
+    void navigate(location.pathname + location.search, { replace: true, state: null });
+    // Solo al llegar con una propuesta nueva: `proponer` y `navigate` no
+    // cambian lo que hay que hacer.
+  }, [propuesta]);
 
   async function startChat(prompt: string) {
     const trimmed = prompt.trim();

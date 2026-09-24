@@ -194,5 +194,15 @@ export function promptDeEstructura(texto: string, fuentes: readonly { title: str
     "- `signal`: `new` si apenas aparece, `rising` si va subiendo, `stable` si es constante.",
     `- "format" solo puede ser uno de: ${TREND_FORMATS.join(", ")}.`,
     `- "signal" solo puede ser uno de: ${TREND_SIGNALS.join(", ")}.`,
+    "- `titulo` y `gancho` son una PROPUESTA DE PUBLICACIÓN sobre esa tendencia,",
+    "  para que el creator la haga en su cuenta, en el formato de `format`:",
+    "  - `titulo`: la publicación concreta, no el tema. En primera persona, como",
+    '    la escribiría el creator ("Grabé cómo armé mi portafolio con IA en una',
+    '    tarde"), no como un titular de noticia. Máximo 120 caracteres.',
+    "  - `gancho`: la primera frase que se dice o se lee, la que hace que alguien",
+    "    se quede. Máximo 200 caracteres.",
+    "  - En español de México, tuteando, sin porcentajes ni cifras inventadas.",
+    "  - Si para una tendencia no se te ocurre una buena, pon los dos en null.",
+    "    Una propuesta de relleno es peor que ninguna.",
   ].join("\n");
 }

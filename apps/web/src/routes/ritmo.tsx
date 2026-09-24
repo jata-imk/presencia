@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import type { SocialNetwork } from "@presencia/shared";
 import { CadenciaHeatmap, LeyendaHeatmap } from "../components/ritmo/CadenciaHeatmap.js";
 import { Narracion } from "../components/ritmo/Narracion.js";
@@ -24,6 +25,8 @@ import {
 } from "../components/ritmo/RitmoStates.js";
 import { NETWORK_META } from "../components/cards/NetworkLogos.js";
 import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
+import { TarjetaPropuesta } from "../components/ritmo/TarjetaPropuesta.js";
+import { elegirPropuestas, promptDePropuesta, type ConPropuesta } from "../lib/ritmo/propuestas.js";
 import { authClient } from "../lib/auth-client.js";
 import { useHorarios, useNarracion, useRitmoResumen, useTendencias } from "../lib/use-ritmo.js";
 
@@ -50,6 +53,15 @@ export function RitmoPage() {
     descartarCuota: descartarCuotaTendencias,
   } = useTendencias();
   const narracion = useNarracion();
+  const navigate = useNavigate();
+  const propuestas = useMemo(() => elegirPropuestas(tendencias?.items ?? []), [tendencias]);
+
+  // "Crear en Chat" deja el texto escrito en el composer de un chat nuevo y
+  // NO manda nada: Ritmo propone, el Chat crea (presencia-ritmo.md §3). Viaja
+  // como `propuesta` y no como `initialPrompt`, que sí dispara la generación.
+  function crearEnChat(item: ConPropuesta) {
+    void navigate("/chats", { state: { propuesta: promptDePropuesta(item) } });
+  }
 
   // `null` hasta que el resumen diga qué redes hay. La elección del usuario
   // sobrevive a las recargas del resumen (guardar una meta lo devuelve entero).
@@ -283,6 +295,21 @@ export function RitmoPage() {
               ))}
             </div>
           )}
+        </section>
+      )}
+
+      {propuestas.length > 0 && (
+        <section>
+          <TituloBloque
+            kicker="De la tendencia a la acción"
+            titulo="Propuestas de publicación"
+            sub="Ideas concretas listas para crear. El Chat es donde nace el contenido."
+          />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {propuestas.map((item) => (
+              <TarjetaPropuesta key={item.topic} item={item} onCrear={crearEnChat} />
+            ))}
+          </div>
         </section>
       )}
 
