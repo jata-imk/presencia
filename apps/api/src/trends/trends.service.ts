@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { generateObject, generateText } from "ai";
 import { z } from "zod";
 import {
@@ -12,6 +12,7 @@ import {
   trendLangSchema,
   type TrendItem,
   type TrendLang,
+  type TrendRefreshStateDto,
 } from "@presencia/shared";
 import { AiService } from "../ai/ai.service.js";
 import {
@@ -20,8 +21,11 @@ import {
   SEARCH_PROVIDER,
 } from "../ai/provider-registry.js";
 import { BrandVoiceRepository } from "../brand-voice/brand-voice.repository.js";
+import { CreditsService } from "../credits/credits.service.js";
+import { flatActionPercentOfQuota, quoteFlatAction } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
 import { env } from "../env.js";
+import { BossService } from "../jobs/boss.service.js";
 import { summarizeFailures } from "../jobs/summarize-failures.js";
 import { ensamblarTendencias, extraerFuentes } from "./grounding.js";
 import {
@@ -31,6 +35,7 @@ import {
   promptDeEstructura,
   type ContextoDeBusqueda,
 } from "./prompt.js";
+import { esCobrable } from "./cobro.js";
 import { TrendsRepository } from "./trends.repository.js";
 
 // Las tendencias de nicho: buscar lo que se está moviendo para UNA persona, y
@@ -98,6 +103,35 @@ export interface ResultadoDeRefresco {
   consultas: number;
 }
 
+/**
+ * El refresco manual que hay que liquidar al terminar.
+ *
+ * `billable` viaja acá dentro y no se vuelve a calcular en el handler, y esa
+ * es la decisión: se resolvió al pedirlo, cuando el usuario todavía tenía en
+ * pantalla la tanda que está adelantando. Cuarenta segundos después, la tanda
+ * ya es otra y la pregunta ya no se puede rehacer.
+ */
+export interface CobroDeRefresco {
+  id: string;
+  billable: boolean;
+}
+
+/** La cola del refresco manual. La registra el worker; la API solo encola. */
+export const MANUAL_REFRESH_QUEUE = "trends.refresh.manual";
+
+/**
+ * Techo de un refresco manual: dos llamadas para UN usuario.
+ *
+ * Mucho menos que los 25 minutos del pase, que trabaja sobre veinte. pg-boss
+ * no mata al handler cuando expira —marca el job fallido y libera el slot—,
+ * así que esto no cancela nada: acota cuánto puede tapar la cola un job
+ * colgado.
+ */
+export const MANUAL_REFRESH_EXPIRE_SECONDS = 6 * 60;
+
+const REASON_REFRESCO = "trend_refresh" as const;
+const REFERENCE_TYPE_REFRESCO = "trend_refresh";
+
 @Injectable()
 export class TrendsService {
   constructor(
@@ -105,6 +139,8 @@ export class TrendsService {
     @Inject(AiService) private readonly ai: AiService,
     @Inject(TrendsRepository) private readonly repo: TrendsRepository,
     @Inject(BrandVoiceRepository) private readonly voiceRepo: BrandVoiceRepository,
+    @Inject(CreditsService) private readonly credits: CreditsService,
+    @Inject(BossService) private readonly boss: BossService,
   ) {}
 
   /**
@@ -142,7 +178,7 @@ export class TrendsService {
    * tanda, sí anota el vacío — la ausencia de fila no es un estado neutro, es
    * lo que hace que el barrido lo vuelva a encolar.
    */
-  async refrescarUsuario(userId: string): Promise<ResultadoDeRefresco> {
+  async refrescarUsuario(userId: string, cobro?: CobroDeRefresco): Promise<ResultadoDeRefresco> {
     const arranque = Date.now();
     const contexto = await this.contextoDe(userId);
     if (!contexto) {
@@ -154,6 +190,7 @@ export class TrendsService {
       // Veinte de esos se comían el presupuesto entero y nadie con la tanda
       // vencida se refrescaba jamás.
       await this.marcarIntento(userId, { motivo: "sin_voz" });
+      await this.liquidar(userId, cobro, "sin_voz");
       return { userId, items: [], fuentes: 0, consultas: 0 };
     }
 
@@ -201,6 +238,7 @@ export class TrendsService {
     // entero y se reintenta, en vez de publicar tendencias inventadas.
     if (unicas.length === 0) {
       await this.marcarIntento(userId, { motivo: "sin_fuentes", modelo, consultas });
+      await this.liquidar(userId, cobro, "sin_resultados");
       return { userId, items: [], fuentes: 0, consultas };
     }
 
@@ -221,12 +259,13 @@ export class TrendsService {
     );
     if (items.length === 0) {
       await this.marcarIntento(userId, { motivo: "sin_items_citables", modelo, consultas });
+      await this.liquidar(userId, cobro, "sin_resultados");
       return { userId, items: [], fuentes: unicas.length, consultas };
     }
 
     const ahora = new Date();
-    await this.dbService.runWithTenant(userId, (tx) =>
-      this.repo.upsert(tx, {
+    await this.dbService.runWithTenant(userId, async (tx) => {
+      await this.repo.upsert(tx, {
         userId,
         items,
         generatedAt: ahora,
@@ -241,10 +280,142 @@ export class TrendsService {
           personalizada: estaPersonalizada(contexto),
           durationMs: Date.now() - arranque,
         },
-      }),
-    );
+      });
+      if (!cobro) return;
+      // EN LA MISMA TRANSACCION que la tanda que lo justifica
+      // (modelo-de-datos.md: "o se cobra y se produce el efecto, o ninguna de
+      // las dos"). Cobrar aparte, despues, deja la puerta abierta a cobrar un
+      // refresco que despues no se guardo.
+      if (cobro.billable) {
+        await this.credits.spend(tx, {
+          userId,
+          reason: REASON_REFRESCO,
+          referenceType: REFERENCE_TYPE_REFRESCO,
+          referenceId: cobro.id,
+        });
+      }
+      await this.repo.liquidarRefresco(tx, cobro.id, cobro.billable ? "cobrado" : "gratis");
+    });
 
     return { userId, items, fuentes: unicas.length, consultas };
+  }
+
+  /**
+   * El estado del botón de "actualizar ahora".
+   *
+   * Lo arma la API y no la pantalla, por la regla de siempre: la web nunca ve
+   * la unidad cruda del ledger. Acá se traduce a porcentaje del mes y a dos
+   * booleanos que el botón puede usar tal cual.
+   */
+  async estadoDeRefresco(userId: string): Promise<TrendRefreshStateDto> {
+    const { enVuelo, billable } = await this.dbService.runWithTenant(userId, async (tx) => {
+      const [vuelo, tanda] = await Promise.all([this.repo.refrescoEnVuelo(tx), this.repo.find(tx)]);
+      return { enVuelo: vuelo !== null, billable: esCobrable(tanda) };
+    });
+
+    if (!billable) {
+      // Gratis: no hay nada que consultarle al ledger, y preguntarle igual
+      // sería un lock por carga de pantalla.
+      return { enCurso: enVuelo, disponible: !enVuelo, costoPorcentaje: 0 };
+    }
+
+    const cuota = await this.credits.getQuotaStatus(userId);
+    return {
+      enCurso: enVuelo,
+      // Sin saldo el botón se apaga acá y no en el 402: anunciar un precio que
+      // la cuenta no puede pagar y recién decírselo al hacer click es la peor
+      // forma de contarlo.
+      disponible: !enVuelo && cuota.rawBalance >= quoteFlatAction(REASON_REFRESCO),
+      costoPorcentaje: flatActionPercentOfQuota(REASON_REFRESCO, cuota.tier),
+    };
+  }
+
+  /**
+   * Pide un refresco adelantado y lo deja encolado.
+   *
+   * **Se cobra solo si el usuario ya tiene tendencias vigentes**, que es lo
+   * único que se puede adelantar. Sin tanda, con la tanda vencida o con una
+   * que no trajo nada, el refresco es gratis: cobrarle a alguien por su
+   * primera entrega —o por reintentar una búsqueda que no dio resultados— es
+   * cobrarle por lo que no recibió.
+   *
+   * No devuelve las tendencias porque todavía no existen: la búsqueda tarda
+   * decenas de segundos, así que esto deja el trabajo en la cola y contesta el
+   * estado. La pantalla vuelve a preguntar.
+   */
+  async solicitarRefresco(userId: string): Promise<TrendRefreshStateDto> {
+    const contexto = await this.contextoDe(userId);
+    if (!contexto) throw new NotFoundException("Aún no configuras tu voz de marca.");
+
+    const estado = await this.estadoDeRefresco(userId);
+    // Ya hay uno andando: se contesta el estado en vez de un error. Volver a
+    // apretar un botón que está trabajando no es una falla del usuario.
+    if (estado.enCurso) return estado;
+
+    const billable = estado.costoPorcentaje > 0;
+    // El gate ANTES de encolar: `spend` rechaza si no alcanza, pero para
+    // entonces ya se habría pagado la búsqueda. Esto contesta 402 sin gastar.
+    if (billable) await this.credits.assertQuotaOr402(userId, quoteFlatAction(REASON_REFRESCO));
+
+    const id = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.abrirRefresco(tx, userId, billable),
+    );
+    // `null` = otro request ganó la carrera contra el índice parcial. Su
+    // refresco sirve igual, así que se reporta como en curso.
+    if (!id) return { ...estado, enCurso: true, disponible: false };
+
+    const encolado = await this.boss.enqueue(
+      MANUAL_REFRESH_QUEUE,
+      { userId, refrescoId: id, billable },
+      { singletonKey: userId, expireInSeconds: MANUAL_REFRESH_EXPIRE_SECONDS },
+    );
+    if (!encolado) {
+      // Sin cola no va a pasar nada, y dejar la fila abierta bloquearía el
+      // botón para siempre: el candado solo se suelta al liquidar.
+      await this.liquidar(userId, { id, billable }, "no_encolado");
+      throw new ServiceUnavailableException(
+        "No pudimos poner tu actualización en cola. Inténtalo en un momento.",
+      );
+    }
+    return { ...estado, enCurso: true, disponible: false };
+  }
+
+  /**
+   * Cierra un refresco manual sin cobrarlo.
+   *
+   * Nunca lanza. Un fallo acá dejaría el candado puesto y el botón muerto para
+   * ese usuario, que es peor que perder la anotación de cómo terminó.
+   */
+  private async liquidar(
+    userId: string,
+    cobro: CobroDeRefresco | undefined,
+    outcome: string,
+  ): Promise<void> {
+    if (!cobro) return;
+    try {
+      await this.dbService.runWithTenant(userId, (tx) =>
+        this.repo.liquidarRefresco(tx, cobro.id, outcome),
+      );
+    } catch (error) {
+      console.error(`[trends] no se pudo liquidar el refresco ${cobro.id}:`, error);
+    }
+  }
+
+  /**
+   * El handler de la cola del refresco manual.
+   *
+   * Envuelve a `refrescarUsuario` solo para garantizar que el candado se
+   * suelte pase lo que pase: si la búsqueda truena, la fila se queda abierta y
+   * el usuario no puede volver a pedir nada.
+   */
+  async atenderRefrescoManual(cobro: CobroDeRefresco & { userId: string }): Promise<void> {
+    const { userId, ...resto } = cobro;
+    try {
+      await this.refrescarUsuario(userId, resto);
+    } catch (error) {
+      await this.liquidar(userId, resto, "error");
+      throw error;
+    }
   }
 
   /**

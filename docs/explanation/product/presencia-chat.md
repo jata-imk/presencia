@@ -1112,7 +1112,7 @@ excede el límite (ej: 25 MB).
 **El diseño:** Toast tipo warning sutil donde está el input.
 NO bloquea. Auto-desaparece en 5-7 segundos. Texto: "Este
 archivo es muy grande. El límite es 25 MB. Tu archivo pesa
-38 MB. Probá comprimirlo."
+38 MB. Prueba comprimirlo."
 
 **Por qué este diseño:** Es un error simple, no requiere
 modal. Toast es suficiente. Y damos contexto útil (el

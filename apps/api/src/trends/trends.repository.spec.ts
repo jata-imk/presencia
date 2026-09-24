@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { TrendItem } from "@presencia/shared";
-import { sessions, trendSources, users, userTrends } from "../db/schema.js";
+import { sessions, trendRefreshes, trendSources, users, userTrends } from "../db/schema.js";
 // Imports solo de tipo: los módulos reales se cargan en beforeAll, mismo
 // patrón que metrics.repository.spec.ts (env.ts valida el entorno al importar).
 import type { DbService as DbServiceType } from "../db/db.service.js";
@@ -183,5 +183,48 @@ describe("TrendsRepository", () => {
     const deB = await dbService.runWithTenant(userB, (tx) => repo.fuentes(tx));
     expect(deA.map((f) => f.host)).toContain("canal10.tv");
     expect(deB).toHaveLength(0);
+  });
+
+  it("no deja abrir dos refrescos a la vez", { timeout: 15_000 }, async () => {
+    // El candado es el índice parcial `trend_refreshes_en_vuelo`, no un `if`:
+    // dos clicks separados por milisegundos leerían los dos "no hay ninguno".
+    await dbService.runWithTenant(userA, (tx) => tx.delete(trendRefreshes));
+
+    const primero = await dbService.runWithTenant(userA, (tx) =>
+      repo.abrirRefresco(tx, userA, true),
+    );
+    const segundo = await dbService.runWithTenant(userA, (tx) =>
+      repo.abrirRefresco(tx, userA, true),
+    );
+    expect(primero).not.toBeNull();
+    expect(segundo).toBeNull();
+
+    // Liquidar es lo que suelta el candado. Sin esto el botón queda muerto
+    // para ese usuario hasta que alguien toque la base a mano.
+    await dbService.runWithTenant(userA, (tx) =>
+      repo.liquidarRefresco(tx, primero as string, "cobrado"),
+    );
+    expect(await dbService.runWithTenant(userA, (tx) => repo.refrescoEnVuelo(tx))).toBeNull();
+
+    const tercero = await dbService.runWithTenant(userA, (tx) =>
+      repo.abrirRefresco(tx, userA, false),
+    );
+    expect(tercero).not.toBeNull();
+  });
+
+  it("el candado es por usuario, no global", { timeout: 15_000 }, async () => {
+    await dbService.runWithTenant(userA, (tx) => tx.delete(trendRefreshes));
+    await dbService.runWithTenant(userB, (tx) => tx.delete(trendRefreshes));
+
+    const deA = await dbService.runWithTenant(userA, (tx) => repo.abrirRefresco(tx, userA, true));
+    const deB = await dbService.runWithTenant(userB, (tx) => repo.abrirRefresco(tx, userB, true));
+    expect(deA).not.toBeNull();
+    expect(deB).not.toBeNull();
+
+    // Y ninguno ve el del otro: `refrescoEnVuelo` no filtra por user_id, el
+    // filtro es la policy. Si faltara, A vería el refresco de B y su botón se
+    // apagaría por un trabajo que no es suyo.
+    const vueloA = await dbService.runWithTenant(userA, (tx) => repo.refrescoEnVuelo(tx));
+    expect(vueloA?.id).toBe(deA);
   });
 });

@@ -30,8 +30,28 @@ Eso último es la lección del prompt de la narración, donde el nombre del perf
 - **TTL de 7 días, barrido diario.** Cada usuario se refresca una vez por semana; uno nuevo espera como mucho un día para ver su primera tanda.
 - **Presupuesto por pase** (`USUARIOS_POR_PASE`), para que el día que se acumulen vencimientos el gasto no llegue de golpe.
 - **Solo cuentas con sesión viva.** Sin ese filtro el negocio paga una búsqueda semanal por cada cuenta que se registró y no volvió. Es la misma lección que el ciclo de créditos aprendió en F8 filtrando por correo verificado.
-- **El refresco periódico lo absorbe el negocio.** Adelantarlo —pedir una tanda nueva antes de los 7 días— lo paga el usuario; eso llega en su propio PR.
+- **El refresco periódico lo absorbe el negocio.** Adelantarlo lo paga el usuario — ver abajo.
 - **Se guarda cuántas consultas disparó cada llamada** (`usage.consultas`). El fee se cobra por consulta y una sola llamada puede lanzar varias: sin ese número, cualquier proyección de costo es una corazonada. Antes no se medía.
+
+## Adelantar el refresco: qué se cobra y qué no
+
+**Se cobra adelantar tendencias que el usuario ya tiene.** Esa es toda la regla, y las tres formas de _no_ tenerlas caen del lado gratis:
+
+- **sin tanda**, porque el barrido todavía no llegó;
+- **con la tanda vencida**, que es trabajo que el negocio ya le debe y que el barrido haría igual dentro del día;
+- **con una tanda vacía**, que es lo que deja un intento que no encontró nada citable.
+
+Ese tercer caso es el que obliga a mirar los items y no solo la fecha. Cuando una búsqueda no produce nada, `marcarIntento` mueve el vencimiento doce horas para que ese usuario no acapare el pase siguiente — y eso deja una tanda técnicamente "vigente" pero sin una sola tendencia adentro. Mirando solo la fecha, el siguiente click cobraría por algo que nunca llegó a la pantalla.
+
+**Tarifa fija, no por tokens** (`RATE_CARDS.flat.trend_refresh`). El grueso del costo no son tokens: el fee del grounding se cobra **por consulta de búsqueda** —medidas, cuatro por refresco— y los dos modelos que intervienen aportan unos pocos miles de tokens entre los dos. Cobrarlo por tokens subestimaría justo la parte cara. Es la misma razón por la que imagen y calendario semanal ya eran `flat`.
+
+**El precio se anuncia antes de gastarse, y como porcentaje del mes.** La web nunca ve la unidad cruda del ledger (addendum ADR-012), y el otro objeto contable no sirve acá: `unitsToPublications` redondea contra 1.000 unidades, así que todo lo que cuesta menos de una publicación se muestra como "0" — inservible para el precio de un botón. El porcentaje sí distingue, y nunca se redondea a cero.
+
+**Va por cola, no por el request.** La búsqueda tarda decenas de segundos: contestar en línea sería tener el request abierto todo ese rato, a merced del timeout del nginx de enfrente. El `POST` deja el trabajo encolado y devuelve el estado; la pantalla vuelve a pedir el `GET` mientras siga en curso.
+
+**El cobro y la tanda, en la misma transacción.** O se cobra y se guardan las tendencias, o ninguna de las dos (`modelo-de-datos.md`). Cobrar después, aparte, deja abierta la puerta a cobrar un refresco que no se guardó.
+
+**El candado contra el doble click es un índice, no un `if`.** `trend_refreshes` lleva uno único parcial sobre `user_id where settled_at is null`: dos requests separados por milisegundos leerían los dos "no hay ninguno", pero solo uno gana el insert. El que pierde recibe el estado "en curso", que es la verdad.
 
 ## Lo que esto cuesta y se acepta
 

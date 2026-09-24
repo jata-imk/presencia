@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { and, asc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
 import { trendItemSchema, type TrendItem } from "@presencia/shared";
-import { sessions, trendSources, users, userTrends } from "../db/schema.js";
+import { sessions, trendRefreshes, trendSources, users, userTrends } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
 // Todo acceso a `user_trends` y `trend_sources` vive aquí.
@@ -137,5 +137,44 @@ export class TrendsRepository {
       .orderBy(sql`${userTrends.expiresAt} asc nulls first`)
       .limit(limite);
     return filas.map((fila) => fila.userId);
+  }
+
+  /**
+   * Abre un refresco manual, o devuelve `null` si el usuario ya tiene uno en
+   * vuelo.
+   *
+   * El `null` NO sale de un `if`: sale del índice parcial
+   * `trend_refreshes_en_vuelo`, contra el que el segundo insert choca. Con un
+   * `if` previo, dos clicks separados por milisegundos leerían los dos "no hay
+   * ninguno" y abrirían dos búsquedas — una de ellas cobrada de más.
+   */
+  async abrirRefresco(tx: Tx, userId: string, billable: boolean): Promise<string | null> {
+    const [fila] = await tx
+      .insert(trendRefreshes)
+      .values({ userId, billable })
+      .onConflictDoNothing()
+      .returning({ id: trendRefreshes.id });
+    return fila?.id ?? null;
+  }
+
+  /** El refresco en vuelo del usuario, si lo hay. */
+  async refrescoEnVuelo(tx: Tx): Promise<{ id: string; billable: boolean } | null> {
+    const [fila] = await tx
+      .select({ id: trendRefreshes.id, billable: trendRefreshes.billable })
+      .from(trendRefreshes)
+      .where(isNull(trendRefreshes.settledAt))
+      .limit(1);
+    return fila ?? null;
+  }
+
+  /**
+   * Cierra un refresco. Soltar el candado es el efecto importante: mientras
+   * `settled_at` siga en null, el usuario no puede pedir otro.
+   */
+  async liquidarRefresco(tx: Tx, id: string, outcome: string): Promise<void> {
+    await tx
+      .update(trendRefreshes)
+      .set({ settledAt: WRITTEN_AT, outcome })
+      .where(eq(trendRefreshes.id, id));
   }
 }

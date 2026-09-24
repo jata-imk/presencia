@@ -1,8 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  HttpException,
-  HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
@@ -17,7 +15,6 @@ import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
 import { CardsRepository } from "../cards/cards.repository.js";
 import { buildPublicationCardTools } from "../cards/publication-card.tools.js";
 import { CreditsService } from "../credits/credits.service.js";
-import { InsufficientQuotaError } from "../credits/errors.js";
 import { getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
 import { FoldersService } from "../folders/folders.service.js";
@@ -191,21 +188,13 @@ export class ChatService {
     await this.runAgentTurn(userId, chatId, history, res, voicePromise);
   }
 
-  // 402 con el mismo QuotaStatusDto que consume la UI (banner/modal) — un
-  // solo lugar traduce InsufficientQuotaError a HTTP, tanto para turno
-  // nuevo como para reintento. minimumTurnUnits es un piso conservador: el
-  // costo real del turno (charge(), en onEnd) casi siempre difiere y puede
+  // El 402 lo arma CreditsService, que es donde vive la traducción de
+  // InsufficientQuotaError a HTTP para todas las puertas de cobro. Lo de acá
+  // es el PISO: minimumTurnUnits es conservador a propósito, porque el costo
+  // real del turno (charge(), en onEnd) casi siempre difiere y puede
   // superarlo — ese caso es sobregiro intencional, no bug de este gate.
   private async assertQuotaForTurn(userId: string): Promise<void> {
-    try {
-      await this.creditsService.assertHasQuota(userId, getRateCard().minimumTurnUnits);
-    } catch (error) {
-      if (error instanceof InsufficientQuotaError) {
-        const quota = await this.creditsService.getQuotaStatusDto(userId);
-        throw new HttpException({ code: "quota_exhausted", quota }, HttpStatus.PAYMENT_REQUIRED);
-      }
-      throw error;
-    }
+    await this.creditsService.assertQuotaOr402(userId, getRateCard().minimumTurnUnits);
   }
 
   // Nunca debe tumbar el turno: una voz de marca que no cargó cae al

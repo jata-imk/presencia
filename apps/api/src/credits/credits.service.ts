@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { QuotaState, QuotaStatusDto } from "@presencia/shared";
 import type { AiTaskKind } from "../ai/provider-registry.js";
 import { DbService, type Tx } from "../db/db.service.js";
@@ -61,6 +61,27 @@ export class CreditsService {
     const status = await this.getQuotaStatus(userId);
     if (status.rawBalance < minimumUnits) {
       throw new InsufficientQuotaError(userId, minimumUnits, status.rawBalance);
+    }
+  }
+
+  /**
+   * El gate en su forma HTTP: 402 con el mismo `QuotaStatusDto` que consume la
+   * UI (banner, modal y botón de refresco).
+   *
+   * Vive acá y no en cada servicio porque ya se había copiado dos veces —chat
+   * y narración de Ritmo— y el comentario del primero seguía afirmando que era
+   * "un solo lugar". Tres copias de una puerta de cobro es como se llega a que
+   * una de ellas devuelva otro código y el front deje de reaccionar.
+   */
+  async assertQuotaOr402(userId: string, minimumUnits: number): Promise<void> {
+    try {
+      await this.assertHasQuota(userId, minimumUnits);
+    } catch (error) {
+      if (error instanceof InsufficientQuotaError) {
+        const quota = await this.getQuotaStatusDto(userId);
+        throw new HttpException({ code: "quota_exhausted", quota }, HttpStatus.PAYMENT_REQUIRED);
+      }
+      throw error;
     }
   }
 

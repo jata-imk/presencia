@@ -158,6 +158,7 @@ export class RitmoService {
     if (!contexto) throw new NotFoundException("Aún no configuras tu voz de marca.");
 
     const guardadas = await this.dbService.runWithTenant(userId, (tx) => this.trendsRepo.find(tx));
+    const refresco = await this.trendsService.estadoDeRefresco(userId);
 
     return {
       vertical: contexto.vertical,
@@ -166,6 +167,11 @@ export class RitmoService {
       generatedAt: guardadas?.generatedAt.toISOString() ?? null,
       expiresAt: guardadas?.expiresAt.toISOString() ?? null,
       personalizada: estaPersonalizada(contexto),
+      // Viaja con las tendencias y no en su propio endpoint: el botón se
+      // pinta junto a ellas y la pantalla vuelve a pedir esto mismo mientras
+      // el refresco corre, así que un solo GET tiene que contar la historia
+      // completa.
+      refresco,
     };
   }
 

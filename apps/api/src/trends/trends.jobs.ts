@@ -1,7 +1,15 @@
 import { Inject, Injectable, type OnApplicationBootstrap } from "@nestjs/common";
 import { BossService } from "../jobs/boss.service.js";
 import { enProcesoWorker } from "../jobs/process-role.js";
-import { TrendsService } from "./trends.service.js";
+import {
+  MANUAL_REFRESH_EXPIRE_SECONDS,
+  MANUAL_REFRESH_QUEUE,
+  TrendsService,
+  type CobroDeRefresco,
+} from "./trends.service.js";
+
+/** Lo que viaja en el job del refresco manual. */
+type ManualRefreshJob = CobroDeRefresco & { userId: string };
 
 // Un pase al día, y la cadencia no la fija cuánto cambian las tendencias —eso
 // lo fija el TTL de 7 días de cada tanda— sino cuánto puede tardar en llegar
@@ -62,6 +70,19 @@ export class TrendsJobs implements OnApplicationBootstrap {
       cron: REFRESH_CRON,
       expireInSeconds: REFRESH_EXPIRE_SECONDS,
       handler: () => this.trends.barrer(),
+    });
+    // El refresco que el usuario adelanta (F9.6). Va por cola y no por el
+    // request porque la búsqueda tarda decenas de segundos: contestar en
+    // línea sería tener el request abierto todo ese rato, a merced del
+    // timeout del nginx de enfrente.
+    //
+    // `retryLimit` implícito en 0, como el resto: un reintento acá no es
+    // gratis ni idempotente — vuelve a pagar la búsqueda con grounding, que
+    // es justo lo que se está cobrando.
+    await this.boss.registerOnDemand<ManualRefreshJob>({
+      queue: MANUAL_REFRESH_QUEUE,
+      expireInSeconds: MANUAL_REFRESH_EXPIRE_SECONDS,
+      handler: (data) => this.trends.atenderRefrescoManual(data),
     });
   }
 }
