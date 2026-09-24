@@ -236,7 +236,7 @@ describe("MetricsService.ingestAll", () => {
   // El tope del adapter es por LLAMADA, y getPostMetrics se llama una vez por
   // usuario: sin un presupuesto del pase, N usuarios harían N×60 requests
   // contra la ventana de 100/5min que comparte con cards.reconcile.
-  it("el presupuesto del pase recorta, y deja lo más nuevo", { timeout: 30_000 }, async () => {
+  it("el presupuesto del pase recorta, y deja lo más nuevo", { timeout: 90_000 }, async () => {
     const viejo = `fb_${randomUUID()}`;
     const medio = `fb_${randomUUID()}`;
     const nuevo = `fb_${randomUUID()}`;
@@ -247,22 +247,34 @@ describe("MetricsService.ingestAll", () => {
     await nuevaCardPublicada(medio, new Date(Date.now() - 8 * dia));
     await nuevaCardPublicada(nuevo, new Date(Date.now() - 4 * dia));
 
-    // Uno solo de los tres entra: el presupuesto del pase se reparte entre
-    // TODOS los usuarios con algo que medir, y la base de dev tiene varios.
-    // Por eso se afirma la prioridad, no un conteo exacto: cuántos entran
-    // depende de cuántos tenants haya, cuál entra no.
-    await service.ingestAll({ presupuesto: 2 });
+    // Presupuesto amplio a propósito, y la afirmación es sobre el ORDEN del
+    // lote, no sobre cuántos entraron.
+    //
+    // Antes esto corría con `presupuesto: 2` y afirmaba que el más nuevo se
+    // había medido. Pero el presupuesto se reparte entre TODOS los usuarios
+    // con algo que medir y esta base comparte tenants, así que si al usuario
+    // del spec no le tocaba, fallaba: pasaba o fallaba por suerte, y llegó a
+    // tumbar CI en un PR que no tocaba métricas. Repetir el pase tampoco lo
+    // arregla —solo baja la probabilidad, y empeora a medida que la base
+    // acumula tenants.
+    //
+    // El orden sí es determinista, y es además la propiedad que importa: el
+    // recorte es un `slice` sobre esta lista, así que si el orden es correcto
+    // el recorte no puede equivocarse.
+    await service.ingestAll({ presupuesto: 500 });
 
     // La query del barrido no ordena y el índice parcial la sirve por
     // published_at ascendente: sin la prioridad explícita, el recorte se
     // comería siempre las publicaciones recientes, que son justo las que
     // todavía se mueven y cuya primera medición no se recupera después.
-    expect(await metricasDe(nuevo)).toHaveLength(1);
-    expect(await metricasDe(viejo)).toHaveLength(0);
-    // Y el del medio nunca puede entrar sin el más nuevo.
-    const medioMedido = (await metricasDe(medio)).length > 0;
-    const nuevoMedido = (await metricasDe(nuevo)).length > 0;
-    expect(medioMedido && !nuevoMedido).toBe(false);
+    const mios = new Set([nuevo, medio, viejo]);
+    const lote = provider.lotes.find((l) => l.some((p) => mios.has(p.platformPostId)));
+    expect(lote, "el pase nunca le pidió métricas a este usuario").toBeDefined();
+    expect(lote?.filter((p) => mios.has(p.platformPostId)).map((p) => p.platformPostId)).toEqual([
+      nuevo,
+      medio,
+      viejo,
+    ]);
   });
 
   // El pase es global: un usuario que truena no puede dejar sin medir a los

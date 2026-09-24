@@ -26,7 +26,7 @@ Formato: **Decisión** → **Razón** → **Descartado**.
 | [018](./adr-018-arquitectura-calendario.md)      | Calendario: vista sobre las cards, construida a mano       |
 | [019](./adr-019-repositorio-publico.md)          | Repositorio público, con la receta cultural adentro        |
 | [020](./adr-020-topologia-de-deploy.md)          | Deploy: CloudPanel + imagen única, sin Caddy               |
-| [021](./adr-021-metricas-de-publicacion.md)      | Métricas: un snapshot por post y día                       |
+| [021](./adr-021-metricas-de-publicacion.md)      | Métricas: un snapshot por post y bucket                    |
 | [022](./adr-022-motor-de-metricas.md)            | Motor de métricas: una sola fórmula, fuera de los módulos  |
 | [023](./adr-023-cache-de-tendencias.md)          | Tendencias: caché compartida por nicho, fuente estructural |
 
