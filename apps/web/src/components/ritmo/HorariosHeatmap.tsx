@@ -108,7 +108,7 @@ export function HorariosHeatmap({ datos }: { datos: RitmoHorariosDto }) {
         ))}
       </div>
       <p className="mt-4 text-xs text-fg-muted">
-        &laquo;+%&raquo; calculado sobre tu propio histórico de los últimos {datos.ventanaDias} días
+        Porcentaje calculado sobre tu propio histórico de los últimos {datos.ventanaDias} días
         {datos.base === "tasa"
           ? ", comparando interacciones contra el alcance de cada publicación."
           : ". Esta red no reporta alcance, así que se comparan interacciones."}

@@ -8,6 +8,7 @@ import {
   type TrendItem,
 } from "@presencia/shared";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
+import { RachaTile } from "./CadenciaHeatmap.js";
 
 export function Bloque({ children }: { children: ReactNode }) {
   return <section className="rounded-2xl border border-line bg-card p-6">{children}</section>;
@@ -45,33 +46,54 @@ export function TituloBloque({
  * aparte y bajo demanda (components/ritmo/Narracion.tsx): esta cabecera se
  * pinta sola en cada carga y por eso no puede costar nada.
  *
- * La racha NO está acá: vive junto al heatmap de cadencia, que es de donde se
- * lee. Un número suelto en la cabecera no se puede rastrear a nada de lo que
- * el usuario ve.
+ * La racha SÍ está acá, y es un cambio respecto de cómo nació. Vivía junto al
+ * heatmap con el argumento de que es una lectura de él; el argumento sigue en
+ * pie pero pesa menos que el hecho de que ahí abajo no se ve, y la racha es el
+ * gancho emocional del módulo. "Mejor racha" se queda junto al mapa.
+ *
+ * La composición sale de la variante A de `StrategyHeader` del mock de Claude
+ * Design. Lo que falta respecto de ese mock es el chip de "Modo: Crecer", que
+ * todavía no existe como dato — tiene su propio PR.
  */
 export function CabeceraRitmo({
   nombre,
   objetivos,
+  racha,
+  publico,
 }: {
   nombre: string;
   objetivos: RitmoObjetivoDto[];
+  /** Días consecutivos publicando. */
+  racha: number;
+  /**
+   * Si el usuario publicó alguna vez en la ventana.
+   *
+   * Con `racha` en 0 son dos mensajes distintos: "todavía no empieza" contra
+   * "se te cortó". Sin este dato el tile le diría a alguien con meses de
+   * historial que su racha empieza con su primer post.
+   */
+  publico: boolean;
 }) {
   const hechas = objetivos.reduce((suma, o) => suma + o.hechas, 0);
   const meta = objetivos.reduce((suma, o) => suma + o.meta, 0);
   return (
-    <header className="flex flex-col gap-3">
+    // Variante A del mock: texto a la izquierda, tile de racha a la derecha.
+    <header className="flex flex-wrap items-center justify-between gap-6">
       <div>
-        <h1 className="font-display text-3xl font-bold text-fg">Hola, {nombre}</h1>
+        <h1 className="font-display text-[32px] leading-[1.02] font-bold tracking-[-0.02em] text-brand">
+          Hola, {nombre}
+        </h1>
         <p className="mt-2 max-w-[440px] text-[15px] text-fg-secondary">
           Esta es tu estrategia: cuándo publicar y sobre qué.
         </p>
+        {meta > 0 && (
+          <span className="mt-4 flex items-center gap-2 text-sm text-fg-secondary">
+            <CalendarCheck size={16} className="text-accent" />
+            Vas {hechas}/{meta} publicaciones esta semana
+          </span>
+        )}
       </div>
-      {meta > 0 && (
-        <span className="flex items-center gap-2 text-sm text-fg-secondary">
-          <CalendarCheck size={16} className="text-accent" />
-          Vas {hechas}/{meta} publicaciones esta semana
-        </span>
-      )}
+      <RachaTile dias={racha} publico={publico} />
     </header>
   );
 }

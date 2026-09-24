@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import type { RitmoDiaDto, SocialNetwork } from "@presencia/shared";
-import { Flame } from "lucide-react";
 import { Tooltip } from "../ui/Tooltip.js";
 
 // El heatmap de cadencia: una celda por día, 16 semanas en columnas.
@@ -150,20 +149,60 @@ export function LeyendaHeatmap() {
 }
 
 /**
- * La racha, en píldora y debajo del mapa.
+ * La racha, en tile, a la derecha de la cabecera.
  *
- * Vive acá y no en la cabecera porque es una lectura DEL heatmap: son las
- * celdas encendidas de la derecha, contadas. Separarla la convertía en un
- * número suelto que el usuario no puede rastrear a nada de lo que ve.
+ * Traducido del mock de Claude Design (`ritmo/RitmoSections.jsx`, `RachaTile` y
+ * la variante A de `StrategyHeader`), no del doc: el doc la describe como un
+ * chip y el diseño la resolvió como una tarjeta con el número gigante. La
+ * primera versión de esto era una píldora con un icono de lucide y no se
+ * parecía en nada.
+ *
+ * **Sin racha no es este tile en gris: es otro.** El mock no apaga la tarjeta,
+ * la cambia por una punteada con un brote.
+ *
+ * Y `dias === 0` son DOS situaciones, no una. El mock solo dibujó la del día 1
+ * porque sus estados eran `cold` y `full`, pero en el producto real alguien con
+ * cuatrocientas publicaciones que dejó de publicar anteayer también llega acá
+ * con cero. Decirle "tu racha empieza con tu primer post" es falso, y es la
+ * misma regla de no inventar la racha rota hacia el otro lado. Por eso el tile
+ * necesita saber si hubo publicaciones alguna vez.
+ *
+ * Los emojis son emojis, no iconos: 🔥 y 🌱 salen del mock tal cual.
  */
-export function RachaPill({ dias }: { dias: number }) {
-  if (dias === 0) return null;
+export function RachaTile({ dias, publico }: { dias: number; publico: boolean }) {
+  if (dias === 0) {
+    return (
+      <div className="flex max-w-[240px] items-center gap-3 rounded-2xl border border-dashed border-ritmo-sin-racha-border bg-card px-5 py-4">
+        <span className="text-[22px] leading-none" aria-hidden>
+          {publico ? "🌤️" : "🌱"}
+        </span>
+        <span className="font-display text-[13px] font-medium text-accent">
+          {publico
+            ? "Tu racha se cortó. Publica hoy y la reinicias."
+            : "Tu racha empieza con tu primer post."}
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-line bg-tint-plum px-3.5 py-1.5">
-      <Flame size={15} className="text-accent" />
-      <span className="font-display text-[13px] font-semibold text-fg">
-        Racha actual: {dias} {dias === 1 ? "día" : "días"}
+    <div className="flex items-center gap-3.5 rounded-2xl border border-ritmo-racha-border bg-linear-to-br from-ritmo-racha-desde to-ritmo-racha-hasta px-[22px] py-4">
+      <span className="text-[34px] leading-none" aria-hidden>
+        🔥
       </span>
-    </span>
+      <div>
+        <div className="flex items-baseline gap-1.5">
+          <span className="font-display text-[46px] leading-[0.9] font-bold tracking-[-0.02em] text-brand">
+            {dias}
+          </span>
+          <span className="font-display text-sm font-semibold text-accent">
+            {dias === 1 ? "día" : "días"}
+          </span>
+        </div>
+        <div className="mt-0.5 text-xs text-fg-secondary">
+          {dias === 1 ? "publicando" : "seguidos publicando"}
+        </div>
+      </div>
+    </div>
   );
 }

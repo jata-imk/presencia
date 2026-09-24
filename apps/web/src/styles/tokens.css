@@ -294,6 +294,22 @@
   --ritmo-mejor-bg: var(--color-pink-orchid);
   --ritmo-mejor-border: var(--color-plum-700);
 
+  /* El tile de racha de la cabecera (mock de Claude Design, RachaTile). Es un
+     degradado rosa→lila con borde petal, no una píldora: el número es el
+     protagonista de la pantalla. Explícito por tema y no con color-mix sobre
+     --bg-card, por lo mismo que las rampas de arriba — un degradado calculado
+     contra el fondo se apaga en oscuro justo donde tiene que llamar. */
+  --ritmo-racha-desde: var(--bg-tint-pink);
+  /* NO plum-50: ese es exactamente --bg-app, o sea el fondo sobre el que se
+     apoya el tile, así que el extremo del degradado se disolvía en la página y
+     la tarjeta quedaba sostenida solo por su borde. El mock usa plum-50 porque
+     ahí el contenido va sobre #FAFAFA, no sobre el shell. */
+  --ritmo-racha-hasta: var(--color-plum-100);
+  --ritmo-racha-border: var(--color-pastel-petal);
+  /* Sin racha: el mock no apaga el tile, lo cambia por uno punteado. Otra
+     cosa, no la misma más gris. */
+  --ritmo-sin-racha-border: var(--color-pink-orchid);
+
   /* Texto sobre una celda pintada. Los pasos altos de las dos rampas son
      pasteles saturados que NO se invierten entre temas (son color de marca),
      así que su foreground tampoco puede invertirse: con un --fg-primary
@@ -406,6 +422,11 @@
      sola, porque es de un solo tono. */
   --ritmo-mejor-bg: var(--color-pink-orchid);
   --ritmo-mejor-border: var(--color-plum-200);
+
+  --ritmo-racha-desde: var(--bg-tint-pink);
+  --ritmo-racha-hasta: var(--color-plum-900);
+  --ritmo-racha-border: var(--color-plum-700);
+  --ritmo-sin-racha-border: var(--color-plum-600);
   --cal-group-bg: color-mix(in srgb, var(--color-pink-orchid) 16%, transparent);
 }
 
@@ -477,6 +498,10 @@
   --color-ritmo-cell-fg: var(--ritmo-cell-fg);
   --color-ritmo-mejor: var(--ritmo-mejor-bg);
   --color-ritmo-mejor-border: var(--ritmo-mejor-border);
+  --color-ritmo-racha-desde: var(--ritmo-racha-desde);
+  --color-ritmo-racha-hasta: var(--ritmo-racha-hasta);
+  --color-ritmo-racha-border: var(--ritmo-racha-border);
+  --color-ritmo-sin-racha-border: var(--ritmo-sin-racha-border);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);

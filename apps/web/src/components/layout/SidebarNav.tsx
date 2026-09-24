@@ -193,167 +193,188 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
         </Tooltip>
       </div>
 
-      <ul className={`mt-4 flex shrink-0 flex-col gap-0.5 ${collapsed ? "px-2" : "px-3"}`}>
-        {MODULES.map((mod) => {
-          const active = mod.to !== null && location.pathname.startsWith(mod.to);
-          if (!mod.to) {
+      {/* Módulos y listas comparten UNA sola región scrolleable, y el pie
+          (Archivados / Configuración / cuenta) queda fuera, fijo.
+
+          Antes los módulos eran `shrink-0` hermanos de la lista, así que lo
+          no-encogible sumaba 459px: por debajo de esa altura de viewport el
+          `flex-1` ya había colapsado a cero, el pie se salía del <nav> —que no
+          scrollea— y lo recortaba el `overflow-hidden` del shell. No había
+          forma de alcanzarlo: ni Archivados ni Configuración existían para el
+          usuario. Agregar el módulo de Ritmo subió ese umbral 36px y fue lo que
+          lo hizo visible.
+
+          Con los módulos adentro, lo fijo son solo cabecera y pie, y lo que se
+          encoge es lo que se puede desplazar. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-2">
+        {/* `sticky`: los módulos entraron al scroll para que el pie deje de ser
+            inalcanzable, pero con una lista larga de chats la navegación
+            principal se iría de vista. Pegados arriba se quedan visibles
+            mientras se desplaza la lista, y aun así ceden su espacio cuando de
+            verdad no alcanza el alto. */}
+        <ul
+          className={`sticky top-0 z-10 mt-4 flex shrink-0 flex-col gap-0.5 bg-card pb-1 ${collapsed ? "px-2" : "px-3"}`}
+        >
+          {MODULES.map((mod) => {
+            const active = mod.to !== null && location.pathname.startsWith(mod.to);
+            if (!mod.to) {
+              return (
+                <li key={mod.label}>
+                  <Tooltip label={`${mod.label} — próximamente`} placement="right">
+                    <div
+                      role="img"
+                      aria-label={`${mod.label} — próximamente`}
+                      className={`flex cursor-not-allowed items-center gap-2.5 rounded-md py-2 text-sm text-fg-muted opacity-60 ${
+                        collapsed ? "justify-center px-2" : "px-2.5"
+                      }`}
+                    >
+                      <mod.icon size={15} strokeWidth={1.75} className="shrink-0" />
+                      {!collapsed && (
+                        <>
+                          <span className="flex-1">{mod.label}</span>
+                          <span className="rounded-full bg-tint-plum px-1.5 py-0.5 text-[9px] font-semibold text-accent">
+                            Pronto
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </Tooltip>
+                </li>
+              );
+            }
             return (
               <li key={mod.label}>
-                <Tooltip label={`${mod.label} — próximamente`} placement="right">
-                  <div
-                    role="img"
-                    aria-label={`${mod.label} — próximamente`}
-                    className={`flex cursor-not-allowed items-center gap-2.5 rounded-md py-2 text-sm text-fg-muted opacity-60 ${
+                <Tooltip label={collapsed ? mod.label : undefined} placement="right">
+                  <Link
+                    to={mod.to}
+                    onClick={onNavigate}
+                    className={`flex items-center gap-2.5 rounded-md py-2 text-sm font-medium transition-colors ${
                       collapsed ? "justify-center px-2" : "px-2.5"
-                    }`}
+                    } ${active ? "bg-tint-plum text-brand" : "text-fg-secondary hover:bg-secondary-hover"}`}
                   >
                     <mod.icon size={15} strokeWidth={1.75} className="shrink-0" />
-                    {!collapsed && (
-                      <>
-                        <span className="flex-1">{mod.label}</span>
-                        <span className="rounded-full bg-tint-plum px-1.5 py-0.5 text-[9px] font-semibold text-accent">
-                          Pronto
-                        </span>
-                      </>
-                    )}
-                  </div>
+                    {!collapsed && <span>{mod.label}</span>}
+                  </Link>
                 </Tooltip>
               </li>
             );
-          }
-          return (
-            <li key={mod.label}>
-              <Tooltip label={collapsed ? mod.label : undefined} placement="right">
-                <Link
-                  to={mod.to}
-                  onClick={onNavigate}
-                  className={`flex items-center gap-2.5 rounded-md py-2 text-sm font-medium transition-colors ${
-                    collapsed ? "justify-center px-2" : "px-2.5"
-                  } ${active ? "bg-tint-plum text-brand" : "text-fg-secondary hover:bg-secondary-hover"}`}
-                >
-                  <mod.icon size={15} strokeWidth={1.75} className="shrink-0" />
-                  {!collapsed && <span>{mod.label}</span>}
-                </Link>
-              </Tooltip>
-            </li>
-          );
-        })}
-      </ul>
+          })}
+        </ul>
 
-      {/* Fijados + Carpetas + Recientes necesitan ancho real para truncar
+        {/* Fijados + Carpetas + Recientes necesitan ancho real para truncar
           títulos: se ocultan colapsado, no por breakpoint. Antes esto era
           `lg:flex`, o sea que a 900px la app no mostraba ni un chat aunque
           hubiera lugar de sobra — ahora si el usuario lo tiene expandido,
           se ve.
 
-          El overflow-y-auto vive en este wrapper y no en un <ul> suelto:
-          con tres secciones, poner el scroll solo en la última dejaría
-          Fijados y Carpetas fuera del área desplazable. px-1.5 en los DOS
+          El overflow-y-auto ya NO vive acá: subió al wrapper que envuelve
+          también a los módulos (ver arriba). Poner dos scrolls anidados en la
+          misma columna es el bug que corrigió ADR-014. px-1.5 en los DOS
           lados, no solo a la derecha: overflow-y implica overflow-x (spec
           de CSS Overflow), así que cualquier caja que se salga del borde
           IZQUIERDO —el anillo de foco de una fila, por ejemplo— se recorta
           igual que contra el derecho. */}
-      {!collapsed && (
-        <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-1.5">
-          {/* px-1.5 acá + px-1.5 en el contenedor con overflow = los mismos
+        {!collapsed && (
+          <div className="mt-5 px-1.5">
+            {/* px-1.5 acá + px-1.5 en el contenedor con overflow = los mismos
               px-3 que usan los módulos de arriba, sin que el anillo de foco
               de una fila quede pegado al borde recortable. */}
-          <div className="px-1.5">
-            {pinnedChats.length > 0 && (
-              <div className="mb-3">
-                <p className="mb-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase">
-                  Fijados
-                </p>
-                <ul>
-                  {pinnedChats.map((chat) => (
-                    <li key={chat.id}>
-                      <ChatListItem
-                        chat={chat}
-                        active={location.pathname === `/chats/${chat.id}`}
+            <div className="px-1.5">
+              {pinnedChats.length > 0 && (
+                <div className="mb-3">
+                  <p className="mb-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase">
+                    Fijados
+                  </p>
+                  <ul>
+                    {pinnedChats.map((chat) => (
+                      <li key={chat.id}>
+                        <ChatListItem
+                          chat={chat}
+                          active={location.pathname === `/chats/${chat.id}`}
+                          onNavigate={onNavigate}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {folders && folders.length > 0 && (
+                <div className="mb-3">
+                  <div className="mb-1.5 flex items-center justify-between px-2.5">
+                    <p className="text-[10px] font-bold tracking-wide text-fg-muted uppercase">
+                      Carpetas
+                    </p>
+                    <button
+                      type="button"
+                      aria-label="Nueva carpeta"
+                      onClick={() => setShowNewFolder(true)}
+                      className="text-fg-muted transition-colors hover:text-fg"
+                    >
+                      <Plus size={11} strokeWidth={2.5} />
+                    </button>
+                  </div>
+                  <ul>
+                    {visibleFolders.map((f) => (
+                      <SidebarFolderItem
+                        key={f.id}
+                        folder={f}
+                        chats={chatsByFolder.get(f.id) ?? []}
+                        expanded={expandedFolderId === f.id}
+                        onToggle={() => setExpandedFolder(expandedFolderId === f.id ? null : f.id)}
                         onNavigate={onNavigate}
                       />
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {folders && folders.length > 0 && (
-              <div className="mb-3">
-                <div className="mb-1.5 flex items-center justify-between px-2.5">
-                  <p className="text-[10px] font-bold tracking-wide text-fg-muted uppercase">
-                    Carpetas
-                  </p>
-                  <button
-                    type="button"
-                    aria-label="Nueva carpeta"
-                    onClick={() => setShowNewFolder(true)}
-                    className="text-fg-muted transition-colors hover:text-fg"
-                  >
-                    <Plus size={11} strokeWidth={2.5} />
-                  </button>
-                </div>
-                <ul>
-                  {visibleFolders.map((f) => (
-                    <SidebarFolderItem
-                      key={f.id}
-                      folder={f}
-                      chats={chatsByFolder.get(f.id) ?? []}
-                      expanded={expandedFolderId === f.id}
-                      onToggle={() => setExpandedFolder(expandedFolderId === f.id ? null : f.id)}
-                      onNavigate={onNavigate}
-                    />
-                  ))}
-                </ul>
-                {/* "Hasta 5 visibles + Ver todas" (overview §5) resuelto como
+                    ))}
+                  </ul>
+                  {/* "Hasta 5 visibles + Ver todas" (overview §5) resuelto como
                   toggle en el lugar: una ruta /carpetas dedicada no existe
                   y nadie la pidió todavía. */}
-                {folders.length > FOLDERS_PREVIEW && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllFolders((v) => !v)}
-                    className="mt-0.5 w-full px-2.5 py-1 text-left text-[10px] font-medium text-fg-muted transition-colors hover:text-fg"
-                  >
-                    {showAllFolders ? "Ver menos" : `Ver todas (${String(folders.length)})`}
-                  </button>
-                )}
-              </div>
-            )}
-            {(!folders || folders.length === 0) && (
-              <button
-                type="button"
-                onClick={() => setShowNewFolder(true)}
-                className="mb-3 flex items-center gap-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase transition-colors hover:text-fg"
-              >
-                Carpetas <Plus size={10} strokeWidth={2.5} />
-              </button>
-            )}
-
-            <p className="mb-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase">
-              Recientes
-            </p>
-            <ul>
-              {recentChats.map((chat) => (
-                <li key={chat.id}>
-                  <ChatListItem
-                    chat={chat}
-                    active={location.pathname === `/chats/${chat.id}`}
-                    onNavigate={onNavigate}
-                  />
-                </li>
-              ))}
-              {/* Un usuario ordenado puede quedarse sin chats sueltos: no
-                dejar un hueco mudo donde antes había una lista. */}
-              {recentChats.length === 0 && (chats?.length ?? 0) > 0 && (
-                <li className="px-2.5 py-1.5 text-[11px] text-fg-muted">
-                  Todos tus chats están en carpetas.
-                </li>
+                  {folders.length > FOLDERS_PREVIEW && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllFolders((v) => !v)}
+                      className="mt-0.5 w-full px-2.5 py-1 text-left text-[10px] font-medium text-fg-muted transition-colors hover:text-fg"
+                    >
+                      {showAllFolders ? "Ver menos" : `Ver todas (${String(folders.length)})`}
+                    </button>
+                  )}
+                </div>
               )}
-            </ul>
+              {(!folders || folders.length === 0) && (
+                <button
+                  type="button"
+                  onClick={() => setShowNewFolder(true)}
+                  className="mb-3 flex items-center gap-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase transition-colors hover:text-fg"
+                >
+                  Carpetas <Plus size={10} strokeWidth={2.5} />
+                </button>
+              )}
+
+              <p className="mb-1.5 px-2.5 text-[10px] font-bold tracking-wide text-fg-muted uppercase">
+                Recientes
+              </p>
+              <ul>
+                {recentChats.map((chat) => (
+                  <li key={chat.id}>
+                    <ChatListItem
+                      chat={chat}
+                      active={location.pathname === `/chats/${chat.id}`}
+                      onNavigate={onNavigate}
+                    />
+                  </li>
+                ))}
+                {/* Un usuario ordenado puede quedarse sin chats sueltos: no
+                dejar un hueco mudo donde antes había una lista. */}
+                {recentChats.length === 0 && (chats?.length ?? 0) > 0 && (
+                  <li className="px-2.5 py-1.5 text-[11px] text-fg-muted">
+                    Todos tus chats están en carpetas.
+                  </li>
+                )}
+              </ul>
+            </div>
           </div>
-        </div>
-      )}
-      {collapsed && <div className="flex-1" />}
+        )}
+      </div>
 
       <div className={`shrink-0 border-t border-line py-3 ${collapsed ? "px-2" : "px-3"}`}>
         <Tooltip label={collapsed ? "Archivados" : undefined} placement="right">
