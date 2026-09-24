@@ -1,5 +1,20 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, count, eq, gt, gte, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { trendItemSchema, type TrendItem } from "@presencia/shared";
 import { sessions, trendRefreshes, trendSources, users, userTrends } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
@@ -227,6 +242,17 @@ export class TrendsRepository {
         ),
       );
     return fila?.total ?? 0;
+  }
+
+  /** El último refresco que terminó, como haya terminado. */
+  async ultimoLiquidado(tx: Tx): Promise<{ outcome: string | null; settledAt: Date } | null> {
+    const [fila] = await tx
+      .select({ outcome: trendRefreshes.outcome, settledAt: trendRefreshes.settledAt })
+      .from(trendRefreshes)
+      .where(isNotNull(trendRefreshes.settledAt))
+      .orderBy(desc(trendRefreshes.settledAt))
+      .limit(1);
+    return fila?.settledAt ? { outcome: fila.outcome, settledAt: fila.settledAt } : null;
   }
 
   /** El refresco en vuelo del usuario, si lo hay. */

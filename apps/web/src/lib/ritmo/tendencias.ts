@@ -1,5 +1,6 @@
 import {
   MAX_FREE_TREND_REFRESHES_PER_DAY,
+  type TrendsDto,
   type TrendRefreshBlock,
   type TrendRefreshStateDto,
 } from "@presencia/shared";
@@ -59,4 +60,22 @@ export function botonDeRefresco(refresco: TrendRefreshStateDto): BotonDeRefresco
     // mientras la única razón era el saldo; con el tope diario ya no.
     motivo: refresco.bloqueo ? MOTIVO[refresco.bloqueo] : null,
   };
+}
+
+/**
+ * Qué decir de la última búsqueda cuando terminó mal, o `null`.
+ *
+ * La API decide si el fallo sigue siendo noticia (`refresco.ultimoFallo`); aquí
+ * solo se elige la frase. Sin esto, una búsqueda que fallaba dejaba la pantalla
+ * igual que antes y el usuario no sabía si falló, si no había nada o si seguía
+ * corriendo.
+ */
+export function avisoDeUltimaBusqueda(datos: TrendsDto): string | null {
+  const fallo = datos.refresco.ultimoFallo;
+  // Sin tarjetas lo cuenta el estado vacío (`TendenciasVacias`), que ocupa el
+  // lugar de ellas; decirlo también aquí sería repetirlo.
+  if (!fallo || datos.refresco.enCurso || datos.items.length === 0) return null;
+  return fallo.motivo === "error"
+    ? "La última búsqueda falló. No se te cobró; te dejamos las anteriores."
+    : "La última búsqueda no encontró nada nuevo; te dejamos las anteriores. No se te cobró.";
 }

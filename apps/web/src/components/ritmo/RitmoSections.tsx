@@ -12,7 +12,7 @@ import {
   type TrendsDto,
 } from "@presencia/shared";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
-import { botonDeRefresco, haceCuanto } from "../../lib/ritmo/tendencias.js";
+import { avisoDeUltimaBusqueda, botonDeRefresco, haceCuanto } from "../../lib/ritmo/tendencias.js";
 import { RachaTile } from "./CadenciaHeatmap.js";
 
 export function Bloque({ children }: { children: ReactNode }) {
@@ -278,6 +278,7 @@ export function AccionesTendencias({
   const boton = botonDeRefresco(datos.refresco);
   const enCurso = datos.refresco.enCurso;
   const nota = boton.motivo ?? boton.precio;
+  const aviso = avisoDeUltimaBusqueda(datos);
   return (
     <div className="flex flex-col items-start gap-1.5 sm:items-end">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:justify-end">
@@ -305,6 +306,11 @@ export function AccionesTendencias({
       {error && (
         <span role="alert" className="text-[11px] text-error">
           {error}
+        </span>
+      )}
+      {!error && aviso && (
+        <span role="status" className="max-w-xs text-[11px] text-warning sm:text-right">
+          {aviso}
         </span>
       )}
       <Link

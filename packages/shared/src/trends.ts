@@ -127,6 +127,24 @@ export const TREND_REFRESH_BLOCKS = ["sin_saldo", "tope_diario"] as const;
 export type TrendRefreshBlock = (typeof TREND_REFRESH_BLOCKS)[number];
 
 /**
+ * Cómo terminó el último refresco, cuando terminó mal y todavía es noticia.
+ *
+ * Sin esto, un refresco que tronaba o no encontraba nada dejaba la pantalla
+ * exactamente como estaba: el botón pasaba por "Buscando…" y volvía, sin una
+ * palabra. Así se vio en prod (F9.6): el usuario no tenía forma de saber si
+ * falló, si no había nada o si seguía corriendo.
+ */
+export const TREND_REFRESH_FAILURES = ["error", "sin_resultados"] as const;
+export type TrendRefreshFailure = (typeof TREND_REFRESH_FAILURES)[number];
+
+export const trendRefreshFailureSchema = z.object({
+  motivo: z.enum(TREND_REFRESH_FAILURES),
+  /** Cuándo terminó, ISO. */
+  en: z.string(),
+});
+export type TrendRefreshFailureDto = z.infer<typeof trendRefreshFailureSchema>;
+
+/**
  * El estado del botón de "actualizar ahora" (F9.6).
  *
  * El refresco periódico es del negocio; adelantarlo lo paga el usuario. Este
@@ -157,6 +175,12 @@ export const trendRefreshStateSchema = z.object({
   costoPorcentaje: z.number(),
   /** Por qué no está disponible, fuera de "hay uno en curso". `null` si nada lo bloquea. */
   bloqueo: z.enum(TREND_REFRESH_BLOCKS).nullable(),
+  /**
+   * El último refresco, si terminó mal DESPUÉS de la tanda que está en
+   * pantalla. `null` si salió bien, si nunca hubo uno, o si una tanda más
+   * nueva ya lo dejó atrás.
+   */
+  ultimoFallo: trendRefreshFailureSchema.nullable(),
 });
 export type TrendRefreshStateDto = z.infer<typeof trendRefreshStateSchema>;
 

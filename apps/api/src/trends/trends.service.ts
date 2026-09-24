@@ -7,16 +7,12 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { generateObject, generateText } from "ai";
-import { z } from "zod";
 import {
   asVerticalId,
   MAX_FREE_TREND_REFRESHES_PER_DAY,
   modoEfectivo,
   resolveMacroRegion,
   resolveVertical,
-  socialNetworkSchema,
-  TREND_FORMATS,
-  TREND_SIGNALS,
   trendLangSchema,
   type TrendItem,
   type TrendLang,
@@ -47,6 +43,8 @@ import {
   type ContextoDeBusqueda,
 } from "./prompt.js";
 import { esCobrable } from "./cobro.js";
+import { falloVigente } from "./estado.js";
+import { esquemaDeEstructura } from "./esquema.js";
 import { TrendsRepository } from "./trends.repository.js";
 
 // Las tendencias de nicho: buscar lo que se está moviendo para UNA persona, y
@@ -89,29 +87,6 @@ const REINTENTO_HORAS = 12;
 
 const MS_POR_HORA = 60 * 60 * 1000;
 const MS_POR_DIA = 24 * MS_POR_HORA;
-
-const esquemaCrudo = z.object({
-  tendencias: z
-    .array(
-      z.object({
-        topic: z.string(),
-        signal: z.enum(TREND_SIGNALS),
-        network: socialNetworkSchema,
-        format: z.enum(TREND_FORMATS),
-        blurb: z.string(),
-        sourceIndex: z.number().int(),
-        // `nullish`: el prompt pide `null` cuando no hay una buena, pero no
-        // todos los proveedores fuerzan la salida estructurada, y uno que
-        // simplemente OMITA la llave no puede tirar la validación entera —
-        // sería perder la tanda después de pagar la búsqueda. Por lo mismo el
-        // tope de largo no va acá: lo aplica `ensamblarTendencias`, que
-        // descarta solo la propuesta.
-        titulo: z.string().nullish(),
-        gancho: z.string().nullish(),
-      }),
-    )
-    .max(MAX_TENDENCIAS * 2),
-});
 
 export interface ResultadoDeRefresco {
   userId: string;
@@ -318,7 +293,7 @@ export class TrendsService {
       // Se pide el TIER, no una tarea: `resolveForTask` obligaría a declarar
       // un AiTaskKind, y ninguno de los que existen es esto.
       model: this.ai.resolve(env.AI_MODEL_UTILITY).model,
-      schema: esquemaCrudo,
+      schema: esquemaDeEstructura,
       prompt: promptDeEstructura(busqueda.text, unicas),
     });
 
@@ -406,19 +381,25 @@ export class TrendsService {
   private async calcularEstado(
     userId: string,
   ): Promise<{ dto: TrendRefreshStateDto; billable: boolean }> {
-    const { enVuelo, billable, gratisHoy } = await this.dbService.runWithTenant(
+    const { enVuelo, billable, gratisHoy, ultimoFallo } = await this.dbService.runWithTenant(
       userId,
       async (tx) => {
         // Las abandonadas se cierran ANTES de mirar: si no, una fila que quedó
         // abierta porque el worker se reinició a media búsqueda deja el botón
         // muerto para ese usuario para siempre.
         await this.repo.cerrarAbandonados(tx, this.limiteDeAbandono());
-        const [vuelo, tanda, gratis] = await Promise.all([
+        const [vuelo, tanda, gratis, ultimo] = await Promise.all([
           this.repo.refrescoEnVuelo(tx),
           this.repo.find(tx),
           this.repo.refrescosGratisDesde(tx, new Date(Date.now() - MS_POR_DIA)),
+          this.repo.ultimoLiquidado(tx),
         ]);
-        return { enVuelo: vuelo !== null, billable: esCobrable(tanda), gratisHoy: gratis };
+        return {
+          enVuelo: vuelo !== null,
+          billable: esCobrable(tanda),
+          gratisHoy: gratis,
+          ultimoFallo: falloVigente(ultimo, tanda),
+        };
       },
     );
 
@@ -435,6 +416,7 @@ export class TrendsService {
           disponible: !enVuelo && !topado,
           costoPorcentaje: 0,
           bloqueo: !enVuelo && topado ? "tope_diario" : null,
+          ultimoFallo,
         },
         billable: false,
       };
@@ -452,6 +434,7 @@ export class TrendsService {
         disponible: !enVuelo && alcanza,
         costoPorcentaje: flatActionPercentOfQuota(REASON_REFRESCO, cuota.tier),
         bloqueo: !enVuelo && !alcanza ? "sin_saldo" : null,
+        ultimoFallo,
       },
     };
   }
@@ -563,6 +546,10 @@ export class TrendsService {
     try {
       await this.refrescarUsuario(userId, resto);
     } catch (error) {
+      // Al log, y no solo a pg-boss: el throw lo guarda en `pgboss.job.output`
+      // sin imprimirlo, así que un `logs worker | grep trends` no veía nada. En
+      // prod así pasó desapercibido que OpenAI rechazaba el schema (F9.6).
+      console.error(`[trends] el refresco manual ${resto.id} de ${userId} falló:`, error);
       await this.liquidar(userId, resto, "error");
       throw error;
     }
