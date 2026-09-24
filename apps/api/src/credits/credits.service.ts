@@ -33,6 +33,17 @@ export interface SpendInput {
   reason: CreditReason;
   referenceType?: string;
   referenceId?: string;
+  /**
+   * Deja pasar el asiento aunque no alcance el saldo.
+   *
+   * Solo para costos YA INCURRIDOS. `spend` rechaza por default porque su
+   * caso normal es cobrar ANTES de producir el efecto: ahí rechazar es
+   * gratis. Cuando el gasto del proveedor ya se pagó —el refresco de
+   * tendencias, que se cobra al terminar una búsqueda de ~40 segundos— negarse
+   * no devuelve el dinero: solo tira el resultado y lo deja sin asentar. Es la
+   * misma doctrina que `charge()`, que sobregira a propósito.
+   */
+  allowOverdraft?: boolean;
 }
 
 export interface ChargeInput {
@@ -96,7 +107,7 @@ export class CreditsService {
     await this.repo.lockUser(tx, input.userId);
     const { cycleStartId } = await this.ensureCurrentCycle(tx, input.userId);
     const balance = await this.repo.balanceFrom(tx, input.userId, cycleStartId);
-    if (balance < units) {
+    if (balance < units && !input.allowOverdraft) {
       throw new InsufficientQuotaError(input.userId, units, balance);
     }
     await this.repo.insertEntry(tx, {

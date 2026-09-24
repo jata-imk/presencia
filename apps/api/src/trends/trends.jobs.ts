@@ -5,11 +5,8 @@ import {
   MANUAL_REFRESH_EXPIRE_SECONDS,
   MANUAL_REFRESH_QUEUE,
   TrendsService,
-  type CobroDeRefresco,
+  type ManualRefreshJob,
 } from "./trends.service.js";
-
-/** Lo que viaja en el job del refresco manual. */
-type ManualRefreshJob = CobroDeRefresco & { userId: string };
 
 // Un pase al día, y la cadencia no la fija cuánto cambian las tendencias —eso
 // lo fija el TTL de 7 días de cada tanda— sino cuánto puede tardar en llegar

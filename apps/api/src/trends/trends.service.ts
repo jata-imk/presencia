@@ -116,6 +116,19 @@ export interface CobroDeRefresco {
   billable: boolean;
 }
 
+/**
+ * Lo que viaja en el job del refresco manual.
+ *
+ * Declarado y usado como TIPO al encolar, no armado como objeto literal, y
+ * eso es una cicatriz: `BossService.enqueue<T extends object>` infiere `T` del
+ * literal que recibe, así que una llave mal escrita compila sin una queja. La
+ * primera versión mandaba `refrescoId` y el handler leía `id`; el resultado
+ * era `undefined` en las dos puntas, con las dos fallando en silencio — el
+ * cobro sin `reference_id` (y por lo tanto sin dedup) y el `UPDATE ... where
+ * id = null` afectando cero filas, dejando el candado puesto para siempre.
+ */
+export type ManualRefreshJob = CobroDeRefresco & { userId: string };
+
 /** La cola del refresco manual. La registra el worker; la API solo encola. */
 export const MANUAL_REFRESH_QUEUE = "trends.refresh.manual";
 
@@ -282,16 +295,25 @@ export class TrendsService {
         },
       });
       if (!cobro) return;
-      // EN LA MISMA TRANSACCION que la tanda que lo justifica
+      // EN LA MISMA TRANSACCIÓN que la tanda que lo justifica
       // (modelo-de-datos.md: "o se cobra y se produce el efecto, o ninguna de
-      // las dos"). Cobrar aparte, despues, deja la puerta abierta a cobrar un
-      // refresco que despues no se guardo.
+      // las dos"). Cobrar aparte, después, deja la puerta abierta a cobrar un
+      // refresco que después no se guardó.
       if (cobro.billable) {
         await this.credits.spend(tx, {
           userId,
           reason: REASON_REFRESCO,
           referenceType: REFERENCE_TYPE_REFRESCO,
           referenceId: cobro.id,
+          // Sobregiro permitido, y acá sí corresponde. El gate del request ya
+          // comprobó el saldo, pero entre el click y este momento pasaron ~40
+          // segundos en los que un turno de chat pudo consumir lo que faltaba.
+          // Sin esto, `spend` lanzaría DENTRO de la transacción y se llevaría
+          // por delante el `upsert` de la tanda: la búsqueda con grounding ya
+          // se pagó, y el usuario se quedaría sin las tendencias Y sin el
+          // asiento que explica el gasto. Un saldo levemente negativo dice la
+          // verdad; perder las dos cosas, no.
+          allowOverdraft: true,
         });
       }
       await this.repo.liquidarRefresco(tx, cobro.id, cobro.billable ? "cobrado" : "gratis");
@@ -308,7 +330,28 @@ export class TrendsService {
    * booleanos que el botón puede usar tal cual.
    */
   async estadoDeRefresco(userId: string): Promise<TrendRefreshStateDto> {
+    return (await this.calcularEstado(userId)).dto;
+  }
+
+  /**
+   * El estado, y aparte si el refresco se cobra.
+   *
+   * Los dos juntos y en un solo lugar a propósito. `costoPorcentaje > 0` se ve
+   * como una forma perfectamente buena de preguntar "¿se cobra?", y no lo es:
+   * es reconstruir una decisión de cobro desde el número que se PINTA.
+   * `flatActionPercentOfQuota` devuelve 0 si la cuota del tier fuera 0, así
+   * que agregar un tier de cortesía haría gratis todos los refrescos sin que
+   * nadie tocara la regla de cobro. Hoy ningún tier tiene cuota 0; el acople
+   * sobra igual.
+   */
+  private async calcularEstado(
+    userId: string,
+  ): Promise<{ dto: TrendRefreshStateDto; billable: boolean }> {
     const { enVuelo, billable } = await this.dbService.runWithTenant(userId, async (tx) => {
+      // Las abandonadas se cierran ANTES de mirar: si no, una fila que quedó
+      // abierta porque el worker se reinició a media búsqueda deja el botón
+      // muerto para ese usuario para siempre.
+      await this.repo.cerrarAbandonados(tx, this.limiteDeAbandono());
       const [vuelo, tanda] = await Promise.all([this.repo.refrescoEnVuelo(tx), this.repo.find(tx)]);
       return { enVuelo: vuelo !== null, billable: esCobrable(tanda) };
     });
@@ -316,18 +359,40 @@ export class TrendsService {
     if (!billable) {
       // Gratis: no hay nada que consultarle al ledger, y preguntarle igual
       // sería un lock por carga de pantalla.
-      return { enCurso: enVuelo, disponible: !enVuelo, costoPorcentaje: 0 };
+      return {
+        dto: { enCurso: enVuelo, disponible: !enVuelo, costoPorcentaje: 0 },
+        billable: false,
+      };
     }
 
     const cuota = await this.credits.getQuotaStatus(userId);
     return {
-      enCurso: enVuelo,
-      // Sin saldo el botón se apaga acá y no en el 402: anunciar un precio que
-      // la cuenta no puede pagar y recién decírselo al hacer click es la peor
-      // forma de contarlo.
-      disponible: !enVuelo && cuota.rawBalance >= quoteFlatAction(REASON_REFRESCO),
-      costoPorcentaje: flatActionPercentOfQuota(REASON_REFRESCO, cuota.tier),
+      billable: true,
+      dto: {
+        enCurso: enVuelo,
+        // Sin saldo el botón se apaga acá y no en el 402: anunciar un precio
+        // que la cuenta no puede pagar y recién decírselo al hacer click es la
+        // peor forma de contarlo.
+        disponible: !enVuelo && cuota.rawBalance >= quoteFlatAction(REASON_REFRESCO),
+        costoPorcentaje: flatActionPercentOfQuota(REASON_REFRESCO, cuota.tier),
+      },
     };
+  }
+
+  /**
+   * Desde cuándo un refresco en vuelo deja de creerse.
+   *
+   * pg-boss no mata al handler al expirar: marca el job fallido y libera el
+   * slot. Con `retryLimit: 0`, nadie vuelve a pasar por `liquidarRefresco`, así
+   * que un worker reiniciado a media búsqueda —un deploy, nada exótico— dejaba
+   * la fila abierta y, con ella, el índice parcial bloqueando al usuario **para
+   * siempre**.
+   *
+   * El doble del techo del job: suficiente margen para no pisar uno que de
+   * verdad está corriendo lento, y muy por debajo de "para siempre".
+   */
+  private limiteDeAbandono(): Date {
+    return new Date(Date.now() - MANUAL_REFRESH_EXPIRE_SECONDS * 2 * 1000);
   }
 
   /**
@@ -347,12 +412,11 @@ export class TrendsService {
     const contexto = await this.contextoDe(userId);
     if (!contexto) throw new NotFoundException("Aún no configuras tu voz de marca.");
 
-    const estado = await this.estadoDeRefresco(userId);
+    const { dto: estado, billable } = await this.calcularEstado(userId);
     // Ya hay uno andando: se contesta el estado en vez de un error. Volver a
     // apretar un botón que está trabajando no es una falla del usuario.
     if (estado.enCurso) return estado;
 
-    const billable = estado.costoPorcentaje > 0;
     // El gate ANTES de encolar: `spend` rechaza si no alcanza, pero para
     // entonces ya se habría pagado la búsqueda. Esto contesta 402 sin gastar.
     if (billable) await this.credits.assertQuotaOr402(userId, quoteFlatAction(REASON_REFRESCO));
@@ -364,11 +428,11 @@ export class TrendsService {
     // refresco sirve igual, así que se reporta como en curso.
     if (!id) return { ...estado, enCurso: true, disponible: false };
 
-    const encolado = await this.boss.enqueue(
-      MANUAL_REFRESH_QUEUE,
-      { userId, refrescoId: id, billable },
-      { singletonKey: userId, expireInSeconds: MANUAL_REFRESH_EXPIRE_SECONDS },
-    );
+    const payload: ManualRefreshJob = { userId, id, billable };
+    const encolado = await this.boss.enqueue(MANUAL_REFRESH_QUEUE, payload, {
+      singletonKey: userId,
+      expireInSeconds: MANUAL_REFRESH_EXPIRE_SECONDS,
+    });
     if (!encolado) {
       // Sin cola no va a pasar nada, y dejar la fila abierta bloquearía el
       // botón para siempre: el candado solo se suelta al liquidar.

@@ -157,6 +157,26 @@ export class TrendsRepository {
     return fila?.id ?? null;
   }
 
+  /**
+   * Cierra los refrescos que quedaron abiertos y ya nadie va a liquidar.
+   *
+   * Sin esto el candado no tiene salida. pg-boss no mata al handler cuando el
+   * job expira —marca el job fallido y libera el slot— y con `retryLimit: 0`
+   * nadie vuelve a pasar por `liquidarRefresco`. Un worker reiniciado a media
+   * búsqueda, que es lo que pasa en cada deploy, dejaba la fila abierta y al
+   * usuario sin botón hasta que alguien tocara la base a mano.
+   *
+   * Corre antes de leer el estado, que es el único momento en que a alguien le
+   * importa: no hace falta un barrido aparte para algo que se arregla solo en
+   * la siguiente carga de la pantalla.
+   */
+  async cerrarAbandonados(tx: Tx, limite: Date): Promise<void> {
+    await tx
+      .update(trendRefreshes)
+      .set({ settledAt: WRITTEN_AT, outcome: "abandonado" })
+      .where(and(isNull(trendRefreshes.settledAt), lte(trendRefreshes.requestedAt, limite)));
+  }
+
   /** El refresco en vuelo del usuario, si lo hay. */
   async refrescoEnVuelo(tx: Tx): Promise<{ id: string; billable: boolean } | null> {
     const [fila] = await tx

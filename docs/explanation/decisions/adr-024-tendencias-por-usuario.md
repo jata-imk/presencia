@@ -53,6 +53,10 @@ Ese tercer caso es el que obliga a mirar los items y no solo la fecha. Cuando un
 
 **El candado contra el doble click es un índice, no un `if`.** `trend_refreshes` lleva uno único parcial sobre `user_id where settled_at is null`: dos requests separados por milisegundos leerían los dos "no hay ninguno", pero solo uno gana el insert. El que pierde recibe el estado "en curso", que es la verdad.
 
+**Y el candado tiene salida.** pg-boss no mata al handler cuando el job expira: marca el job fallido y libera el slot. Con `retryLimit: 0` —que acá es obligatorio, porque un reintento vuelve a pagar la búsqueda— nadie vuelve a pasar por la liquidación. Un worker reiniciado a media búsqueda, que es lo que pasa en **cada deploy**, dejaba la fila abierta y al usuario sin botón para siempre. Las filas más viejas que el doble del techo del job se cierran como `abandonado` al leer el estado; no hace falta un barrido aparte para algo que se arregla solo en la siguiente carga de la pantalla.
+
+**El cobro puede sobregirar, y acá corresponde.** `spend` rechaza por default porque su caso normal es cobrar _antes_ de producir el efecto, donde rechazar es gratis. Este cobro ocurre al final de una búsqueda de ~40 segundos: entre el click y ese momento, un turno de chat pudo consumir el saldo que el gate había comprobado. Sin sobregiro, `spend` lanzaría dentro de la transacción y se llevaría por delante el `upsert` de la tanda — la búsqueda ya pagada, el usuario sin tendencias **y** sin el asiento que explica el gasto. Un saldo levemente negativo dice la verdad; perder las dos cosas, no. Es la misma doctrina que `charge()`.
+
 ## Lo que esto cuesta y se acepta
 
 - **Se pierde el arranque instantáneo.** Con caché compartida, un usuario nuevo heredaba la tanda de otro de su vertical y veía tendencias al primer login. Ahora espera al barrido (≤ 1 día) o paga un refresco inmediato. A cambio, lo que ve es suyo.

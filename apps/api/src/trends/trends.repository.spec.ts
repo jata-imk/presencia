@@ -227,4 +227,39 @@ describe("TrendsRepository", () => {
     const vueloA = await dbService.runWithTenant(userA, (tx) => repo.refrescoEnVuelo(tx));
     expect(vueloA?.id).toBe(deA);
   });
+
+  it("el candado se suelta solo cuando el job se perdió", { timeout: 15_000 }, async () => {
+    // Sin esto el candado no tiene salida: pg-boss no mata al handler cuando
+    // el job expira, y con retryLimit 0 nadie vuelve a liquidar. Un worker
+    // reiniciado a media búsqueda —cada deploy— dejaba al usuario sin botón
+    // para siempre.
+    await dbService.runWithTenant(userA, (tx) => tx.delete(trendRefreshes));
+    const viejo = await dbService.runWithTenant(userA, (tx) => repo.abrirRefresco(tx, userA, true));
+    await dbService.runWithTenant(userA, (tx) =>
+      tx
+        .update(trendRefreshes)
+        .set({ requestedAt: new Date(Date.now() - 60 * 60 * 1000) })
+        .where(eq(trendRefreshes.id, viejo as string)),
+    );
+
+    // Un límite posterior a ese requested_at: la fila ya no se cree.
+    await dbService.runWithTenant(userA, (tx) =>
+      repo.cerrarAbandonados(tx, new Date(Date.now() - 30 * 60 * 1000)),
+    );
+    expect(await dbService.runWithTenant(userA, (tx) => repo.refrescoEnVuelo(tx))).toBeNull();
+
+    // Y el índice parcial deja pasar uno nuevo, que es el punto.
+    const nuevo = await dbService.runWithTenant(userA, (tx) => repo.abrirRefresco(tx, userA, true));
+    expect(nuevo).not.toBeNull();
+  });
+
+  it("no cierra un refresco que recién arrancó", { timeout: 15_000 }, async () => {
+    await dbService.runWithTenant(userA, (tx) => tx.delete(trendRefreshes));
+    await dbService.runWithTenant(userA, (tx) => repo.abrirRefresco(tx, userA, true));
+
+    await dbService.runWithTenant(userA, (tx) =>
+      repo.cerrarAbandonados(tx, new Date(Date.now() - 30 * 60 * 1000)),
+    );
+    expect(await dbService.runWithTenant(userA, (tx) => repo.refrescoEnVuelo(tx))).not.toBeNull();
+  });
 });
