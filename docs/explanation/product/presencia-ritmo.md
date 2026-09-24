@@ -207,6 +207,37 @@ Cada card tiene una señal de fuerza **cualitativa** (🔥 Subiendo
 su fuente** de forma sutil. Jose confía en ellas precisamente
 porque no huelen a número sacado de la manga.
 
+#### "Actualizar ahora": adelantar la tanda
+
+Las tendencias se refrescan solas una vez por semana y eso no
+le cuesta nada al usuario — lo paga el negocio. Pero la semana
+no siempre se porta: pasó algo en el nicho el martes y Jose no
+quiere esperar al domingo.
+
+La sección muestra **cuándo se generó** lo que está viendo y,
+al lado, un botón para adelantarlo:
+
+> _Actualizadas hace 3 días_ · **Actualizar ahora** (usa ~3% de
+> tu mes)
+
+Tres cosas que el botón tiene que hacer bien:
+
+- **Decir el precio antes de cobrarlo.** Nunca "actualizar" a
+  secas y después un cargo. Y nunca en unidades: el usuario
+  piensa en su mes, no en la aritmética interna del ledger.
+- **Apagarse cuando no alcanza**, en vez de dejar apretar y
+  contestar "no te alcanza" después de la ilusión.
+- **Desaparecer el precio cuando es gratis.** Si Jose todavía
+  no tiene tendencias, o las suyas ya vencieron, o la última
+  búsqueda no encontró nada, actualizar no cuesta: no se cobra
+  por la primera entrega ni por reintentar lo que falló. El
+  botón dice "Buscar tendencias" y punto.
+
+Mientras corre —tarda cerca de un minuto, porque de verdad
+navega— el botón queda en "Buscando…" y la sección sigue
+mostrando lo anterior con su fecha. No se vacía la pantalla
+para poner un spinner: lo viejo fechado sirve más que un hueco.
+
 ### De tendencia a acción: las propuestas
 
 Al final, la sección de **Propuestas**: publicaciones concretas
@@ -214,7 +245,7 @@ que Ritmo arma a partir de los temas virales, cada una con su
 formato recomendado y un gancho:
 
 > 🎬 **Reel** · "3 apps gratis que reemplazan a las de pago"
-> Gancho: "Dejá de pagar suscripciones, ve esto 👇"
+> Gancho: "Deja de pagar suscripciones, ve esto 👇"
 > [Crear en Chat]
 
 Jose ve una que le late. Click en **"Crear en Chat"**.
@@ -343,7 +374,7 @@ heatmap comunica **patrón a lo largo del tiempo** mejor que
 cualquier barra. Un gráfico de barras te dice "publicaste X
 esta semana"; el heatmap te muestra tu historia entera de
 consistencia de un solo golpe. Y tiene el bonus del efecto
-racha (la cadena visual que no querés romper).
+racha (la cadena visual que no quieres romper).
 
 **Por qué es el hero del módulo:** es lo que pidió el founder
 ("deslumbrar, motivar") y es el componente que más
@@ -663,7 +694,7 @@ datos. Decir la verdad de por qué falta el dato.
 ### Tendencias sin resultados / fuente caída
 
 **El diseño:** estado vacío honesto: _"No encontramos
-tendencias frescas de tu nicho ahorita. Probá refrescar en un
+tendencias frescas de tu nicho ahorita. Prueba de nuevo en un
 rato."_ NUNCA rellenar con tendencias inventadas para que se
 vea lleno.
 

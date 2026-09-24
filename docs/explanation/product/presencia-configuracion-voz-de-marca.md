@@ -120,13 +120,13 @@ onboarding a lo más nuevo/opcional.
 
 ## 3. Tipo de input por campo
 
-| Campo                                       | Tipo de input                               | Por qué                                                                                                                                           |
-| ------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mercado, nicho/audiencia, temas clave, CTAs | Chips + texto libre                         | Mismo patrón que el onboarding: listas abiertas con sugerencias, el usuario reconoce el patrón porque ya lo vio en paso 2 de 5.                   |
-| Modismos permitidos/prohibidos              | Tag input libre (sin presets)               | Nadie va a adivinar qué modismo específico querés prohibir — es vocabulario abierto y personal, no una lista de opciones que se puedan pre-armar. |
-| Anglicismos                                 | Toggle sí/no                                | Es binario de verdad, no necesita más granularidad.                                                                                               |
-| Formalidad                                  | Slider continuo                             | Ver sección 4.                                                                                                                                    |
-| Ejemplos de referencia                      | Selector de Biblioteca + upload/pegar texto | Ver Bloque D.                                                                                                                                     |
+| Campo                                       | Tipo de input                               | Por qué                                                                                                                                            |
+| ------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mercado, nicho/audiencia, temas clave, CTAs | Chips + texto libre                         | Mismo patrón que el onboarding: listas abiertas con sugerencias, el usuario reconoce el patrón porque ya lo vio en paso 2 de 5.                    |
+| Modismos permitidos/prohibidos              | Tag input libre (sin presets)               | Nadie va a adivinar qué modismo específico quieres prohibir — es vocabulario abierto y personal, no una lista de opciones que se puedan pre-armar. |
+| Anglicismos                                 | Toggle sí/no                                | Es binario de verdad, no necesita más granularidad.                                                                                                |
+| Formalidad                                  | Slider continuo                             | Ver sección 4.                                                                                                                                     |
+| Ejemplos de referencia                      | Selector de Biblioteca + upload/pegar texto | Ver Bloque D.                                                                                                                                      |
 
 ---
 
@@ -336,5 +336,5 @@ de esta pantalla.
 ## Próximo paso
 
 Con esto ya tengo base sólida para armar el prompt real hacia Claude
-Design. ¿Seguimos directo a construirlo, o querés ajustar algo de este
+Design. ¿Seguimos directo a construirlo, o quieres ajustar algo de este
 documento primero?

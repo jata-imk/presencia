@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { QuotaState, QuotaStatusDto } from "@presencia/shared";
 import type { AiTaskKind } from "../ai/provider-registry.js";
 import { DbService, type Tx } from "../db/db.service.js";
@@ -33,6 +33,17 @@ export interface SpendInput {
   reason: CreditReason;
   referenceType?: string;
   referenceId?: string;
+  /**
+   * Deja pasar el asiento aunque no alcance el saldo.
+   *
+   * Solo para costos YA INCURRIDOS. `spend` rechaza por default porque su
+   * caso normal es cobrar ANTES de producir el efecto: ahí rechazar es
+   * gratis. Cuando el gasto del proveedor ya se pagó —el refresco de
+   * tendencias, que se cobra al terminar una búsqueda de ~40 segundos— negarse
+   * no devuelve el dinero: solo tira el resultado y lo deja sin asentar. Es la
+   * misma doctrina que `charge()`, que sobregira a propósito.
+   */
+  allowOverdraft?: boolean;
 }
 
 export interface ChargeInput {
@@ -65,6 +76,27 @@ export class CreditsService {
   }
 
   /**
+   * El gate en su forma HTTP: 402 con el mismo `QuotaStatusDto` que consume la
+   * UI (banner, modal y botón de refresco).
+   *
+   * Vive acá y no en cada servicio porque ya se había copiado dos veces —chat
+   * y narración de Ritmo— y el comentario del primero seguía afirmando que era
+   * "un solo lugar". Tres copias de una puerta de cobro es como se llega a que
+   * una de ellas devuelva otro código y el front deje de reaccionar.
+   */
+  async assertQuotaOr402(userId: string, minimumUnits: number): Promise<void> {
+    try {
+      await this.assertHasQuota(userId, minimumUnits);
+    } catch (error) {
+      if (error instanceof InsufficientQuotaError) {
+        const quota = await this.getQuotaStatusDto(userId);
+        throw new HttpException({ code: "quota_exhausted", quota }, HttpStatus.PAYMENT_REQUIRED);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Cobro de costo conocido de antemano (imagen, multi-adapt, calendario
    * semanal). Rechaza si no alcanza — nunca deja saldo negativo. El caller
    * decide la transacción: o se cobra y se produce el efecto, o ninguna de
@@ -75,7 +107,7 @@ export class CreditsService {
     await this.repo.lockUser(tx, input.userId);
     const { cycleStartId } = await this.ensureCurrentCycle(tx, input.userId);
     const balance = await this.repo.balanceFrom(tx, input.userId, cycleStartId);
-    if (balance < units) {
+    if (balance < units && !input.allowOverdraft) {
       throw new InsufficientQuotaError(input.userId, units, balance);
     }
     await this.repo.insertEntry(tx, {

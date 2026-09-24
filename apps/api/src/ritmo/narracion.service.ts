@@ -1,17 +1,9 @@
-import {
-  HttpException,
-  HttpStatus,
-  Inject,
-  Injectable,
-  NotFoundException,
-  ServiceUnavailableException,
-} from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { generateText } from "ai";
 import type { RitmoNarracionDto } from "@presencia/shared";
 import { AiService, type ResolvedModel } from "../ai/ai.service.js";
 import { AiUsageRepository } from "../ai/ai-usage.repository.js";
 import { CreditsService } from "../credits/credits.service.js";
-import { InsufficientQuotaError } from "../credits/errors.js";
 import { DbService } from "../db/db.service.js";
 import { MetricsEngineService } from "../metrics/metrics-engine.service.js";
 import { fechaLocal } from "../metrics/hora-local.js";
@@ -95,7 +87,7 @@ export class NarracionService {
     // El gate va antes de la llamada, no después: cobrar post-hoc puede dejar
     // saldo negativo a propósito (ADR-012), y sin este piso una cuenta agotada
     // seguiría generando texto gratis, una vez por día, para siempre.
-    await this.assertQuota(userId);
+    await this.credits.assertQuotaOr402(userId, UNIDADES_MINIMAS);
 
     const payload = await this.payloadDe(userId, perfil.timezone, ahora);
     const arranque = Date.now();
@@ -191,19 +183,6 @@ export class NarracionService {
       );
     } catch (error) {
       console.error(`[ritmo] No se pudo registrar el usage de la narración de ${userId}:`, error);
-    }
-  }
-
-  /** 402 con el mismo QuotaStatusDto que consume la UI, igual que el chat. */
-  private async assertQuota(userId: string): Promise<void> {
-    try {
-      await this.credits.assertHasQuota(userId, UNIDADES_MINIMAS);
-    } catch (error) {
-      if (error instanceof InsufficientQuotaError) {
-        const quota = await this.credits.getQuotaStatusDto(userId);
-        throw new HttpException({ code: "quota_exhausted", quota }, HttpStatus.PAYMENT_REQUIRED);
-      }
-      throw error;
     }
   }
 

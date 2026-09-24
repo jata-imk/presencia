@@ -85,6 +85,38 @@ export const trendSourceSchema = z.object({
 });
 export type TrendSourceDto = z.infer<typeof trendSourceSchema>;
 
+/**
+ * El estado del botón de "actualizar ahora" (F9.6).
+ *
+ * El refresco periódico es del negocio; adelantarlo lo paga el usuario. Este
+ * objeto es todo lo que la pantalla necesita para pintar el botón sin
+ * calcular nada por su cuenta: si se puede pedir, si ya hay uno andando, y
+ * cuánto cuesta.
+ *
+ * El costo viaja como **porcentaje de la cuota del mes** y no en unidades, por
+ * la misma regla de siempre (addendum ADR-012): la web nunca ve la unidad
+ * cruda del ledger, solo objeto contable. Un botón que dijera "800 unidades"
+ * no le dice nada a nadie; "usa ~3% de tu mes", sí.
+ */
+export const trendRefreshStateSchema = z.object({
+  /** `true` mientras hay un refresco pedido y sin terminar. */
+  enCurso: z.boolean(),
+  /**
+   * Si se puede pedir uno ahora.
+   *
+   * `false` mientras hay otro en vuelo, y también cuando el usuario no tiene
+   * saldo para el que le tocaría pagar.
+   */
+  disponible: z.boolean(),
+  /**
+   * Cuánto se llevaría de la cuota del mes, en porcentaje. **`0` significa
+   * gratis**, y eso pasa cuando el usuario no tiene tendencias vigentes: no se
+   * cobra por la primera entrega ni por rehacer una tanda que no trajo nada.
+   */
+  costoPorcentaje: z.number(),
+});
+export type TrendRefreshStateDto = z.infer<typeof trendRefreshStateSchema>;
+
 export const trendsDtoSchema = z.object({
   vertical: verticalIdSchema,
   region: macroRegionIdSchema,
@@ -107,6 +139,7 @@ export const trendsDtoSchema = z.object({
   expiresAt: z.string().nullable(),
   /** `true` si el usuario personalizó la búsqueda (fuentes, prompt o idiomas). */
   personalizada: z.boolean(),
+  refresco: trendRefreshStateSchema,
 });
 export type TrendsDto = z.infer<typeof trendsDtoSchema>;
 

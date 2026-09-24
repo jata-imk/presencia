@@ -18,17 +18,20 @@ import {
   type RitmoResumenDto,
   type VentanaDeRedDto,
   type TrendsDto,
+  type TrendRefreshStateDto,
 } from "@presencia/shared";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { SessionUser } from "../auth/auth.js";
 import { NarracionService } from "./narracion.service.js";
 import { RitmoService } from "./ritmo.service.js";
+import { TrendsService } from "../trends/trends.service.js";
 
 @Controller("ritmo")
 export class RitmoController {
   constructor(
     @Inject(RitmoService) private readonly service: RitmoService,
     @Inject(NarracionService) private readonly narraciones: NarracionService,
+    @Inject(TrendsService) private readonly trends: TrendsService,
   ) {}
 
   @Get("resumen")
@@ -71,6 +74,16 @@ export class RitmoController {
   @Get("tendencias")
   tendencias(@CurrentUser() user: SessionUser): Promise<TrendsDto> {
     return this.service.tendencias(user.id);
+  }
+
+  // POST por la misma razón que la narración: esto puede cobrar, y un GET que
+  // cobra es un GET que un prefetch o un reintento del navegador disparan
+  // solos. No devuelve tendencias porque todavía no existen —la búsqueda
+  // tarda decenas de segundos—: devuelve el estado, y la pantalla vuelve a
+  // pedir el GET de arriba mientras `enCurso` siga en true.
+  @Post("tendencias/refresco")
+  refrescarTendencias(@CurrentUser() user: SessionUser): Promise<TrendRefreshStateDto> {
+    return this.trends.solicitarRefresco(user.id);
   }
 
   // Sin el avance de la semana: quien lo pide (la barra del Calendario) ya

@@ -86,6 +86,11 @@ export const creditReason = pgEnum("credit_reason", [
   // tarifa fija en `flat`) porque su costo depende del texto que produce,
   // igual que un turno de chat.
   "ritmo_narration",
+  // F9.6: adelantar el refresco de tendencias antes de que venza la tanda. Sí
+  // tiene tarifa fija en `flat`, al revés que `ritmo_narration`: el fee del
+  // grounding se cobra POR CONSULTA de búsqueda, no por token, así que
+  // cobrarlo por tokens subestimaría justo la parte cara.
+  "trend_refresh",
   "refund",
   "adjustment",
 ]);
@@ -608,6 +613,38 @@ export const trendSources = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("trend_sources_user_host").on(t.userId, t.host)],
+);
+
+export const trendRefreshes = pgTable(
+  "trend_refreshes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Si este refresco se iba a cobrar. Se decide al PEDIRLO y no al
+    // liquidarlo: en el momento del click el usuario tenía tendencias
+    // vigentes en pantalla, y eso es lo que está adelantando. Para cuando el
+    // job termina, la tanda ya cambió y la pregunta ya no se puede rehacer.
+    billable: boolean("billable").notNull(),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    // Null mientras el job no termina, y ese null ES el candado: el índice
+    // parcial de abajo impide un segundo pedido en vuelo.
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    // Cómo terminó: `cobrado`, `gratis`, `sin_resultados` o `error`. Texto y
+    // no enum porque nadie filtra por esto — se lee cuando algo se ve raro.
+    outcome: text("outcome"),
+  },
+  (t) => [
+    // Un refresco en vuelo por usuario. Es el candado contra el doble click, y
+    // vive en la base y no en un `if` por la misma razón que
+    // `ritmo_narrations_user_day`: dos requests simultáneos chocan contra el
+    // índice, que no puede perder la carrera.
+    uniqueIndex("trend_refreshes_en_vuelo")
+      .on(t.userId)
+      .where(sql`${t.settledAt} is null`),
+    index("trend_refreshes_user_requested").on(t.userId, t.requestedAt),
+  ],
 );
 
 // ── Telemetría de IA ─────────────────────────────────────────────────

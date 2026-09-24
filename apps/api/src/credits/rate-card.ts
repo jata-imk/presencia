@@ -62,11 +62,18 @@ export const RATE_CARDS: Record<number, RateCard> = {
       multi_adapt: 900,
       image_generation: 700,
       weekly_calendar: 1800,
+      // Adelantar el refresco de tendencias (F9.6). Tarifa fija y no por
+      // tokens porque el grueso del costo NO son tokens: el fee del grounding
+      // se cobra por consulta de búsqueda —medidas, 4 por refresco— y los dos
+      // modelos que intervienen aportan unos pocos miles de tokens entre los
+      // dos. Cobrarlo por tokens subestimaría justo la parte cara.
+      //
+      // El refresco PERIÓDICO no pasa por acá: lo absorbe el negocio
+      // (ADR-024). Esto solo cobra adelantarlo.
+      trend_refresh: 800,
       // `ritmo_narration` NO está acá, y no es un olvido: se cobra por tokens
       // (perThousandTokens.analytics_narration), no con tarifa fija, porque su
-      // costo depende del texto que produce. Las tendencias, en cambio, siguen
-      // costando 0 para el usuario: se cachean por (vertical, región) y no por
-      // user_id, así que no hay a quién cobrárselas.
+      // costo depende del texto que produce.
     },
   },
 };
@@ -122,6 +129,28 @@ export function quoteFlatAction(
     throw new Error(`El rate card v${version} no tiene tarifa fija para "${reason}".`);
   }
   return units;
+}
+
+/**
+ * Qué porción de la cuota del mes se lleva una acción de tarifa fija.
+ *
+ * El otro objeto contable, además de "publicaciones": `unitsToPublications`
+ * redondea hacia abajo contra 1.000 unidades, así que todo lo que cuesta menos
+ * de una publicación se muestra como "0" — inservible justo para anunciar el
+ * precio de un botón. El porcentaje sí distingue.
+ *
+ * Con un decimal, y nunca 0 si la acción cuesta algo: "0%" en un botón que
+ * cobra es mentira, aunque sea una mentira de redondeo.
+ */
+export function flatActionPercentOfQuota(
+  reason: CreditReason,
+  tier: PlanTier,
+  version: number = CURRENT_RATE_CARD_VERSION,
+): number {
+  const units = quoteFlatAction(reason, version);
+  const quota = PLAN_QUOTAS[tier];
+  if (quota <= 0) return 0;
+  return Math.max(Math.round((units / quota) * 1000) / 10, 0.1);
 }
 
 /** El objeto contable que ve el usuario: cuántas publicaciones más le alcanzan. */

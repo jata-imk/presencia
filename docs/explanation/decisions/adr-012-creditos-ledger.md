@@ -62,3 +62,15 @@ Dos clicks simultáneos chocan contra el índice único, no contra una condició
 **El `day` es el día local del usuario** (`users.timezone`), no UTC. Con UTC, a alguien en Mérida la ventana de cobro se le cortaría a las 18:00 y el botón volvería a cobrarle esa misma tarde.
 
 **El gate es de 1 unidad, no de `minimumTurnUnits`.** Ese piso es de un turno de chat, que cuesta un orden de magnitud más; acá la pregunta no es "¿te alcanza?" sino "¿te queda algo?". Sin ningún gate, una cuenta agotada seguiría generando texto gratis, una vez por día, indefinidamente.
+
+## Addendum (2026-09-24, F9.6 PR2) — `trend_refresh`, y una puerta de cobro en un solo lugar
+
+**`trend_refresh` sí tiene tarifa fija**, al revés que `ritmo_narration`, y la distinción vuelve a ser la de F5: se cobra fijo lo que cuesta lo mismo siempre. Acá el grueso del costo ni siquiera son tokens — el fee del grounding se cobra **por consulta de búsqueda** (medidas, cuatro por refresco), y los dos modelos que intervienen aportan unos pocos miles de tokens entre ambos. Cobrarlo con `charge()` subestimaría justo la parte cara.
+
+**El `reference_id` obligó a una tabla, otra vez.** `user_trends` es un upsert: una fila por usuario cuyo id no cambia entre refrescos. Apuntar el asiento ahí habría hecho que el segundo cobro chocara contra `ledger_dedup` y se perdiera **en silencio** — cobrado una vez, gratis para siempre. `trend_refreshes` da un uuid nuevo por refresco, y de paso el candado contra el doble click y el registro de si ese refresco era cobrable.
+
+**El 402 se armaba en tres lugares.** `InsufficientQuotaError` → `HttpException({ code: "quota_exhausted", quota })` estaba copiado en el chat y en la narración de Ritmo, y el comentario del primero seguía afirmando que era "un solo lugar". El refresco habría sido la tercera copia, así que se movió a `CreditsService.assertQuotaOr402`. Tres copias de una puerta de cobro es como se llega a que una devuelva otro código y el front deje de reaccionar.
+
+**Y el precio se anuncia antes de gastarse.** `flatActionPercentOfQuota` traduce la tarifa a porcentaje de la cuota del mes, porque el objeto contable que ya existía no alcanza: `unitsToPublications` redondea hacia abajo contra 1.000 unidades, así que todo lo que cuesta menos de una publicación se muestra como "0". El porcentaje distingue, y nunca se redondea a cero — "0%" en un botón que cobra es mentira, aunque sea de redondeo. La regla se mantiene: la web nunca ve la unidad cruda.
+
+**`spend` aprende a sobregirar, con llave.** `allowOverdraft` es opt-in y solo para **costos ya incurridos**. El default sigue siendo rechazar, porque el caso normal de `spend` es cobrar antes de producir el efecto y ahí negarse no cuesta nada. El refresco de tendencias es al revés: se cobra al terminar una búsqueda de ~40 segundos, y para entonces el gasto con el proveedor ya ocurrió. Negarse no devuelve ese dinero — solo tira el resultado y lo deja sin asentar. Con esto, `spend` y `charge` quedan alineados en la doctrina de siempre: **el asiento registra el costo real, y lo que evita que el sobregiro pase seguido es el gate, no el asiento.**
