@@ -1,5 +1,7 @@
 # ADR-023 · Tendencias: caché compartida por nicho y fuente estructural
 
+> **Superado por [ADR-024](./adr-024-tendencias-por-usuario.md) (2026-09-24)** en lo que hace a la llave y al aislamiento: las tendencias pasaron a ser por usuario y `niche_trends` se eliminó. Lo que este ADR decidió sobre **cómo se busca** —dos llamadas, fuente estructural por índice, el modelo con capacidad de grounding y su propio default— sigue vigente y ADR-024 no lo repite. Se conserva porque el razonamiento de por qué la caché compartida parecía correcta, y qué dato la desarmó, es la parte que sirve la próxima vez.
+
 **Decisión:** las tendencias de Ritmo se buscan y se guardan por la tupla `(vertical, país, macro-región)` en `niche_trends`, una tabla **sin `user_id` y sin RLS** — la única del dominio. La vertical sale de un catálogo cerrado (`packages/shared/src/verticals.ts`); el nicho libre del usuario solo sirve para mapear a ella y nunca entra a la búsqueda.
 
 Cada tendencia se arma en dos llamadas: una **con búsqueda web con grounding** (hoy solo Google la da) que devuelve prosa y las páginas que de verdad visitó, y una segunda **sin herramientas** que estructura esa prosa, donde la única forma que tiene el modelo de señalar procedencia es un **índice** a la lista de páginas de la primera. La URL y el título se copian de esa lista. Un índice que no apunta a nada produce un item menos, nunca un item sin fuente.

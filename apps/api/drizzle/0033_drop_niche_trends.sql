@@ -1,0 +1,22 @@
+-- F9.6: se retira la caché compartida de tendencias.
+--
+-- `niche_trends` era la ÚNICA tabla del dominio sin `user_id` y sin RLS: la
+-- excepción a ADR-003, justificada en ADR-023 porque una tanda de tendencias
+-- era idéntica para todos los usuarios de la tupla `(vertical, país, región)`
+-- y llavearla por usuario multiplicaba el gasto de búsqueda.
+--
+-- Lo que la derriba no es técnico, es de producto: el cubo era demasiado
+-- grueso. Un creator de "programación, IA y devops" caía en "tecnología", que
+-- es la industria entera, y recibía tendencias de un nicho que no era el suyo.
+--
+-- Y la palanca que lo sostenía valía menos de lo que costaba. El grounding con
+-- búsqueda trae capa gratuita mensual y después cobra por consulta, no por
+-- usuario: con los volúmenes de esta etapa, y aun con mil usuarios refrescando
+-- una vez por semana, el ahorro de compartir la caché no compensaba entregar
+-- tendencias equivocadas. Ver ADR-024, que reemplaza a ADR-023.
+--
+-- Se dropea sin migrar datos a propósito: lo que hay son tandas de nicho
+-- genérico con menos de una semana de vida, y cada usuario recupera la suya
+-- —mejor— en el primer pase del barrido. CASCADE porque nada la referencia.
+
+DROP TABLE "niche_trends" CASCADE;

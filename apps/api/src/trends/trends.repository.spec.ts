@@ -1,32 +1,30 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { TrendItem } from "@presencia/shared";
-import { nicheTrends } from "../db/schema.js";
+import { sessions, trendSources, users, userTrends } from "../db/schema.js";
 // Imports solo de tipo: los módulos reales se cargan en beforeAll, mismo
 // patrón que metrics.repository.spec.ts (env.ts valida el entorno al importar).
 import type { DbService as DbServiceType } from "../db/db.service.js";
-import type {
-  TrendsRepository as TrendsRepositoryType,
-  TuplaDeTendencias,
-} from "./trends.repository.js";
+import type { TrendsRepository as TrendsRepositoryType } from "./trends.repository.js";
 
-// Contra Postgres real: lo que está bajo prueba es el upsert por tupla y que
-// la tabla sea legible SIN tenant fijado — la parte inusual de esta tabla, y
-// la que una migración futura podría romper sin que nada más lo note.
+// Contra Postgres real, porque lo que está bajo prueba es justo lo que un mock
+// no ejercita: que `user_trends` y `trend_sources` estén aisladas por RLS, y
+// que el barrido —que corre SIN tenant— sí las vea a todas.
+//
+// Ese par es la parte delicada del cambio de F9.6: la tabla vieja no tenía RLS
+// y se leía desde cualquier tenant a propósito. Si la policy nueva quedara mal,
+// el síntoma sería silencioso en las dos direcciones — o el usuario no ve sus
+// tendencias, o ve las de otro.
 
 let dbService: DbServiceType;
 let repo: TrendsRepositoryType;
+let userA: string;
+let userB: string;
 
-// Cada test usa su propia región para no depender del orden ni del estado que
-// dejó el anterior. Con estado compartido, un `--shuffle` o un `.only`
-// producía fallos que apuntaban al lugar equivocado.
-const REGIONES_USADAS: string[] = [];
-function tuplaNueva(region: TuplaDeTendencias["region"] = "sureste"): TuplaDeTendencias {
-  const vertical = `spec_${randomUUID().slice(0, 8)}`;
-  REGIONES_USADAS.push(vertical);
-  return { vertical: vertical as TuplaDeTendencias["vertical"], marketCountry: "MX", region };
-}
+const AHORA = new Date("2026-09-24T12:00:00.000Z");
+const EN_UNA_SEMANA = new Date("2026-10-01T12:00:00.000Z");
+const HACE_UN_DIA = new Date("2026-09-23T12:00:00.000Z");
 
 const ITEM: TrendItem = {
   topic: "Carruseles antes y después",
@@ -38,166 +36,152 @@ const ITEM: TrendItem = {
   sourceUrl: "https://ejemplo.mx/tendencias",
 };
 
-const AHORA = new Date("2026-09-20T12:00:00.000Z");
-const EN_UN_DIA = new Date("2026-09-21T12:00:00.000Z");
+async function nuevoUsuario(conSesion: boolean): Promise<string> {
+  const [user] = await dbService.db
+    .insert(users)
+    .values({
+      name: "Tendencias",
+      email: `trends-${randomUUID()}@test.local`,
+      emailVerified: true,
+    })
+    .returning({ id: users.id });
+  if (!user) throw new Error("No se pudo crear el usuario de prueba");
+  if (conSesion) {
+    await dbService.db.insert(sessions).values({
+      userId: user.id,
+      token: randomUUID(),
+      expiresAt: new Date(AHORA.getTime() + 30 * 24 * 60 * 60 * 1000),
+    });
+  }
+  return user.id;
+}
 
-function guardar(
-  tupla: TuplaDeTendencias,
-  items: TrendItem[],
-  expiresAt: Date,
-  generatedAt = AHORA,
-) {
-  return dbService.db.transaction((tx) =>
+async function guardar(userId: string, items: TrendItem[], expiresAt: Date): Promise<void> {
+  await dbService.runWithTenant(userId, (tx) =>
     repo.upsert(tx, {
-      ...tupla,
+      userId,
       items,
-      generatedAt,
+      generatedAt: AHORA,
       expiresAt,
       provider: "google",
-      model: "spec",
-      usage: {},
+      model: "gemini-spec",
+      usage: { consultas: 3 },
     }),
   );
 }
 
-beforeAll(async () => {
-  try {
-    process.loadEnvFile("../../.env");
-  } catch {
-    // sin .env: se usa el process.env tal cual
-  }
-  const { DbService } = await import("../db/db.service.js");
-  const { TrendsRepository } = await import("./trends.repository.js");
-  dbService = new DbService();
-  repo = new TrendsRepository();
-}, 30_000);
-
-// La tupla del test de posponer usa una vertical REAL, porque probar el
-// posponer con una vertical inventada pasaría por el motivo equivocado: el
-// filtro del barrido la descartaría antes y la aserción no diría nada.
-const TUPLA_REAL: TuplaDeTendencias = {
-  vertical: "parenting",
-  marketCountry: "SPEC",
-  region: "noroeste",
-};
-
-afterAll(async () => {
-  if (REGIONES_USADAS.length > 0) {
-    await dbService.db.delete(nicheTrends).where(inArray(nicheTrends.vertical, REGIONES_USADAS));
-  }
-  await dbService.db.delete(nicheTrends).where(eq(nicheTrends.marketCountry, "SPEC"));
-  await dbService.onModuleDestroy();
-}, 30_000);
-
 describe("TrendsRepository", () => {
-  it("un segundo refresco actualiza la fila, no agrega otra", { timeout: 15_000 }, async () => {
-    const tupla = tuplaNueva();
-    await guardar(tupla, [ITEM], EN_UN_DIA);
-    await guardar(tupla, [ITEM, { ...ITEM, topic: "Otra tendencia" }], EN_UN_DIA);
+  beforeAll(async () => {
+    try {
+      process.loadEnvFile("../../.env");
+    } catch {
+      // sin .env: se usa el process.env tal cual (CI)
+    }
+    const { DbService } = await import("../db/db.service.js");
+    const { TrendsRepository } = await import("./trends.repository.js");
+    dbService = new DbService();
+    repo = new TrendsRepository();
+    userA = await nuevoUsuario(true);
+    userB = await nuevoUsuario(true);
+  }, 30_000);
 
-    const filas = await dbService.db
-      .select()
-      .from(nicheTrends)
-      .where(
-        and(
-          eq(nicheTrends.vertical, tupla.vertical),
-          eq(nicheTrends.marketCountry, tupla.marketCountry),
-          eq(nicheTrends.region, tupla.region),
-        ),
-      );
+  afterAll(async () => {
+    await dbService.db.delete(users).where(inArray(users.id, [userA, userB]));
+    await dbService.onModuleDestroy();
+  }, 30_000);
+
+  it("un segundo refresco actualiza la fila, no agrega otra", { timeout: 15_000 }, async () => {
+    await guardar(userA, [ITEM], EN_UNA_SEMANA);
+    await guardar(userA, [ITEM, { ...ITEM, topic: "Otra cosa" }], EN_UNA_SEMANA);
+
+    // Dentro del tenant: sin `app.user_id` fijado la policy no deja pasar
+    // nada, que es exactamente lo que este cambio vino a instalar.
+    const filas = await dbService.runWithTenant(userA, (tx) => tx.select().from(userTrends));
     expect(filas).toHaveLength(1);
+
+    const guardadas = await dbService.runWithTenant(userA, (tx) => repo.find(tx));
+    expect(guardadas?.items).toHaveLength(2);
   });
 
-  it("se lee desde dentro del tenant de un usuario cualquiera", { timeout: 15_000 }, async () => {
-    // Es la propiedad que hace útil a la caché compartida: cualquier tenant ve
-    // la misma fila. Si alguien le pusiera RLS a esta tabla, este test es el
-    // que se entera — todo lo demás seguiría compilando y el usuario vería el
-    // estado vacío sin motivo.
-    const tupla = tuplaNueva();
-    await guardar(tupla, [ITEM], EN_UN_DIA);
-
-    const guardadas = await dbService.runWithTenant(randomUUID(), (tx) => repo.find(tx, tupla));
-    expect(guardadas?.items).toHaveLength(1);
-    expect(guardadas?.items[0]?.sourceUrl).toBe(ITEM.sourceUrl);
+  it("otro tenant no ve tendencias ajenas", { timeout: 15_000 }, async () => {
+    // La tabla vieja no tenía RLS y se leía desde cualquier tenant a
+    // propósito: era una caché compartida. Ahora es dato de una persona.
+    await guardar(userA, [ITEM], EN_UNA_SEMANA);
+    const deB = await dbService.runWithTenant(userB, (tx) => repo.find(tx));
+    expect(deB).toBeNull();
   });
 
   it("descarta los items guardados que ya no pasan el schema", { timeout: 15_000 }, async () => {
-    // `items` es jsonb: el motor no garantiza su forma, así que una fila
-    // escrita por una versión vieja del código no puede llegar a medias a la
-    // pantalla.
-    const tupla = tuplaNueva();
-    await guardar(tupla, [ITEM, { topic: "rota" } as unknown as TrendItem], EN_UN_DIA);
-
-    const guardadas = await dbService.db.transaction((tx) => repo.find(tx, tupla));
+    // `items` es jsonb: una fila escrita por una versión vieja del código no
+    // puede llegar a medias a la pantalla.
+    await guardar(userA, [ITEM, { topic: "rota" } as unknown as TrendItem], EN_UNA_SEMANA);
+    const guardadas = await dbService.runWithTenant(userA, (tx) => repo.find(tx));
     expect(guardadas?.items).toHaveLength(1);
   });
 
-  it("una tanda vacía SÍ es una fila, no una tupla sin buscar", { timeout: 15_000 }, async () => {
-    // De esto cuelga el freno de gasto de la semilla. `tendencias()` pide una
-    // búsqueda nueva cuando `find` devuelve `null`, así que si una fila con
-    // `items: []` se leyera como ausencia, una vertical que nunca produce nada
-    // citable pagaría una llamada con grounding en CADA carga de pantalla —y
-    // son dos pantallas las que la piden, Ritmo y el estado vacío del Chat.
-    const tupla = tuplaNueva();
-    await guardar(tupla, [], EN_UN_DIA);
-
-    const guardadas = await dbService.db.transaction((tx) => repo.find(tx, tupla));
+  it("una tanda vacía SÍ es una fila, no ausencia", { timeout: 15_000 }, async () => {
+    // De esto cuelga que la pantalla pueda distinguir "todavía no buscamos" de
+    // "buscamos y no encontramos", y que el barrido sepa que ya pasó por acá.
+    await guardar(userB, [], EN_UNA_SEMANA);
+    const guardadas = await dbService.runWithTenant(userB, (tx) => repo.find(tx));
     expect(guardadas).not.toBeNull();
     expect(guardadas?.items).toEqual([]);
-    // Y con fecha: es lo que deja a la pantalla decir "buscamos y no
-    // encontramos" en vez de "todavía no buscamos".
     expect(guardadas?.generatedAt).toBeInstanceOf(Date);
   });
 
-  it("las vencidas vuelven igual, para poder mostrarlas con su fecha", async () => {
-    // El camino de lectura prefiere tendencias de ayer fechadas que una
-    // pantalla vacía mientras se refresca.
-    const tupla = tuplaNueva();
-    await guardar(tupla, [ITEM], new Date("2026-09-02T12:00:00.000Z"));
-
-    const guardadas = await dbService.db.transaction((tx) => repo.find(tx, tupla));
+  it("las vencidas vuelven igual, para mostrarlas con su fecha", { timeout: 15_000 }, async () => {
+    await guardar(userA, [ITEM], HACE_UN_DIA);
+    const guardadas = await dbService.runWithTenant(userA, (tx) => repo.find(tx));
     expect(guardadas?.items).toHaveLength(1);
     expect(guardadas?.expiresAt.getTime()).toBeLessThan(AHORA.getTime());
   });
 
   it("posponer mueve el vencimiento sin tocar las tendencias", { timeout: 15_000 }, async () => {
-    // Es lo que impide que una tupla improductiva acapare el pase: conserva la
-    // fecha más vieja de la tabla y vuelve a salir primera cada vez. Y los
-    // items se quedan, para que el usuario siga viendo su última tanda buena.
-    const tupla = TUPLA_REAL;
-    await guardar(tupla, [ITEM], new Date("2026-09-02T12:00:00.000Z"));
+    await guardar(userA, [ITEM], HACE_UN_DIA);
+    const hasta = new Date(AHORA.getTime() + 12 * 60 * 60 * 1000);
+    await dbService.runWithTenant(userA, (tx) => repo.posponer(tx, hasta));
 
-    // Vencida: el barrido la ve.
-    const corte = new Date("2026-09-20T12:00:00.000Z");
-    const antes = await dbService.db.transaction((tx) => repo.porRefrescar(tx, corte, 500));
-    expect(antes.some((t) => t.marketCountry === "SPEC")).toBe(true);
-
-    const despues = new Date("2026-09-30T12:00:00.000Z");
-    await dbService.db.transaction((tx) => repo.posponer(tx, tupla, despues));
-
-    const guardadas = await dbService.db.transaction((tx) => repo.find(tx, tupla));
-    expect(guardadas?.expiresAt.getTime()).toBe(despues.getTime());
-    // Los items siguen ahí: el usuario conserva su última tanda buena.
+    const guardadas = await dbService.runWithTenant(userA, (tx) => repo.find(tx));
+    expect(guardadas?.expiresAt.getTime()).toBe(hasta.getTime());
     expect(guardadas?.items).toHaveLength(1);
-
-    // Y ya no sale en el barrido, que es lo que le devuelve el lugar a las
-    // tuplas sanas.
-    const pendientes = await dbService.db.transaction((tx) => repo.porRefrescar(tx, corte, 500));
-    expect(pendientes.some((t) => t.marketCountry === "SPEC")).toBe(false);
   });
 
-  it("el barrido ignora las filas cuya vertical ya no existe", { timeout: 15_000 }, async () => {
-    // Las columnas son `text` para que guardar nunca truene, pero lo que sale
-    // de acá se convierte en el nicho del prompt de búsqueda: una vertical
-    // retirada mandaría al job a buscar tendencias de algo inexistente, cada
-    // pase. Es también lo que protege a la DB de dev de las filas que deja
-    // este mismo spec si se interrumpe.
-    const tupla = tuplaNueva();
-    await guardar(tupla, [ITEM], new Date("2026-09-02T12:00:00.000Z"));
+  it("el barrido ve a quien le venció y a quien nunca tuvo", { timeout: 15_000 }, async () => {
+    // Corre sin tenant: si la policy de worker faltara, esto devolvería vacío
+    // y las tendencias no se refrescarían nunca, sin un solo error.
+    await guardar(userA, [ITEM], HACE_UN_DIA);
+    await dbService.runWithTenant(userB, (tx) => tx.delete(userTrends));
 
-    const pendientes = await dbService.db.transaction((tx) =>
-      repo.porRefrescar(tx, new Date("2026-09-20T12:00:00.000Z"), 200),
+    const pendientes = await dbService.runWorkerScan((tx) => repo.porRefrescar(tx, AHORA, 200));
+    expect(pendientes).toContain(userA);
+    expect(pendientes).toContain(userB);
+  });
+
+  it("el barrido NO ve a quien tiene una tanda vigente", { timeout: 15_000 }, async () => {
+    await guardar(userA, [ITEM], EN_UNA_SEMANA);
+    const pendientes = await dbService.runWorkerScan((tx) => repo.porRefrescar(tx, AHORA, 200));
+    expect(pendientes).not.toContain(userA);
+  });
+
+  it("el barrido salta a las cuentas sin sesión viva", { timeout: 20_000 }, async () => {
+    // Sin este filtro el negocio paga una búsqueda por semana por cada cuenta
+    // que se registró y no volvió. Quien vuelva entra al pase siguiente.
+    const dormido = await nuevoUsuario(false);
+    try {
+      const pendientes = await dbService.runWorkerScan((tx) => repo.porRefrescar(tx, AHORA, 200));
+      expect(pendientes).not.toContain(dormido);
+    } finally {
+      await dbService.db.delete(users).where(eq(users.id, dormido));
+    }
+  });
+
+  it("las fuentes propias también están aisladas por tenant", { timeout: 15_000 }, async () => {
+    await dbService.runWithTenant(userA, (tx) =>
+      tx.insert(trendSources).values({ userId: userA, host: "canal10.tv" }),
     );
-    expect(pendientes.some((t) => t.vertical === tupla.vertical)).toBe(false);
+    const deA = await dbService.runWithTenant(userA, (tx) => repo.fuentes(tx));
+    const deB = await dbService.runWithTenant(userB, (tx) => repo.fuentes(tx));
+    expect(deA.map((f) => f.host)).toContain("canal10.tv");
+    expect(deB).toHaveLength(0);
   });
 });

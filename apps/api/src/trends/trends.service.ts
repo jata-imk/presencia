@@ -2,28 +2,39 @@ import { Inject, Injectable } from "@nestjs/common";
 import { generateObject, generateText } from "ai";
 import { z } from "zod";
 import {
-  macroRegionLabel,
+  asVerticalId,
+  modoEfectivo,
+  resolveMacroRegion,
+  resolveVertical,
   socialNetworkSchema,
   TREND_FORMATS,
   TREND_SIGNALS,
-  verticalLabel,
+  trendLangSchema,
   type TrendItem,
+  type TrendLang,
 } from "@presencia/shared";
-import { AiService, type ResolvedModel } from "../ai/ai.service.js";
-import { BossService } from "../jobs/boss.service.js";
+import { AiService } from "../ai/ai.service.js";
 import {
   DEFAULT_TRENDS_MODEL_ID,
   GOOGLE_SEARCH_TOOL,
   SEARCH_PROVIDER,
 } from "../ai/provider-registry.js";
+import { BrandVoiceRepository } from "../brand-voice/brand-voice.repository.js";
 import { DbService } from "../db/db.service.js";
 import { env } from "../env.js";
 import { summarizeFailures } from "../jobs/summarize-failures.js";
 import { ensamblarTendencias, extraerFuentes } from "./grounding.js";
-import { TrendsRepository, type TuplaDeTendencias } from "./trends.repository.js";
+import {
+  estaPersonalizada,
+  MAX_TENDENCIAS,
+  promptDeBusqueda,
+  promptDeEstructura,
+  type ContextoDeBusqueda,
+} from "./prompt.js";
+import { TrendsRepository } from "./trends.repository.js";
 
-// Las tendencias de nicho: buscar lo que se está moviendo, y escribirlo solo
-// si tiene de dónde salir.
+// Las tendencias de nicho: buscar lo que se está moviendo para UNA persona, y
+// escribirlo solo si tiene de dónde salir.
 //
 // El recorrido es de dos llamadas, y la separación no es estética:
 //
@@ -38,41 +49,30 @@ import { TrendsRepository, type TuplaDeTendencias } from "./trends.repository.js
 // que es exactamente lo que no puede ser (ver grounding.ts).
 
 /** Cuánto dura una tanda antes de pedir refresco. */
-const TTL_HORAS = 24;
-
-/** La cola de la primera búsqueda de una tupla, disparada desde la lectura. */
-export const COLA_SEMILLA = "trends.seed";
+const TTL_DIAS = 7;
 
 /**
- * Techo de una búsqueda suelta. La llamada con grounding navega de verdad y
- * puede tardar decenas de segundos; dos minutos dejan margen sin que un job
- * colgado ocupe la cola indefinidamente.
- */
-export const SEMILLA_EXPIRE_SECONDS = 120;
-
-/**
- * Tuplas por pase del barrido.
+ * Usuarios por pase del barrido.
  *
- * Cada una cuesta dos llamadas, una de ellas con búsqueda. El tope existe
- * para que un despliegue con muchas verticales activas no dispare el gasto en
- * un solo pase: lo que no entra se refresca en el siguiente, y mientras tanto
- * el usuario ve su tanda de ayer con la fecha a la vista.
+ * Cada uno cuesta dos llamadas, una de ellas con búsqueda, y el fee del
+ * grounding se cobra por consulta. El tope existe para que el día que se
+ * acumulen muchos vencimientos el gasto no llegue de golpe en un solo pase: lo
+ * que no entra se refresca en el siguiente, y mientras tanto el usuario ve su
+ * tanda anterior con la fecha a la vista.
  */
-const TUPLAS_POR_PASE = 8;
-
-/** Cuántas tendencias se le piden al modelo. La UI pinta las que sobrevivan. */
-const MAX_TENDENCIAS = 10;
+const USUARIOS_POR_PASE = 20;
 
 /**
- * Cuánto se pospone una tupla que no produjo nada.
+ * Cuánto se pospone un usuario cuya búsqueda no produjo nada.
  *
- * Igual al intervalo del cron: así la tupla se salta exactamente un pase y
- * queda por detrás de cualquier tupla sana recién vencida, en vez de volver a
- * encabezar la fila. Ver `TrendsRepository.posponer`.
+ * Bastante menos que el TTL: no es un refresco normal, es un reintento. Pero
+ * suficiente para que no acapare el pase siguiente, porque el barrido ordena
+ * por vencimiento y el suyo volvería a ser el más viejo.
  */
-const REINTENTO_HORAS = 6;
+const REINTENTO_HORAS = 12;
 
 const MS_POR_HORA = 60 * 60 * 1000;
+const MS_POR_DIA = 24 * MS_POR_HORA;
 
 const esquemaCrudo = z.object({
   tendencias: z
@@ -90,10 +90,12 @@ const esquemaCrudo = z.object({
 });
 
 export interface ResultadoDeRefresco {
-  tupla: TuplaDeTendencias;
+  userId: string;
   items: TrendItem[];
   /** Fuentes que devolvió la búsqueda, antes del ensamblado. */
   fuentes: number;
+  /** Consultas de búsqueda que disparó la llamada. Es lo que se factura. */
+  consultas: number;
 }
 
 @Injectable()
@@ -102,69 +104,59 @@ export class TrendsService {
     @Inject(DbService) private readonly dbService: DbService,
     @Inject(AiService) private readonly ai: AiService,
     @Inject(TrendsRepository) private readonly repo: TrendsRepository,
-    @Inject(BossService) private readonly boss: BossService,
+    @Inject(BrandVoiceRepository) private readonly voiceRepo: BrandVoiceRepository,
   ) {}
 
   /**
-   * Pide la PRIMERA búsqueda de una tupla que nunca se ha buscado.
+   * El contexto de búsqueda de un usuario, leído de su voz de marca.
    *
-   * Sin esto el módulo no arranca nunca, y el hueco es fácil de no ver: el
-   * barrido periódico solo refresca filas que YA existen (`porRefrescar` lee
-   * de `niche_trends`), así que una tupla sin fila no entra jamás al pase. Un
-   * usuario con una vertical que nadie más tiene vería el estado vacío para
-   * siempre, con el cron corriendo cada seis horas sin tocarla.
-   *
-   * Va por cola y no en el request porque la búsqueda tarda decenas de
-   * segundos: el usuario ve su estado vacío ahora y sus tendencias en el
-   * siguiente refresco, en vez de esperar con la pantalla en blanco.
+   * Devuelve `null` si todavía no tiene voz: sin nicho no hay nada que buscar,
+   * y adivinarlo sería inventarle un mercado.
    */
-  async pedirPrimeraBusqueda(tupla: TuplaDeTendencias): Promise<void> {
-    await this.boss.enqueue(COLA_SEMILLA, tupla, {
-      // Una búsqueda por tupla, aunque diez usuarios del mismo nicho abran
-      // Ritmo a la vez. Es la misma palanca por la que la caché no se llavea
-      // por usuario.
-      singletonKey: claveDe(tupla),
-      expireInSeconds: SEMILLA_EXPIRE_SECONDS,
+  async contextoDe(userId: string): Promise<ContextoDeBusqueda | null> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const voz = await this.voiceRepo.findDefault(tx);
+      if (!voz) return null;
+      const fuentes = await this.repo.fuentes(tx);
+      return {
+        vertical: resolveVertical(asVerticalId(voz.vertical), voz.niche),
+        region: resolveMacroRegion(voz.marketCountry, voz.marketRegion),
+        marketCountry: voz.marketCountry,
+        niche: voz.niche,
+        audience: voz.audience,
+        modo: modoEfectivo(voz.modo, voz.extras),
+        fuentes: fuentes.map((fuente) => fuente.host),
+        prompt: voz.trendPrompt,
+        excluye: voz.trendExclude,
+        langs: parseLangs(voz.trendLangs),
+      };
     });
   }
 
   /**
-   * Busca solo si la tupla no tiene una tanda vigente.
-   *
-   * Es el handler de la cola de semilla, y existe porque la policy `short`
-   * acota los duplicados pero no los elimina: deja a lo más uno por llave en
-   * estado `created`, así que mientras uno corre se puede encolar otro. Sin
-   * esta guardia, una ráfaga de aperturas dejaba un segundo job que salía a
-   * buscar de nuevo un nicho que el primero acababa de llenar — pagando la
-   * llamada cara para sobrescribir lo mismo.
-   */
-  async refrescarSiHaceFalta(tupla: TuplaDeTendencias): Promise<void> {
-    const vigente = await this.dbService.db.transaction(async (tx) => {
-      const guardadas = await this.repo.find(tx, tupla);
-      return guardadas !== null && guardadas.expiresAt.getTime() > Date.now();
-    });
-    if (vigente) {
-      console.info(`[trends] ${claveDe(tupla)} ya tenía tanda vigente; no se busca de nuevo`);
-      return;
-    }
-    await this.refrescar(tupla);
-  }
-
-  /**
-   * Refresca una tupla: busca, ensambla y guarda.
+   * Busca las tendencias de un usuario y guarda la tanda.
    *
    * **Nunca pisa una tanda buena con el vacío**, ni con lo que el modelo
-   * recordara de su entrenamiento: el usuario ve tendencias de ayer con su
-   * fecha, en vez de un módulo que se apagó sin explicación.
-   *
-   * Pero si NO había tanda, sí anota el vacío (`registrarVacio`). La ausencia
-   * de fila no es un estado neutro: es lo que hace que la lectura vuelva a
-   * pedir la búsqueda en la visita siguiente, y una tupla que nunca produce
-   * nada terminaba pagando una llamada con grounding por cada carga de
-   * pantalla.
+   * recordara de su entrenamiento: el usuario ve las de la semana pasada con
+   * su fecha, en vez de un módulo que se apagó sin explicación. Si no había
+   * tanda, sí anota el vacío — la ausencia de fila no es un estado neutro, es
+   * lo que hace que el barrido lo vuelva a encolar.
    */
-  async refrescar(tupla: TuplaDeTendencias): Promise<ResultadoDeRefresco> {
+  async refrescarUsuario(userId: string): Promise<ResultadoDeRefresco> {
     const arranque = Date.now();
+    const contexto = await this.contextoDe(userId);
+    if (!contexto) {
+      // Sin voz de marca no hay nada que buscar. Pero hay que DEJAR CONSTANCIA
+      // igual: el barrido pone primero a quien no tiene tanda, así que un
+      // usuario a medio onboarding —correo verificado y sesión viva, que es lo
+      // que el filtro pide, pero sin haber llegado al paso de la Voz— se
+      // quedaba a la cabeza de la fila en todos los pases, para siempre.
+      // Veinte de esos se comían el presupuesto entero y nadie con la tanda
+      // vencida se refrescaba jamás.
+      await this.marcarIntento(userId, { motivo: "sin_voz" });
+      return { userId, items: [], fuentes: 0, consultas: 0 };
+    }
+
     const modelo = this.ai.resolve(env.AI_MODEL_TRENDS ?? DEFAULT_TRENDS_MODEL_ID);
     if (modelo.provider !== SEARCH_PROVIDER) {
       // Fail-fast y no degradación: sin búsqueda, el modelo contestaría desde
@@ -179,43 +171,42 @@ export class TrendsService {
     const busqueda = await generateText({
       model: modelo.model,
       tools: { google_search: GOOGLE_SEARCH_TOOL },
-      prompt: promptDeBusqueda(tupla),
+      prompt: promptDeBusqueda(contexto),
     });
 
-    // El metadata puede venir en el resultado o por step, según cómo el
-    // proveedor parta la respuesta. Se juntan los dos y `extraerFuentes`
-    // descarta lo que no entienda.
-    const fuentes = [
-      ...extraerFuentes(busqueda.providerMetadata),
-      ...busqueda.steps.flatMap((step) => extraerFuentes(step.providerMetadata)),
-    ];
+    // Solo `steps`. El `providerMetadata` del resultado es una COPIA del
+    // último step —así lo documenta el SDK, y por eso está deprecado en favor
+    // de `finalStep.providerMetadata`— así que leerlo aparte cuenta ese step
+    // dos veces. Medido contra la API: un step con 3 consultas y 8 chunks
+    // aparecía idéntico en los dos lados. Acá el `Map` de abajo lo disimulaba;
+    // en `contarConsultas`, no.
+    const fuentes = busqueda.steps.flatMap((step) => extraerFuentes(step.providerMetadata));
     // Únicas por TÍTULO y no por URL, y eso es una corrección de honestidad.
     // Google reporta el dominio como título, así que una búsqueda normal trae
-    // varios chunks de la misma página madre: el modelo veía
-    // `0. mexicofollowers.mx`, `3. mexicofollowers.mx`, `7. mexicofollowers.mx`
-    // —entradas indistinguibles— y su elección entre ellas era azar. El
-    // resultado podía ser un enlace a otra página del mismo dominio que la que
-    // sostiene la tendencia.
-    //
-    // Colapsándolas, el índice deja de ser ambiguo y la cita afirma justo lo
-    // que se puede defender: "visto en este medio". Es lo mismo que el usuario
-    // lee en la tarjeta.
+    // varios chunks de la misma página madre: el modelo veía entradas
+    // indistinguibles y su elección entre ellas era azar. Colapsándolas, la
+    // cita afirma justo lo que se puede defender: "visto en este medio".
     const unicas = [...new Map(fuentes.map((f) => [f.title, f])).values()];
+    const consultas = contarConsultas(busqueda.steps);
 
     // Sin páginas no hay nada que citar, y sin cita no hay tendencia. Se corta
-    // acá para no pagar la segunda llamada por un resultado que ya se sabe
-    // vacío.
+    // acá para no pagar la segunda llamada por un resultado ya vacío.
+    //
+    // Y esto pasa de verdad, no es defensa teórica: `google_search` es
+    // discrecional. Midiendo contra la API con este mismo prompt, algunas
+    // corridas vuelven sin una sola búsqueda —`toolCalls: 0`, sin
+    // `groundingMetadata`— y el modelo redacta desde su entrenamiento. Prosa
+    // convincente y cero procedencia, que es exactamente lo que no puede
+    // pasar. Por eso la puerta es la cita y no el texto: acá se descarta
+    // entero y se reintenta, en vez de publicar tendencias inventadas.
     if (unicas.length === 0) {
-      await this.registrarVacio(tupla, modelo);
-      return { tupla, items: [], fuentes: 0 };
+      await this.marcarIntento(userId, { motivo: "sin_fuentes", modelo, consultas });
+      return { userId, items: [], fuentes: 0, consultas };
     }
 
     const estructura = await generateObject({
       // Se pide el TIER, no una tarea: `resolveForTask` obligaría a declarar
-      // un AiTaskKind, y ninguno de los que existen es esto. Decir
-      // "chat_title" pondría a alguien a afinar AI_MODEL_UTILITY para
-      // titulares cortos sin saber que también está tocando una llamada con
-      // salida estructurada.
+      // un AiTaskKind, y ninguno de los que existen es esto.
       model: this.ai.resolve(env.AI_MODEL_UTILITY).model,
       schema: esquemaCrudo,
       prompt: promptDeEstructura(busqueda.text, unicas),
@@ -223,185 +214,157 @@ export class TrendsService {
 
     // El recorte va DESPUÉS de ensamblar, no en el schema. Con un `.max`
     // estricto, un modelo que devolviera once items tiraba la validación
-    // entera y perdía la tupla — después de haber pagado ya la búsqueda, que
-    // es la llamada cara.
+    // entera y perdía la tanda — después de haber pagado la búsqueda.
     const items = ensamblarTendencias(estructura.object.tendencias, unicas).slice(
       0,
       MAX_TENDENCIAS,
     );
     if (items.length === 0) {
-      await this.registrarVacio(tupla, modelo);
-      return { tupla, items: [], fuentes: unicas.length };
+      await this.marcarIntento(userId, { motivo: "sin_items_citables", modelo, consultas });
+      return { userId, items: [], fuentes: unicas.length, consultas };
     }
 
     const ahora = new Date();
-    await this.dbService.db.transaction((tx) =>
+    await this.dbService.runWithTenant(userId, (tx) =>
       this.repo.upsert(tx, {
-        ...tupla,
+        userId,
         items,
         generatedAt: ahora,
-        expiresAt: new Date(ahora.getTime() + TTL_HORAS * MS_POR_HORA),
+        expiresAt: new Date(ahora.getTime() + TTL_DIAS * MS_POR_DIA),
         provider: modelo.provider,
         model: modelo.modelName,
-        // El gasto viaja con su resultado y no a `ai_usage_events`: esa tabla
-        // es por tenant y esta llamada no tiene tenant. Ver ADR-023.
         usage: {
           busqueda: busqueda.usage,
           estructura: estructura.usage,
           fuentes: unicas.length,
+          consultas,
+          personalizada: estaPersonalizada(contexto),
           durationMs: Date.now() - arranque,
         },
       }),
     );
 
-    return { tupla, items, fuentes: unicas.length };
+    return { userId, items, fuentes: unicas.length, consultas };
   }
 
   /**
-   * El pase periódico: refresca lo que ya venció.
+   * El pase periódico: refresca a quien le venció la tanda o nunca tuvo.
    *
-   * Recorre las tuplas que ya existen, que son exactamente las que alguien
-   * pidió alguna vez. Una vertical sin usuarios activos no gasta búsquedas, y
-   * no hace falta leer `brand_voices` cross-tenant para saberlo.
-   *
-   * Estructura de ADR-008: enumerar → iterar con try/catch por unidad →
-   * contar fallos → relanzar al final. Una tupla que truena no puede dejar sin
-   * refrescar a las demás.
+   * Estructura de ADR-008: enumerar → iterar con try/catch por unidad → contar
+   * fallos → relanzar al final. Un usuario que truena no puede dejar sin
+   * refrescar a los demás.
    */
   async barrer(): Promise<void> {
     const ahora = new Date();
-    const tuplas = await this.dbService.db.transaction((tx) =>
-      this.repo.porRefrescar(tx, ahora, TUPLAS_POR_PASE),
+    const usuarios = await this.dbService.runWorkerScan((tx) =>
+      this.repo.porRefrescar(tx, ahora, USUARIOS_POR_PASE),
     );
-    if (tuplas.length === 0) return;
+    if (usuarios.length === 0) return;
 
-    // `summarizeFailures` cuenta identificadores, no errores: acá el
-    // identificador natural es la tupla, porque es la unidad que se refresca.
-    const fallidas: string[] = [];
-    for (const tupla of tuplas) {
+    const fallidos: string[] = [];
+    for (const userId of usuarios) {
       try {
-        const resultado = await this.refrescar(tupla);
+        const resultado = await this.refrescarUsuario(userId);
         if (resultado.items.length === 0) {
           // No es un fallo: la búsqueda corrió y no trajo nada citable. Se
-          // registra porque si pasa siempre para la misma tupla, el problema
-          // es el prompt o la vertical, no la red.
+          // registra porque si pasa siempre para el mismo usuario, el problema
+          // es su configuración o su nicho, no la red.
           console.warn(
-            `[trends] ${claveDe(tupla)}: ${String(resultado.fuentes)} fuentes, 0 tendencias citables`,
+            `[trends] ${userId}: ${String(resultado.fuentes)} fuentes, 0 tendencias citables`,
           );
-          await this.posponer(tupla);
         }
       } catch (error) {
-        console.error(`[trends] ${claveDe(tupla)} no se pudo refrescar:`, error);
-        // Posponer TAMBIÉN cuando truena, y por la misma razón: si no, la
-        // tupla que falla siempre acapara el pase entero.
-        await this.posponer(tupla);
-        fallidas.push(claveDe(tupla));
+        console.error(`[trends] no se pudo refrescar a ${userId}:`, error);
+        // Posponer TAMBIÉN cuando truena, y por la misma razón: si no, el
+        // usuario que falla siempre acapara el pase entero.
+        await this.marcarIntento(userId, { motivo: "error" });
+        fallidos.push(userId);
       }
     }
-    if (fallidas.length > 0) {
-      throw new Error(summarizeFailures("trends.refresh", fallidas, "tupla(s)"));
+    if (fallidos.length > 0) {
+      throw new Error(summarizeFailures("trends.refresh", fallidos, "usuario(s)"));
     }
   }
 
   /**
-   * Deja constancia de que se buscó y no había nada citable.
+   * Deja constancia de un intento que no produjo tendencias.
    *
-   * **Sin esto, una tupla improductiva se cobra una búsqueda por cada carga de
-   * pantalla, para siempre.** El encadenado es este: `refrescar` volvía sin
-   * escribir fila, así que `find` seguía en `null`, así que `tendencias()`
-   * volvía a pedir la primera búsqueda en la visita siguiente. Y `tendencias()`
-   * lo llaman DOS pantallas —Ritmo y el estado vacío del Chat— por cada usuario
-   * de esa vertical. El `singletonKey` no lo frena: solo acota lo que está en
-   * `created`, y para la visita siguiente el job anterior ya terminó.
+   * Es un UPSERT, y ahí está la diferencia entre posponer y no hacer nada. La
+   * primera versión hacía `update ... set expires_at` sin `WHERE` (el filtro
+   * era el RLS), que afecta CERO filas cuando el usuario todavía no tiene
+   * ninguna — que es exactamente el caso del que más importa postergar: el que
+   * nunca tuvo tanda, al que el barrido pone primero. Con un error
+   * reproducible (proveedor caído, `AI_MODEL_TRENDS` mal apuntado) ese usuario
+   * volvía a encabezar el pase siguiente, volvía a fallar, y el job terminaba
+   * en rojo todos los días sin avanzar nunca.
    *
-   * La fila vacía le da a la semilla el mismo respiro que `posponer` le da al
-   * barrido, y de paso vuelve alcanzable un estado que hoy no lo era: la
-   * pantalla distingue "todavía no buscamos" de "buscamos y no encontramos"
-   * por `generatedAt`, y por esta ruta nunca llegaba al segundo.
-   *
-   * Solo escribe si NO había fila. Si ya existía una tanda buena se conserva
-   * —tendencias de ayer fechadas le sirven más al usuario que un módulo
-   * apagado, que es la decisión que ya tomaba `refrescar`— y de moverle el
-   * vencimiento se encarga `posponer`.
+   * **Nunca pisa una tanda buena.** Si ya había items solo se mueve el
+   * vencimiento: tendencias de la semana pasada fechadas le sirven más al
+   * usuario que un módulo apagado.
    */
-  private async registrarVacio(tupla: TuplaDeTendencias, modelo: ResolvedModel): Promise<void> {
+  private async marcarIntento(
+    userId: string,
+    datos: { motivo: string; modelo?: { provider: string; modelName: string }; consultas?: number },
+  ): Promise<void> {
     const ahora = new Date();
+    const hasta = new Date(ahora.getTime() + REINTENTO_HORAS * MS_POR_HORA);
     try {
-      await this.dbService.db.transaction(async (tx) => {
-        if (await this.repo.find(tx, tupla)) return;
+      await this.dbService.runWithTenant(userId, async (tx) => {
+        const guardadas = await this.repo.find(tx);
+        if (guardadas && guardadas.items.length > 0) {
+          await this.repo.posponer(tx, hasta);
+          return;
+        }
         await this.repo.upsert(tx, {
-          ...tupla,
+          userId,
           items: [],
           generatedAt: ahora,
-          expiresAt: new Date(ahora.getTime() + REINTENTO_HORAS * MS_POR_HORA),
-          provider: modelo.provider,
-          model: modelo.modelName,
-          usage: { vacio: true },
+          expiresAt: hasta,
+          // "ninguno" cuando ni se llegó a resolver un modelo. Es procedencia
+          // del intento, y no haberlo intentado con ninguno es la verdad.
+          provider: datos.modelo?.provider ?? "ninguno",
+          model: datos.modelo?.modelName ?? "ninguno",
+          usage: { vacio: true, motivo: datos.motivo, consultas: datos.consultas ?? 0 },
         });
       });
     } catch (error) {
       // No se relanza: quien llama ya tiene su propio resultado que reportar, y
-      // no haber podido anotar el vacío no convierte la búsqueda en un fallo.
-      console.error(`[trends] ${claveDe(tupla)}: no se pudo registrar el vacío:`, error);
-    }
-  }
-
-  /**
-   * Manda una tupla improductiva al final de la fila del barrido.
-   *
-   * Si esto mismo falla no se relanza: el pase ya tiene su propio resultado que
-   * reportar, y tumbarlo por no haber podido posponer cambiaría un problema de
-   * prioridad por uno de disponibilidad.
-   */
-  private async posponer(tupla: TuplaDeTendencias): Promise<void> {
-    const hasta = new Date(Date.now() + REINTENTO_HORAS * MS_POR_HORA);
-    try {
-      await this.dbService.db.transaction((tx) => this.repo.posponer(tx, tupla, hasta));
-    } catch (error) {
-      console.error(`[trends] ${claveDe(tupla)} no se pudo posponer:`, error);
+      // no haber podido anotar el intento no cambia lo que pasó.
+      console.error(`[trends] ${userId}: no se pudo registrar el intento:`, error);
     }
   }
 }
 
-function claveDe(tupla: TuplaDeTendencias): string {
-  return `${tupla.vertical}/${tupla.marketCountry}/${tupla.region}`;
+/**
+ * Cuántas consultas de búsqueda disparó la llamada.
+ *
+ * Es el número que decide la factura: el grounding se cobra por CONSULTA, no
+ * por request ni por token, y una sola llamada puede lanzar varias. Antes no se
+ * guardaba, así que cualquier proyección de costo era una corazonada.
+ *
+ * Si el proveedor no lo reporta queda en 0, que es honesto —no lo sabemos— y
+ * distinguible de "no hubo búsqueda", porque eso deja la lista de fuentes
+ * vacía.
+ *
+ * Solo `steps`, y esto no es un detalle: la primera versión sumaba además el
+ * `providerMetadata` del resultado, que es una copia del último step, así que
+ * reportaba el doble. Justo el número que existe para que las proyecciones de
+ * costo dejen de ser una corazonada.
+ */
+function contarConsultas(steps: readonly { providerMetadata?: unknown }[]): number {
+  const deUno = (raw: unknown): number => {
+    const google = (raw as { google?: { groundingMetadata?: { webSearchQueries?: unknown } } })
+      ?.google;
+    const queries = google?.groundingMetadata?.webSearchQueries;
+    return Array.isArray(queries) ? queries.length : 0;
+  };
+  return steps.reduce((suma, step) => suma + deUno(step.providerMetadata), 0);
 }
 
-function promptDeBusqueda(tupla: TuplaDeTendencias): string {
-  const vertical = verticalLabel(tupla.vertical);
-  const region = macroRegionLabel(tupla.region);
-  return [
-    `Busca qué temas y formatos de contenido se están moviendo AHORA en redes sociales`,
-    `dentro del nicho "${vertical}", para creators de México${
-      tupla.region === "nacional" ? "" : ` y en particular de la región ${region}`
-    }.`,
-    "",
-    "Interesa lo reciente: de los últimos días o semanas, no lo perenne.",
-    `Busca hasta ${String(MAX_TENDENCIAS)} temas distintos. Para cada uno di de qué se trata,`,
-    "en qué red se está moviendo y en qué formato (reel, carrusel, post, video o historia),",
-    "y si apenas está apareciendo, si va subiendo o si ya es estable.",
-    "",
-    "Escribe en español de México, tuteando. No inventes datos: si de algo no",
-    "encuentras información, déjalo fuera. No des porcentajes de crecimiento.",
-  ].join("\n");
-}
-
-function promptDeEstructura(texto: string, fuentes: readonly { title: string }[]): string {
-  const listado = fuentes.map((fuente, indice) => `${String(indice)}. ${fuente.title}`).join("\n");
-  return [
-    "Convierte el siguiente resumen de tendencias en una lista estructurada.",
-    "",
-    "RESUMEN:",
-    texto,
-    "",
-    "FUENTES CONSULTADAS (usa su número en sourceIndex):",
-    listado,
-    "",
-    "Reglas:",
-    "- `sourceIndex` tiene que ser el número de la fuente que respalda ESA tendencia.",
-    "  Si una tendencia no viene de ninguna de las fuentes listadas, no la incluyas.",
-    "- `blurb`: una o dos frases en español de México, tuteando, diciéndole al creator",
-    "  por qué le sirve. Nada de porcentajes.",
-    "- `signal`: `new` si apenas aparece, `rising` si va subiendo, `stable` si es constante.",
-  ].join("\n");
+/** Los idiomas guardados, validados. Un valor raro no apaga la búsqueda. */
+function parseLangs(raw: readonly string[]): TrendLang[] {
+  const langs = raw
+    .map((valor) => trendLangSchema.safeParse(valor))
+    .flatMap((p) => (p.success ? [p.data] : []));
+  return langs.length > 0 ? langs : ["es"];
 }

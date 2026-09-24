@@ -29,10 +29,16 @@ import { trendItemSchema, type TrendItem } from "@presencia/shared";
  * - **`uri` no es la URL de la página**, es un redirect de
  *   `vertexaisearch.cloud.google.com` que apunta a ella. Google pide que se
  *   usen sus ligas de grounding, así que se guarda tal cual.
- * - **Ese redirect caduca** (del orden de semanas). No es un problema mientras
- *   las tandas se refresquen cada 24 h, pero sí fija un piso: una fila que
- *   sobreviviera meses sin refrescarse tendría ligas muertas. Si algún día se
- *   guarda historial de tendencias, esto hay que resolverlo antes.
+ * - **Ese redirect caduca** (del orden de semanas), y desde F9.6 eso dejó de
+ *   ser teórico. El TTL pasó de 24 h a 7 días, y el barrido salta a las
+ *   cuentas sin sesión viva: alguien que se ausenta un mes y vuelve ve su
+ *   tanda guardada de inmediato —la lectura ya no dispara búsquedas— con
+ *   ligas que pueden estar muertas, y no se refresca hasta el pase siguiente.
+ *   Dentro de la semana del TTL no hay problema; el hueco es el del usuario
+ *   que vuelve. La salida no es bajar el TTL sino guardar también la URL real
+ *   cuando el metadata la traiga, o refrescar al detectar el regreso. Está
+ *   anotado y sin hacer: hasta que haya usuarios que se ausenten, arreglarlo
+ *   sería adivinar cuál de las dos.
  * - **`title` sí es legible**: viene el dominio real ("mexicofollowers.mx"),
  *   que es lo que el usuario lee en "Visto en …". La cita que ve es cierta
  *   aunque la liga pase por Google.

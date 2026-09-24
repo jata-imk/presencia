@@ -1,12 +1,9 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
-  asVerticalId,
   mejoresVentanas,
   metaSugerida,
   modoEfectivo,
   type ModoEstrategia,
-  resolveMacroRegion,
-  resolveVertical,
   type RitmoCadenciaDto,
   type RitmoHorariosDto,
   type RitmoMetaDto,
@@ -22,6 +19,7 @@ import { MetricsEngineService } from "../metrics/metrics-engine.service.js";
 import { fechaLocal, sumarDias } from "../metrics/hora-local.js";
 import { ProfileRepository } from "../profile/profile.repository.js";
 import { TrendsRepository } from "../trends/trends.repository.js";
+import { estaPersonalizada } from "../trends/prompt.js";
 import { TrendsService } from "../trends/trends.service.js";
 import { RitmoRepository } from "./ritmo.repository.js";
 
@@ -138,50 +136,37 @@ export class RitmoService {
   }
 
   /**
-   * Las tendencias del nicho del usuario.
+   * Las tendencias del usuario.
    *
-   * Cuando la tupla nunca se ha buscado devuelve el DTO igual, con `items`
-   * vacío y `generatedAt` en `null`. La vertical y la región viajan siempre
-   * porque son lo que vuelve honesto al estado vacío: "no encontramos
-   * tendencias de Diseño en el Sureste" dice algo; "no hay nada", no.
+   * Sin tanda todavía devuelve el DTO igual, con `items` vacío y `generatedAt`
+   * en `null`. La vertical y la región viajan siempre porque son lo que vuelve
+   * honesto al estado vacío: "no encontramos tendencias de Diseño en el
+   * Sureste" dice algo; "no hay nada", no. Ya no son llave de ninguna caché —
+   * desde F9.6 la tanda es por usuario— pero siguen siendo su sujeto.
    *
-   * Las **vencidas sí se devuelven**, con su fecha, porque tendencias de ayer
-   * fechadas le sirven más al usuario que un módulo apagado — el job las
-   * refresca por su cuenta.
+   * Las **vencidas sí se devuelven**, con su fecha, porque tendencias de la
+   * semana pasada fechadas le sirven más al usuario que un módulo apagado; el
+   * barrido diario las refresca por su cuenta.
+   *
+   * Y esta lectura NO dispara búsquedas. Cuando lo hacía, una vertical que
+   * nunca producía nada citable pagaba una búsqueda con grounding por cada
+   * carga de pantalla; ahora quien encola es el barrido, que sabe a quién le
+   * toca y cuánto puede gastar.
    */
   async tendencias(userId: string): Promise<TrendsDto> {
-    return this.dbService.runWithTenant(userId, async (tx) => {
-      const voz = await this.voiceRepo.findDefault(tx);
-      if (!voz) throw new NotFoundException("Aún no configuras tu voz de marca.");
+    const contexto = await this.trendsService.contextoDe(userId);
+    if (!contexto) throw new NotFoundException("Aún no configuras tu voz de marca.");
 
-      // `asVerticalId` y no un cast: la columna es `text`, así que una vertical
-      // retirada vuelve como null y el usuario cae a la derivación por nicho en
-      // vez de arrastrar una llave de caché que ya no existe.
-      const vertical = resolveVertical(asVerticalId(voz.vertical), voz.niche);
-      const region = resolveMacroRegion(voz.marketCountry, voz.marketRegion);
-      const guardadas = await this.trendsRepo.find(tx, {
-        vertical,
-        marketCountry: voz.marketCountry,
-        region,
-      });
-      // Nunca buscada: se pide la primera búsqueda. Sin esto el módulo no
-      // arranca jamás para un nicho nuevo — el barrido periódico solo refresca
-      // filas que ya existen, así que una tupla sin fila no entra a su pase.
-      if (!guardadas) {
-        await this.trendsService.pedirPrimeraBusqueda({
-          vertical,
-          marketCountry: voz.marketCountry,
-          region,
-        });
-      }
+    const guardadas = await this.dbService.runWithTenant(userId, (tx) => this.trendsRepo.find(tx));
 
-      return {
-        vertical,
-        region,
-        items: guardadas?.items ?? [],
-        generatedAt: guardadas?.generatedAt.toISOString() ?? null,
-      };
-    });
+    return {
+      vertical: contexto.vertical,
+      region: contexto.region,
+      items: guardadas?.items ?? [],
+      generatedAt: guardadas?.generatedAt.toISOString() ?? null,
+      expiresAt: guardadas?.expiresAt.toISOString() ?? null,
+      personalizada: estaPersonalizada(contexto),
+    };
   }
 
   async guardarMeta(

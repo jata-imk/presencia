@@ -209,6 +209,17 @@ export const brandVoices = pgTable(
     // función pura. Un valor derivado guardado al lado de su fuente, sin nada
     // que los sincronice, se vuelve mentira en cuanto alguien edita la fuente.
     vertical: text("vertical"),
+    // Lo que el usuario quiere que busquemos, en sus palabras. Opcional: sin
+    // esto la búsqueda se arma igual con su nicho, su audiencia y su región.
+    // Es texto libre y por eso entra al prompt como DATO delimitado, nunca
+    // como instrucción (ver trends/prompt.ts).
+    trendPrompt: text("trend_prompt"),
+    // Lo que NO quiere ver. Mismo trato de dato que el anterior.
+    trendExclude: text("trend_exclude"),
+    // Idiomas de las fuentes. El default es español porque el producto es para
+    // creators mexicanos; en nichos técnicos casi todo lo que se mueve está en
+    // inglés, y sin esta perilla el prompt lo escondía.
+    trendLangs: text("trend_langs").array().notNull().default(["es"]),
     // El Modo que el usuario ELIGIÓ. NULL no es "sin modo": es "no lo ha
     // tocado", y entonces se deriva de `extras.goals` al leer — el mismo
     // criterio que `vertical`. Guardarlo solo cuando lo elige a mano hace que
@@ -532,28 +543,26 @@ export const ritmoNarrations = pgTable(
   (t) => [uniqueIndex("ritmo_narrations_user_day").on(t.userId, t.day)],
 );
 
-// ── Tendencias de nicho (F9) ─────────────────────────────────────────
-// La ÚNICA tabla del dominio sin `user_id` y sin RLS, y es a propósito: no
-// es dato de un tenant, es una caché compartida. Ver ADR-023.
+// ── Tendencias (F9.6) ────────────────────────────────────────────────
+// Por usuario y con RLS, después de haber nacido como caché compartida sin
+// `user_id` — la única excepción a ADR-003, que con esto deja de existir.
 //
-// Las tendencias dependen de la tupla (vertical, país, región), no de la
-// persona: diez creators de "fitness en CDMX" tienen exactamente la misma
-// respuesta. Llavearla por usuario multiplicaría por diez el gasto de
-// búsqueda para producir diez copias del mismo texto.
-//
-// La escribe SOLO el worker; todos los tenants la leen.
+// El cambio no fue técnico sino de producto: el cubo `(vertical, país,
+// región)` era demasiado grueso. Un creator de "programación, IA y devops"
+// caía en "tecnología", que es la industria entera, y recibía tendencias de un
+// nicho que no era el suyo. La caché existía para que el gasto creciera con
+// los nichos y no con los usuarios; la tarifa real de la búsqueda con
+// grounding —capa gratuita mensual y después un costo por consulta chico—
+// hizo que esa palanca valiera mucho menos de lo que costaba en calidad.
+// Ver ADR-024.
 
-export const nicheTrends = pgTable(
-  "niche_trends",
+export const userTrends = pgTable(
+  "user_trends",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // Los tres van como `text` y no como enum de Postgres: el catálogo vive
-    // en packages/shared y se ajusta con el uso. Un enum obligaría a una
-    // migración por cada vertical nueva, y el costo de un valor viejo acá es
-    // una fila que nadie vuelve a pedir — no una fila corrupta.
-    vertical: text("vertical").notNull(),
-    marketCountry: text("market_country").notNull(),
-    region: text("region").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
     // Cuándo deja de servir. Explícito y no derivado de generated_at + TTL:
     // así una tanda mala se puede invalidar a mano sin tocar código.
@@ -563,23 +572,42 @@ export const nicheTrends = pgTable(
     items: jsonb("items").notNull(),
     provider: text("provider").notNull(),
     model: text("model").notNull(),
-    // Tokens y duración de la llamada que produjo esta fila.
-    //
-    // No van a `ai_usage_events` porque esa tabla es por tenant y esta
-    // llamada no tiene tenant: atribuírsela a alguien inventaría consumo de
-    // un usuario y sesgaría la calibración de la rate card, que es
-    // exactamente lo que esa tabla existe para medir bien. Pero el gasto es
-    // real y alguien tiene que poder verlo, así que viaja con su resultado.
+    // Tokens, duración y —esto es lo que decide la factura— cuántas consultas
+    // de búsqueda disparó la llamada. El fee del grounding se cobra por
+    // consulta, no por request ni por token, y una sola llamada puede lanzar
+    // varias: sin este número cualquier proyección de costo es una corazonada.
     usage: jsonb("usage").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    // Una sola fila vigente por tupla: el refresco es un upsert, no un
-    // insert. Sin historial a propósito — nadie pidió "las tendencias de la
-    // semana pasada" y guardarlas obligaría a decidir cuándo podarlas.
-    uniqueIndex("niche_trends_key").on(t.vertical, t.marketCountry, t.region),
+    // Una sola tanda vigente por usuario: el refresco es un upsert. Sin
+    // historial a propósito — nadie pidió "las tendencias de la semana pasada"
+    // y guardarlas obligaría a decidir cuándo podarlas.
+    uniqueIndex("user_trends_user").on(t.userId),
+    // El barrido busca a quién le venció la tanda.
+    index("user_trends_expires").on(t.expiresAt),
   ],
+);
+
+// Las fuentes propias: los medios que el usuario quiere que miremos.
+//
+// Tabla y no un array en `brand_voices` porque se listan, se agregan y se
+// borran de a una, y porque cada una necesita su propia fecha de alta.
+export const trendSources = pgTable(
+  "trend_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // El HOST, ya normalizado (sin esquema ni `www.`). Es lo que la búsqueda
+    // puede acotar con `site:` y lo que el usuario reconoce en la tarjeta;
+    // guardar la ruta completa acotaría la búsqueda a una sola página.
+    host: text("host").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("trend_sources_user_host").on(t.userId, t.host)],
 );
 
 // ── Telemetría de IA ─────────────────────────────────────────────────
