@@ -236,7 +236,7 @@ describe("MetricsService.ingestAll", () => {
   // El tope del adapter es por LLAMADA, y getPostMetrics se llama una vez por
   // usuario: sin un presupuesto del pase, N usuarios harían N×60 requests
   // contra la ventana de 100/5min que comparte con cards.reconcile.
-  it("el presupuesto del pase recorta, y deja lo más nuevo", { timeout: 30_000 }, async () => {
+  it("el presupuesto del pase recorta, y deja lo más nuevo", { timeout: 90_000 }, async () => {
     const viejo = `fb_${randomUUID()}`;
     const medio = `fb_${randomUUID()}`;
     const nuevo = `fb_${randomUUID()}`;
@@ -247,22 +247,35 @@ describe("MetricsService.ingestAll", () => {
     await nuevaCardPublicada(medio, new Date(Date.now() - 8 * dia));
     await nuevaCardPublicada(nuevo, new Date(Date.now() - 4 * dia));
 
-    // Uno solo de los tres entra: el presupuesto del pase se reparte entre
-    // TODOS los usuarios con algo que medir, y la base de dev tiene varios.
-    // Por eso se afirma la prioridad, no un conteo exacto: cuántos entran
-    // depende de cuántos tenants haya, cuál entra no.
-    await service.ingestAll({ presupuesto: 2 });
+    // El presupuesto del pase se reparte entre TODOS los usuarios con algo que
+    // medir, y esta base tiene varios: que al usuario del spec le toque en un
+    // pase dado depende del barajado. Por eso se repite hasta que le toque en
+    // vez de afirmar sobre un solo pase — así era antes, y el test pasaba o
+    // fallaba por suerte (hizo fallar CI en un PR que no tocaba métricas).
+    //
+    // Repetir también ejercita la equidad: si el barajado no reparte —como
+    // pasaba con `sort(() => Math.random() - 0.5)`, que deja el orden casi
+    // intacto— al mismo usuario no le toca nunca y esto se agota.
+    let tocó = false;
+    for (let intento = 0; intento < 6 && !tocó; intento += 1) {
+      await service.ingestAll({ presupuesto: 2 });
+      tocó = (await metricasDe(nuevo)).length > 0 || (await metricasDe(medio)).length > 0;
+    }
+    expect(tocó, "en seis pases el barajado nunca le dio presupuesto a este usuario").toBe(true);
 
     // La query del barrido no ordena y el índice parcial la sirve por
     // published_at ascendente: sin la prioridad explícita, el recorte se
     // comería siempre las publicaciones recientes, que son justo las que
     // todavía se mueven y cuya primera medición no se recupera después.
-    expect(await metricasDe(nuevo)).toHaveLength(1);
-    expect(await metricasDe(viejo)).toHaveLength(0);
-    // Y el del medio nunca puede entrar sin el más nuevo.
-    const medioMedido = (await metricasDe(medio)).length > 0;
+    //
+    // La afirmación es de ORDEN y no de conteo: cuántos entran depende de
+    // cuántos tenants compitan, cuál entra primero no.
     const nuevoMedido = (await metricasDe(nuevo)).length > 0;
+    const medioMedido = (await metricasDe(medio)).length > 0;
+    const viejoMedido = (await metricasDe(viejo)).length > 0;
+    expect(nuevoMedido).toBe(true);
     expect(medioMedido && !nuevoMedido).toBe(false);
+    expect(viejoMedido && !medioMedido).toBe(false);
   });
 
   // El pase es global: un usuario que truena no puede dejar sin medir a los
