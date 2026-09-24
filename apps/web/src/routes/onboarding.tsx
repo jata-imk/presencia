@@ -335,9 +335,12 @@ export function OnboardingPage() {
           </div>
           {error && <p className="text-sm text-error">{error}</p>}
           <Button onClick={() => void handleGoalsNext()} disabled={submitting}>
+            {/* El Modo cuenta como "algo que decir": sin esta condición el
+                botón prometía descartar lo que el usuario acababa de elegir
+                mientras el PATCH lo guardaba. */}
             {submitting
               ? "Guardando…"
-              : selectedGoals.length > 0 || otherGoal.trim()
+              : goalsActuales.length > 0 || modo !== null
                 ? "Siguiente"
                 : "Saltar por ahora"}
           </Button>

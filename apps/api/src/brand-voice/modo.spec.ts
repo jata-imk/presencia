@@ -43,6 +43,24 @@ describe("modoDeGoals", () => {
     expect(modoDeGoals(["conseguir más clientes"])).toBe("crecer");
   });
 
+  it("aguanta que el español conjugue", () => {
+    // Con palabras completas en vez de raíces, estos dos caían a `mantener` en
+    // silencio: "vender" no contiene "venta" y "crecimiento" no contiene
+    // "crecer". El usuario pedía crecer y recibía la meta base.
+    expect(modoDeGoals(["Quiero vender más"])).toBe("crecer");
+    expect(modoDeGoals(["Busco crecimiento en Instagram"])).toBe("crecer");
+    expect(modoDeGoals(["que me sigan más personas", "sumar seguidores"])).toBe("crecer");
+  });
+
+  it("compara contra el principio de la palabra, no contra cualquier trozo", () => {
+    // Sin esto, "client" encontraba coincidencias dentro de otras palabras. El
+    // falso positivo que SÍ queda es "ventaja", y se acepta: proponer una meta
+    // alta de más se corrige con un click y se muestra marcada como sugerida;
+    // proponer una baja de más pasa desapercibida.
+    expect(modoDeGoals(["Ser más eficiente"])).toBe("mantener");
+    expect(modoDeGoals(["Publicar con calma"])).toBe("mantener");
+  });
+
   it("cae a mantener cuando nada habla de crecer", () => {
     expect(modoDeGoals(["Ahorrar tiempo", "Consistencia al publicar"])).toBe("mantener");
     expect(modoDeGoals([])).toBe(MODO_ESTRATEGIA_FALLBACK);
