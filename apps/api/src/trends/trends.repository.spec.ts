@@ -146,6 +146,18 @@ describe("TrendsRepository", () => {
     expect(guardadas?.items).toHaveLength(1);
   });
 
+  it("posponer nunca acorta una tanda vigente", { timeout: 15_000 }, async () => {
+    // Un refresco adelantado que no encuentra nada pasa por aquí con la tanda
+    // todavía vigente: recortarla a doce horas haría pagar otra búsqueda antes
+    // de tiempo.
+    await guardar(userA, [ITEM], EN_UNA_SEMANA);
+    const hasta = new Date(AHORA.getTime() + 12 * 60 * 60 * 1000);
+    await dbService.runWithTenant(userA, (tx) => repo.posponer(tx, hasta));
+
+    const guardadas = await dbService.runWithTenant(userA, (tx) => repo.find(tx));
+    expect(guardadas?.expiresAt.getTime()).toBe(EN_UNA_SEMANA.getTime());
+  });
+
   it("el barrido ve a quien le venció y a quien nunca tuvo", { timeout: 15_000 }, async () => {
     // Corre sin tenant: si la policy de worker faltara, esto devolvería vacío
     // y las tendencias no se refrescarían nunca, sin un solo error.
@@ -219,6 +231,42 @@ describe("TrendsRepository", () => {
     expect(deB.map((f) => f.host)).toEqual(["de-b.mx"]);
     await dbService.runWithTenant(userB, (tx) => repo.reemplazarFuentes(tx, userB, []));
   });
+
+  it(
+    "cuenta los refrescos gratis del día, sin los que ni se encolaron",
+    { timeout: 15_000 },
+    async () => {
+      // Es lo que topa el botón gratis: una búsqueda que no encuentra nada deja
+      // la tanda vacía y el siguiente click vuelve a ser gratis.
+      await dbService.runWithTenant(userB, (tx) => tx.delete(trendRefreshes));
+      const ayer = new Date(Date.now() - 25 * 60 * 60 * 1000);
+      await dbService.runWithTenant(userB, (tx) =>
+        tx.insert(trendRefreshes).values([
+          { userId: userB, billable: false, settledAt: new Date(), outcome: "sin_resultados" },
+          { userId: userB, billable: false, settledAt: new Date(), outcome: "error" },
+          { userId: userB, billable: false, settledAt: new Date(), outcome: "no_encolado" },
+          { userId: userB, billable: true, settledAt: new Date(), outcome: "cobrado" },
+          {
+            userId: userB,
+            billable: false,
+            requestedAt: ayer,
+            settledAt: ayer,
+            outcome: "sin_resultados",
+          },
+        ]),
+      );
+      const desde = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      expect(
+        await dbService.runWithTenant(userB, (tx) => repo.refrescosGratisDesde(tx, desde)),
+      ).toBe(2);
+      // Y son del usuario: A no ve los de B.
+      await dbService.runWithTenant(userA, (tx) => tx.delete(trendRefreshes));
+      expect(
+        await dbService.runWithTenant(userA, (tx) => repo.refrescosGratisDesde(tx, desde)),
+      ).toBe(0);
+      await dbService.runWithTenant(userB, (tx) => tx.delete(trendRefreshes));
+    },
+  );
 
   it("no deja abrir dos refrescos a la vez", { timeout: 15_000 }, async () => {
     // El candado es el índice parcial `trend_refreshes_en_vuelo`, no un `if`:

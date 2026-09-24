@@ -106,6 +106,27 @@ export const trendSourceSchema = z.object({
 export type TrendSourceDto = z.infer<typeof trendSourceSchema>;
 
 /**
+ * Cuántas búsquedas GRATIS puede pedir un usuario en 24 horas.
+ *
+ * Gratis es buscar cuando no hay tendencias que adelantar: sin tanda, vencida o
+ * vacía. Y una búsqueda que no encuentra nada deja la tanda vacía, así que el
+ * siguiente click también es gratis. En un nicho que nunca da nada citable eso
+ * era un botón sin tope, a ~40 segundos por click, pagado por el negocio y por
+ * fuera del presupuesto por pase del barrido. Sigue siendo gratis; solo se
+ * acota. Vive en shared para que la pantalla diga el número sin copiarlo.
+ */
+export const MAX_FREE_TREND_REFRESHES_PER_DAY = 3;
+
+/**
+ * Por qué el botón está apagado, cuando no es porque haya uno en curso.
+ *
+ * Viaja explícito porque ya hay más de una razón: antes la web deducía "sin
+ * saldo" de `disponible: false`, y con el tope diario eso mentiría.
+ */
+export const TREND_REFRESH_BLOCKS = ["sin_saldo", "tope_diario"] as const;
+export type TrendRefreshBlock = (typeof TREND_REFRESH_BLOCKS)[number];
+
+/**
  * El estado del botón de "actualizar ahora" (F9.6).
  *
  * El refresco periódico es del negocio; adelantarlo lo paga el usuario. Este
@@ -134,6 +155,8 @@ export const trendRefreshStateSchema = z.object({
    * cobra por la primera entrega ni por rehacer una tanda que no trajo nada.
    */
   costoPorcentaje: z.number(),
+  /** Por qué no está disponible, fuera de "hay uno en curso". `null` si nada lo bloquea. */
+  bloqueo: z.enum(TREND_REFRESH_BLOCKS).nullable(),
 });
 export type TrendRefreshStateDto = z.infer<typeof trendRefreshStateSchema>;
 

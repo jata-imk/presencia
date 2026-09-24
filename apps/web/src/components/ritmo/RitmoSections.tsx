@@ -283,7 +283,11 @@ export function AccionesTendencias({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:justify-end">
         {datos.generatedAt && (
           <span className="text-xs text-fg-muted italic">
-            Actualizadas {haceCuanto(datos.generatedAt)}
+            {/* Una tanda vacía también tiene fecha —la del intento que no
+                encontró nada—, y "Actualizadas hace un momento" encima de "No
+                encontramos tendencias frescas" se contradice. */}
+            {datos.items.length > 0 ? "Actualizadas" : "Última búsqueda"}{" "}
+            {haceCuanto(datos.generatedAt)}
           </span>
         )}
         <button

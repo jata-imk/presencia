@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, isNull, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, gte, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import { trendItemSchema, type TrendItem } from "@presencia/shared";
 import { sessions, trendRefreshes, trendSources, users, userTrends } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
@@ -84,7 +84,14 @@ export class TrendsRepository {
    * barrido ordena por vencimiento y el suyo seguiría siendo el más viejo.
    */
   async posponer(tx: Tx, hasta: Date): Promise<void> {
-    await tx.update(userTrends).set({ expiresAt: hasta, updatedAt: WRITTEN_AT });
+    // `greatest` y no `hasta` a secas: posponer nunca ACORTA. Un refresco
+    // manual —pagado— que no encuentra nada también pasa por aquí, y con la
+    // asignación directa le recortaba a una tanda vigente sus días restantes a
+    // doce horas: el barrido volvía a pagar una búsqueda antes de tiempo y el
+    // botón se volvía gratis antes de lo que tocaba.
+    await tx
+      .update(userTrends)
+      .set({ expiresAt: sql`greatest(${userTrends.expiresAt}, ${hasta})`, updatedAt: WRITTEN_AT });
   }
 
   /** Las fuentes propias del usuario, en orden de alta. */
@@ -127,7 +134,7 @@ export class TrendsRepository {
    *
    * Corre SIN tenant (barrido global). `users` y `sessions` no tienen RLS —son
    * de Better Auth— y `user_trends` sí, por eso necesita la policy de worker
-   * de la migración 0033, acotada a SELECT y al centinela del barrido.
+   * de la migración 0034, acotada a SELECT y al centinela del barrido.
    *
    * Devuelve ids y no filas a propósito: lo que sigue —leer la voz, las
    * fuentes, escribir la tanda— vuelve a entrar por `runWithTenant`, que es
@@ -198,6 +205,28 @@ export class TrendsRepository {
       .update(trendRefreshes)
       .set({ settledAt: WRITTEN_AT, outcome: "abandonado" })
       .where(and(isNull(trendRefreshes.settledAt), lte(trendRefreshes.requestedAt, limite)));
+  }
+
+  /**
+   * Cuántos refrescos gratis pidió el usuario desde `desde`.
+   *
+   * Cuentan los que salieron a buscar, terminaran como terminaran: una
+   * búsqueda que falló se pagó igual. No cuentan los que ni se encolaron
+   * (`no_encolado`), porque esos no costaron nada. El que está en vuelo sí
+   * cuenta: ya está buscando.
+   */
+  async refrescosGratisDesde(tx: Tx, desde: Date): Promise<number> {
+    const [fila] = await tx
+      .select({ total: count() })
+      .from(trendRefreshes)
+      .where(
+        and(
+          eq(trendRefreshes.billable, false),
+          gte(trendRefreshes.requestedAt, desde),
+          or(isNull(trendRefreshes.outcome), ne(trendRefreshes.outcome, "no_encolado")),
+        ),
+      );
+    return fila?.total ?? 0;
   }
 
   /** El refresco en vuelo del usuario, si lo hay. */

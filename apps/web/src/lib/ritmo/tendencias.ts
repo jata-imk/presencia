@@ -1,4 +1,8 @@
-import type { TrendRefreshStateDto } from "@presencia/shared";
+import {
+  MAX_FREE_TREND_REFRESHES_PER_DAY,
+  type TrendRefreshBlock,
+  type TrendRefreshStateDto,
+} from "@presencia/shared";
 
 // Lo que la sección de tendencias de Ritmo dice alrededor de sus tarjetas:
 // cuándo se generaron y qué hace el botón. Puro para poder probarlo sin
@@ -30,6 +34,11 @@ export interface BotonDeRefresco {
   motivo: string | null;
 }
 
+const MOTIVO: Record<TrendRefreshBlock, string> = {
+  sin_saldo: "Tu saldo del mes no alcanza",
+  tope_diario: `Ya buscamos ${String(MAX_FREE_TREND_REFRESHES_PER_DAY)} veces en las últimas 24 horas; lo volvemos a intentar solos`,
+};
+
 /**
  * El botón de "Actualizar ahora", leído del estado que manda la API.
  *
@@ -46,7 +55,8 @@ export function botonDeRefresco(refresco: TrendRefreshStateDto): BotonDeRefresco
     etiqueta: gratis ? "Buscar tendencias" : "Actualizar ahora",
     precio: gratis ? null : `usa ~${porcentaje.format(refresco.costoPorcentaje)}% de tu mes`,
     deshabilitado: !refresco.disponible,
-    // Sin uno en curso, el único motivo por el que la API lo apaga es el saldo.
-    motivo: refresco.disponible ? null : "Tu saldo del mes no alcanza",
+    // El motivo lo dice la API. Deducirlo de `disponible: false` funcionaba
+    // mientras la única razón era el saldo; con el tope diario ya no.
+    motivo: refresco.bloqueo ? MOTIVO[refresco.bloqueo] : null,
   };
 }
