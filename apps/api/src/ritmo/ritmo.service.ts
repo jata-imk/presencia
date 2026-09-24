@@ -2,7 +2,9 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   asVerticalId,
   mejoresVentanas,
-  META_SEMANAL_SUGERIDA,
+  metaSugerida,
+  modoEfectivo,
+  type ModoEstrategia,
   resolveMacroRegion,
   resolveVertical,
   type RitmoCadenciaDto,
@@ -57,9 +59,16 @@ export class RitmoService {
       const cadencia = await this.motor.cadencia(tx, { timezone, ahora });
       const metas = await this.repo.metas(tx);
       const redesConectadas = await this.repo.redesConectadas(tx);
+      const voz = await this.voiceRepo.findDefault(tx);
+      // El Modo mueve la meta sugerida, así que la lectura de la voz no es
+      // decorativa: sin ella el número de la pantalla y el que usa la
+      // narración serían distintos.
+      const modo = modoEfectivo(voz?.modo ?? null, voz?.extras);
       return {
         cadencia,
-        objetivos: this.objetivosDe(cadencia, metas, redesConectadas, timezone, ahora),
+        modo,
+        modoSugerido: (voz?.modo ?? null) === null,
+        objetivos: this.objetivosDe(cadencia, metas, redesConectadas, modo, timezone, ahora),
         redesConectadas,
         timezone,
       };
@@ -77,11 +86,13 @@ export class RitmoService {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const elegidas = await this.repo.metas(tx);
       const redes = await this.repo.redesConectadas(tx);
+      const voz = await this.voiceRepo.findDefault(tx);
+      const modo = modoEfectivo(voz?.modo ?? null, voz?.extras);
       return redes.map((network) => {
         const propia = elegidas.get(network);
         return {
           network,
-          meta: propia ?? META_SEMANAL_SUGERIDA[network],
+          meta: propia ?? metaSugerida(network, modo),
           sugerido: propia === undefined,
         };
       });
@@ -198,6 +209,7 @@ export class RitmoService {
     cadencia: RitmoCadenciaDto,
     metas: Map<SocialNetwork, number>,
     redes: readonly SocialNetwork[],
+    modo: ModoEstrategia,
     timezone: string,
     ahora: Date,
   ): RitmoObjetivoDto[] {
@@ -210,7 +222,7 @@ export class RitmoService {
       const propia = metas.get(network);
       return {
         network,
-        meta: propia ?? META_SEMANAL_SUGERIDA[network],
+        meta: propia ?? metaSugerida(network, modo),
         hechas: deLaSemana.reduce((suma, dia) => suma + (dia.porRed[network] ?? 0), 0),
         sugerido: propia === undefined,
       };

@@ -1,10 +1,131 @@
 import { z } from "zod";
+import { normalizeExpression } from "./text.js";
 import { verticalIdSchema, type VerticalId } from "./verticals.js";
 
 // Contratos de brand_voices (docs/reference/modelo-de-datos.md,
 // docs/explanation/product/presencia-configuracion-voz-de-marca.md).
 // Onboarding (paso "Voz") y Configuración > Voz de marca escriben el
 // MISMO objeto — una sola fuente de verdad (AGENTS.md regla dura #5).
+
+/**
+ * El objetivo activo del creator: el "Modo" de la cabecera de Ritmo.
+ *
+ * Existe porque amarra lo demás. Una cadencia de "3 por semana" sin un
+ * para-qué es un número arbitrario; atada a un objetivo, es una sugerencia con
+ * sentido (presencia-ritmo.md §3).
+ *
+ * Y por eso mismo **cambia cosas, no solo se muestra**: mueve la meta semanal
+ * sugerida (ritmo.ts) y entra al payload de la narración. Un chip que no
+ * cambiara nada sería decoración aparentando importar.
+ */
+export const MODOS_ESTRATEGIA = ["crecer", "mantener", "lanzar"] as const;
+export const modoEstrategiaSchema = z.enum(MODOS_ESTRATEGIA);
+export type ModoEstrategia = z.infer<typeof modoEstrategiaSchema>;
+
+/** Cómo se le muestra cada modo. El emoji sale del mock de Claude Design. */
+export const MODO_ESTRATEGIA_META: Record<
+  ModoEstrategia,
+  { label: string; emoji: string; ayuda: string }
+> = {
+  crecer: {
+    label: "Crecer",
+    emoji: "🚀",
+    ayuda: "Sumar audiencia. Te vamos a sugerir publicar más seguido.",
+  },
+  mantener: {
+    label: "Mantener",
+    // ⚖️ y no 🔁: el de las flechas se lee como un icono de interfaz, sobre
+    // todo al lado del lápiz de "editar".
+    emoji: "⚖️",
+    ayuda: "Sostener lo que ya tienes, sin exigirte de más.",
+  },
+  lanzar: {
+    label: "Lanzar algo",
+    emoji: "📣",
+    ayuda: "Hay algo concreto que anunciar. Más volumen, concentrado en un tema.",
+  },
+};
+
+/** El modo por defecto de quien todavía no eligió ni contestó nada. */
+export const MODO_ESTRATEGIA_FALLBACK: ModoEstrategia = "mantener";
+
+// Las RAÍCES que delatan una intención de crecimiento en lo que el usuario
+// contestó en el paso de metas. Se comparan normalizadas (sin acentos, en
+// minúsculas) contra el PRINCIPIO de cada palabra.
+//
+// Raíces y no palabras completas porque acá entra texto libre además de los
+// presets, y el español conjuga: "quiero vender más" no contiene "venta", y
+// "busco crecimiento" no contiene "crecer". Con las palabras enteras los dos
+// caían a `mantener` en silencio.
+//
+// Por el principio de la palabra y no por subcadena suelta, que es como nació:
+// así "client" no aparece dentro de otra cosa. Queda un falso positivo
+// conocido —"ventaja" empieza con "vent"— y se acepta: el error caro es el
+// otro. Proponer una meta alta de más se corrige con un click y además se
+// muestra marcada como sugerida; proponer una baja de más pasa desapercibida.
+const RAICES_DE_CRECER = [
+  "seguidor",
+  "audiencia",
+  "vent",
+  "vend",
+  "client",
+  "crec",
+  "alcance",
+  "escalar",
+];
+
+/** Separador de palabras, igual que en el catálogo de verticales. */
+const SEPARADORES = /[^\p{L}\p{N}]+/u;
+
+/**
+ * Deriva el Modo de lo que el usuario ya contestó en el onboarding.
+ *
+ * El paso de metas guarda un multiselect de frases en `extras.goals`, que
+ * hasta ahora era dato muerto: se escribía una vez y no lo leía nadie. En vez
+ * de agregarle un paso al onboarding, el Modo nace de ahí y el usuario lo
+ * confirma o lo cambia — mismo truco que nicho → vertical.
+ *
+ * **`lanzar` no se deriva nunca.** Ninguna de las metas del onboarding
+ * significa "tengo un lanzamiento": es una decisión puntual que el usuario
+ * toma cuando le pasa, no algo que se adivine.
+ *
+ * Un empate se resuelve hacia `crecer` a propósito: si alguien que quería
+ * crecer ve una meta baja, la sugerencia le pasa desapercibida; al revés, una
+ * meta alta se baja con un click y además se muestra marcada como "Sugerido".
+ */
+export function modoDeGoals(goals: readonly string[]): ModoEstrategia {
+  const palabras = normalizeExpression(goals.join(" ")).split(SEPARADORES).filter(Boolean);
+  if (palabras.length === 0) return MODO_ESTRATEGIA_FALLBACK;
+  const quiereCrecer = palabras.some((palabra) =>
+    RAICES_DE_CRECER.some((raiz) => palabra.startsWith(raiz)),
+  );
+  return quiereCrecer ? "crecer" : MODO_ESTRATEGIA_FALLBACK;
+}
+
+/**
+ * Las metas del onboarding, sacadas del escape hatch con cuidado.
+ *
+ * `extras` es jsonb sin schema: el motor no garantiza su forma, así que lo que
+ * no sea una lista de strings simplemente no está. Mismo criterio que
+ * `parseItems` en la caché de tendencias.
+ */
+export function goalsDeExtras(extras: unknown): string[] {
+  if (typeof extras !== "object" || extras === null) return [];
+  const goals = (extras as Record<string, unknown>).goals;
+  if (!Array.isArray(goals)) return [];
+  return goals.filter((g): g is string => typeof g === "string");
+}
+
+/**
+ * El Modo que de verdad aplica: el elegido, o el derivado si no eligió.
+ *
+ * Una sola función para que el servidor y la pantalla no puedan discrepar —
+ * mismo patrón que `resolveVertical`. Si la UI derivara por su cuenta, podría
+ * mostrarle al usuario un Modo y calcularle la meta con otro.
+ */
+export function modoEfectivo(modo: ModoEstrategia | null, extras: unknown): ModoEstrategia {
+  return modo ?? modoDeGoals(goalsDeExtras(extras));
+}
 
 export const brandVoiceRegisterSchema = z.enum([
   "neutro_profesional",
@@ -104,6 +225,9 @@ export const updateBrandVoiceBodySchema = z.object({
   // única forma que tiene el usuario de deshacer una elección manual y volver
   // al default automático.
   vertical: verticalIdSchema.nullable().optional(),
+  // `null` = "vuelve a derivarlo de mis metas", igual que `vertical`. Es cómo
+  // el usuario deshace una elección manual sin que le inventemos un default.
+  modo: modoEstrategiaSchema.nullable().optional(),
   audience: z.string().trim().max(500).nullable().optional(),
   register: brandVoiceRegisterSchema.optional(),
   formality: z.number().int().min(0).max(100).optional(),
@@ -138,6 +262,24 @@ export interface BrandVoiceDto {
    * usuario que nunca tomó.
    */
   vertical: VerticalId | null;
+  /**
+   * El Modo que el usuario ELIGIÓ, o `null` si nunca lo tocó. Igual que
+   * `vertical`, no es el efectivo: ese sale de `modoDeGoals(extras.goals)`
+   * cuando este viene en null, y la pantalla usa la distinción para decir
+   * "esto lo dedujimos de tus metas" en vez de presentarlo como una decisión
+   * que el usuario no tomó.
+   */
+  modo: ModoEstrategia | null;
+  /**
+   * El Modo que saldría de sus metas si no eligiera ninguno.
+   *
+   * Lo calcula el SERVIDOR con la misma función que usa para la meta semanal.
+   * La pantalla necesita este valor para poder decir "por tus metas asumimos
+   * X", y derivarlo por su cuenta pediría exponer `extras` entero — además de
+   * abrir la puerta a que muestre un Modo y el backend calcule con otro, que
+   * es justo lo que el comentario de `vertical` advierte.
+   */
+  modoDerivado: ModoEstrategia;
   audience: string | null;
   register: BrandVoiceRegister;
   formality: number;
@@ -161,7 +303,12 @@ export interface BrandVoiceDto {
 // contenido suene a él. Meter "design" junto a "Diseño & IA para creators de
 // Mérida" no agrega información y sí invita al modelo a escribir para la
 // categoría en vez de para la persona.
+//
+// `modo` también queda fuera, y por un motivo distinto: no es identidad de
+// voz, es una preferencia de estrategia. Lo que hace es mover la meta semanal
+// sugerida y entrar al payload de la narración; que además tiña cómo escribe
+// el chat es una decisión aparte que nadie tomó todavía.
 export type BrandVoiceForPrompt = Omit<
   BrandVoiceDto,
-  "id" | "name" | "isDefault" | "createdAt" | "updatedAt" | "vertical"
+  "id" | "name" | "isDefault" | "createdAt" | "updatedAt" | "vertical" | "modo" | "modoDerivado"
 >;

@@ -87,6 +87,8 @@ export function RitmoPage() {
         objetivos={resumen.objetivos}
         racha={resumen.cadencia.rachaActual}
         publico={!sinPublicaciones}
+        modo={resumen.modo}
+        modoSugerido={resumen.modoSugerido}
       />
 
       {/* Sin publicaciones no hay nada que narrar: el modelo solo podría

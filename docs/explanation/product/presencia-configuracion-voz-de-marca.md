@@ -72,6 +72,14 @@ onboarding a lo más nuevo/opcional.
 - **Nicho/audiencia**: heredado (chips + texto libre), con espacio
   para profundizar (edad, intereses, pain points) que el onboarding
   no pedía por tiempo.
+- **Categoría** (vertical): la del catálogo cerrado, con opción de
+  "detectar por mi nicho". De ahí cuelgan las tendencias.
+- **Objetivo (Modo)**: `Crecer`, `Mantener` o `Lanzar algo`, con
+  opción de "deducirlo de mis metas" — que es el default y sale de
+  lo que contestó en el onboarding. No es un campo de voz: es de
+  estrategia, y vive acá porque es donde el chip de Ritmo promete
+  que se cambia. Mueve la meta semanal que Ritmo propone, así que
+  la pantalla dice qué implica en vez de guardarlo en silencio.
 
 ### Bloque B — Registro y tono (el corazón cultural)
 

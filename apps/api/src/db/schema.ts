@@ -15,6 +15,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { MODOS_ESTRATEGIA } from "@presencia/shared";
 import { AI_TASK_KINDS } from "../ai/provider-registry.js";
 
 // Implementa docs/reference/modelo-de-datos.md (aprobado 2026-07-18).
@@ -93,6 +94,12 @@ export const creditReason = pgEnum("credit_reason", [
 // tier vive en apps/api/src/credits/rate-card.ts, no en la DB — cambiarla
 // no debe requerir migración.
 export const planTier = pgEnum("plan_tier", ["creator", "pro", "agencia"]);
+
+// El objetivo activo del creator (el "Modo" de Ritmo). Enum y no `text` como
+// `vertical`: aquél es un catálogo que se va a mover y una entrada retirada
+// tiene que poder leerse como "no elegida", mientras que estos tres valores
+// son la decisión misma y no una taxonomía que crezca.
+export const strategyMode = pgEnum("strategy_mode", MODOS_ESTRATEGIA);
 
 // ── Identidad ────────────────────────────────────────────────────────
 // Better Auth será dueño de esta tabla en F1 (configurado con ids uuid
@@ -202,6 +209,11 @@ export const brandVoices = pgTable(
     // función pura. Un valor derivado guardado al lado de su fuente, sin nada
     // que los sincronice, se vuelve mentira en cuanto alguien edita la fuente.
     vertical: text("vertical"),
+    // El Modo que el usuario ELIGIÓ. NULL no es "sin modo": es "no lo ha
+    // tocado", y entonces se deriva de `extras.goals` al leer — el mismo
+    // criterio que `vertical`. Guardarlo solo cuando lo elige a mano hace que
+    // mejorar la derivación siga beneficiando a quien nunca lo tocó.
+    modo: strategyMode("modo"),
     audience: text("audience"),
     register: voiceRegister("register").notNull().default("neutro_profesional"),
     // Posición fina 0-100 sobre el slider de formalidad (doc §4); `register`
