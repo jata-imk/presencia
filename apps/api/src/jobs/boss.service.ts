@@ -41,14 +41,20 @@ const RECURRING_QUEUE_POLICY = "exclusive";
 //   terminal conserva la llave. No es lo que se quiere acá: un fallo dejaría
 //   la tupla sin poder reintentar hasta que pg-boss archive.
 //
-// Que quede uno esperando mientras otro corre es aceptable porque el handler
-// es idempotente: `refrescarSiHaceFalta` no vuelve a buscar si la tanda ya
-// está vigente.
+// Que quede uno esperando mientras otro corre es aceptable siempre que el
+// handler sea idempotente por su cuenta — esta cola acota los duplicados pero
+// no los elimina, así que eso es requisito de quien la use, no algo que ella
+// garantice.
 const ON_DEMAND_QUEUE_POLICY = "short";
 
 /**
  * Cola de trabajos puntuales: los encola alguien (un request) y los ejecuta el
  * worker. A diferencia de una recurrente, acá no hay cron.
+ *
+ * Sin llamadores desde F9.6, que retiró la cola de semilla de tendencias: el
+ * barrido sabe solo a quién le toca. Se conserva porque el refresco manual —el
+ * que el usuario pide y paga— vuelve a necesitarla en el PR siguiente: la
+ * búsqueda tarda decenas de segundos y eso no cabe en un request.
  *
  * La policy es `short` y no `exclusive` porque el filtro de duplicados es por
  * TRABAJO, no por cola: dos tuplas distintas sí pueden buscarse a la vez, dos
@@ -244,9 +250,8 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
    *
    * `short` acota a un job por llave **en estado `created`**, y esa precisión
    * importa: un job que ya está corriendo NO bloquea que se encole otro. Por
-   * eso el handler tiene que ser idempotente por su cuenta
-   * (`refrescarSiHaceFalta`), y por eso no alcanza con esta cola para sostener
-   * la palanca de sublinealidad de ADR-023.
+   * eso el handler tiene que ser idempotente por su cuenta; esta cola sola no
+   * alcanza para garantizar "una vez y nada más".
    *
    * Devuelve `false` si no se encoló (por duplicado o porque la cola no está).
    * Nunca lanza: esto se llama desde un request de lectura, y no poder encolar

@@ -145,7 +145,17 @@ export class TrendsService {
   async refrescarUsuario(userId: string): Promise<ResultadoDeRefresco> {
     const arranque = Date.now();
     const contexto = await this.contextoDe(userId);
-    if (!contexto) return { userId, items: [], fuentes: 0, consultas: 0 };
+    if (!contexto) {
+      // Sin voz de marca no hay nada que buscar. Pero hay que DEJAR CONSTANCIA
+      // igual: el barrido pone primero a quien no tiene tanda, así que un
+      // usuario a medio onboarding —correo verificado y sesión viva, que es lo
+      // que el filtro pide, pero sin haber llegado al paso de la Voz— se
+      // quedaba a la cabeza de la fila en todos los pases, para siempre.
+      // Veinte de esos se comían el presupuesto entero y nadie con la tanda
+      // vencida se refrescaba jamás.
+      await this.marcarIntento(userId, { motivo: "sin_voz" });
+      return { userId, items: [], fuentes: 0, consultas: 0 };
+    }
 
     const modelo = this.ai.resolve(env.AI_MODEL_TRENDS ?? DEFAULT_TRENDS_MODEL_ID);
     if (modelo.provider !== SEARCH_PROVIDER) {
@@ -164,25 +174,33 @@ export class TrendsService {
       prompt: promptDeBusqueda(contexto),
     });
 
-    // El metadata puede venir en el resultado o por step, según cómo el
-    // proveedor parta la respuesta. Se juntan los dos y `extraerFuentes`
-    // descarta lo que no entienda.
-    const fuentes = [
-      ...extraerFuentes(busqueda.providerMetadata),
-      ...busqueda.steps.flatMap((step) => extraerFuentes(step.providerMetadata)),
-    ];
+    // Solo `steps`. El `providerMetadata` del resultado es una COPIA del
+    // último step —así lo documenta el SDK, y por eso está deprecado en favor
+    // de `finalStep.providerMetadata`— así que leerlo aparte cuenta ese step
+    // dos veces. Medido contra la API: un step con 3 consultas y 8 chunks
+    // aparecía idéntico en los dos lados. Acá el `Map` de abajo lo disimulaba;
+    // en `contarConsultas`, no.
+    const fuentes = busqueda.steps.flatMap((step) => extraerFuentes(step.providerMetadata));
     // Únicas por TÍTULO y no por URL, y eso es una corrección de honestidad.
     // Google reporta el dominio como título, así que una búsqueda normal trae
     // varios chunks de la misma página madre: el modelo veía entradas
     // indistinguibles y su elección entre ellas era azar. Colapsándolas, la
     // cita afirma justo lo que se puede defender: "visto en este medio".
     const unicas = [...new Map(fuentes.map((f) => [f.title, f])).values()];
-    const consultas = contarConsultas(busqueda.providerMetadata, busqueda.steps);
+    const consultas = contarConsultas(busqueda.steps);
 
     // Sin páginas no hay nada que citar, y sin cita no hay tendencia. Se corta
     // acá para no pagar la segunda llamada por un resultado ya vacío.
+    //
+    // Y esto pasa de verdad, no es defensa teórica: `google_search` es
+    // discrecional. Midiendo contra la API con este mismo prompt, algunas
+    // corridas vuelven sin una sola búsqueda —`toolCalls: 0`, sin
+    // `groundingMetadata`— y el modelo redacta desde su entrenamiento. Prosa
+    // convincente y cero procedencia, que es exactamente lo que no puede
+    // pasar. Por eso la puerta es la cita y no el texto: acá se descarta
+    // entero y se reintenta, en vez de publicar tendencias inventadas.
     if (unicas.length === 0) {
-      await this.registrarVacio(userId, modelo, consultas, arranque);
+      await this.marcarIntento(userId, { motivo: "sin_fuentes", modelo, consultas });
       return { userId, items: [], fuentes: 0, consultas };
     }
 
@@ -202,7 +220,7 @@ export class TrendsService {
       MAX_TENDENCIAS,
     );
     if (items.length === 0) {
-      await this.registrarVacio(userId, modelo, consultas, arranque);
+      await this.marcarIntento(userId, { motivo: "sin_items_citables", modelo, consultas });
       return { userId, items: [], fuentes: unicas.length, consultas };
     }
 
@@ -259,7 +277,7 @@ export class TrendsService {
         console.error(`[trends] no se pudo refrescar a ${userId}:`, error);
         // Posponer TAMBIÉN cuando truena, y por la misma razón: si no, el
         // usuario que falla siempre acapara el pase entero.
-        await this.posponer(userId);
+        await this.marcarIntento(userId, { motivo: "error" });
         fallidos.push(userId);
       }
     }
@@ -269,54 +287,50 @@ export class TrendsService {
   }
 
   /**
-   * Deja constancia de que se buscó y no había nada citable.
+   * Deja constancia de un intento que no produjo tendencias.
    *
-   * Solo escribe si NO había tanda. Si ya existía una buena se conserva
-   * —tendencias de la semana pasada fechadas le sirven más al usuario que un
-   * módulo apagado— y de moverle el vencimiento se encarga `posponer`.
+   * Es un UPSERT, y ahí está la diferencia entre posponer y no hacer nada. La
+   * primera versión hacía `update ... set expires_at` sin `WHERE` (el filtro
+   * era el RLS), que afecta CERO filas cuando el usuario todavía no tiene
+   * ninguna — que es exactamente el caso del que más importa postergar: el que
+   * nunca tuvo tanda, al que el barrido pone primero. Con un error
+   * reproducible (proveedor caído, `AI_MODEL_TRENDS` mal apuntado) ese usuario
+   * volvía a encabezar el pase siguiente, volvía a fallar, y el job terminaba
+   * en rojo todos los días sin avanzar nunca.
    *
-   * La fila vacía vuelve alcanzable un estado que si no no lo sería: la
-   * pantalla distingue "todavía no buscamos" de "buscamos y no encontramos"
-   * por `generatedAt`.
+   * **Nunca pisa una tanda buena.** Si ya había items solo se mueve el
+   * vencimiento: tendencias de la semana pasada fechadas le sirven más al
+   * usuario que un módulo apagado.
    */
-  private async registrarVacio(
+  private async marcarIntento(
     userId: string,
-    modelo: { provider: string; modelName: string },
-    consultas: number,
-    arranque: number,
+    datos: { motivo: string; modelo?: { provider: string; modelName: string }; consultas?: number },
   ): Promise<void> {
     const ahora = new Date();
+    const hasta = new Date(ahora.getTime() + REINTENTO_HORAS * MS_POR_HORA);
     try {
       await this.dbService.runWithTenant(userId, async (tx) => {
         const guardadas = await this.repo.find(tx);
         if (guardadas && guardadas.items.length > 0) {
-          await this.repo.posponer(tx, new Date(ahora.getTime() + REINTENTO_HORAS * MS_POR_HORA));
+          await this.repo.posponer(tx, hasta);
           return;
         }
         await this.repo.upsert(tx, {
           userId,
           items: [],
           generatedAt: ahora,
-          expiresAt: new Date(ahora.getTime() + REINTENTO_HORAS * MS_POR_HORA),
-          provider: modelo.provider,
-          model: modelo.modelName,
-          usage: { vacio: true, consultas, durationMs: Date.now() - arranque },
+          expiresAt: hasta,
+          // "ninguno" cuando ni se llegó a resolver un modelo. Es procedencia
+          // del intento, y no haberlo intentado con ninguno es la verdad.
+          provider: datos.modelo?.provider ?? "ninguno",
+          model: datos.modelo?.modelName ?? "ninguno",
+          usage: { vacio: true, motivo: datos.motivo, consultas: datos.consultas ?? 0 },
         });
       });
     } catch (error) {
       // No se relanza: quien llama ya tiene su propio resultado que reportar, y
-      // no haber podido anotar el vacío no convierte la búsqueda en un fallo.
-      console.error(`[trends] ${userId}: no se pudo registrar el vacío:`, error);
-    }
-  }
-
-  /** Manda a un usuario improductivo al final de la fila del barrido. */
-  private async posponer(userId: string): Promise<void> {
-    const hasta = new Date(Date.now() + REINTENTO_HORAS * MS_POR_HORA);
-    try {
-      await this.dbService.runWithTenant(userId, (tx) => this.repo.posponer(tx, hasta));
-    } catch (error) {
-      console.error(`[trends] ${userId} no se pudo posponer:`, error);
+      // no haber podido anotar el intento no cambia lo que pasó.
+      console.error(`[trends] ${userId}: no se pudo registrar el intento:`, error);
     }
   }
 }
@@ -331,18 +345,20 @@ export class TrendsService {
  * Si el proveedor no lo reporta queda en 0, que es honesto —no lo sabemos— y
  * distinguible de "no hubo búsqueda", porque eso deja la lista de fuentes
  * vacía.
+ *
+ * Solo `steps`, y esto no es un detalle: la primera versión sumaba además el
+ * `providerMetadata` del resultado, que es una copia del último step, así que
+ * reportaba el doble. Justo el número que existe para que las proyecciones de
+ * costo dejen de ser una corazonada.
  */
-function contarConsultas(
-  metadata: unknown,
-  steps: readonly { providerMetadata?: unknown }[],
-): number {
+function contarConsultas(steps: readonly { providerMetadata?: unknown }[]): number {
   const deUno = (raw: unknown): number => {
     const google = (raw as { google?: { groundingMetadata?: { webSearchQueries?: unknown } } })
       ?.google;
     const queries = google?.groundingMetadata?.webSearchQueries;
     return Array.isArray(queries) ? queries.length : 0;
   };
-  return steps.reduce((suma, step) => suma + deUno(step.providerMetadata), deUno(metadata));
+  return steps.reduce((suma, step) => suma + deUno(step.providerMetadata), 0);
 }
 
 /** Los idiomas guardados, validados. Un valor raro no apaga la búsqueda. */
