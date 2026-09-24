@@ -225,6 +225,13 @@
       "when": 1789952277852,
       "tag": "0031_ritmo_narrations",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790225431382,
+      "tag": "0032_brand_voices_modo",
+      "breakpoints": true
     }
   ]
 }

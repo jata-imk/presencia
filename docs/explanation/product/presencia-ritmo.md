@@ -261,6 +261,31 @@ lo demás. Una cadencia de "3 por semana" sin un para-qué es un
 número arbitrario. Atarla a un objetivo ("Crecer", "Mantener",
 "Lanzar algo") le da sentido a la sugerencia.
 
+**Cómo quedó implementado (F9.5).** Tres decisiones que vale la
+pena dejar escritas:
+
+- **El Modo cambia algo, o no va.** Mueve la meta semanal
+  sugerida: quien dijo que quiere crecer recibe una propuesta más
+  alta que quien dijo mantener, y el número sigue marcado como
+  "Sugerido" mientras no lo toque. Un chip que solo se mostrara
+  sería decoración aparentando importar. También entra al payload
+  de la narración, para que el texto lea los números a la luz del
+  objetivo en vez de empujar a todos a publicar más.
+- **No se le pregunta en un paso nuevo.** El onboarding ya pedía
+  metas ("Más seguidores", "Consistencia al publicar"…) y las
+  guardaba en un campo que después no leía nadie. De ahí sale el
+  default, y el usuario lo confirma o lo cambia — el mismo truco
+  que nicho → vertical. Un paso más en un flujo de cinco es caro;
+  un dato muerto que revive, no.
+- **`lanzar` nunca se deduce.** Ninguna de esas metas significa
+  "tengo un lanzamiento": es una decisión puntual que la persona
+  toma cuando le pasa, no algo que se adivine.
+
+El chip de la cabecera enlaza a Configuración › Voz de marca,
+que es donde se cambia. En el mock tiene lápiz y cursor de mano,
+así que prometía ser editable; no llevar a ningún lado habría
+sido la promesa a medias.
+
 ### La narración bajo demanda ("Explícame mi ritmo")
 
 **Qué es:** un botón en la parte alta de Ritmo que devuelve

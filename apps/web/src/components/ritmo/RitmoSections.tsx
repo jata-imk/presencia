@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
-import { CalendarCheck, ExternalLink, Minus, Plus } from "lucide-react";
+import { Link } from "react-router";
+import { CalendarCheck, ExternalLink, Minus, Pencil, Plus } from "lucide-react";
 import {
+  MODO_ESTRATEGIA_META,
   TREND_FORMAT_LABELS,
   TREND_SIGNAL_LABELS,
+  type ModoEstrategia,
   type RitmoObjetivoDto,
   type SocialNetwork,
   type TrendItem,
@@ -52,14 +55,15 @@ export function TituloBloque({
  * gancho emocional del módulo. "Mejor racha" se queda junto al mapa.
  *
  * La composición sale de la variante A de `StrategyHeader` del mock de Claude
- * Design. Lo que falta respecto de ese mock es el chip de "Modo: Crecer", que
- * todavía no existe como dato — tiene su propio PR.
+ * Design, con su chip de Modo y su tile de racha.
  */
 export function CabeceraRitmo({
   nombre,
   objetivos,
   racha,
   publico,
+  modo,
+  modoSugerido,
 }: {
   nombre: string;
   objetivos: RitmoObjetivoDto[];
@@ -73,6 +77,10 @@ export function CabeceraRitmo({
    * historial que su racha empieza con su primer post.
    */
   publico: boolean;
+  /** El objetivo activo, ya resuelto por el servidor. */
+  modo: ModoEstrategia;
+  /** `true` si salió de sus metas del onboarding y no de una elección suya. */
+  modoSugerido: boolean;
 }) {
   const hechas = objetivos.reduce((suma, o) => suma + o.hechas, 0);
   const meta = objetivos.reduce((suma, o) => suma + o.meta, 0);
@@ -86,15 +94,49 @@ export function CabeceraRitmo({
         <p className="mt-2 max-w-[440px] text-[15px] text-fg-secondary">
           Esta es tu estrategia: cuándo publicar y sobre qué.
         </p>
-        {meta > 0 && (
-          <span className="mt-4 flex items-center gap-2 text-sm text-fg-secondary">
-            <CalendarCheck size={16} className="text-accent" />
-            Vas {hechas}/{meta} publicaciones esta semana
-          </span>
-        )}
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <ModoChip modo={modo} sugerido={modoSugerido} />
+          {meta > 0 && (
+            <span className="flex items-center gap-2 text-sm text-fg-secondary">
+              <CalendarCheck size={16} className="text-accent" />
+              Vas {hechas}/{meta} publicaciones esta semana
+            </span>
+          )}
+        </div>
       </div>
       <RachaTile dias={racha} publico={publico} />
     </header>
+  );
+}
+
+/**
+ * El "Modo" de la cabecera: el objetivo activo, y un enlace para cambiarlo.
+ *
+ * Traducido del `ObjetivoChip` del mock de Claude Design. Es un enlace y no un
+ * adorno porque en el mock tiene lápiz y cursor de mano: prometía ser editable,
+ * y el lugar donde se edita es Configuración › Voz de marca.
+ *
+ * Marca cuando el Modo se dedujo de las metas del onboarding en vez de
+ * elegirse, por la misma razón que las metas semanales dicen "Sugerido": un
+ * objetivo que nosotros supusimos y uno que la persona eligió no son la misma
+ * promesa, y el primero mueve su meta semanal.
+ */
+function ModoChip({ modo, sugerido }: { modo: ModoEstrategia; sugerido: boolean }) {
+  const meta = MODO_ESTRATEGIA_META[modo];
+  return (
+    <Link
+      to="/configuracion/voz-de-marca"
+      title={
+        sugerido ? `${meta.ayuda} Lo dedujimos de tus metas: cámbialo cuando quieras.` : meta.ayuda
+      }
+      className="inline-flex h-[38px] items-center gap-[7px] rounded-full border-[1.5px] border-line-focus bg-card px-4 font-display text-[15px] font-semibold text-brand transition-colors hover:bg-secondary"
+    >
+      <span className="font-medium text-fg-muted">Modo:</span>
+      {meta.label}
+      <span aria-hidden>{meta.emoji}</span>
+      {sugerido && <span className="text-[11px] font-medium text-fg-muted italic">Sugerido</span>}
+      <Pencil size={14} strokeWidth={1.75} className="ml-0.5 text-fg-muted" aria-hidden />
+    </Link>
   );
 }
 

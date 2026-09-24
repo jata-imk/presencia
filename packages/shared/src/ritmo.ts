@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ModoEstrategia } from "./brand-voice.js";
 import { socialNetworkSchema, type SocialNetwork } from "./publication.js";
 
 // El contrato del módulo Ritmo.
@@ -128,6 +129,16 @@ export interface RitmoObjetivoDto {
 
 export interface RitmoResumenDto {
   cadencia: RitmoCadenciaDto;
+  /** El Modo que aplica, ya resuelto (elegido o derivado de las metas). */
+  modo: ModoEstrategia;
+  /**
+   * `true` mientras el usuario no haya elegido su Modo a mano.
+   *
+   * La pantalla lo marca por la misma razón que marca las metas sugeridas: un
+   * objetivo que dedujimos de lo que contestó en el onboarding y uno que
+   * eligió no son la misma promesa.
+   */
+  modoSugerido: boolean;
   objetivos: RitmoObjetivoDto[];
   /** Las redes con cuenta conectada; de ahí salen las pestañas de horarios. */
   redesConectadas: SocialNetwork[];
@@ -183,6 +194,37 @@ export const META_SEMANAL_SUGERIDA: Record<SocialNetwork, number> = {
   youtube: 1,
   threads: 3,
 };
+
+/**
+ * Cuánto mueve el Modo a la meta sugerida.
+ *
+ * `crecer` y `lanzar` piden más volumen por motivos distintos —uno sostenido,
+ * el otro concentrado— pero el NÚMERO semanal termina siendo el mismo: lo que
+ * cambia entre ellos es sobre qué se publica, y eso es trabajo del Chat, no de
+ * esta tabla. Inventar un tercer factor para distinguirlos sería precisión
+ * falsa.
+ *
+ * El 1.5 es tan provisional como los números de arriba y se recalibra con el
+ * mismo dato: cuando haya historial suficiente, este es el lugar que cambia.
+ */
+export const FACTOR_POR_MODO: Record<ModoEstrategia, number> = {
+  crecer: 1.5,
+  mantener: 1,
+  lanzar: 1.5,
+};
+
+/**
+ * La meta semanal que el producto propone, ya con el Modo aplicado.
+ *
+ * Que el Modo entre acá es lo que lo separa de un chip decorativo: el usuario
+ * dijo que quiere crecer y la sugerencia sube en consecuencia. Sigue marcada
+ * como "Sugerido" mientras no la toque, que es lo que distingue un número que
+ * propusimos de uno que aceptó.
+ */
+export function metaSugerida(network: SocialNetwork, modo: ModoEstrategia): number {
+  const base = META_SEMANAL_SUGERIDA[network];
+  return Math.max(1, Math.round(base * FACTOR_POR_MODO[modo]));
+}
 
 /** Una ventana recomendada, ya con la red a la que pertenece. */
 export interface VentanaDeRedDto extends VentanaRecomendada {

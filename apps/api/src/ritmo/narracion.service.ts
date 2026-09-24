@@ -224,7 +224,7 @@ export class NarracionService {
     const horarios = await this.dbService.runWithTenant(userId, (tx) =>
       this.motor.horariosDeVarias(tx, resumen.redesConectadas, { timezone, ahora }),
     );
-    return armarPayload(resumen.cadencia, resumen.objetivos, horarios);
+    return armarPayload(resumen.cadencia, resumen.objetivos, horarios, resumen.modo);
   }
 }
 

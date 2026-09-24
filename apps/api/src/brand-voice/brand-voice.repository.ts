@@ -1,6 +1,10 @@
 import { Injectable } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
-import type { BrandVoiceReferenceExample, BrandVoiceRegister } from "@presencia/shared";
+import type {
+  BrandVoiceReferenceExample,
+  BrandVoiceRegister,
+  ModoEstrategia,
+} from "@presencia/shared";
 import { brandVoices } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 import { omitUndefined } from "../db/omit-undefined.js";
@@ -32,6 +36,7 @@ export type UpdateBrandVoicePatch = Partial<{
   marketRegion: string | null;
   niche: string[];
   vertical: string | null;
+  modo: ModoEstrategia | null;
   audience: string | null;
   register: BrandVoiceRegister;
   formality: number;

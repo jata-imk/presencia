@@ -2,6 +2,8 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   asVerticalId,
   formalityToRegister,
+  goalsDeExtras,
+  modoDeGoals,
   normalizeExpression,
   REGISTER_FORMALITY_ANCHORS,
   type BrandVoiceDto,
@@ -123,6 +125,12 @@ export class BrandVoiceService {
       // La columna es `text`, no un enum de Postgres: se valida contra el
       // catálogo al leer, para que una vertical retirada no viaje al cliente.
       vertical: asVerticalId(row.vertical),
+      // Crudo, no resuelto: `null` significa "no lo eligió" y es lo que deja a
+      // la pantalla decir "lo dedujimos de tus metas". Quien necesita el modo
+      // EFECTIVO llama a `modoEfectivo` (ritmo), que es el mismo criterio que
+      // se usa con la vertical.
+      modo: row.modo,
+      modoDerivado: modoDeGoals(goalsDeExtras(row.extras)),
       ...this.toPromptShape(row),
     };
   }

@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import type { RitmoCadenciaDto, SocialNetwork } from "@presencia/shared";
+import { metaSugerida } from "@presencia/shared";
+import type { ModoEstrategia, RitmoCadenciaDto, SocialNetwork } from "@presencia/shared";
 // Import solo de tipo: el módulo real se carga en beforeAll, mismo patrón que
 // brand-voice.service.spec.ts — importarlo arriba arrastra db.service.js, que
 // arrastra env.ts, que valida el entorno al cargarse.
@@ -41,6 +42,10 @@ function armar(opciones: {
   metas?: Map<SocialNetwork, number>;
   redes?: SocialNetwork[];
   timezone?: string;
+  /** El Modo elegido a mano. `undefined` = no eligió, se deriva de `goals`. */
+  modo?: ModoEstrategia;
+  /** Lo que contestó en el paso de metas del onboarding. */
+  goals?: string[];
 }): RitmoServiceType {
   const cadencia: RitmoCadenciaDto = {
     dias: opciones.dias,
@@ -59,11 +64,18 @@ function armar(opciones: {
   const profileRepo = {
     findById: vi.fn().mockResolvedValue({ timezone: opciones.timezone ?? MERIDA }),
   };
+  // La voz de marca entra al resumen porque el Modo mueve la meta sugerida.
+  const voiceRepo = {
+    findDefault: vi.fn().mockResolvedValue({
+      modo: opciones.modo ?? null,
+      extras: { goals: opciones.goals ?? [] },
+    }),
+  };
   return new RitmoService(
     dbService as never,
     motor as never,
     repo as never,
-    {} as never,
+    voiceRepo as never,
     profileRepo as never,
     {} as never,
   );
@@ -97,6 +109,35 @@ describe("RitmoService.resumen", () => {
     vi.useRealTimers();
 
     expect(resumen.objetivos[0]?.hechas).toBe(4);
+  });
+
+  it("el Modo mueve la meta sugerida: por eso no es un adorno", async () => {
+    // Si el chip solo se mostrara, sería decoración aparentando importar. Lo
+    // que lo vuelve real es esto: el usuario dijo que quiere crecer y la
+    // sugerencia sube en consecuencia, sin dejar de estar marcada como nuestra.
+    const service = armar({ dias: [], redes: ["facebook"], modo: "crecer" });
+    vi.setSystemTime(AHORA);
+    const resumen = await service.resumen("u1");
+    vi.useRealTimers();
+
+    expect(resumen.modo).toBe("crecer");
+    expect(resumen.modoSugerido).toBe(false);
+    expect(resumen.objetivos[0]?.meta).toBe(metaSugerida("facebook", "crecer"));
+    expect(resumen.objetivos[0]?.meta).toBeGreaterThan(metaSugerida("facebook", "mantener"));
+    expect(resumen.objetivos[0]?.sugerido).toBe(true);
+  });
+
+  it("sin Modo elegido lo deriva de lo que contestó en el onboarding", async () => {
+    // `extras.goals` era dato muerto: se escribía una vez y no lo leía nadie.
+    // De ahí sale el default, y `modoSugerido` es lo que deja a la pantalla
+    // decir que lo dedujimos en vez de presentarlo como decisión suya.
+    const service = armar({ dias: [], redes: ["facebook"], goals: ["Más seguidores"] });
+    vi.setSystemTime(AHORA);
+    const resumen = await service.resumen("u1");
+    vi.useRealTimers();
+
+    expect(resumen.modo).toBe("crecer");
+    expect(resumen.modoSugerido).toBe(true);
   });
 
   it("marca la meta como sugerida mientras el usuario no ponga la suya", async () => {

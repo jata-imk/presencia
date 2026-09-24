@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
+  modoDeGoals,
+  MODO_ESTRATEGIA_META,
+  MODOS_ESTRATEGIA,
   REGISTER_FORMALITY_ANCHORS,
   socialNetworkSchema,
   type BrandVoiceRegister,
+  type ModoEstrategia,
 } from "@presencia/shared";
 import { Button } from "../components/ui/Button.js";
 import { Field } from "../components/ui/Field.js";
@@ -87,6 +91,10 @@ export function OnboardingPage() {
   // Paso 4 — Goals.
   const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
   const [otherGoal, setOtherGoal] = useState("");
+  // `null` = no lo eligió, que NO es lo mismo que "mantener": el servidor lo
+  // deriva de las metas al leer.
+  const [modo, setModo] = useState<ModoEstrategia | null>(null);
+  const goalsActuales = [...selectedGoals, ...(otherGoal.trim() ? [otherGoal.trim()] : [])];
 
   function toggleGoal(goal: string) {
     setSelectedGoals((prev) =>
@@ -124,13 +132,19 @@ export function OnboardingPage() {
   }
 
   async function handleGoalsNext() {
-    const goals = [...selectedGoals, ...(otherGoal.trim() ? [otherGoal.trim()] : [])];
-    if (goals.length === 0) {
+    const goals = goalsActuales;
+    // `modo` solo viaja si lo eligió a mano: en null el servidor lo deriva de
+    // `goals` al leer, y eso es lo que hace que mejorar la derivación siga
+    // beneficiando a quien nunca lo tocó.
+    if (goals.length === 0 && modo === null) {
       setStep(5);
       return;
     }
     const ok = await runStep(() =>
-      apiFetch("/api/brand-voice", { method: "PATCH", body: { extras: { goals } } }),
+      apiFetch("/api/brand-voice", {
+        method: "PATCH",
+        body: { extras: { goals }, ...(modo === null ? {} : { modo }) },
+      }),
     );
     if (ok) setStep(5);
   }
@@ -283,6 +297,42 @@ export function OnboardingPage() {
               placeholder="Cuéntanos qué más te gustaría lograr"
             />
           </Field>
+
+          {/* El Modo va acá y no en un paso propio: es la misma pregunta que
+              las metas de arriba, en una forma que el producto sí usa. Si no
+              lo toca, se deduce de lo que eligió — por eso el botón dice
+              "Sugerido" sobre la opción derivada en vez de traerla marcada,
+              que lo convertiría en alguien que ya eligió. */}
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-semibold text-fg">¿Y ahora mismo, qué buscas?</p>
+            <p className="text-[13px] text-fg-secondary">
+              Con esto ajustamos cuántas publicaciones por semana te proponemos. Lo puedes cambiar
+              cuando quieras.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {MODOS_ESTRATEGIA.map((valor) => {
+                const meta = MODO_ESTRATEGIA_META[valor];
+                const elegido = modo === valor;
+                const derivado = modo === null && modoDeGoals(goalsActuales) === valor;
+                return (
+                  <button
+                    key={valor}
+                    type="button"
+                    title={meta.ayuda}
+                    onClick={() => setModo(elegido ? null : valor)}
+                    className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                      elegido
+                        ? "border-primary bg-primary text-primary-fg"
+                        : "border-line bg-card text-fg-secondary hover:bg-secondary-hover"
+                    }`}
+                  >
+                    {meta.emoji} {meta.label}
+                    {derivado && <span className="ml-1.5 text-[11px] italic">Sugerido</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {error && <p className="text-sm text-error">{error}</p>}
           <Button onClick={() => void handleGoalsNext()} disabled={submitting}>
             {submitting

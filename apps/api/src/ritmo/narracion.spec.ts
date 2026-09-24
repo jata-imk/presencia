@@ -47,6 +47,7 @@ describe("armarPayload", () => {
       cadenciaCon([1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 99]),
       OBJETIVOS,
       [],
+      "crecer",
     );
     expect(payload.previos7).toBe(7);
     expect(payload.ultimos7).toBe(21);
@@ -59,16 +60,24 @@ describe("armarPayload", () => {
     // entre 106 y 112 días. Con `Math.round`, de lunes a miércoles decía 15 —
     // y el prompt solo deja citar números del payload, así que el modelo le
     // afirmaba al usuario "las últimas 15 semanas" sobre un total de 16.
-    const lunes = armarPayload(cadenciaCon(Array.from({ length: 106 }, () => 1)), OBJETIVOS, []);
+    const lunes = armarPayload(
+      cadenciaCon(Array.from({ length: 106 }, () => 1)),
+      OBJETIVOS,
+      [],
+      "crecer",
+    );
     expect(lunes.semanas).toBe(16);
   });
 
   it("no lleva la rejilla ni el heatmap, solo el resumen", () => {
     // El payload completo invitaría al modelo a buscarle patrones que nadie
     // calculó ("los martes rindes mejor") y que nadie puede defender.
-    const payload = armarPayload(cadenciaCon(Array.from({ length: 112 }, () => 1)), OBJETIVOS, [
-      horariosCon("instagram", "full", [CELDA_BUENA, CELDA_MALA]),
-    ]);
+    const payload = armarPayload(
+      cadenciaCon(Array.from({ length: 112 }, () => 1)),
+      OBJETIVOS,
+      [horariosCon("instagram", "full", [CELDA_BUENA, CELDA_MALA])],
+      "crecer",
+    );
     const plano = JSON.stringify(payload);
     expect(plano).not.toContain("2026-09-01");
     expect(plano).not.toContain("intensidad");
@@ -77,16 +86,22 @@ describe("armarPayload", () => {
 
   it("una ventana recomendada nunca sale de una celda con lift negativo", () => {
     // Una recomendación de dónde te va PEOR no es una recomendación.
-    const payload = armarPayload(cadenciaCon([1, 2]), OBJETIVOS, [
-      horariosCon("instagram", "full", [CELDA_MALA]),
-    ]);
+    const payload = armarPayload(
+      cadenciaCon([1, 2]),
+      OBJETIVOS,
+      [horariosCon("instagram", "full", [CELDA_MALA])],
+      "crecer",
+    );
     expect(payload.ventanas).toHaveLength(0);
   });
 
   it("la ventana viaja como rango de tres horas, no como hora exacta", () => {
-    const payload = armarPayload(cadenciaCon([1, 2]), OBJETIVOS, [
-      horariosCon("instagram", "full", [CELDA_BUENA]),
-    ]);
+    const payload = armarPayload(
+      cadenciaCon([1, 2]),
+      OBJETIVOS,
+      [horariosCon("instagram", "full", [CELDA_BUENA])],
+      "crecer",
+    );
     expect(payload.ventanas).toEqual([
       { network: "instagram", franja: "18–21", lift: 42, heredado: false },
     ]);
@@ -96,11 +111,16 @@ describe("armarPayload", () => {
     // `poca` y `no_reporta` son hechos distintos —uno sobre el usuario, otro
     // sobre la red— y el prompt los trata distinto. Mezclarlos haría que el
     // modelo prometiera que una red que nunca da métricas "pronto" las dará.
-    const payload = armarPayload(cadenciaCon([1, 2]), OBJETIVOS, [
-      horariosCon("instagram", "full", [CELDA_BUENA]),
-      horariosCon("linkedin", "no_reporta", []),
-      horariosCon("facebook", "poca", []),
-    ]);
+    const payload = armarPayload(
+      cadenciaCon([1, 2]),
+      OBJETIVOS,
+      [
+        horariosCon("instagram", "full", [CELDA_BUENA]),
+        horariosCon("linkedin", "no_reporta", []),
+        horariosCon("facebook", "poca", []),
+      ],
+      "crecer",
+    );
     expect(payload.ventanas.map((v) => v.network)).toEqual(["instagram"]);
     expect(payload.sinHorarios).toEqual([
       { network: "linkedin", modo: "no_reporta" },
@@ -112,7 +132,7 @@ describe("armarPayload", () => {
     // Un número que el producto propuso y uno que la persona eligió no son la
     // misma promesa: sin la bandera, el modelo regañaría por incumplir una
     // meta que el usuario nunca aceptó.
-    const payload = armarPayload(cadenciaCon([1]), OBJETIVOS, []);
+    const payload = armarPayload(cadenciaCon([1]), OBJETIVOS, [], "mantener");
     expect(payload.objetivos).toEqual([
       { network: "instagram", meta: 5, hechas: 3, sugerido: true },
       { network: "linkedin", meta: 2, hechas: 2, sugerido: false },
@@ -121,9 +141,12 @@ describe("armarPayload", () => {
 });
 
 describe("promptDeNarracion", () => {
-  const payload = armarPayload(cadenciaCon([1, 2, 3]), OBJETIVOS, [
-    horariosCon("instagram", "full", [CELDA_BUENA]),
-  ]);
+  const payload = armarPayload(
+    cadenciaCon([1, 2, 3]),
+    OBJETIVOS,
+    [horariosCon("instagram", "full", [CELDA_BUENA])],
+    "crecer",
+  );
 
   it("lleva los números adentro y prohíbe inventar otros", () => {
     const prompt = promptDeNarracion(payload, "Jose");

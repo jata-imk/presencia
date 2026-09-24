@@ -1,6 +1,8 @@
 import {
   etiquetaDeFranja,
   mejoresVentanas,
+  MODO_ESTRATEGIA_META,
+  type ModoEstrategia,
   type RitmoHorariosDto,
   type RitmoObjetivoDto,
   type SocialNetwork,
@@ -46,6 +48,14 @@ export interface VentanaDeNarracion {
 }
 
 export interface PayloadDeNarracion {
+  /**
+   * El objetivo activo del creator.
+   *
+   * Es lo que le da un para-qué a los demás números: "vas 8 de 14" significa
+   * cosas distintas según si dijo que quiere crecer o sostener. Va como la
+   * etiqueta que el usuario ve, no como el id interno.
+   */
+  modo: string;
   /** Semanas que cubre la rejilla de cadencia. */
   semanas: number;
   totalPublicaciones: number;
@@ -71,6 +81,7 @@ export function armarPayload(
   cadencia: ResultadoCadencia,
   objetivos: readonly RitmoObjetivoDto[],
   horarios: readonly RitmoHorariosDto[],
+  modo: ModoEstrategia,
 ): PayloadDeNarracion {
   const dias = cadencia.dias;
   const cerrados = dias.slice(0, dias.length - DIAS_INCOMPLETOS);
@@ -93,6 +104,7 @@ export function armarPayload(
     .slice(0, MAX_VENTANAS);
 
   return {
+    modo: MODO_ESTRATEGIA_META[modo].label,
     // `ceil` y no `round`: la rejilla arranca en el lunes de hace 16 semanas y
     // termina hoy, así que mide entre 106 y 112 días. Con `round`, de lunes a
     // miércoles daba 15 — y como el prompt solo deja citar números del
@@ -169,6 +181,8 @@ export function promptDeNarracion(payload: PayloadDeNarracion, nombre: string): 
     "  de ese día. Si lo mencionas, dilo con menos certeza.",
     "- `sugerido: true` en una meta significa que él no la eligió, la propusimos",
     "  nosotros. No lo regañes por no cumplir una meta que nunca aceptó.",
+    "- `modo` es el objetivo que eligió. Léelo todo a esa luz: quien está",
+    "  manteniendo no necesita que lo empujes a publicar más.",
     "- Una red en `sinHorarios` todavía no tiene suficiente historial para",
     "  sostener un número, salvo `no_reporta`, que significa que esa red no da",
     "  métricas y nunca las va a dar. No prometas que 'pronto' las tendrá.",

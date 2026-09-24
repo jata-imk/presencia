@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   macroRegionLabel,
+  MODO_ESTRATEGIA_META,
+  MODOS_ESTRATEGIA,
   normalizeExpression,
   resolveMacroRegion,
   verticalDeNicho,
   verticalLabel,
   VERTICALS,
   type BrandVoiceDto,
+  type ModoEstrategia,
   type VerticalId,
 } from "@presencia/shared";
 import { FormalitySlider } from "../../components/ui/FormalitySlider.js";
@@ -35,6 +38,10 @@ export function VozDeMarcaPage() {
   const [niche, setNiche] = useState<string[]>([]);
   // "" en el <select> representa el NULL de la DB: "derívala de mi nicho".
   const [vertical, setVertical] = useState<VerticalId | "">("");
+  // `""` = "no lo he elegido", que el servidor deriva de mis metas. Mismo
+  // criterio que la categoría de arriba.
+  const [modo, setModo] = useState<ModoEstrategia | "">("");
+  const [modoDerivado, setModoDerivado] = useState<ModoEstrategia>("mantener");
   const [audience, setAudience] = useState("");
 
   // Bloque B
@@ -58,6 +65,8 @@ export function VozDeMarcaPage() {
         setMarketRegion(data.marketRegion ?? "");
         setNiche(data.niche);
         setVertical(data.vertical ?? "");
+        setModo(data.modo ?? "");
+        setModoDerivado(data.modoDerivado);
         setAudience(data.audience ?? "");
         setFormality(data.formality);
         setAllowedExpressions(data.allowedExpressions);
@@ -88,6 +97,7 @@ export function VozDeMarcaPage() {
   // (shared/verticals.ts): si la pantalla derivara por su cuenta, podría
   // decirle al usuario que buscamos en una vertical y buscar en otra.
   const verticalDerivada = useMemo(() => verticalDeNicho(niche), [niche]);
+
   const regionEfectiva = useMemo(
     () => resolveMacroRegion(marketCountry, marketRegion.trim() || null),
     [marketCountry, marketRegion],
@@ -116,6 +126,7 @@ export function VozDeMarcaPage() {
           niche,
           // "" -> null: vuelve a la derivación automática por nicho.
           vertical: vertical || null,
+          modo: modo || null,
           audience: audience.trim() || null,
           // register no se manda: el servidor lo recalcula desde formality
           // (brand-voice.service.ts::reconcileFormality, doc §4).
@@ -133,6 +144,8 @@ export function VozDeMarcaPage() {
       });
       setVoice(updated);
       setVertical(updated.vertical ?? "");
+      setModo(updated.modo ?? "");
+      setModoDerivado(updated.modoDerivado);
       setAllowedExpressions(updated.allowedExpressions);
       setBannedExpressions(updated.bannedExpressions);
       setSaved(true);
@@ -198,6 +211,29 @@ export function VozDeMarcaPage() {
             {VERTICALS.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {/* El chip de Ritmo enlaza acá: es donde promete que se cambia. */}
+        <Field
+          label="Objetivo (Modo)"
+          htmlFor="modo"
+          hint={
+            modo === ""
+              ? `Por tus metas asumimos "${MODO_ESTRATEGIA_META[modoDerivado].label}". Con esto ajustamos cuántas publicaciones por semana te proponemos.`
+              : MODO_ESTRATEGIA_META[modo].ayuda
+          }
+        >
+          <Select
+            id="modo"
+            value={modo}
+            onChange={(e) => setModo(e.target.value as ModoEstrategia | "")}
+          >
+            <option value="">Deducirlo de mis metas</option>
+            {MODOS_ESTRATEGIA.map((valor) => (
+              <option key={valor} value={valor}>
+                {MODO_ESTRATEGIA_META[valor].emoji} {MODO_ESTRATEGIA_META[valor].label}
               </option>
             ))}
           </Select>
