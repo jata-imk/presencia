@@ -232,6 +232,20 @@
       "when": 1790225431382,
       "tag": "0032_brand_voices_modo",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790257630974,
+      "tag": "0033_drop_niche_trends",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790257653433,
+      "tag": "0034_tendencias_por_usuario",
+      "breakpoints": true
     }
   ]
 }

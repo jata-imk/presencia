@@ -4,30 +4,31 @@ Registro del QUÉ y el POR QUÉ de cada decisión de arquitectura de Presencia V
 
 Formato: **Decisión** → **Razón** → **Descartado**.
 
-| ADR                                              | Tema                                                       |
-| ------------------------------------------------ | ---------------------------------------------------------- |
-| [001](./adr-001-stack-typescript.md)             | Stack: TypeScript de punta a punta (Node.js + NestJS)      |
-| [002](./adr-002-monolito-modular.md)             | Arquitectura: monolito modular                             |
-| [003](./adr-003-multi-tenancy-rls.md)            | Multi-tenancy: shared schema + Row-Level Security          |
-| [004](./adr-004-ia-multi-proveedor.md)           | IA: multi-proveedor vía Vercel AI SDK                      |
-| [005](./adr-005-cards-tool-call.md)              | Cards de publicación: salida estructurada vía tool call    |
-| [006](./adr-006-streaming-sse.md)                | Streaming: SSE sobre HTTP                                  |
-| [007](./adr-007-auth-better-auth.md)             | Auth: Better Auth                                          |
-| [008](./adr-008-jobs-pg-boss.md)                 | Jobs programados: pg-boss sobre Postgres                   |
-| [009](./adr-009-publicacion-postfast-adapter.md) | Publicación: PostFast detrás de patrón adapter             |
-| [010](./adr-010-canales-telegram-adapter.md)     | Canales de mensajería: Telegram primero, adapter de canal  |
-| [011](./adr-011-assets-object-storage.md)        | Assets: Object Storage externo desde día 1                 |
-| [012](./adr-012-creditos-ledger.md)              | Créditos: ledger contable transaccional                    |
-| [013](./adr-013-orm-drizzle.md)                  | ORM y migraciones: Drizzle + drizzle-kit                   |
-| [014](./adr-014-estrategia-de-animacion.md)      | Animación: motion + CSS, tokens obligatorios               |
-| [015](./adr-015-portales-floating-ui.md)         | Menús, popovers y modales: `@floating-ui/react`            |
-| [016](./adr-016-tema-claro-oscuro.md)            | Tema: preferencia en localStorage + `data-theme`           |
-| [017](./adr-017-busqueda-full-text.md)           | Búsqueda: full-text de Postgres (tsvector + trigramas)     |
-| [018](./adr-018-arquitectura-calendario.md)      | Calendario: vista sobre las cards, construida a mano       |
-| [019](./adr-019-repositorio-publico.md)          | Repositorio público, con la receta cultural adentro        |
-| [020](./adr-020-topologia-de-deploy.md)          | Deploy: CloudPanel + imagen única, sin Caddy               |
-| [021](./adr-021-metricas-de-publicacion.md)      | Métricas: un snapshot por post y bucket                    |
-| [022](./adr-022-motor-de-metricas.md)            | Motor de métricas: una sola fórmula, fuera de los módulos  |
-| [023](./adr-023-cache-de-tendencias.md)          | Tendencias: caché compartida por nicho, fuente estructural |
+| ADR                                              | Tema                                                          |
+| ------------------------------------------------ | ------------------------------------------------------------- |
+| [001](./adr-001-stack-typescript.md)             | Stack: TypeScript de punta a punta (Node.js + NestJS)         |
+| [002](./adr-002-monolito-modular.md)             | Arquitectura: monolito modular                                |
+| [003](./adr-003-multi-tenancy-rls.md)            | Multi-tenancy: shared schema + Row-Level Security             |
+| [004](./adr-004-ia-multi-proveedor.md)           | IA: multi-proveedor vía Vercel AI SDK                         |
+| [005](./adr-005-cards-tool-call.md)              | Cards de publicación: salida estructurada vía tool call       |
+| [006](./adr-006-streaming-sse.md)                | Streaming: SSE sobre HTTP                                     |
+| [007](./adr-007-auth-better-auth.md)             | Auth: Better Auth                                             |
+| [008](./adr-008-jobs-pg-boss.md)                 | Jobs programados: pg-boss sobre Postgres                      |
+| [009](./adr-009-publicacion-postfast-adapter.md) | Publicación: PostFast detrás de patrón adapter                |
+| [010](./adr-010-canales-telegram-adapter.md)     | Canales de mensajería: Telegram primero, adapter de canal     |
+| [011](./adr-011-assets-object-storage.md)        | Assets: Object Storage externo desde día 1                    |
+| [012](./adr-012-creditos-ledger.md)              | Créditos: ledger contable transaccional                       |
+| [013](./adr-013-orm-drizzle.md)                  | ORM y migraciones: Drizzle + drizzle-kit                      |
+| [014](./adr-014-estrategia-de-animacion.md)      | Animación: motion + CSS, tokens obligatorios                  |
+| [015](./adr-015-portales-floating-ui.md)         | Menús, popovers y modales: `@floating-ui/react`               |
+| [016](./adr-016-tema-claro-oscuro.md)            | Tema: preferencia en localStorage + `data-theme`              |
+| [017](./adr-017-busqueda-full-text.md)           | Búsqueda: full-text de Postgres (tsvector + trigramas)        |
+| [018](./adr-018-arquitectura-calendario.md)      | Calendario: vista sobre las cards, construida a mano          |
+| [019](./adr-019-repositorio-publico.md)          | Repositorio público, con la receta cultural adentro           |
+| [020](./adr-020-topologia-de-deploy.md)          | Deploy: CloudPanel + imagen única, sin Caddy                  |
+| [021](./adr-021-metricas-de-publicacion.md)      | Métricas: un snapshot por post y bucket                       |
+| [022](./adr-022-motor-de-metricas.md)            | Motor de métricas: una sola fórmula, fuera de los módulos     |
+| [023](./adr-023-cache-de-tendencias.md)          | ~~Tendencias: caché compartida por nicho~~ (superado por 024) |
+| [024](./adr-024-tendencias-por-usuario.md)       | Tendencias por usuario, personalizables                       |
 
 Decisiones pendientes de cerrar: proveedor(es) de generación de imágenes; modelo default por acción (según suite de regresión cultural).

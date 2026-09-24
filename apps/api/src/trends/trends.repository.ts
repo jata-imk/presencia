@@ -1,37 +1,23 @@
 import { Injectable } from "@nestjs/common";
-import { and, eq, lte, sql } from "drizzle-orm";
-import {
-  macroRegionIdSchema,
-  trendItemSchema,
-  verticalIdSchema,
-  type MacroRegionId,
-  type TrendItem,
-  type VerticalId,
-} from "@presencia/shared";
-import { nicheTrends } from "../db/schema.js";
+import { and, asc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
+import { trendItemSchema, type TrendItem } from "@presencia/shared";
+import { sessions, trendSources, users, userTrends } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
-// Todo acceso a niche_trends vive aquí (patrón del resto de repositorios).
+// Todo acceso a `user_trends` y `trend_sources` vive aquí.
 //
-// Con una diferencia que importa: esta tabla NO tiene RLS, así que acá el
-// aislamiento por tenant no existe y tampoco hace falta — la fila es la misma
-// para todos los usuarios de la tupla (ADR-023). Se puede leer desde dentro de
-// un `runWithTenant` sin que ninguna policy la filtre, que es justo lo que
-// necesita el camino de lectura del usuario.
+// Las dos tienen RLS, así que las queries NO filtran por `user_id`: el filtro
+// es la policy de la transacción. La excepción es el barrido, que corre sin
+// tenant y por eso devuelve ids en vez de filas — ver `porRefrescar`.
 
-export interface TuplaDeTendencias {
-  vertical: VerticalId;
-  marketCountry: string;
-  region: MacroRegionId;
-}
-
-export interface TendenciasGuardadas extends TuplaDeTendencias {
+export interface TendenciasGuardadas {
   items: TrendItem[];
   generatedAt: Date;
   expiresAt: Date;
 }
 
-export interface UpsertTendenciasInput extends TuplaDeTendencias {
+export interface UpsertTendenciasInput {
+  userId: string;
   items: TrendItem[];
   generatedAt: Date;
   expiresAt: Date;
@@ -42,135 +28,114 @@ export interface UpsertTendenciasInput extends TuplaDeTendencias {
 
 const WRITTEN_AT = sql`clock_timestamp()`;
 
+/**
+ * Valida los items al leer.
+ *
+ * `items` es jsonb: el motor no garantiza su forma, así que una fila escrita
+ * por una versión vieja del código no puede llegar a medias a la pantalla. Lo
+ * que no pase el schema simplemente no está.
+ */
+function parseItems(raw: unknown): TrendItem[] {
+  if (!Array.isArray(raw)) return [];
+  const items: TrendItem[] = [];
+  for (const candidato of raw) {
+    const parsed = trendItemSchema.safeParse(candidato);
+    if (parsed.success) items.push(parsed.data);
+  }
+  return items;
+}
+
 @Injectable()
 export class TrendsRepository {
   /**
-   * La tanda vigente de una tupla, vencida o no.
+   * La tanda del usuario, vencida o no.
    *
-   * Devuelve las vencidas a propósito: el camino de lectura prefiere mostrar
-   * tendencias de ayer —diciendo cuándo se generaron— que una pantalla vacía
-   * mientras se refresca. Quien llama decide si le sirven, con `expiresAt`.
+   * Devuelve las vencidas a propósito: la pantalla prefiere mostrar tendencias
+   * de la semana pasada —diciendo cuándo se generaron— que un hueco mientras
+   * se refresca. Quien llama decide si le sirven, con `expiresAt`.
    */
-  async find(tx: Tx, tupla: TuplaDeTendencias): Promise<TendenciasGuardadas | null> {
-    const [fila] = await tx
-      .select()
-      .from(nicheTrends)
-      .where(
-        and(
-          eq(nicheTrends.vertical, tupla.vertical),
-          eq(nicheTrends.marketCountry, tupla.marketCountry),
-          eq(nicheTrends.region, tupla.region),
-        ),
-      );
+  async find(tx: Tx): Promise<TendenciasGuardadas | null> {
+    const [fila] = await tx.select().from(userTrends);
     if (!fila) return null;
     return {
-      vertical: tupla.vertical,
-      marketCountry: tupla.marketCountry,
-      region: tupla.region,
-      // `items` es jsonb: el motor no garantiza su forma. Se valida al leer
-      // para que una fila escrita por una versión vieja del código no llegue
-      // a la pantalla a medias — lo que no pase el schema simplemente no está.
       items: parseItems(fila.items),
       generatedAt: fila.generatedAt,
       expiresAt: fila.expiresAt,
     };
   }
 
-  /**
-   * Las tuplas que ya vencieron o están por vencer.
-   *
-   * Barre ESTA tabla y no `brand_voices`, y esa es una decisión de diseño con
-   * dos efectos: no hace falta abrirle al worker una lectura cross-tenant de
-   * la voz de marca (que es el moat cultural del producto, no una lista de
-   * mercados), y solo se refrescan las tuplas que alguien de verdad pidió
-   * alguna vez. Una vertical sin usuarios activos no gasta búsquedas.
-   */
-  async porRefrescar(tx: Tx, hasta: Date, limite: number): Promise<TuplaDeTendencias[]> {
-    const filas = await tx
-      .select({
-        vertical: nicheTrends.vertical,
-        marketCountry: nicheTrends.marketCountry,
-        region: nicheTrends.region,
-      })
-      .from(nicheTrends)
-      .where(lte(nicheTrends.expiresAt, hasta))
-      .orderBy(nicheTrends.expiresAt)
-      .limit(limite);
-
-    // Las columnas son `text` para que una vertical retirada no rompa nada al
-    // guardarse, pero ACÁ sí importa: lo que salga de esta función se convierte
-    // en el nicho del prompt de búsqueda. Sin validar, una fila con
-    // `vertical: "spec_9f2a1c33"` —o con el nombre de una vertical que ya se
-    // fusionó— haría que el job saliera a buscar tendencias de un nicho
-    // inexistente, cada pase, para siempre.
-    return filas.flatMap((fila) => {
-      const vertical = verticalIdSchema.safeParse(fila.vertical);
-      const region = macroRegionIdSchema.safeParse(fila.region);
-      if (!vertical.success || !region.success) return [];
-      return [{ vertical: vertical.data, marketCountry: fila.marketCountry, region: region.data }];
-    });
-  }
-
-  /**
-   * Corre la fecha de vencimiento sin tocar las tendencias guardadas.
-   *
-   * Es lo que impide que una tupla improductiva se coma el pase. `porRefrescar`
-   * ordena por `expires_at` ascendente, así que una tupla que falla —o que
-   * busca bien y no trae nada citable— conserva la fecha más vieja de la tabla
-   * y vuelve a salir PRIMERA en cada pase, para siempre. Con ocho así, el
-   * presupuesto completo se va en ellas y las tuplas sanas ya vencidas no se
-   * refrescan nunca, sin más señal que un warning en el log.
-   *
-   * Posponer la manda al final de la fila y le devuelve su lugar a las demás.
-   * Los `items` no se tocan: el usuario sigue viendo su última tanda buena con
-   * su fecha, que es mejor que una pantalla vacía.
-   */
-  async posponer(tx: Tx, tupla: TuplaDeTendencias, hasta: Date): Promise<void> {
-    await tx
-      .update(nicheTrends)
-      .set({ expiresAt: hasta, updatedAt: WRITTEN_AT })
-      .where(
-        and(
-          eq(nicheTrends.vertical, tupla.vertical),
-          eq(nicheTrends.marketCountry, tupla.marketCountry),
-          eq(nicheTrends.region, tupla.region),
-        ),
-      );
-  }
-
+  /** Reemplaza la tanda del usuario. Una fila por usuario, siempre. */
   async upsert(tx: Tx, input: UpsertTendenciasInput): Promise<void> {
+    const { userId, ...resto } = input;
     await tx
-      .insert(nicheTrends)
-      .values({
-        vertical: input.vertical,
-        marketCountry: input.marketCountry,
-        region: input.region,
-        items: input.items,
-        generatedAt: input.generatedAt,
-        expiresAt: input.expiresAt,
-        provider: input.provider,
-        model: input.model,
-        usage: input.usage,
-      })
+      .insert(userTrends)
+      .values({ userId, ...resto })
       .onConflictDoUpdate({
-        target: [nicheTrends.vertical, nicheTrends.marketCountry, nicheTrends.region],
-        set: {
-          items: input.items,
-          generatedAt: input.generatedAt,
-          expiresAt: input.expiresAt,
-          provider: input.provider,
-          model: input.model,
-          usage: input.usage,
-          updatedAt: WRITTEN_AT,
-        },
+        target: userTrends.userId,
+        set: { ...resto, updatedAt: WRITTEN_AT },
       });
   }
-}
 
-function parseItems(valor: unknown): TrendItem[] {
-  if (!Array.isArray(valor)) return [];
-  return valor.flatMap((item) => {
-    const parsed = trendItemSchema.safeParse(item);
-    return parsed.success ? [parsed.data] : [];
-  });
+  /**
+   * Mueve el vencimiento sin tocar las tendencias.
+   *
+   * Es lo que manda al final de la fila a un usuario cuya búsqueda no produjo
+   * nada citable: sin esto acapararía todos los pases siguientes, porque el
+   * barrido ordena por vencimiento y el suyo seguiría siendo el más viejo.
+   */
+  async posponer(tx: Tx, hasta: Date): Promise<void> {
+    await tx.update(userTrends).set({ expiresAt: hasta, updatedAt: WRITTEN_AT });
+  }
+
+  /** Las fuentes propias del usuario, en orden de alta. */
+  async fuentes(tx: Tx): Promise<{ id: string; host: string; createdAt: Date }[]> {
+    return tx
+      .select({
+        id: trendSources.id,
+        host: trendSources.host,
+        createdAt: trendSources.createdAt,
+      })
+      .from(trendSources)
+      .orderBy(asc(trendSources.createdAt));
+  }
+
+  /**
+   * A quién le toca refresco: sin tanda todavía, o con la suya vencida.
+   *
+   * Corre SIN tenant (barrido global). `users` y `sessions` no tienen RLS —son
+   * de Better Auth— y `user_trends` sí, por eso necesita la policy de worker
+   * de la migración 0033, acotada a SELECT y al centinela del barrido.
+   *
+   * Devuelve ids y no filas a propósito: lo que sigue —leer la voz, las
+   * fuentes, escribir la tanda— vuelve a entrar por `runWithTenant`, que es
+   * donde el RLS decide.
+   *
+   * **Filtra por sesión viva, y eso no es cosmético.** Sin ese filtro el
+   * negocio paga una búsqueda por semana por cada cuenta que se registró
+   * alguna vez y no volvió. Es la misma lección que el ciclo de créditos
+   * aprendió en F8 filtrando por correo verificado (addendum ADR-012): un
+   * barrido que recorre a todo el mundo acumula costo sobre gente que no
+   * abre la app. Quien vuelva entra al pase siguiente.
+   *
+   * `nulls first`: el que nunca tuvo tanda va antes que el que tiene una
+   * vencida. El primero ve un módulo vacío; el segundo, tendencias de la
+   * semana pasada con su fecha.
+   */
+  async porRefrescar(tx: Tx, ahora: Date, limite: number): Promise<string[]> {
+    const filas = await tx
+      .select({ userId: users.id, expiresAt: userTrends.expiresAt })
+      .from(users)
+      .innerJoin(sessions, and(eq(sessions.userId, users.id), gt(sessions.expiresAt, ahora)))
+      .leftJoin(userTrends, eq(userTrends.userId, users.id))
+      .where(
+        and(
+          eq(users.emailVerified, true),
+          or(isNull(userTrends.id), lte(userTrends.expiresAt, ahora)),
+        ),
+      )
+      .groupBy(users.id, userTrends.expiresAt)
+      .orderBy(sql`${userTrends.expiresAt} asc nulls first`)
+      .limit(limite);
+    return filas.map((fila) => fila.userId);
+  }
 }
