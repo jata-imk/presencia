@@ -12,6 +12,7 @@ import { CanalesPage } from "./routes/configuracion/canales.js";
 import { ConfiguracionLayout } from "./routes/configuracion/layout.js";
 import { MiPerfilPage } from "./routes/configuracion/mi-perfil.js";
 import { PlanPage } from "./routes/configuracion/plan.js";
+import { TendenciasPage } from "./routes/configuracion/tendencias.js";
 import { VozDeMarcaPage } from "./routes/configuracion/voz-de-marca.js";
 import { LoginPage } from "./routes/login.js";
 import { OnboardingPage } from "./routes/onboarding.js";
@@ -51,6 +52,7 @@ const router = createBrowserRouter([
             element: <Navigate to="/configuracion/voz-de-marca" replace />,
           },
           { path: "/configuracion/voz-de-marca", element: <VozDeMarcaPage /> },
+          { path: "/configuracion/tendencias", element: <TendenciasPage /> },
           { path: "/configuracion/mi-perfil", element: <MiPerfilPage /> },
           { path: "/configuracion/apariencia", element: <AparienciaPage /> },
           { path: "/configuracion/plan", element: <PlanPage /> },

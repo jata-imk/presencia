@@ -93,35 +93,34 @@ export function HorariosSinData() {
 }
 
 /** Tendencias: nunca buscadas, o buscadas sin resultado. */
-export function TendenciasVacias({
-  datos,
-  onReintentar,
-}: {
-  datos: TrendsDto;
-  onReintentar: () => void;
-}) {
+export function TendenciasVacias({ datos }: { datos: TrendsDto }) {
   const nicho = verticalLabel(datos.vertical);
   const region = macroRegionLabel(datos.region);
   // `generatedAt` en null distingue "todavía no buscamos" de "buscamos y no
   // encontramos". Son dos cosas distintas y el usuario merece saber cuál es.
+  // Sin botón propio: el de la cabecera de la sección es el que busca, y en
+  // estos tres casos no cobra.
+  if (datos.refresco.enCurso) {
+    return (
+      <Vacio
+        icono={<CloudOff size={22} className="text-fg-muted" />}
+        titulo="Buscando tus tendencias"
+      >
+        {`Estamos revisando qué se mueve en ${nicho} por el ${region}. Tarda cerca de un minuto y aparecen acá solas.`}
+      </Vacio>
+    );
+  }
   const nuncaBuscado = datos.generatedAt === null;
   return (
     <Vacio
       icono={<CloudOff size={22} className="text-fg-muted" />}
       titulo={
-        nuncaBuscado ? "Estamos buscando tus tendencias" : "No encontramos tendencias frescas"
-      }
-      accion={
-        nuncaBuscado ? undefined : (
-          <Button variant="secondary" onClick={onReintentar}>
-            Volver a revisar
-          </Button>
-        )
+        nuncaBuscado ? "Todavía no buscamos tus tendencias" : "No encontramos tendencias frescas"
       }
     >
       {nuncaBuscado
-        ? `Salimos a buscar qué se está moviendo en ${nicho} por el ${region}. En un momento aparecen acá.`
-        : `No hay nada fresco de ${nicho} en el ${region} ahorita. No te inventamos tendencias para llenar el espacio.`}
+        ? `Las traemos solas en menos de un día. Si no quieres esperar, búscalas ahora: la primera vez no cuesta.`
+        : `No hay nada fresco de ${nicho} en el ${region} ahorita. No te inventamos tendencias para llenar el espacio; volver a buscar no cuesta.`}
     </Vacio>
   );
 }

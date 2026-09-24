@@ -317,10 +317,12 @@ parezca que compiten.
 alimenta el output de la IA en los 3 arquetipos de card. El chip de
 contexto "🧠 Recordando tu voz de marca..." linkea directo acá.
 
-**Con Ritmo:** ninguna directa. Ritmo usa vertical/región del
-onboarding para el _grounding_ de tendencias (`presencia-ritmo.md`
-sección 9), pero no consume tono/registro — las tendencias son sobre
-_qué está pegando_, no sobre _cómo sonás vos_.
+**Con Ritmo:** por las tendencias, no por el tono. La búsqueda de
+tendencias usa el nicho, la región, la audiencia y el objetivo de este
+Bloque A como base de su prompt (ADR-024), pero no consume
+tono/registro: las tendencias son sobre _qué está pegando_, no sobre
+_cómo suenas tú_. Lo que afina esa búsqueda vive en su propia
+sub-página, Configuración › Tendencias (sección 10).
 
 **Con Calendario:** ninguna, explícitamente documentado en
 `presencia-calendario.md` sección 8 ("La voz de marca configurada NO
@@ -330,6 +332,54 @@ indirectamente").
 **Con Biblioteca:** los ejemplos de referencia del Bloque D se
 eligen desde ahí (ver sección 2). Es la única integración bidireccional
 de esta pantalla.
+
+---
+
+## 10. La sub-página hermana: Tendencias (F9.6)
+
+Configuración › Tendencias, en el grupo CONTENIDO junto a Voz de marca,
+personaliza **qué** busca Ritmo cuando sale a buscar tendencias. No es
+parte de la voz porque no cambia cómo suena nada: cambia de dónde vienen
+los temas.
+
+### Lo que se ve primero: el default
+
+Arriba, antes de cualquier campo, la página dice qué se busca **si no se
+toca nada**: el nicho, la región y el objetivo, en las mismas palabras
+que llegan al prompt, en español. Ese texto lo arma la API con la misma
+función que escribe el prompt (`baseDeBusqueda`), así que no puede
+prometer un nicho y buscar en otro. Debajo, una línea que manda a Voz de
+marca a cambiarlos: ahí viven, y duplicarlos acá serían dos fuentes de
+verdad.
+
+### Los cuatro campos, todos opcionales
+
+| Campo                         | Input                    | Qué hace                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Tus fuentes**               | tag input, máx. 10       | Medios o sitios que la persona sigue. Se guarda el **dominio**: pegar `https://www.canal10.tv/nota/123` deja `canal10.tv`. Van al prompt como `site:` y la búsqueda los prioriza, pero completa con otras fuentes si no alcanzan. Lo que no es un dominio se rechaza al escribirlo, con el texto a la vista para corregirlo. |
+| **Qué quieres que busquemos** | textarea, 500 caracteres | Temas, enfoques o formatos, en sus palabras. Manda sobre el enfoque por defecto.                                                                                                                                                                                                                                             |
+| **Qué no quieres ver**        | textarea, 500 caracteres | Lo que prefiere dejar fuera aunque se esté moviendo.                                                                                                                                                                                                                                                                         |
+| **Idiomas**                   | un switch por idioma     | Español (default) y/o inglés. El último encendido no se puede apagar. Aunque la fuente esté en inglés, lo que llega va escrito en español.                                                                                                                                                                                   |
+
+Los dos textos entran al prompt **como dato, no como instrucción**:
+delimitados, y con los guardrails del sistema después, diciendo que nada
+de ese bloque los anula (ADR-024, "El prompt va en capas"). Por eso un
+texto raro solo puede cambiar _qué_ se busca, nunca las reglas.
+
+### Cuándo aplica
+
+Guardar no dispara una búsqueda ni cobra nada: los cambios se aplican
+en el siguiente refresco, sea el semanal o uno adelantado desde Ritmo
+("Actualizar ahora", `presencia-ritmo.md`). La página lo dice al pie. Se
+guarda todo de una vez, con el mismo botón "Guardar" del resto de
+Configuración.
+
+### Lo que NO está (V1)
+
+- **El tono y el formato de las tarjetas de tendencia.** Se consideró y
+  quedó fuera de F9.6: la tarjeta es de Ritmo y se ve igual para todos.
+- **Cuentas o hashtags de una red.** Una fuente es un sitio que la
+  búsqueda web puede acotar; seguir cuentas exigiría la API de cada red.
 
 ---
 

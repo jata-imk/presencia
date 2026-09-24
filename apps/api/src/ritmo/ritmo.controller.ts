@@ -6,12 +6,14 @@ import {
   Inject,
   Patch,
   Post,
+  Put,
   Query,
 } from "@nestjs/common";
 import {
   ritmoHorariosQuerySchema,
   ritmoVentanasQuerySchema,
   updateCadenceTargetBodySchema,
+  updateTrendSettingsBodySchema,
   type RitmoHorariosDto,
   type RitmoMetaDto,
   type RitmoNarracionDto,
@@ -19,6 +21,7 @@ import {
   type VentanaDeRedDto,
   type TrendsDto,
   type TrendRefreshStateDto,
+  type TrendSettingsDto,
 } from "@presencia/shared";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { SessionUser } from "../auth/auth.js";
@@ -84,6 +87,31 @@ export class RitmoController {
   @Post("tendencias/refresco")
   refrescarTendencias(@CurrentUser() user: SessionUser): Promise<TrendRefreshStateDto> {
     return this.trends.solicitarRefresco(user.id);
+  }
+
+  // Los ajustes viven en Configuración, pero se sirven desde acá por la misma
+  // razón que todo lo demás de tendencias: TrendsModule no tiene controller.
+  // Un PUT con la configuración entera, como el "Guardar" del resto de
+  // Configuración — nada de un endpoint por fuente.
+  @Get("tendencias/ajustes")
+  ajustesDeTendencias(@CurrentUser() user: SessionUser): Promise<TrendSettingsDto> {
+    return this.trends.ajustes(user.id);
+  }
+
+  @Put("tendencias/ajustes")
+  guardarAjustesDeTendencias(
+    @CurrentUser() user: SessionUser,
+    @Body() body: unknown,
+  ): Promise<TrendSettingsDto> {
+    const parsed = updateTrendSettingsBodySchema.safeParse(body);
+    if (!parsed.success) {
+      // El primer mensaje y no uno genérico: el schema los escribe para el
+      // usuario, y "esa fuente no parece un sitio" dice cuál de las diez es.
+      throw new BadRequestException(
+        parsed.error.issues[0]?.message ?? "Esos ajustes de tendencias no son válidos.",
+      );
+    }
+    return this.trends.guardarAjustes(user.id, parsed.data);
   }
 
   // Sin el avance de la semana: quien lo pide (la barra del Calendario) ya

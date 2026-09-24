@@ -18,6 +18,7 @@ import {
   fetchVentanas,
   pedirNarracion,
   saveMetaSemanal,
+  solicitarRefrescoDeTendencias,
 } from "./ritmo-api.js";
 
 // Los tres recursos de Ritmo, cada uno con su propio ciclo de vida.
@@ -131,6 +132,9 @@ export function useHorarios(network: SocialNetwork | null) {
   return { horarios, error, reintentar };
 }
 
+/** Cada cuánto se repregunta mientras corre un refresco (tarda cerca de un minuto). */
+const SONDEO_MS = 5000;
+
 export function useTendencias() {
   const [tendencias, setTendencias] = useState<TrendsDto | null>(null);
   // `null` no alcanza para saber en qué estado estamos: es lo mismo mientras
@@ -138,6 +142,9 @@ export function useTendencias() {
   // tarjetas necesita distinguirlos — con una sola señal, el hueco se queda
   // para siempre o no se reserva nunca.
   const [cargando, setCargando] = useState(true);
+  const [errorRefresco, setErrorRefresco] = useState<string | null>(null);
+  const [cuotaAgotada, setCuotaAgotada] = useState<QuotaStatusDto | null>(null);
+  const pidiendo = useRef(false);
 
   const recargar = useCallback(() => {
     setCargando(true);
@@ -151,7 +158,59 @@ export function useTendencias() {
 
   useEffect(recargar, [recargar]);
 
-  return { tendencias, cargando, recargar };
+  // Mientras hay un refresco en curso se repregunta el GET, y la tanda
+  // anterior SIGUE en pantalla con su fecha: lo viejo fechado sirve más que un
+  // hueco con un spinner (presencia-ritmo.md, "Actualizar ahora"). Por eso el
+  // sondeo reemplaza `tendencias` solo cuando llega respuesta, y un fallo
+  // suelto no borra nada: el siguiente tick vuelve a intentar.
+  const enCurso = tendencias?.refresco.enCurso ?? false;
+  useEffect(() => {
+    if (!enCurso) return;
+    const abort = new AbortController();
+    const timer = window.setInterval(() => {
+      fetchTendencias(abort.signal)
+        .then((datos) => {
+          if (!abort.signal.aborted) setTendencias(datos);
+        })
+        .catch(() => undefined);
+    }, SONDEO_MS);
+    return () => {
+      window.clearInterval(timer);
+      abort.abort();
+    };
+  }, [enCurso]);
+
+  const actualizar = useCallback(() => {
+    if (pidiendo.current) return;
+    pidiendo.current = true;
+    setErrorRefresco(null);
+    solicitarRefrescoDeTendencias()
+      .then((refresco) =>
+        // Solo el estado del botón: las tarjetas se quedan como están hasta
+        // que el sondeo traiga la tanda nueva.
+        setTendencias((actual) => (actual ? { ...actual, refresco } : actual)),
+      )
+      .catch((e: unknown) => {
+        const quota = cuotaDe(e);
+        if (quota) setCuotaAgotada(quota);
+        else setErrorRefresco(mensajeDe(e));
+      })
+      .finally(() => {
+        pidiendo.current = false;
+      });
+  }, []);
+
+  const descartarCuota = useCallback(() => setCuotaAgotada(null), []);
+
+  return {
+    tendencias,
+    cargando,
+    recargar,
+    actualizar,
+    errorRefresco,
+    cuotaAgotada,
+    descartarCuota,
+  };
 }
 
 /**

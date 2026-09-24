@@ -25,6 +25,8 @@ Eso último es la lección del prompt de la narración, donde el nombre del perf
 
 **Personalizar es opcional. El prompt base nunca lo es.** Un usuario que no toca nada recibe tendencias de su nicho igual que antes, solo que armadas con su nicho real y no con su casilla.
 
+**Dónde se edita.** Configuración › Tendencias, servida por `GET`/`PUT /api/ritmo/tendencias/ajustes` (TrendsModule sigue sin controller propio). El `PUT` recibe la configuración **entera** y reemplaza: las fuentes se normalizan a host en el schema compartido, con un 400 que nombra la que no lo es, y los tres campos de texto e idiomas se escriben en `brand_voices` en la misma transacción. La pantalla muestra la capa 1 con `baseDeBusqueda`, la misma función que la escribe en el prompt, para que "lo que buscamos si no tocas nada" no pueda divergir de lo que se busca.
+
 ## Cadencia y costo
 
 - **TTL de 7 días, barrido diario.** Cada usuario se refresca una vez por semana; uno nuevo espera como mucho un día para ver su primera tanda.

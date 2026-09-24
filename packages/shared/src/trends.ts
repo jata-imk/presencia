@@ -167,6 +167,71 @@ export function normalizeTrendSource(entrada: string): string | null {
   return limpio;
 }
 
+/** Tope de lo que el usuario escribe en "qué buscar" y en "qué no ver". */
+export const MAX_TREND_TEXT = 500;
+
+/**
+ * Lo que la búsqueda usa aunque nadie personalice nada, en las mismas palabras
+ * que llegan al prompt.
+ *
+ * Lo arma la API con la misma función que escribe el prompt
+ * (`trends/prompt.ts`), y no la pantalla por su cuenta: una explicación del
+ * default reconstruida en la web podría decir un nicho y buscar en otro.
+ */
+export const trendSearchBaseSchema = z.object({
+  nicho: z.string(),
+  region: z.string(),
+  objetivo: z.string(),
+});
+export type TrendSearchBaseDto = z.infer<typeof trendSearchBaseSchema>;
+
+/** Configuración › Tendencias: la personalización de la búsqueda. */
+export const trendSettingsDtoSchema = z.object({
+  /** Hosts ya normalizados, en orden de alta. */
+  fuentes: z.array(z.string()),
+  prompt: z.string().nullable(),
+  excluye: z.string().nullable(),
+  langs: z.array(trendLangSchema),
+  base: trendSearchBaseSchema,
+});
+export type TrendSettingsDto = z.infer<typeof trendSettingsDtoSchema>;
+
+/**
+ * El guardado de Configuración › Tendencias: la lista ENTERA, no un parche.
+ *
+ * Así funciona el "Guardar" de toda Configuración, y con fuentes evita la
+ * pregunta de qué hacer con un alta y una baja que llegan desordenadas.
+ *
+ * Las fuentes se normalizan en el schema, así que lo que pasa la validación ya
+ * es un host. Una que no normaliza es un 400 que nombra cuál: un "datos
+ * inválidos" a secas dejaría al usuario adivinando entre diez.
+ */
+export const updateTrendSettingsBodySchema = z.object({
+  fuentes: z
+    .array(
+      z.string().transform((entrada, ctx) => {
+        const host = normalizeTrendSource(entrada);
+        if (host) return host;
+        ctx.addIssue({
+          code: "custom",
+          message: `"${entrada.trim().slice(0, 60)}" no parece la dirección de un sitio.`,
+        });
+        return z.NEVER;
+      }),
+    )
+    .max(MAX_TREND_SOURCES, `Puedes registrar hasta ${String(MAX_TREND_SOURCES)} fuentes.`)
+    // Sin duplicados DESPUÉS de normalizar: "canal10.tv" y "www.canal10.tv"
+    // son la misma fuente, y el índice único los rechazaría con un 500.
+    .transform((hosts) => [...new Set(hosts)]),
+  prompt: z.string().trim().max(MAX_TREND_TEXT).nullable(),
+  excluye: z.string().trim().max(MAX_TREND_TEXT).nullable(),
+  langs: z
+    .array(trendLangSchema)
+    .min(1, "Elige al menos un idioma.")
+    .transform((langs) => [...new Set(langs)]),
+});
+export type UpdateTrendSettingsBody = z.infer<typeof updateTrendSettingsBodySchema>;
+
 export const TREND_SIGNAL_LABELS: Record<TrendSignal, string> = {
   rising: "Subiendo",
   stable: "Estable",

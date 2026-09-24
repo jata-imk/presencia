@@ -27,6 +27,8 @@ const GROUPS: NavGroup[] = [
     title: "CONTENIDO",
     items: [
       { label: "Voz de marca", to: "/configuracion/voz-de-marca" },
+      // F9.6: la personalización de la búsqueda de tendencias de Ritmo.
+      { label: "Tendencias", to: "/configuracion/tendencias" },
       { label: "Plantillas" },
       // F6: navegable — antes solo listada deshabilitada.
       { label: "Canales conectados", to: "/configuracion/canales" },

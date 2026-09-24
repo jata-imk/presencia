@@ -185,6 +185,41 @@ describe("TrendsRepository", () => {
     expect(deB).toHaveLength(0);
   });
 
+  it(
+    "reemplazar fuentes borra las que salen y conserva el orden",
+    { timeout: 15_000 },
+    async () => {
+      // Configuración guarda la lista ENTERA: lo que no viene, se va. Las que se
+      // quedan no se reinsertan, y por eso conservan su lugar.
+      await dbService.runWithTenant(userA, (tx) =>
+        repo.reemplazarFuentes(tx, userA, ["uno.mx", "dos.mx", "tres.mx"]),
+      );
+      await dbService.runWithTenant(userA, (tx) =>
+        repo.reemplazarFuentes(tx, userA, ["dos.mx", "cuatro.mx", "uno.mx"]),
+      );
+      const hosts = (await dbService.runWithTenant(userA, (tx) => repo.fuentes(tx))).map(
+        (f) => f.host,
+      );
+      expect(hosts).toEqual(["uno.mx", "dos.mx", "cuatro.mx"]);
+    },
+  );
+
+  it("reemplazar con la lista vacía las borra todas", { timeout: 15_000 }, async () => {
+    await dbService.runWithTenant(userA, (tx) => repo.reemplazarFuentes(tx, userA, ["uno.mx"]));
+    await dbService.runWithTenant(userA, (tx) => repo.reemplazarFuentes(tx, userA, []));
+    expect(await dbService.runWithTenant(userA, (tx) => repo.fuentes(tx))).toHaveLength(0);
+  });
+
+  it("reemplazar las fuentes de uno no toca las de otro", { timeout: 15_000 }, async () => {
+    // El DELETE no filtra por `user_id`: el filtro es la policy. Si faltara,
+    // guardar la configuración de A borraría las fuentes de B.
+    await dbService.runWithTenant(userB, (tx) => repo.reemplazarFuentes(tx, userB, ["de-b.mx"]));
+    await dbService.runWithTenant(userA, (tx) => repo.reemplazarFuentes(tx, userA, []));
+    const deB = await dbService.runWithTenant(userB, (tx) => repo.fuentes(tx));
+    expect(deB.map((f) => f.host)).toEqual(["de-b.mx"]);
+    await dbService.runWithTenant(userB, (tx) => repo.reemplazarFuentes(tx, userB, []));
+  });
+
   it("no deja abrir dos refrescos a la vez", { timeout: 15_000 }, async () => {
     // El candado es el índice parcial `trend_refreshes_en_vuelo`, no un `if`:
     // dos clicks separados por milisegundos leerían los dos "no hay ninguno".
