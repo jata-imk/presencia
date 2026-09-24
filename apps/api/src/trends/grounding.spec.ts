@@ -122,4 +122,38 @@ describe("ensamblarTendencias", () => {
       "topic",
     ]);
   });
+
+  it("conserva la propuesta de publicación cuando es válida", () => {
+    const [item] = ensamblarTendencias(
+      [
+        cruda({
+          titulo: "  Rediseñé esta pantalla: 5 decisiones que cambiaron todo ",
+          gancho: "El antes te va a doler.",
+        }),
+      ],
+      FUENTES,
+    );
+    expect(item?.propuesta).toEqual({
+      titulo: "Rediseñé esta pantalla: 5 decisiones que cambiaron todo",
+      gancho: "El antes te va a doler.",
+    });
+  });
+
+  it("una propuesta mala se cae sola y la tendencia sobrevive", () => {
+    // Un título de más o un gancho vacío no justifican perder una tendencia
+    // bien citada, que ya costó una búsqueda.
+    const items = ensamblarTendencias(
+      [
+        cruda({ topic: "Uno", titulo: "x".repeat(141), gancho: "Gancho" }),
+        cruda({ topic: "Dos", titulo: "Título", gancho: "   " }),
+        cruda({ topic: "Tres", titulo: null, gancho: null }),
+        cruda({ topic: "Cuatro", titulo: "Solo título", gancho: null }),
+        // Un proveedor que omite las llaves en vez de mandar null.
+        cruda({ topic: "Cinco" }),
+      ],
+      FUENTES,
+    );
+    expect(items.map((item) => item.topic)).toEqual(["Uno", "Dos", "Tres", "Cuatro", "Cinco"]);
+    expect(items.every((item) => item.propuesta === undefined)).toBe(true);
+  });
 });

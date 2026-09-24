@@ -1,4 +1,4 @@
-import { trendItemSchema, type TrendItem } from "@presencia/shared";
+import { trendItemSchema, trendProposalSchema, type TrendItem } from "@presencia/shared";
 
 // Cómo una tendencia gana su fuente.
 //
@@ -61,6 +61,9 @@ export interface TendenciaCruda {
   format: string;
   blurb: string;
   sourceIndex: number;
+  /** La propuesta de publicación. `null` si el modelo no tuvo una buena. */
+  titulo?: string | null;
+  gancho?: string | null;
 }
 
 /**
@@ -129,7 +132,12 @@ export function ensamblarTendencias(
     if (!parsed.success) continue;
 
     vistos.add(clave);
-    items.push(parsed.data);
+    // La propuesta se valida APARTE, y si no pasa se cae ella sola: un título
+    // demasiado largo o un gancho vacío no son razón para perder una
+    // tendencia bien citada. La tarjeta de tendencia se pinta igual; solo esa
+    // propuesta no aparece.
+    const propuesta = trendProposalSchema.safeParse({ titulo: cruda.titulo, gancho: cruda.gancho });
+    items.push(propuesta.success ? { ...parsed.data, propuesta: propuesta.data } : parsed.data);
   }
 
   return items;

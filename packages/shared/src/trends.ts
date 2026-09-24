@@ -37,6 +37,25 @@ export const TREND_FORMATS = ["reel", "carrusel", "post", "video", "historia"] a
 export const trendFormatSchema = z.enum(TREND_FORMATS);
 export type TrendFormat = z.infer<typeof trendFormatSchema>;
 
+/**
+ * La propuesta de publicación que sale de una tendencia (F9.6).
+ *
+ * Una tendencia es un TEMA ("carruseles antes y después"); la propuesta es
+ * una publicación concreta sobre ese tema, con su título y su gancho. La
+ * escribe la misma llamada que estructura las tendencias —sin búsqueda, así
+ * que no paga fee de grounding— y viaja dentro del item porque no existe sin
+ * él: su fuente es la de la tendencia.
+ *
+ * Opcional por dos razones. Las tandas guardadas antes de que existiera no la
+ * traen, y deben seguir leyéndose. Y el modelo puede no tener una buena para
+ * un tema: una propuesta de relleno es peor que ninguna.
+ */
+export const trendProposalSchema = z.object({
+  titulo: z.string().trim().min(1).max(140),
+  gancho: z.string().trim().min(1).max(280),
+});
+export type TrendProposal = z.infer<typeof trendProposalSchema>;
+
 export const trendItemSchema = z.object({
   topic: z.string().trim().min(1).max(160),
   signal: trendSignalSchema,
@@ -47,6 +66,7 @@ export const trendItemSchema = z.object({
   sourceTitle: z.string().trim().min(1).max(300),
   /** URL de la página citada. Sin esto el item no existe. */
   sourceUrl: z.url(),
+  propuesta: trendProposalSchema.optional(),
 });
 export type TrendItem = z.infer<typeof trendItemSchema>;
 
