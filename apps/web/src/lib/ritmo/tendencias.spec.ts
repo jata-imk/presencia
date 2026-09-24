@@ -18,7 +18,12 @@ describe("haceCuanto", () => {
 
 describe("botonDeRefresco", () => {
   it("gratis no anuncia precio", () => {
-    const boton = botonDeRefresco({ enCurso: false, disponible: true, costoPorcentaje: 0 });
+    const boton = botonDeRefresco({
+      enCurso: false,
+      disponible: true,
+      costoPorcentaje: 0,
+      bloqueo: null,
+    });
     expect(boton).toEqual({
       etiqueta: "Buscar tendencias",
       precio: null,
@@ -28,26 +33,59 @@ describe("botonDeRefresco", () => {
   });
 
   it("cobrable dice su precio en porcentaje del mes", () => {
-    const boton = botonDeRefresco({ enCurso: false, disponible: true, costoPorcentaje: 2.7 });
+    const boton = botonDeRefresco({
+      enCurso: false,
+      disponible: true,
+      costoPorcentaje: 2.7,
+      bloqueo: null,
+    });
     expect(boton.etiqueta).toBe("Actualizar ahora");
     expect(boton.precio).toBe("usa ~2.7% de tu mes");
   });
 
   it("un precio chico no se redondea a cero", () => {
     // La API nunca manda menos de 0.1 para algo que cobra; "0%" sería mentir.
-    expect(botonDeRefresco({ enCurso: false, disponible: true, costoPorcentaje: 0.1 }).precio).toBe(
-      "usa ~0.1% de tu mes",
-    );
+    expect(
+      botonDeRefresco({ enCurso: false, disponible: true, costoPorcentaje: 0.1, bloqueo: null })
+        .precio,
+    ).toBe("usa ~0.1% de tu mes");
   });
 
   it("sin saldo se apaga y dice por qué", () => {
-    const boton = botonDeRefresco({ enCurso: false, disponible: false, costoPorcentaje: 2.7 });
+    const boton = botonDeRefresco({
+      enCurso: false,
+      disponible: false,
+      costoPorcentaje: 2.7,
+      bloqueo: "sin_saldo",
+    });
     expect(boton.deshabilitado).toBe(true);
     expect(boton.motivo).toBe("Tu saldo del mes no alcanza");
   });
 
+  it("al tope de búsquedas gratis se apaga, sin precio y diciendo por qué", () => {
+    const boton = botonDeRefresco({
+      enCurso: false,
+      disponible: false,
+      costoPorcentaje: 0,
+      bloqueo: "tope_diario",
+    });
+    expect(boton).toMatchObject({
+      etiqueta: "Buscar tendencias",
+      precio: null,
+      deshabilitado: true,
+    });
+    expect(boton.motivo).toBe(
+      "Ya buscamos 3 veces en las últimas 24 horas; lo volvemos a intentar solos",
+    );
+  });
+
   it("en curso dice Buscando… y no anuncia precio", () => {
-    const boton = botonDeRefresco({ enCurso: true, disponible: false, costoPorcentaje: 2.7 });
+    const boton = botonDeRefresco({
+      enCurso: true,
+      disponible: false,
+      costoPorcentaje: 2.7,
+      bloqueo: null,
+    });
     expect(boton).toMatchObject({ etiqueta: "Buscando…", precio: null, deshabilitado: true });
   });
 });

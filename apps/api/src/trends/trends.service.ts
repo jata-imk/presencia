@@ -1,8 +1,16 @@
-import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { generateObject, generateText } from "ai";
 import { z } from "zod";
 import {
   asVerticalId,
+  MAX_FREE_TREND_REFRESHES_PER_DAY,
   modoEfectivo,
   resolveMacroRegion,
   resolveVertical,
@@ -398,34 +406,52 @@ export class TrendsService {
   private async calcularEstado(
     userId: string,
   ): Promise<{ dto: TrendRefreshStateDto; billable: boolean }> {
-    const { enVuelo, billable } = await this.dbService.runWithTenant(userId, async (tx) => {
-      // Las abandonadas se cierran ANTES de mirar: si no, una fila que quedó
-      // abierta porque el worker se reinició a media búsqueda deja el botón
-      // muerto para ese usuario para siempre.
-      await this.repo.cerrarAbandonados(tx, this.limiteDeAbandono());
-      const [vuelo, tanda] = await Promise.all([this.repo.refrescoEnVuelo(tx), this.repo.find(tx)]);
-      return { enVuelo: vuelo !== null, billable: esCobrable(tanda) };
-    });
+    const { enVuelo, billable, gratisHoy } = await this.dbService.runWithTenant(
+      userId,
+      async (tx) => {
+        // Las abandonadas se cierran ANTES de mirar: si no, una fila que quedó
+        // abierta porque el worker se reinició a media búsqueda deja el botón
+        // muerto para ese usuario para siempre.
+        await this.repo.cerrarAbandonados(tx, this.limiteDeAbandono());
+        const [vuelo, tanda, gratis] = await Promise.all([
+          this.repo.refrescoEnVuelo(tx),
+          this.repo.find(tx),
+          this.repo.refrescosGratisDesde(tx, new Date(Date.now() - MS_POR_DIA)),
+        ]);
+        return { enVuelo: vuelo !== null, billable: esCobrable(tanda), gratisHoy: gratis };
+      },
+    );
 
     if (!billable) {
       // Gratis: no hay nada que consultarle al ledger, y preguntarle igual
-      // sería un lock por carga de pantalla.
+      // sería un lock por carga de pantalla. Pero con tope: una búsqueda que
+      // no encuentra nada deja la tanda vacía y el siguiente click vuelve a
+      // ser gratis, así que sin esto es un botón sin fondo que paga el
+      // negocio.
+      const topado = gratisHoy >= MAX_FREE_TREND_REFRESHES_PER_DAY;
       return {
-        dto: { enCurso: enVuelo, disponible: !enVuelo, costoPorcentaje: 0 },
+        dto: {
+          enCurso: enVuelo,
+          disponible: !enVuelo && !topado,
+          costoPorcentaje: 0,
+          bloqueo: !enVuelo && topado ? "tope_diario" : null,
+        },
         billable: false,
       };
     }
 
     const cuota = await this.credits.getQuotaStatus(userId);
+    // Sin saldo el botón se apaga acá y no en el 402: anunciar un precio que la
+    // cuenta no puede pagar y recién decírselo al hacer click es la peor forma
+    // de contarlo.
+    const alcanza = cuota.rawBalance >= quoteFlatAction(REASON_REFRESCO);
     return {
       billable: true,
       dto: {
         enCurso: enVuelo,
-        // Sin saldo el botón se apaga acá y no en el 402: anunciar un precio
-        // que la cuenta no puede pagar y recién decírselo al hacer click es la
-        // peor forma de contarlo.
-        disponible: !enVuelo && cuota.rawBalance >= quoteFlatAction(REASON_REFRESCO),
+        disponible: !enVuelo && alcanza,
         costoPorcentaje: flatActionPercentOfQuota(REASON_REFRESCO, cuota.tier),
+        bloqueo: !enVuelo && !alcanza ? "sin_saldo" : null,
       },
     };
   }
@@ -468,6 +494,15 @@ export class TrendsService {
     // apretar un botón que está trabajando no es una falla del usuario.
     if (estado.enCurso) return estado;
 
+    // El tope de gratis se hace valer aquí también, y no solo apagando el
+    // botón: la pantalla puede estar vieja, y un POST directo no pasa por ella.
+    if (estado.bloqueo === "tope_diario") {
+      throw new HttpException(
+        `Ya buscamos tus tendencias ${String(MAX_FREE_TREND_REFRESHES_PER_DAY)} veces en las últimas 24 horas. El barrido diario lo vuelve a intentar solo.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     // El gate ANTES de encolar: `spend` rechaza si no alcanza, pero para
     // entonces ya se habría pagado la búsqueda. Esto contesta 402 sin gastar.
     if (billable) await this.credits.assertQuotaOr402(userId, quoteFlatAction(REASON_REFRESCO));
@@ -477,7 +512,7 @@ export class TrendsService {
     );
     // `null` = otro request ganó la carrera contra el índice parcial. Su
     // refresco sirve igual, así que se reporta como en curso.
-    if (!id) return { ...estado, enCurso: true, disponible: false };
+    if (!id) return { ...estado, enCurso: true, disponible: false, bloqueo: null };
 
     const payload: ManualRefreshJob = { userId, id, billable };
     const encolado = await this.boss.enqueue(MANUAL_REFRESH_QUEUE, payload, {
@@ -492,7 +527,7 @@ export class TrendsService {
         "No pudimos poner tu actualización en cola. Inténtalo en un momento.",
       );
     }
-    return { ...estado, enCurso: true, disponible: false };
+    return { ...estado, enCurso: true, disponible: false, bloqueo: null };
   }
 
   /**

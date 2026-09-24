@@ -51,14 +51,13 @@ const ON_DEMAND_QUEUE_POLICY = "short";
  * Cola de trabajos puntuales: los encola alguien (un request) y los ejecuta el
  * worker. A diferencia de una recurrente, acá no hay cron.
  *
- * Sin llamadores desde F9.6, que retiró la cola de semilla de tendencias: el
- * barrido sabe solo a quién le toca. Se conserva porque el refresco manual —el
- * que el usuario pide y paga— vuelve a necesitarla en el PR siguiente: la
- * búsqueda tarda decenas de segundos y eso no cabe en un request.
+ * Hoy la usa el refresco manual de tendencias (`trends.refresh.manual`, F9.6):
+ * el que el usuario pide y paga. La búsqueda tarda decenas de segundos y eso no
+ * cabe en un request, así que el POST encola y la pantalla repregunta.
  *
  * La policy es `short` y no `exclusive` porque el filtro de duplicados es por
- * TRABAJO, no por cola: dos tuplas distintas sí pueden buscarse a la vez, dos
- * veces la misma no. Eso lo resuelve `singletonKey` al encolar, y el bloque de
+ * TRABAJO, no por cola: dos usuarios distintos sí pueden buscar a la vez, el
+ * mismo dos veces no. Eso lo resuelve `singletonKey` al encolar, y el bloque de
  * arriba explica por qué `short` y no las otras dos que sí deduplican.
  */
 export interface OnDemandJob<T> {

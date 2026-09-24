@@ -232,6 +232,13 @@ Tres cosas que el botón tiene que hacer bien:
   búsqueda no encontró nada, actualizar no cuesta: no se cobra
   por la primera entrega ni por reintentar lo que falló. El
   botón dice "Buscar tendencias" y punto.
+- **Tener fondo cuando es gratis.** Gratis no es ilimitado: hasta
+  3 búsquedas gratis cada 24 horas. Una búsqueda que no encuentra nada
+  deja la sección vacía y el siguiente intento vuelve a ser gratis,
+  así que en un nicho sin nada citable el botón no tendría fondo, y
+  cada click es una búsqueda real que paga el negocio. Al llegar al
+  tope se apaga y dice _"Ya buscamos 3 veces en las últimas 24 horas; lo
+  volvemos a intentar solos"_, que es verdad: el barrido diario sigue pasando.
 
 Mientras corre —tarda cerca de un minuto, porque de verdad
 navega— el botón queda en "Buscando…" y la sección sigue
