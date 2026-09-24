@@ -38,4 +38,18 @@ describe("barajar", () => {
     expect(barajar([])).toEqual([]);
     expect(barajar(["solo"])).toEqual(["solo"]);
   });
+
+  it("tampoco se sesga cuando los elementos pueden ser undefined", () => {
+    // La primera versión de esta función saltaba el intercambio cuando un
+    // elemento era `undefined` —era un truco para noUncheckedIndexedAccess— y
+    // eso los dejaba clavados cerca de su posición original. Nadie lo notaba
+    // porque el único llamador pasa tuplas, pero era un sesgo escondido dentro
+    // de la única función que tiene que repartir bien.
+    const posiciones = new Set<number>();
+    for (let corrida = 0; corrida < 400; corrida += 1) {
+      const revuelto = barajar<string | undefined>(["a", undefined, "c", "d"]);
+      posiciones.add(revuelto.indexOf(undefined));
+    }
+    expect(posiciones).toEqual(new Set([0, 1, 2, 3]));
+  });
 });

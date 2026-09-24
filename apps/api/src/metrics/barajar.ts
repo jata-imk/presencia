@@ -18,11 +18,17 @@ export function barajar<T>(items: readonly T[]): T[] {
   const copia = [...items];
   for (let i = copia.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
-    const eni = copia[i];
-    const enj = copia[j];
-    // Ambos índices están en rango por construcción; el chequeo es para
-    // noUncheckedIndexedAccess, no una posibilidad real.
-    if (eni === undefined || enj === undefined) continue;
+    // Los dos índices están en rango por construcción, así que el aserto es
+    // para `noUncheckedIndexedAccess` y nada más.
+    //
+    // La primera versión usaba `if (eni === undefined) continue` para el mismo
+    // fin, y era un sesgo escondido: con un `T` que admita `undefined` esa
+    // rama SALTA el intercambio en vez de hacerlo, y esos elementos se quedan
+    // cerca de donde estaban. O sea justo la clase de bug que este módulo
+    // existe para borrar, dentro de la única función que tiene que ser
+    // confiable.
+    const eni = copia[i] as T;
+    const enj = copia[j] as T;
     copia[i] = enj;
     copia[j] = eni;
   }

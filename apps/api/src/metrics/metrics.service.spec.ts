@@ -247,35 +247,34 @@ describe("MetricsService.ingestAll", () => {
     await nuevaCardPublicada(medio, new Date(Date.now() - 8 * dia));
     await nuevaCardPublicada(nuevo, new Date(Date.now() - 4 * dia));
 
-    // El presupuesto del pase se reparte entre TODOS los usuarios con algo que
-    // medir, y esta base tiene varios: que al usuario del spec le toque en un
-    // pase dado depende del barajado. Por eso se repite hasta que le toque en
-    // vez de afirmar sobre un solo pase — así era antes, y el test pasaba o
-    // fallaba por suerte (hizo fallar CI en un PR que no tocaba métricas).
+    // Presupuesto amplio a propósito, y la afirmación es sobre el ORDEN del
+    // lote, no sobre cuántos entraron.
     //
-    // Repetir también ejercita la equidad: si el barajado no reparte —como
-    // pasaba con `sort(() => Math.random() - 0.5)`, que deja el orden casi
-    // intacto— al mismo usuario no le toca nunca y esto se agota.
-    let tocó = false;
-    for (let intento = 0; intento < 6 && !tocó; intento += 1) {
-      await service.ingestAll({ presupuesto: 2 });
-      tocó = (await metricasDe(nuevo)).length > 0 || (await metricasDe(medio)).length > 0;
-    }
-    expect(tocó, "en seis pases el barajado nunca le dio presupuesto a este usuario").toBe(true);
+    // Antes esto corría con `presupuesto: 2` y afirmaba que el más nuevo se
+    // había medido. Pero el presupuesto se reparte entre TODOS los usuarios
+    // con algo que medir y esta base comparte tenants, así que si al usuario
+    // del spec no le tocaba, fallaba: pasaba o fallaba por suerte, y llegó a
+    // tumbar CI en un PR que no tocaba métricas. Repetir el pase tampoco lo
+    // arregla —solo baja la probabilidad, y empeora a medida que la base
+    // acumula tenants.
+    //
+    // El orden sí es determinista, y es además la propiedad que importa: el
+    // recorte es un `slice` sobre esta lista, así que si el orden es correcto
+    // el recorte no puede equivocarse.
+    await service.ingestAll({ presupuesto: 500 });
 
     // La query del barrido no ordena y el índice parcial la sirve por
     // published_at ascendente: sin la prioridad explícita, el recorte se
     // comería siempre las publicaciones recientes, que son justo las que
     // todavía se mueven y cuya primera medición no se recupera después.
-    //
-    // La afirmación es de ORDEN y no de conteo: cuántos entran depende de
-    // cuántos tenants compitan, cuál entra primero no.
-    const nuevoMedido = (await metricasDe(nuevo)).length > 0;
-    const medioMedido = (await metricasDe(medio)).length > 0;
-    const viejoMedido = (await metricasDe(viejo)).length > 0;
-    expect(nuevoMedido).toBe(true);
-    expect(medioMedido && !nuevoMedido).toBe(false);
-    expect(viejoMedido && !medioMedido).toBe(false);
+    const mios = new Set([nuevo, medio, viejo]);
+    const lote = provider.lotes.find((l) => l.some((p) => mios.has(p.platformPostId)));
+    expect(lote, "el pase nunca le pidió métricas a este usuario").toBeDefined();
+    expect(lote?.filter((p) => mios.has(p.platformPostId)).map((p) => p.platformPostId)).toEqual([
+      nuevo,
+      medio,
+      viejo,
+    ]);
   });
 
   // El pase es global: un usuario que truena no puede dejar sin medir a los

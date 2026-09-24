@@ -1,7 +1,7 @@
 import { Inject, Injectable, type OnApplicationBootstrap } from "@nestjs/common";
 import { BossService } from "../jobs/boss.service.js";
 import { enProcesoWorker } from "../jobs/process-role.js";
-import { MetricsService } from "./metrics.service.js";
+import { INGEST_EXPIRE_SECONDS, MetricsService } from "./metrics.service.js";
 
 // Cada hora. El pase es barato cuando no hay nada que medir —la política de
 // frescura corta antes de tocar la red—, así que la cadencia no la fija el
@@ -39,7 +39,10 @@ const INGEST_CRON = "0 * * * *";
 // 50 minutos deja 20 de colchón sobre el peor caso y 10 antes del pase
 // siguiente. Si sube POSTS_POR_PASE, esto se recalcula: el peor caso crece
 // medio minuto por post.
-const INGEST_EXPIRE_SECONDS = 50 * 60;
+//
+// El número vive en metrics.service.ts porque la guarda contra pases
+// solapados usa EL MISMO techo: si se separaran, el expire de la cola y la
+// guarda estarían midiendo cosas distintas.
 
 /**
  * El disparador de la ingesta de métricas (F8.7). La lógica vive entera en

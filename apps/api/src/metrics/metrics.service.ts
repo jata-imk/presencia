@@ -46,6 +46,17 @@ const POSTS_POR_PASE = 60;
 
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
 
+/**
+ * Cuánto puede llevar un pase antes de darlo por perdido.
+ *
+ * Vive acá y lo importa el job (y no al revés) para que sea un solo número: es
+ * el mismo techo que `expireInSeconds` le declara a pg-boss. Si los dos se
+ * separaran, la guarda contra pases solapados y el expire de la cola estarían
+ * midiendo cosas distintas y nadie lo notaría.
+ */
+export const INGEST_EXPIRE_SECONDS = 50 * 60;
+const TECHO_DEL_PASE_MS = INGEST_EXPIRE_SECONDS * 1000;
+
 export interface OpcionesDePase {
   /** Tope de posts de todo el pase. Default: POSTS_POR_PASE. */
   presupuesto?: number;
@@ -63,8 +74,8 @@ export class MetricsService {
     @Inject(PUBLISHING_PROVIDER) private readonly provider: PublishingProvider,
   ) {}
 
-  /** Un pase en vuelo en este proceso. Ver la guarda de `ingestAll`. */
-  private corriendo = false;
+  /** Cuándo arrancó el pase en vuelo, o `null` si no hay ninguno. */
+  private corriendoDesde: number | null = null;
 
   /**
    * Un pase completo: enumera lo publicado, filtra por frescura, le pregunta
@@ -91,15 +102,34 @@ export class MetricsService {
     // Una bandera en memoria alcanza porque ese segundo pase sale del MISMO
     // proceso worker. El día que corra más de un worker hará falta un lock en
     // la base; hoy prod es un solo contenedor y eso sería infra por si acaso.
-    if (this.corriendo) {
-      console.warn("[metrics] El pase anterior sigue corriendo; este tick se salta.");
-      return;
+    //
+    // **Con fecha de caducidad, y eso no es opcional.** Una bandera pelada deja
+    // la ingesta muerta para siempre si el pase nunca termina: la promesa no
+    // resuelve, el `finally` no corre, y cada tick siguiente sale por el
+    // `return` — que pg-boss registra como `completed`. O sea un job que se ve
+    // sano mientras no mide nada, que es peor que el pase duplicado que esta
+    // guarda evita. Y colgarse es alcanzable: el cliente HTTP tiene timeout,
+    // pero una conexión del pool trabada no.
+    const desdeCuando = this.corriendoDesde;
+    if (desdeCuando !== null) {
+      const corriendoHace = Date.now() - desdeCuando;
+      if (corriendoHace < TECHO_DEL_PASE_MS) {
+        // Se LANZA en vez de volver callado: una hora saltada es una anomalía y
+        // tiene que quedar en `pgboss.job`, no solo en un console.warn que
+        // nadie lee.
+        throw new Error(
+          `El pase anterior lleva ${String(Math.round(corriendoHace / 1000))} s corriendo; este tick se salta.`,
+        );
+      }
+      console.error(
+        `[metrics] El pase anterior lleva ${String(Math.round(corriendoHace / 60000))} min y pasó su techo: se lo da por perdido y se arranca otro.`,
+      );
     }
-    this.corriendo = true;
+    this.corriendoDesde = Date.now();
     try {
       await this.pase(opciones);
     } finally {
-      this.corriendo = false;
+      this.corriendoDesde = null;
     }
   }
 
