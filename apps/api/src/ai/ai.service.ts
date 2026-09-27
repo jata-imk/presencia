@@ -5,9 +5,9 @@ import {
   createModelResolver,
   MODEL_BY_TASK,
   parseModelId,
-  type AiTaskKind,
   type ModelResolver,
   type ProviderId,
+  type RoutedTaskKind,
 } from "./provider-registry.js";
 
 export interface ResolvedModel {
@@ -40,7 +40,7 @@ export class AiService {
   // Routing por tarea (F4.5, addendum ADR-004): el call site declara su
   // tarea explícitamente, nunca se infiere. MODEL_BY_TASK mapea la tarea a
   // un tier de env var; sin setear, cae a AI_MODEL vía resolve().
-  resolveForTask(task: AiTaskKind): ResolvedModel {
+  resolveForTask(task: RoutedTaskKind): ResolvedModel {
     const envVar = MODEL_BY_TASK[task];
     return this.resolve(env[envVar]);
   }

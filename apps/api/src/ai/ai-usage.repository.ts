@@ -22,6 +22,8 @@ export interface InsertAiUsageEventInput {
   cachedInputTokens: number | null;
   stepsCount: number;
   durationMs: number;
+  // Consultas de búsqueda con grounding (F9.8). `null` = la llamada no busca.
+  searchQueries: number | null;
   // Crudo del proveedor (usage + providerMetadata por step, finishReason).
   // Nunca se normaliza aquí — esa lectura es trabajo de F5.
   providerRaw: unknown;

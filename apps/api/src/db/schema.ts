@@ -672,6 +672,12 @@ export const aiUsageEvents = pgTable(
     // Llamadas reales al proveedor dentro del turno (tool calls incluidos).
     stepsCount: smallint("steps_count").notNull(),
     durationMs: integer("duration_ms").notNull(),
+    // F9.8: consultas que disparó una búsqueda con grounding. Columna propia y
+    // no dentro de `provider_raw` porque es la parte CARA de las tendencias:
+    // Google cobra por consulta, no por token, y un gasto que solo se puede
+    // sumar escarbando jsonb no se suma. `null` = la llamada no busca, que no
+    // es lo mismo que buscar cero veces.
+    searchQueries: smallint("search_queries"),
     // Crudo del proveedor: usage + providerMetadata por step, finishReason.
     // Ver runAgentTurn (chat.service.ts) — nunca se normaliza aquí.
     providerRaw: jsonb("provider_raw").notNull(),

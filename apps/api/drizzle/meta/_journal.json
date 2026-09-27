@@ -253,6 +253,13 @@
       "when": 1790261791878,
       "tag": "0035_refresco_manual_de_tendencias",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790489955417,
+      "tag": "0036_tendencias_en_ai_usage_events",
+      "breakpoints": true
     }
   ]
 }

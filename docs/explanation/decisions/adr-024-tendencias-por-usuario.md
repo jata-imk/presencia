@@ -33,7 +33,8 @@ Eso último es la lección del prompt de la narración, donde el nombre del perf
 - **Presupuesto por pase** (`USUARIOS_POR_PASE`), para que el día que se acumulen vencimientos el gasto no llegue de golpe.
 - **Solo cuentas con sesión viva.** Sin ese filtro el negocio paga una búsqueda semanal por cada cuenta que se registró y no volvió. Es la misma lección que el ciclo de créditos aprendió en F8 filtrando por correo verificado.
 - **El refresco periódico lo absorbe el negocio.** Adelantarlo lo paga el usuario — ver abajo.
-- **Se guarda cuántas consultas disparó cada llamada** (`usage.consultas`). El fee se cobra por consulta y una sola llamada puede lanzar varias: sin ese número, cualquier proyección de costo es una corazonada. Antes no se medía.
+- **Se guarda cuántas consultas disparó cada llamada.** El fee se cobra por consulta y una sola llamada puede lanzar varias: sin ese número, cualquier proyección de costo es una corazonada. Antes no se medía.
+- **Cada llamada deja su fila en `ai_usage_events`** (F9.8): `trends_search` con sus tokens y `search_queries`, `trends_structure` con los suyos. Se registra la búsqueda **en cuanto vuelve**, antes de saber si sirvió, porque los caminos que la tiran —sin fuentes, sin items citables, la estructura sin pasar el schema— se pagaron igual y eran justo los que no dejaban rastro. Una estructura que no pasa el schema trae su usage en el error del SDK y también se registra. Un rechazo del proveedor antes de generar no, porque no consumió tokens. `user_trends.usage` queda como resumen de la tanda **sin tokens** (fuentes, consultas, si estaba personalizada, duración; o el motivo si vino vacía): es un upsert por usuario, así que como libreta de gastos solo recordaba el último refresco.
 
 ## Adelantar el refresco: qué se cobra y qué no
 
