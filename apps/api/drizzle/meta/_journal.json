@@ -267,6 +267,13 @@
       "when": 1790493731477,
       "tag": "0037_ejemplo_de_voz",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790523023956,
+      "tag": "0038_imagenes_en_ai_usage_events",
+      "breakpoints": true
     }
   ]
 }

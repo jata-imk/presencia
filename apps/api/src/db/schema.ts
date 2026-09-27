@@ -681,6 +681,11 @@ export const aiUsageEvents = pgTable(
     // sumar escarbando jsonb no se suma. `null` = la llamada no busca, que no
     // es lo mismo que buscar cero veces.
     searchQueries: smallint("search_queries"),
+    // F10: imágenes que produjo la llamada. Mismo razonamiento que
+    // `search_queries`: el proveedor cobra por imagen, y lo que se cobra por
+    // imagen se suma por imagen, no escarbando tokens. `null` = la llamada no
+    // dibuja; `0` = debía dibujar y el proveedor no devolvió nada (bloqueo).
+    imagesCount: smallint("images_count"),
     // Crudo del proveedor: usage + providerMetadata por step, finishReason.
     // Ver runAgentTurn (chat.service.ts) — nunca se normaliza aquí.
     providerRaw: jsonb("provider_raw").notNull(),

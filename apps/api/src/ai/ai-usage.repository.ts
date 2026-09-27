@@ -24,6 +24,8 @@ export interface InsertAiUsageEventInput {
   durationMs: number;
   // Consultas de búsqueda con grounding (F9.8). `null` = la llamada no busca.
   searchQueries: number | null;
+  // Imágenes producidas (F10). `null` = la llamada no dibuja.
+  imagesCount: number | null;
   // Crudo del proveedor (usage + providerMetadata por step, finishReason).
   // Nunca se normaliza aquí — esa lectura es trabajo de F5.
   providerRaw: unknown;

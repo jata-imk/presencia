@@ -30,5 +30,6 @@ Formato: **Decisión** → **Razón** → **Descartado**.
 | [022](./adr-022-motor-de-metricas.md)            | Motor de métricas: una sola fórmula, fuera de los módulos     |
 | [023](./adr-023-cache-de-tendencias.md)          | ~~Tendencias: caché compartida por nicho~~ (superado por 024) |
 | [024](./adr-024-tendencias-por-usuario.md)       | Tendencias por usuario, personalizables                       |
+| [025](./adr-025-generacion-de-imagenes.md)       | Imágenes: un adapter, dos generadores (Gemini + gpt-image)    |
 
-Decisiones pendientes de cerrar: proveedor(es) de generación de imágenes; modelo default por acción (según suite de regresión cultural).
+Decisiones pendientes de cerrar: modelo default por acción (según suite de regresión cultural).

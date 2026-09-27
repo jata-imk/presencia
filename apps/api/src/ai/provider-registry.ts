@@ -3,7 +3,7 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI, google } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createProviderRegistry, type LanguageModel } from "ai";
+import { createProviderRegistry, type ImageModel, type LanguageModel } from "ai";
 
 // Capa de proveedor de ADR-004: los modelos se nombran "proveedor:modelo"
 // (ej. "google:gemini-3.5-flash") y se resuelven contra un registry. Hoy el
@@ -84,8 +84,16 @@ export const AI_TASK_KINDS = [
   // no vive en una conversación, y mezclarla con los turnos ensuciaría
   // justo la métrica con la que se calibra el costo del chat.
   "voice_preview",
+  // F10: generar una imagen desde cero y editar una a partir de otra (ADR-025).
+  // Separadas porque la edición manda una imagen de entrada, que el proveedor
+  // cobra aparte, y juntarlas escondería justo esa diferencia.
+  "image_generate",
+  "image_edit",
 ] as const;
 export type AiTaskKind = (typeof AI_TASK_KINDS)[number];
+
+/** Las tareas que producen imágenes: no se enrutan por tier ni se cobran por tokens. */
+export type ImageTaskKind = "image_generate" | "image_edit";
 
 /**
  * Las tareas que se enrutan por tier.
@@ -96,7 +104,7 @@ export type AiTaskKind = (typeof AI_TASK_KINDS)[number];
  * abierta una llamada a `resolveForTask("trends_search")` que devuelve un
  * modelo sin búsqueda; excluida del tipo, esa llamada no compila.
  */
-export type RoutedTaskKind = Exclude<AiTaskKind, "trends_search">;
+export type RoutedTaskKind = Exclude<AiTaskKind, "trends_search" | ImageTaskKind>;
 
 // Tiers de modelo (F4.5, addendum ADR-004): AI_MODEL_CHAT es el moat
 // cultural, no se abarata. AI_MODEL_UTILITY es modelo chico (titulares,
@@ -154,8 +162,18 @@ export const SEARCH_PROVIDER: ProviderId = "google";
  */
 export const DEFAULT_TRENDS_MODEL_ID = "google:gemini-3.6-flash";
 
+/**
+ * El generador de imágenes cuando nadie configuró AI_MODEL_IMAGE (F10, ADR-025).
+ *
+ * Mismo criterio que `DEFAULT_TRENDS_MODEL_ID`: default propio y no AI_MODEL,
+ * porque un modelo de texto no sabe hacer imágenes — heredar AI_MODEL sería
+ * resolver algo que truena en la primera generación.
+ */
+export const DEFAULT_IMAGE_MODEL_ID = "google:gemini-3.1-flash-image";
+
 export type EnvSource = Record<string, string | undefined>;
 export type ModelResolver = (modelId?: string) => LanguageModel;
+export type ImageModelResolver = (modelId: string) => ImageModel;
 
 /** Valida formato "proveedor:modelo" contra la tabla; error claro si no cumple. */
 export function parseModelId(id: string): { provider: ProviderId; model: string } {
@@ -173,8 +191,7 @@ export function parseModelId(id: string): { provider: ProviderId; model: string 
   return { provider: provider as ProviderId, model };
 }
 
-// Función pura (recibe el entorno como dato) para poder testearla sin env real.
-export function createModelResolver(source: EnvSource, defaultModelId: string): ModelResolver {
+function buildRegistry(source: EnvSource) {
   const providers: Partial<Record<ProviderId, RegistrableProvider>> = {};
   for (const id of PROVIDER_IDS) {
     const descriptor = PROVIDERS[id] as ProviderDescriptor;
@@ -188,8 +205,7 @@ export function createModelResolver(source: EnvSource, defaultModelId: string): 
 
   const registry = createProviderRegistry(providers as Record<string, RegistrableProvider>);
 
-  return (modelId?: string): LanguageModel => {
-    const id = modelId ?? defaultModelId;
+  const assertConfigured = (id: string) => {
     const { provider } = parseModelId(id);
     if (!Object.hasOwn(providers, provider)) {
       throw new Error(
@@ -197,6 +213,34 @@ export function createModelResolver(source: EnvSource, defaultModelId: string): 
           `(${PROVIDERS[provider].envKey}). Configured providers: ${Object.keys(providers).join(", ") || "none"}.`,
       );
     }
+  };
+
+  return { registry, assertConfigured };
+}
+
+// Función pura (recibe el entorno como dato) para poder testearla sin env real.
+export function createModelResolver(source: EnvSource, defaultModelId: string): ModelResolver {
+  const { registry, assertConfigured } = buildRegistry(source);
+  return (modelId?: string): LanguageModel => {
+    const id = modelId ?? defaultModelId;
+    assertConfigured(id);
     return registry.languageModel(id as `${string}:${string}`);
+  };
+}
+
+/**
+ * Lo mismo para modelos de imagen (F10). Mismo inventario de proveedores y
+ * mismas keys: un generador de imágenes es otro modelo del mismo proveedor, no
+ * un proveedor aparte.
+ *
+ * Un proveedor sin modelos de imagen (deepseek, kimi) truena al resolver, que
+ * es lo que tiene que pasar: env.ts ya validó el formato y la key al boot, así
+ * que ese error solo aparece si alguien apuntó la variable a algo que no dibuja.
+ */
+export function createImageModelResolver(source: EnvSource): ImageModelResolver {
+  const { registry, assertConfigured } = buildRegistry(source);
+  return (modelId: string): ImageModel => {
+    assertConfigured(modelId);
+    return registry.imageModel(modelId as `${string}:${string}`);
   };
 }

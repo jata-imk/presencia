@@ -78,6 +78,44 @@ describe("AiUsageService.registrar", () => {
     expect(insertEvent.mock.calls[0]?.[1]).toMatchObject({ searchQueries: null, chatId: null });
   });
 
+  it("una imagen registra cuántas produjo, con el usage corto de un modelo de imagen", async () => {
+    const insertEvent = vi.fn();
+    const aiUsage = await servicio((_userId, fn) => fn({} as never), insertEvent);
+    await aiUsage.registrar({
+      userId: "u1",
+      task: "image_generate",
+      modelo: { provider: "google", modelName: "gemini-3.1-flash-image" },
+      usage: { inputTokens: 12, outputTokens: 1290, totalTokens: 1302 },
+      stepsCount: 1,
+      arranque: Date.now(),
+      imagesCount: 1,
+      providerRaw: {},
+    });
+    expect(insertEvent.mock.calls[0]?.[1]).toMatchObject({
+      taskKind: "image_generate",
+      inputTokens: 12,
+      outputTokens: 1290,
+      cachedInputTokens: null,
+      imagesCount: 1,
+      searchQueries: null,
+    });
+  });
+
+  it("sin imagesCount escribe null: la llamada no dibuja", async () => {
+    const insertEvent = vi.fn();
+    const aiUsage = await servicio((_userId, fn) => fn({} as never), insertEvent);
+    await aiUsage.registrar({
+      userId: "u1",
+      task: "chat",
+      modelo: { provider: "google", modelName: "gemini" },
+      usage: USAGE,
+      stepsCount: 1,
+      arranque: Date.now(),
+      providerRaw: {},
+    });
+    expect(insertEvent.mock.calls[0]?.[1]).toMatchObject({ imagesCount: null });
+  });
+
   it("un fallo al escribir no se propaga", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const aiUsage = await servicio(() => Promise.reject(new Error("se cayó la base")));

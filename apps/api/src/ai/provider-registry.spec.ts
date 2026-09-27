@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   AI_TASK_KINDS,
+  createImageModelResolver,
   createModelResolver,
   MODEL_BY_TASK,
   MODEL_TIER_ENV_VARS,
   parseModelId,
+  type AiTaskKind,
   type EnvSource,
+  type RoutedTaskKind,
 } from "./provider-registry.js";
 
 const baseEnv: EnvSource = {
@@ -81,9 +84,28 @@ describe("createModelResolver", () => {
   });
 });
 
+describe("createImageModelResolver", () => {
+  it("resuelve modelos de imagen de Google y de OpenAI con las mismas keys", () => {
+    const resolve = createImageModelResolver({ ...baseEnv, OPENAI_API_KEY: "k" });
+    expect(resolve("google:gemini-3.1-flash-image")).toMatchObject({
+      modelId: "gemini-3.1-flash-image",
+    });
+    expect(resolve("openai:gpt-image-1.5")).toMatchObject({ modelId: "gpt-image-1.5" });
+  });
+
+  it("truena si el proveedor del modelo de imagen no tiene key", () => {
+    const resolve = createImageModelResolver(baseEnv);
+    expect(() => resolve("openai:gpt-image-1.5")).toThrow(/OPENAI_API_KEY/);
+  });
+});
+
 describe("MODEL_BY_TASK", () => {
-  it("cubre toda tarea de AI_TASK_KINDS menos la búsqueda de tendencias", () => {
-    const enrutadas = AI_TASK_KINDS.filter((task) => task !== "trends_search");
+  const SIN_TIER: readonly AiTaskKind[] = ["trends_search", "image_generate", "image_edit"];
+
+  it("cubre toda tarea de AI_TASK_KINDS menos las que piden una capacidad", () => {
+    const enrutadas = AI_TASK_KINDS.filter(
+      (task): task is RoutedTaskKind => !SIN_TIER.includes(task),
+    );
     for (const task of enrutadas) {
       expect(MODEL_TIER_ENV_VARS).toContain(MODEL_BY_TASK[task]);
     }
@@ -92,6 +114,11 @@ describe("MODEL_BY_TASK", () => {
 
   it("la búsqueda de tendencias no tiene tier: pide grounding, no un modelo", () => {
     expect(Object.hasOwn(MODEL_BY_TASK, "trends_search")).toBe(false);
+  });
+
+  it("las imágenes no tienen tier: un modelo de texto no dibuja", () => {
+    expect(Object.hasOwn(MODEL_BY_TASK, "image_generate")).toBe(false);
+    expect(Object.hasOwn(MODEL_BY_TASK, "image_edit")).toBe(false);
   });
 
   it("chat usa su propio tier — el moat cultural no comparte con utility/adapt", () => {
