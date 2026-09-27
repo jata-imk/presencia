@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  DEFAULT_IMAGE_MODEL_ID,
   DEFAULT_MODEL_ID,
   DEFAULT_TRENDS_MODEL_ID,
   MODEL_TIER_ENV_VARS,
@@ -51,6 +52,20 @@ const envSchema = z
     // Google, el job falla con un motivo escrito en vez de producir tendencias
     // sin fuente.
     AI_MODEL_TRENDS: z.string().optional(),
+    // Generación de imágenes (F10, ADR-025). Mismo criterio que
+    // AI_MODEL_TRENDS: default propio (DEFAULT_IMAGE_MODEL_ID), nunca AI_MODEL,
+    // porque un modelo de texto no dibuja.
+    AI_MODEL_IMAGE: z.string().optional(),
+    // El "otro generador" de la card ("Probar con otro generador"). Opcional
+    // SIN default: es una segunda opinión, no una dependencia, y exigir la key
+    // de un segundo proveedor para arrancar la API sería caro para nada. Sin
+    // setear, el botón no aparece.
+    AI_MODEL_IMAGE_ALT: z.string().optional(),
+    // "fake" dibuja un PNG liso sin llamar a nadie: es lo que usan los tests y
+    // lo que conviene en dev para probar la card sin gastar. Mismo patrón que
+    // PUBLISHING_PROVIDER, pero default "real": generar es el producto, y una
+    // instalación nueva que dibuja cuadros grises en silencio engaña.
+    IMAGE_PROVIDER: z.enum(["real", "fake"]).default("real"),
     ZEPTOMAIL_TOKEN: z.string().min(1),
     MAIL_FROM: z.email(),
     PORT: z.coerce.number().int().positive().default(3000),
@@ -134,6 +149,14 @@ const envSchema = z
     // un job que truena cada 6 h con la única señal en `pgboss.job`. Un boot
     // roto se ve; un job que falla en silencio, no.
     validateModelEnv("AI_MODEL_TRENDS", value.AI_MODEL_TRENDS ?? DEFAULT_TRENDS_MODEL_ID);
+    // Mismo razonamiento para las imágenes: sin setear cae a Google, y sin su
+    // key la primera generación truena dentro de un job. Con el fake no se
+    // llama a nadie, así que no hay key que exigir.
+    if (value.IMAGE_PROVIDER === "real") {
+      validateModelEnv("AI_MODEL_IMAGE", value.AI_MODEL_IMAGE ?? DEFAULT_IMAGE_MODEL_ID);
+      if (value.AI_MODEL_IMAGE_ALT)
+        validateModelEnv("AI_MODEL_IMAGE_ALT", value.AI_MODEL_IMAGE_ALT);
+    }
 
     // Fail-fast (mismo criterio que el modelo de IA): pedir el provider real
     // sin key es un boot roto, no un fallback silencioso a datos falsos.

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { LanguageModelUsage } from "ai";
+import type { ImageModelUsage, LanguageModelUsage } from "ai";
 import { DbService } from "../db/db.service.js";
 import { AiUsageRepository } from "./ai-usage.repository.js";
 import type { ResolvedModel } from "./ai.service.js";
@@ -13,13 +13,19 @@ export interface RegistroDeUso {
   task: AiTaskKind;
   /** El modelo que DE VERDAD corrió: la identidad sale del mismo `ResolvedModel`. */
   modelo: Pick<ResolvedModel, "provider" | "modelName">;
-  usage: LanguageModelUsage;
+  /**
+   * El usage de un modelo de texto, o el de uno de imagen, que solo trae
+   * tokens de entrada y salida (y a veces ni eso: sin dato cuenta como 0).
+   */
+  usage: LanguageModelUsage | ImageModelUsage;
   /** Llamadas reales al proveedor dentro de la tarea (tool calls incluidos). */
   stepsCount: number;
   /** `Date.now()` de antes de la llamada. */
   arranque: number;
   /** Solo la búsqueda con grounding. `null` es "esta llamada no busca", no "cero". */
   searchQueries?: number | null;
+  /** Solo las tareas de imagen. `null` es "esta llamada no dibuja", no "cero". */
+  imagesCount?: number | null;
   /** Crudo del proveedor, sin normalizar. */
   providerRaw: unknown;
 }
@@ -50,10 +56,12 @@ export class AiUsageService {
           model: modelo.modelName,
           inputTokens: usage.inputTokens ?? 0,
           outputTokens: usage.outputTokens ?? 0,
-          cachedInputTokens: usage.inputTokenDetails.cacheReadTokens ?? null,
+          cachedInputTokens:
+            "inputTokenDetails" in usage ? (usage.inputTokenDetails.cacheReadTokens ?? null) : null,
           stepsCount: registro.stepsCount,
           durationMs: Date.now() - registro.arranque,
           searchQueries: registro.searchQueries ?? null,
+          imagesCount: registro.imagesCount ?? null,
           providerRaw: registro.providerRaw,
         }),
       );

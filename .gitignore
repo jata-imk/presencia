@@ -33,3 +33,6 @@ test-results/
 # Capturas de Playwright: caen en la raíz al verificar en navegador y no son
 # del repo. Los assets de verdad viven en apps/web/public.
 /*.png
+
+# Imágenes del bake-off de generadores (F10): pesan MB y se regeneran con el script.
+apps/api/scripts/image-bakeoff/out/

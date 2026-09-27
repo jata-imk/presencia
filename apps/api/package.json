@@ -12,6 +12,7 @@
     "seed:dev": "tsx --env-file=../../.env scripts/seed-dev.ts",
     "suite:cultural": "tsx --env-file=../../.env scripts/cultural-suite/run.ts",
     "suite:voz-prohibida": "tsx --env-file=../../.env scripts/cultural-suite/prohibited-word.ts",
+    "bakeoff:imagenes": "tsx --env-file=../../.env scripts/image-bakeoff/run.ts",
     "start": "node dist/main.js",
     "worker": "node dist/worker.js",
     "db:generate": "drizzle-kit generate",

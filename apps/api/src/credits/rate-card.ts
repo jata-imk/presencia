@@ -1,5 +1,5 @@
 import { creditReason, planTier } from "../db/schema.js";
-import type { AiTaskKind } from "../ai/provider-registry.js";
+import type { AiTaskKind, ImageTaskKind } from "../ai/provider-registry.js";
 
 // F5 (ADR-012 addendum, 2026-08-09): la unidad normalizada del ledger.
 // Nunca tokens directos (no expresan el costo de una imagen), nunca
@@ -17,8 +17,15 @@ export type CreditReason = (typeof creditReason.enumValues)[number];
  * negocio, y adelantarlo se cobra con tarifa fija (`flat.trend_refresh`)
  * porque el grueso de su costo es el fee por consulta, no los tokens. Que
  * tengan fila en `ai_usage_events` (F9.8) es telemetría de gasto, no cobro.
+ *
+ * Las de imagen (F10) tampoco: una imagen cuesta lo mismo siempre
+ * (`flat.image_generation`, por imagen), sin importar los tokens que el
+ * proveedor reporte por ella.
  */
-export type TokenBilledTaskKind = Exclude<AiTaskKind, "trends_search" | "trends_structure">;
+export type TokenBilledTaskKind = Exclude<
+  AiTaskKind,
+  "trends_search" | "trends_structure" | ImageTaskKind
+>;
 
 export interface TokenRate {
   /** Unidades por cada 1,000 tokens de este tipo. */
