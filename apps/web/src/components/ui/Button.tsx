@@ -1,8 +1,9 @@
 import type { ButtonHTMLAttributes } from "react";
 
-// Kit crudo sobre tokens de capa 3 (docs/reference/design-tokens.md) — se
-// reemplaza cuando entre el handoff de diseño. Reusado en el onboarding y
-// en Configuración > Voz de marca.
+// Botón base sobre tokens de capa 3 (docs/reference/design-tokens.md). Lo
+// usan el onboarding, Configuración, los modales, el drawer y Ritmo, así que
+// su piel se decide en un pase de toda la app y no en el de una pantalla:
+// F9.7 (Configuración) lo dejó como estaba a propósito.
 
 const VARIANT_CLASSES = {
   primary: "bg-primary text-primary-fg hover:bg-primary-hover active:bg-primary-press",

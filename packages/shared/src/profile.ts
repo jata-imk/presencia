@@ -7,7 +7,10 @@ import { z } from "zod";
 // contra Intl.supportedValuesOf).
 
 export const updateProfileBodySchema = z.object({
-  displayName: z.string().trim().min(1).max(60).optional(),
+  // `null` = quitarlo y volver al nombre de la cuenta (F9.7). Con
+  // autoguardado, vaciar el campo tiene que hacer algo: antes no había forma
+  // de borrarlo una vez puesto.
+  displayName: z.string().trim().min(1).max(60).nullable().optional(),
   timezone: z
     .string()
     .trim()
