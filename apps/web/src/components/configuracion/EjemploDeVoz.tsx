@@ -1,5 +1,5 @@
 import { Info, RefreshCw, Sparkles, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { BrandVoiceExampleDto, QuotaStatusDto } from "@presencia/shared";
 import { ApiError, apiFetch } from "../../lib/api.js";
 import { cuotaAgotadaDe } from "../../lib/cuota-agotada.js";
@@ -17,7 +17,8 @@ import { Modal } from "../ui/Modal.js";
 // - El texto no se guarda en ningún lado, y el modal lo dice.
 
 interface EjemploDeVozProps {
-  antesDePedir: () => Promise<void>;
+  /** Manda y espera lo pendiente del autoguardado; `false` si algo no se guardó. */
+  antesDePedir: () => Promise<boolean>;
 }
 
 type Estado =
@@ -29,16 +30,36 @@ type Estado =
 export function EjemploDeVoz({ antesDePedir }: EjemploDeVozProps) {
   const [estado, setEstado] = useState<Estado>({ tipo: "cerrado" });
   const [cuota, setCuota] = useState<QuotaStatusDto | null>(null);
+  // Cada pedido lleva su turno. Una respuesta de un turno viejo —se cerró el
+  // modal, o se volvió a pedir— se descarta: si no, el modal se reabría solo
+  // con un texto ya despedido, o dos respuestas se pisaban entre sí. El
+  // servidor ya cobró esa generación; lo que no puede es aparecer tarde.
+  const turno = useRef(0);
 
   async function pedir() {
+    const mio = ++turno.current;
+    const vigente = () => mio === turno.current;
     setEstado({ tipo: "generando" });
     try {
-      await antesDePedir();
+      const guardado = await antesDePedir();
+      if (!vigente()) return;
+      if (!guardado) {
+        // Sin esto, el ejemplo saldría con la voz de ANTES del último cambio,
+        // y se cobraría igual.
+        setEstado({
+          tipo: "error",
+          mensaje:
+            "No pudimos guardar tus últimos cambios, así que el ejemplo no sonaría a tu voz actual. Revisa los campos marcados y vuelve a intentarlo.",
+        });
+        return;
+      }
       const { text } = await apiFetch<BrandVoiceExampleDto>("/api/brand-voice/ejemplo", {
         method: "POST",
       });
+      if (!vigente()) return;
       setEstado({ tipo: "listo", texto: text });
     } catch (e) {
+      if (!vigente()) return;
       const agotada = cuotaAgotadaDe(e);
       if (agotada) {
         setEstado({ tipo: "cerrado" });
@@ -52,7 +73,10 @@ export function EjemploDeVoz({ antesDePedir }: EjemploDeVozProps) {
     }
   }
 
-  const cerrar = () => setEstado({ tipo: "cerrado" });
+  const cerrar = () => {
+    turno.current += 1;
+    setEstado({ tipo: "cerrado" });
+  };
 
   return (
     <>

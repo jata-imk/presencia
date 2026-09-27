@@ -48,7 +48,10 @@ export function useAutoguardado<P>({ enviar, combinar }: Opciones<P>) {
   return {
     programar: motor.programar.bind(motor),
     tienePendiente: motor.tienePendiente.bind(motor),
-    /** Manda ya lo pendiente: antes de algo que lee lo guardado (el ejemplo de voz). */
+    /**
+     * Manda ya lo pendiente y espera la confirmación; `false` si algo no se
+     * guardó. Antes de algo que lee lo guardado (el ejemplo de voz).
+     */
     vaciar: motor.vaciarYa.bind(motor),
     estado: (campo: string): EstadoDeCampo | undefined => estados.get(campo),
   };

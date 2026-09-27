@@ -43,6 +43,8 @@ export class Autoguardado<P> {
   private pendiente: P | null = null;
   private camposPendientes = new Set<string>();
   private enVuelo = false;
+  /** La cadena de envíos en curso, para quien necesita esperar a que termine. */
+  private actual: Promise<void> = Promise.resolve();
   private temporizador: ReturnType<typeof setTimeout> | null = null;
   private readonly apagados = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly estados = new Map<string, EstadoDeCampo>();
@@ -81,18 +83,42 @@ export class Autoguardado<P> {
   }
 
   /**
-   * Manda ya lo que haya pendiente, sin esperar el debounce. Al salir de la
-   * página: un cambio escrito hace menos de `retrasoMs` no puede perderse
-   * solo porque el usuario navegó rápido.
+   * Manda ya lo que haya pendiente, sin esperar el debounce, y ESPERA a que
+   * el servidor lo confirme — incluido lo que ya estaba en vuelo y lo que se
+   * juntó detrás. Devuelve si quedó todo guardado.
+   *
+   * Dos usos: al salir de la página (un cambio escrito hace menos de
+   * `retrasoMs` no puede perderse porque el usuario navegó rápido) y antes
+   * de algo que lee lo guardado, como el ejemplo de voz: sin esperar, el
+   * servidor leería la voz de antes del último cambio y la cobraría igual.
    */
-  vaciarYa(): Promise<void> {
+  async vaciarYa(): Promise<boolean> {
     if (this.temporizador) clearTimeout(this.temporizador);
     this.temporizador = null;
-    return this.vaciar();
+    if (this.enVuelo) {
+      await this.actual;
+      // Si lo que viajaba falló, volvió a la cola sin reintentarse solo: este
+      // es el siguiente intento. Uno, no un bucle.
+      if (this.pendiente !== null) await this.vaciar();
+    } else {
+      // Lo pendiente sale ahora (si falló antes, esto ES el reintento).
+      await this.vaciar();
+    }
+    return (
+      this.pendiente === null &&
+      ![...this.estados.values()].some((estado) => estado.tipo === "error")
+    );
   }
 
-  private async vaciar(): Promise<void> {
-    if (this.enVuelo || this.pendiente === null) return;
+  private vaciar(): Promise<void> {
+    if (this.enVuelo) return this.actual;
+    if (this.pendiente === null) return Promise.resolve();
+    this.actual = this.enviarLoPendiente();
+    return this.actual;
+  }
+
+  private async enviarLoPendiente(): Promise<void> {
+    if (this.pendiente === null) return;
     const parche = this.pendiente;
     const campos = [...this.camposPendientes];
     this.pendiente = null;
