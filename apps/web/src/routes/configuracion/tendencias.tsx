@@ -1,3 +1,4 @@
+import { Globe, Languages, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import {
@@ -9,13 +10,20 @@ import {
   type TrendLang,
   type TrendSettingsDto,
 } from "@presencia/shared";
-import { Button } from "../../components/ui/Button.js";
-import { Field } from "../../components/ui/Field.js";
+import {
+  Campo,
+  EncabezadoDePagina,
+  MarcaDeGuardado,
+  NotaInfo,
+  Seccion,
+  SkeletonDePagina,
+} from "../../components/configuracion/primitivas.js";
 import { TagInput } from "../../components/ui/TagInput.js";
 import { Textarea } from "../../components/ui/Textarea.js";
 import { Toggle } from "../../components/ui/Toggle.js";
 import { ApiError } from "../../lib/api.js";
 import { fetchAjustesDeTendencias, saveAjustesDeTendencias } from "../../lib/ritmo-api.js";
+import { useAutoguardado } from "../../lib/use-autoguardado.js";
 
 // Configuración › Tendencias (F9.6): la personalización de la búsqueda de
 // tendencias de Ritmo — fuentes propias, qué buscar, qué no, en qué idiomas.
@@ -24,15 +32,16 @@ import { fetchAjustesDeTendencias, saveAjustesDeTendencias } from "../../lib/rit
 // toca nada. Ese texto sale de la API (`base`), armado con la misma función
 // que escribe el prompt: una explicación del default redactada acá podría
 // decir un nicho y buscar en otro. Ver ADR-024.
+//
+// Se guarda sola (F9.7). El endpoint es un PUT que reemplaza la configuración
+// ENTERA, así que cada cambio manda todo y, si se juntan varios, sale solo el
+// último: es el más nuevo en todos los campos a la vez.
 
-const DEFAULT_ERROR = "Algo salió mal. Inténtalo de nuevo.";
+type Ajustes = Pick<TrendSettingsDto, "fuentes" | "prompt" | "excluye" | "langs">;
 
 export function TendenciasPage() {
-  const [ajustes, setAjustes] = useState<TrendSettingsDto | null>(null);
+  const [base, setBase] = useState<TrendSettingsDto["base"] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   const [fuentes, setFuentes] = useState<string[]>([]);
   const [fuenteInvalida, setFuenteInvalida] = useState<string | null>(null);
@@ -40,18 +49,41 @@ export function TendenciasPage() {
   const [excluye, setExcluye] = useState("");
   const [langs, setLangs] = useState<TrendLang[]>(["es"]);
 
-  function aplicar(datos: TrendSettingsDto) {
-    setAjustes(datos);
-    setFuentes(datos.fuentes);
-    setPrompt(datos.prompt ?? "");
-    setExcluye(datos.excluye ?? "");
-    setLangs(datos.langs);
+  // La respuesta del PUT no se aplica a los campos: lo que devuelve es lo
+  // que se mandó (las fuentes ya viajan normalizadas), y aplicarla pisaría
+  // lo que se haya escrito mientras viajaba.
+  const auto = useAutoguardado<Ajustes>({
+    combinar: (_anterior, nuevo) => nuevo,
+    enviar: async (ajustes) => {
+      await saveAjustesDeTendencias(ajustes);
+    },
+  });
+
+  function guardar(campo: keyof Ajustes, cambios: Partial<Ajustes>, inmediato = false) {
+    const siguiente = { fuentes, prompt, excluye, langs, ...cambios };
+    auto.programar(
+      campo,
+      {
+        fuentes: siguiente.fuentes,
+        // "" -> null: "no personalicé esto", que el prompt omite entero.
+        prompt: siguiente.prompt?.trim() || null,
+        excluye: siguiente.excluye?.trim() || null,
+        langs: siguiente.langs,
+      },
+      { inmediato },
+    );
   }
 
   useEffect(() => {
     const abort = new AbortController();
     fetchAjustesDeTendencias(abort.signal)
-      .then(aplicar)
+      .then((datos) => {
+        setBase(datos.base);
+        setFuentes(datos.fuentes);
+        setPrompt(datos.prompt ?? "");
+        setExcluye(datos.excluye ?? "");
+        setLangs(datos.langs);
+      })
       .catch((e: unknown) => {
         if (abort.signal.aborted) return;
         setLoadError(e instanceof ApiError ? e.message : "No se pudieron cargar tus ajustes.");
@@ -62,73 +94,49 @@ export function TendenciasPage() {
   function cambiarIdioma(lang: TrendLang, activo: boolean) {
     // En el orden del catálogo y no en el de los clics: "español o inglés"
     // se lee igual siempre, en la pantalla y en el prompt.
-    setLangs((actuales) => TREND_LANGS.filter((l) => (l === lang ? activo : actuales.includes(l))));
+    const siguientes = TREND_LANGS.filter((l) => (l === lang ? activo : langs.includes(l)));
+    setLangs(siguientes);
+    guardar("langs", { langs: siguientes }, true);
   }
 
-  async function handleSave() {
-    setSaveError(null);
-    setSaved(false);
-    // Una fuente que no se pudo agregar sigue escrita en el input. Guardar
-    // "todo menos eso" y decir "Guardado." junto al error sería contar dos
-    // historias a la vez: mejor no guardar hasta que se corrija o se borre.
-    if (fuenteInvalida) {
-      setSaveError("Corrige o borra la fuente marcada antes de guardar.");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      aplicar(
-        await saveAjustesDeTendencias({
-          fuentes,
-          // "" -> null: "no personalicé esto", que el prompt omite entero.
-          prompt: prompt.trim() || null,
-          excluye: excluye.trim() || null,
-          langs,
-        }),
-      );
-      setSaved(true);
-    } catch (e) {
-      setSaveError(e instanceof ApiError ? e.message : DEFAULT_ERROR);
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  if (loadError) return <p className="text-sm text-error-fg">{loadError}</p>;
+  if (!base) return <SkeletonDePagina />;
 
-  if (loadError) return <p className="text-sm text-error">{loadError}</p>;
-  if (!ajustes) return <p className="text-sm text-fg-muted">Cargando…</p>;
-
-  const { base } = ajustes;
+  const estadoIdiomas = auto.estado("langs");
 
   return (
-    <div className="flex max-w-xl flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-bold text-fg">Tendencias</h1>
-        {/* El default a la vista: qué pasa si no se toca nada. */}
-        <p className="mt-1 rounded-md bg-tint-plum p-3 text-sm text-fg-secondary">
-          Si no tocas nada, buscamos qué se está moviendo en{" "}
-          <strong className="font-semibold text-fg">{base.nicho}</strong>, para{" "}
-          <strong className="font-semibold text-fg">{base.region}</strong>, en español y pensando en
-          tu objetivo (<strong className="font-semibold text-fg">{base.objetivo}</strong>). Todo lo
-          de abajo es opcional: sirve para afinar esa búsqueda, no para reemplazarla.
-        </p>
-        <p className="mt-2 text-xs text-fg-muted">
-          El nicho, la región y el objetivo se cambian en{" "}
-          <Link to="/configuracion/voz-de-marca" className="underline underline-offset-2">
-            Voz de marca
-          </Link>
-          .
-        </p>
-      </div>
+    <div>
+      <EncabezadoDePagina
+        titulo="Tendencias"
+        subtitulo="Afina qué buscamos para ti en Ritmo. Todo es opcional."
+      />
+      {/* El default a la vista: qué pasa si no se toca nada. */}
+      <NotaInfo>
+        Si no tocas nada, buscamos qué se está moviendo en <b>{base.nicho}</b>, para{" "}
+        <b>{base.region}</b>, en español y pensando en tu objetivo (<b>{base.objetivo}</b>). Lo de
+        abajo afina esa búsqueda, no la reemplaza. El nicho, la región y el objetivo se cambian en{" "}
+        <Link
+          to="/configuracion/voz-de-marca"
+          className="font-semibold underline underline-offset-2"
+        >
+          Voz de marca
+        </Link>
+        .
+      </NotaInfo>
 
-      <section className="flex flex-col gap-4">
-        <h2 className="text-sm font-semibold text-fg-secondary uppercase">Tus fuentes</h2>
-        <Field
-          label="Medios o sitios que sigues"
+      <Seccion
+        icono={Globe}
+        titulo="Tus fuentes"
+        subtitulo="Medios o sitios que sigues. Los revisamos primero y completamos con otros si no alcanzan."
+      >
+        <Campo
+          label="Medios o sitios"
           htmlFor="fuentes"
-          error={
-            fuenteInvalida ? `"${fuenteInvalida}" no parece la dirección de un sitio.` : undefined
-          }
-          hint={`Pega la dirección o el nombre del sitio; guardamos solo el dominio. Las revisamos primero y completamos con otras si no alcanzan. ${String(fuentes.length)} de ${String(MAX_TREND_SOURCES)}.`}
+          estado={auto.estado("fuentes")}
+          // Lo escrito que no es un sitio se queda en el input para corregirlo,
+          // y no se guarda: la lista guardada es solo lo que sí pasó.
+          error={fuenteInvalida ? `"${fuenteInvalida}" no parece la dirección de un sitio.` : null}
+          hint={`Pega la dirección o el nombre del sitio; guardamos solo el dominio. ${String(fuentes.length)} de ${String(MAX_TREND_SOURCES)}.`}
         >
           <TagInput
             id="fuentes"
@@ -136,89 +144,105 @@ export function TendenciasPage() {
             onChange={(next) => {
               setFuenteInvalida(null);
               setFuentes(next);
+              guardar("fuentes", { fuentes: next }, true);
             }}
             normalize={normalizeTrendSource}
             onInvalid={setFuenteInvalida}
             maxItems={MAX_TREND_SOURCES}
             placeholder="Ej. xataka.com.mx"
           />
-        </Field>
-      </section>
+        </Campo>
+      </Seccion>
 
-      <section className="flex flex-col gap-4">
-        <h2 className="text-sm font-semibold text-fg-secondary uppercase">Qué buscar</h2>
-        <Field
+      <Seccion icono={Search} titulo="Qué buscar" subtitulo="En tus palabras, sin fórmulas.">
+        <Campo
           label="Qué quieres que busquemos"
           htmlFor="trend-prompt"
-          hint="En tus palabras: temas, enfoques o formatos que te interesan. Sin esto, buscamos lo general de tu nicho."
+          estado={auto.estado("prompt")}
+          hint="Temas, enfoques o formatos que te interesan. Sin esto, buscamos lo general de tu nicho."
         >
           <Textarea
             id="trend-prompt"
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={(e) => {
+              setPrompt(e.target.value);
+              guardar("prompt", { prompt: e.target.value });
+            }}
             maxLength={MAX_TREND_TEXT}
             rows={3}
             placeholder="Ej. herramientas de IA que le sirvan a freelancers, más que noticias de empresas grandes"
           />
-        </Field>
-        <Field
+        </Campo>
+        <Campo
           label="Qué no quieres ver"
           htmlFor="trend-exclude"
+          estado={auto.estado("excluye")}
           hint="Temas que prefieres que dejemos fuera aunque se estén moviendo."
         >
           <Textarea
             id="trend-exclude"
             value={excluye}
-            onChange={(e) => setExcluye(e.target.value)}
+            onChange={(e) => {
+              setExcluye(e.target.value);
+              guardar("excluye", { excluye: e.target.value });
+            }}
             maxLength={MAX_TREND_TEXT}
             rows={2}
             placeholder="Ej. criptomonedas, chismes de celebridades"
           />
-        </Field>
-      </section>
+        </Campo>
+      </Seccion>
 
-      <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-fg-secondary uppercase">Idiomas</h2>
-          <p className="mt-1 text-xs text-fg-secondary">
-            En qué idiomas buscamos. Aunque la fuente esté en inglés, las tendencias te llegan
-            escritas en español.
-          </p>
+      <Seccion
+        icono={Languages}
+        titulo="Idiomas"
+        subtitulo="En qué idiomas buscamos. Aunque la fuente esté en inglés, las tendencias te llegan en español."
+      >
+        <div className="flex flex-col gap-2">
+          {TREND_LANGS.map((lang) => {
+            const activo = langs.includes(lang);
+            // El último encendido no se puede apagar: una búsqueda sin idioma
+            // no existe, y el servidor la rechazaría al guardar.
+            const ultimo = activo && langs.length === 1;
+            return (
+              <div
+                key={lang}
+                className="flex items-center justify-between gap-4 rounded-md border border-line bg-surface px-4 py-3"
+              >
+                <div>
+                  <p className="font-display text-base font-semibold text-fg">
+                    {TREND_LANG_LABELS[lang]}
+                  </p>
+                  {ultimo && <p className="text-xs text-fg-muted">Necesitas al menos uno.</p>}
+                </div>
+                <Toggle
+                  checked={activo}
+                  onChange={(next) => cambiarIdioma(lang, next)}
+                  label={TREND_LANG_LABELS[lang]}
+                  disabled={ultimo}
+                />
+              </div>
+            );
+          })}
+          <div className="flex min-h-5 justify-end">
+            <MarcaDeGuardado estado={estadoIdiomas} />
+          </div>
+          {estadoIdiomas?.tipo === "error" && (
+            <p role="alert" className="text-xs text-error-fg">
+              {estadoIdiomas.mensaje}
+            </p>
+          )}
         </div>
-        {TREND_LANGS.map((lang) => {
-          const activo = langs.includes(lang);
-          // El último encendido no se puede apagar: una búsqueda sin idioma no
-          // existe, y el servidor la rechazaría al guardar.
-          const ultimo = activo && langs.length === 1;
-          return (
-            <div key={lang} className="flex items-center gap-3">
-              <Toggle
-                checked={activo}
-                onChange={(next) => cambiarIdioma(lang, next)}
-                label={TREND_LANG_LABELS[lang]}
-                disabled={ultimo}
-              />
-              <span className="text-sm text-fg-secondary">{TREND_LANG_LABELS[lang]}</span>
-              {ultimo && <span className="text-xs text-fg-muted">Necesitas al menos uno.</span>}
-            </div>
-          );
-        })}
-      </section>
+      </Seccion>
 
       <p className="text-xs text-fg-muted">
-        Los cambios se aplican la próxima vez que se actualicen tus tendencias: solas cada semana, o
-        antes desde{" "}
+        Guardar no dispara una búsqueda ni cobra nada: los cambios se aplican la próxima vez que se
+        actualicen tus tendencias, solas cada semana o antes desde{" "}
         <Link to="/ritmo" className="underline underline-offset-2">
           Ritmo
         </Link>
         .
       </p>
-
-      {saveError && <p className="text-sm text-error">{saveError}</p>}
-      {saved && <p className="text-sm text-success">Guardado.</p>}
-      <Button onClick={() => void handleSave()} disabled={submitting} className="w-fit">
-        {submitting ? "Guardando…" : "Guardar"}
-      </Button>
     </div>
   );
 }

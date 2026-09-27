@@ -276,3 +276,85 @@ body[data-dragging] {
     0 0 0 3px color-mix(in srgb, var(--color-pink-orchid) 45%, transparent);
   animation: cal-flash 900ms var(--ease-out) forwards;
 }
+
+/* ── Configuración (F9.7, mock de Claude Design) ─────────────────────── */
+
+/* La marca "Guardado" entra con un fade corto (pfFade del mock). */
+@keyframes aparecer {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Skeleton de carga. Reusa @keyframes shimmer (el de VisualCardBody): un
+   degradado más ancho que la barra que se desliza. Quieto si el sistema pide
+   menos movimiento — una barra gris también dice "cargando". */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--skeleton) 25%,
+    var(--skeleton-brillo) 37%,
+    var(--skeleton) 63%
+  );
+  background-size: 400% 100%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+}
+
+/* Slider de formalidad: track con las zonas y un thumb blanco con aro de
+   marca. Los pseudo-elementos del range no se alcanzan con utilities, por
+   eso vive acá. Los cortes del degradado son los `max` de FORMALITY_ZONES
+   (packages/shared/src/brand-voice.ts): si cambian allá, cambian acá. */
+.slider-formalidad {
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  margin: 0;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+  background: linear-gradient(
+    90deg,
+    var(--formalidad-zona-0) 0% 24.5%,
+    var(--formalidad-zona-1) 24.5% 44.5%,
+    var(--formalidad-zona-2) 44.5% 64.5%,
+    var(--formalidad-zona-3) 64.5% 84.5%,
+    var(--formalidad-zona-4) 84.5% 100%
+  );
+}
+.slider-formalidad::-webkit-slider-thumb {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 4px solid var(--fg-brand);
+  box-shadow: var(--shadow-md);
+  cursor: grab;
+}
+.slider-formalidad::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 4px solid var(--fg-brand);
+  box-shadow: var(--shadow-md);
+  cursor: grab;
+}
+.slider-formalidad:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+.slider-formalidad:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}
+.slider-formalidad:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}

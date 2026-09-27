@@ -1,3 +1,4 @@
+import { Bookmark, LayoutGrid, SlidersHorizontal, Target } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   macroRegionLabel,
@@ -10,27 +11,46 @@ import {
   VERTICALS,
   type BrandVoiceDto,
   type ModoEstrategia,
+  type UpdateBrandVoiceBody,
   type VerticalId,
 } from "@presencia/shared";
+import {
+  Aviso,
+  Campo,
+  EncabezadoDePagina,
+  Invitacion,
+  MarcaDeGuardado,
+  NotaInfo,
+  Pill,
+  Seccion,
+  SkeletonDePagina,
+} from "../../components/configuracion/primitivas.js";
+import { RanuraEjemplo } from "../../components/configuracion/RanuraEjemplo.js";
 import { FormalitySlider } from "../../components/ui/FormalitySlider.js";
-import { Textarea } from "../../components/ui/Textarea.js";
-import { TagInput } from "../../components/ui/TagInput.js";
 import { Select } from "../../components/ui/Select.js";
+import { TagInput } from "../../components/ui/TagInput.js";
+import { Textarea } from "../../components/ui/Textarea.js";
 import { TextInput } from "../../components/ui/TextInput.js";
 import { Toggle } from "../../components/ui/Toggle.js";
-import { Field } from "../../components/ui/Field.js";
-import { Button } from "../../components/ui/Button.js";
+import type { EstadoDeCampo } from "../../lib/autoguardado.js";
 import { ApiError, apiFetch } from "../../lib/api.js";
+import { useAutoguardado } from "../../lib/use-autoguardado.js";
 
-const DEFAULT_ERROR = "Algo salió mal. Inténtalo de nuevo.";
-const MAX_EXAMPLES = 2;
+// Configuración › Voz de marca (doc presencia-configuracion-voz-de-marca.md,
+// diseño del mock de Claude Design, F9.7).
+//
+// Se guarda sola, campo por campo: cada cambio viaja como un PATCH parcial
+// con solo lo que cambió (el schema lo permite: `undefined` = no tocar). Los
+// textos esperan a que se deje de escribir; los chips, switches y selects
+// salen al momento. Ver lib/autoguardado.ts.
+
+const INVITACION = "Agrega esto para que tu contenido suene aún más a ti.";
+
+type CampoDeVoz = keyof UpdateBrandVoiceBody;
 
 export function VozDeMarcaPage() {
   const [voice, setVoice] = useState<BrandVoiceDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   // Bloque A
   const [marketCountry, setMarketCountry] = useState("");
@@ -55,7 +75,52 @@ export function VozDeMarcaPage() {
   const [preferredCtas, setPreferredCtas] = useState<string[]>([]);
 
   // Bloque D — hasta 2 slots, por posición.
-  const [examples, setExamples] = useState<string[]>(["", ""]);
+  const [examples, setExamples] = useState<[string, string]>(["", ""]);
+
+  // Errores que se ven antes de mandar nada: un país de una letra o un nicho
+  // vacío los rechazaría el servidor, y guardar a medias no tiene sentido.
+  const [errorPais, setErrorPais] = useState<string | null>(null);
+  const [errorNicho, setErrorNicho] = useState<string | null>(null);
+  // Modismos que el servidor sacó de "permitidos" por estar también en
+  // "prohibidos". Con autoguardado eso pasa en un segundo, y sin este aviso
+  // el chip simplemente desaparecía.
+  const [quitadosPorConflicto, setQuitadosPorConflicto] = useState<string[]>([]);
+
+  const auto = useAutoguardado<UpdateBrandVoiceBody>({
+    combinar: (anterior, nuevo) => ({ ...anterior, ...nuevo }),
+    enviar: async (parche) => {
+      const updated = await apiFetch<BrandVoiceDto>("/api/brand-voice", {
+        method: "PATCH",
+        body: parche,
+      });
+      // Solo lo que el SERVIDOR decide, y solo si no se volvió a escribir
+      // mientras viajaba: pisar un campo recién editado con la respuesta del
+      // envío anterior borraría lo último que el usuario tecleó.
+      setModoDerivado(updated.modoDerivado);
+      // "Prohibido gana" (brand-voice.service.ts::resolveConflicts): guardar
+      // una lista puede cambiar la otra.
+      if (!auto.tienePendiente("allowedExpressions") && !auto.tienePendiente("bannedExpressions")) {
+        // Contra lo que se MANDÓ, no contra el estado: un cambio inmediato
+        // sale dentro del mismo onChange, antes del render que lo pinta, así
+        // que el estado que ve este closure todavía es el de antes.
+        const enviados = parche.allowedExpressions ?? allowedExpressions;
+        const quitados = enviados.filter((term) => !updated.allowedExpressions.includes(term));
+        if (quitados.length > 0) {
+          setQuitadosPorConflicto(quitados);
+        }
+        setAllowedExpressions(updated.allowedExpressions);
+        setBannedExpressions(updated.bannedExpressions);
+      }
+    },
+  });
+
+  function guardar<K extends CampoDeVoz>(
+    campo: K,
+    valor: UpdateBrandVoiceBody[K],
+    inmediato = false,
+  ) {
+    auto.programar(campo, { [campo]: valor }, { inmediato });
+  }
 
   useEffect(() => {
     apiFetch<BrandVoiceDto>("/api/brand-voice")
@@ -87,113 +152,134 @@ export function VozDeMarcaPage() {
   // gana" de verdad al persistir — con acentos incluidos ("café"/"cafe"
   // cuentan como el mismo modismo). El warning inline solo avisa lo que el
   // servidor sí va a resolver.
-  const conflictingTerm = useMemo(() => {
-    const bannedSet = new Set(bannedExpressions.map(normalizeExpression));
-    return allowedExpressions.find((term) => bannedSet.has(normalizeExpression(term)));
-  }, [allowedExpressions, bannedExpressions]);
+  const prohibidosNormalizados = useMemo(
+    () => new Set(bannedExpressions.map(normalizeExpression)),
+    [bannedExpressions],
+  );
+  const conflictingTerm = allowedExpressions.find((term) =>
+    prohibidosNormalizados.has(normalizeExpression(term)),
+  );
 
   // Lo que el servidor va a usar si el select queda en automático. Se calcula
-  // con las MISMAS funciones que usa la API para armar la llave de caché
-  // (shared/verticals.ts): si la pantalla derivara por su cuenta, podría
-  // decirle al usuario que buscamos en una vertical y buscar en otra.
+  // con las MISMAS funciones que usa la API (shared/verticals.ts): si la
+  // pantalla derivara por su cuenta, podría decirle al usuario que buscamos
+  // en una vertical y buscar en otra.
   const verticalDerivada = useMemo(() => verticalDeNicho(niche), [niche]);
-
   const regionEfectiva = useMemo(
     () => resolveMacroRegion(marketCountry, marketRegion.trim() || null),
     [marketCountry, marketRegion],
   );
 
-  function updateExample(slot: number, value: string) {
-    setExamples((prev) => {
-      const next = [...prev];
-      next[slot] = value;
-      return next;
-    });
+  function cambiarEjemplo(slot: 0 | 1, texto: string) {
+    const siguientes: [string, string] = [...examples];
+    siguientes[slot] = texto;
+    setExamples(siguientes);
+    guardar(
+      "referenceExamples",
+      siguientes.filter((t) => t.trim().length > 0).map((t) => ({ text: t.trim() })),
+      true,
+    );
   }
 
-  async function handleSave() {
-    setSaveError(null);
-    setSaved(false);
-    setSubmitting(true);
-    try {
-      const updated = await apiFetch<BrandVoiceDto>("/api/brand-voice", {
-        method: "PATCH",
-        body: {
-          marketCountry,
-          // "" -> null (borra el campo guardado), no undefined (que el
-          // PATCH interpretaría como "no tocar" y dejaría el valor viejo).
-          marketRegion: marketRegion.trim() || null,
-          niche,
-          // "" -> null: vuelve a la derivación automática por nicho.
-          vertical: vertical || null,
-          modo: modo || null,
-          audience: audience.trim() || null,
-          // register no se manda: el servidor lo recalcula desde formality
-          // (brand-voice.service.ts::reconcileFormality, doc §4).
-          formality,
-          allowedExpressions,
-          bannedExpressions,
-          useAnglicisms,
-          keyTopics,
-          preferredCtas,
-          referenceExamples: examples
-            .filter((text) => text.trim().length > 0)
-            .slice(0, MAX_EXAMPLES)
-            .map((text) => ({ text: text.trim() })),
-        },
-      });
-      setVoice(updated);
-      setVertical(updated.vertical ?? "");
-      setModo(updated.modo ?? "");
-      setModoDerivado(updated.modoDerivado);
-      setAllowedExpressions(updated.allowedExpressions);
-      setBannedExpressions(updated.bannedExpressions);
-      setSaved(true);
-    } catch (e) {
-      setSaveError(e instanceof ApiError ? e.message : DEFAULT_ERROR);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  if (loadError) return <p className="text-sm text-error">{loadError}</p>;
-  if (!voice) return <p className="text-sm text-fg-muted">Cargando…</p>;
+  if (loadError) return <p className="text-sm text-error-fg">{loadError}</p>;
+  if (!voice) return <SkeletonDePagina />;
 
   return (
-    <div className="flex max-w-xl flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-bold text-fg">Voz de marca</h1>
-        {/* Nota fija (doc §1) — nunca un tooltip escondido. */}
-        <p className="mt-1 rounded-md bg-tint-plum p-3 text-sm text-fg-secondary">
-          Esta es tu voz base y persistente — define cómo suena TODO tu contenido. Para ajustar el
-          tono de un mensaje puntual, usa &quot;Estilo de respuesta&quot; dentro del Chat.
-        </p>
-      </div>
+    <div>
+      <EncabezadoDePagina
+        titulo="Voz de marca"
+        subtitulo="Define cómo suena todo tu contenido — de forma persistente y en tu registro real."
+      />
+      {/* Nota fija (doc §1) — nunca un tooltip escondido. */}
+      <NotaInfo>
+        Esta es tu voz base y persistente — define cómo suena <b>todo</b> tu contenido. Para ajustar
+        el tono de un mensaje puntual, usa <b>«Estilo de respuesta»</b> dentro del Chat.
+      </NotaInfo>
 
-      {/* Bloque A — Identidad y audiencia */}
-      <section className="flex flex-col gap-4">
-        <h2 className="text-sm font-semibold text-fg-secondary uppercase">Identidad y audiencia</h2>
-        <Field label="País" htmlFor="market-country">
-          <TextInput
-            id="market-country"
-            value={marketCountry}
-            onChange={(e) => setMarketCountry(e.target.value)}
+      <Seccion
+        icono={Target}
+        titulo="Identidad y audiencia"
+        subtitulo="A quién le hablas y desde dónde."
+      >
+        <Campo
+          label="Mercado"
+          htmlFor="market-country"
+          extra={<Pill>Heredado del onboarding</Pill>}
+          estado={combinar(auto.estado("marketCountry"), auto.estado("marketRegion"))}
+          error={errorPais}
+        >
+          <div className="grid gap-2.5 md:grid-cols-2">
+            <TextInput
+              id="market-country"
+              aria-label="País"
+              value={marketCountry}
+              placeholder="País"
+              onChange={(e) => {
+                const valor = e.target.value;
+                setMarketCountry(valor);
+                if (valor.trim().length < 2) {
+                  setErrorPais("Escribe el país: al menos dos letras.");
+                  return;
+                }
+                setErrorPais(null);
+                guardar("marketCountry", valor.trim());
+              }}
+            />
+            <TextInput
+              aria-label="Región"
+              value={marketRegion}
+              placeholder="Región (ej. Yucatán)"
+              onChange={(e) => {
+                setMarketRegion(e.target.value);
+                // "" -> null (borra el campo guardado), no undefined (que el
+                // PATCH interpretaría como "no tocar" y dejaría el valor viejo).
+                guardar("marketRegion", e.target.value.trim() || null);
+              }}
+            />
+          </div>
+        </Campo>
+
+        <Campo
+          label="Nicho / audiencia"
+          htmlFor="niche"
+          estado={combinar(auto.estado("niche"), auto.estado("audience"))}
+          error={errorNicho}
+        >
+          <TagInput
+            id="niche"
+            value={niche}
+            onChange={(next) => {
+              setNiche(next);
+              if (next.length === 0) {
+                setErrorNicho("Necesitas al menos un nicho: con él buscamos tus tendencias.");
+                return;
+              }
+              setErrorNicho(null);
+              guardar("niche", next, true);
+            }}
+            maxItems={20}
+            maxLength={40}
+            placeholder="Escribe y presiona Enter…"
           />
-        </Field>
-        <Field label="Región" htmlFor="market-region">
-          <TextInput
-            id="market-region"
-            value={marketRegion}
-            onChange={(e) => setMarketRegion(e.target.value)}
-            placeholder="Ej. Yucatán"
+          <Textarea
+            id="audience"
+            aria-label="Detalle de tu audiencia"
+            value={audience}
+            onChange={(e) => {
+              setAudience(e.target.value);
+              guardar("audience", e.target.value.trim() || null);
+            }}
+            rows={2}
+            className="mt-2.5"
+            placeholder="Detalle adicional: edad, intereses, pain points…"
           />
-        </Field>
-        <Field label="Nicho" htmlFor="niche">
-          <TagInput id="niche" value={niche} onChange={setNiche} maxItems={20} maxLength={40} />
-        </Field>
-        <Field
+          {!audience.trim() && <Invitacion>{INVITACION}</Invitacion>}
+        </Campo>
+
+        <Campo
           label="Categoría"
           htmlFor="vertical"
+          estado={auto.estado("vertical")}
           hint={
             vertical === ""
               ? verticalDerivada
@@ -205,7 +291,12 @@ export function VozDeMarcaPage() {
           <Select
             id="vertical"
             value={vertical}
-            onChange={(e) => setVertical(e.target.value as VerticalId | "")}
+            onChange={(e) => {
+              const valor = e.target.value as VerticalId | "";
+              setVertical(valor);
+              // "" -> null: vuelve a la derivación automática por nicho.
+              guardar("vertical", valor || null, true);
+            }}
           >
             <option value="">Detectar por mi nicho</option>
             {VERTICALS.map((item) => (
@@ -214,11 +305,13 @@ export function VozDeMarcaPage() {
               </option>
             ))}
           </Select>
-        </Field>
+        </Campo>
+
         {/* El chip de Ritmo enlaza acá: es donde promete que se cambia. */}
-        <Field
+        <Campo
           label="Objetivo (Modo)"
           htmlFor="modo"
+          estado={auto.estado("modo")}
           hint={
             modo === ""
               ? `Por tus metas asumimos "${MODO_ESTRATEGIA_META[modoDerivado].label}". Con esto ajustamos cuántas publicaciones por semana te proponemos.`
@@ -228,7 +321,11 @@ export function VozDeMarcaPage() {
           <Select
             id="modo"
             value={modo}
-            onChange={(e) => setModo(e.target.value as ModoEstrategia | "")}
+            onChange={(e) => {
+              const valor = e.target.value as ModoEstrategia | "";
+              setModo(valor);
+              guardar("modo", valor || null, true);
+            }}
           >
             <option value="">Deducirlo de mis metas</option>
             {MODOS_ESTRATEGIA.map((valor) => (
@@ -237,129 +334,197 @@ export function VozDeMarcaPage() {
               </option>
             ))}
           </Select>
-        </Field>
-        <Field
-          label="Audiencia"
-          htmlFor="audience"
-          hint="Edad, intereses, pain points — lo que el onboarding no pedía por tiempo."
-        >
-          <Textarea
-            id="audience"
-            value={audience}
-            onChange={(e) => setAudience(e.target.value)}
-            rows={3}
-            placeholder="Agrega esto para que tu contenido suene aún más a ti."
-          />
-        </Field>
-      </section>
+        </Campo>
+      </Seccion>
 
-      {/* Bloque B — Registro y tono */}
-      <section className="flex flex-col gap-4">
-        <h2 className="text-sm font-semibold text-fg-secondary uppercase">Registro y tono</h2>
-        <Field label="Formalidad" htmlFor="formality">
-          <FormalitySlider id="formality" value={formality} onChange={setFormality} />
-        </Field>
-        <Field
-          label="Modismos permitidos"
-          htmlFor="allowed-expressions"
-          hint="Palabras o frases que quieres que aparezcan cuando encajen de forma natural — nunca forzadas."
-        >
-          <TagInput
-            id="allowed-expressions"
-            value={allowedExpressions}
-            onChange={setAllowedExpressions}
-            maxItems={20}
-            maxLength={40}
+      <Seccion
+        icono={SlidersHorizontal}
+        titulo="Registro y tono"
+        subtitulo="Qué tan formal suenas y qué palabras usas."
+      >
+        <Campo label="Formalidad" htmlFor="formality" estado={auto.estado("formality")}>
+          <FormalitySlider
+            id="formality"
+            value={formality}
+            onChange={(valor) => {
+              setFormality(valor);
+              // register no se manda: el servidor lo recalcula desde formality
+              // (brand-voice.service.ts::reconcileFormality, doc §4).
+              guardar("formality", valor);
+            }}
           />
-        </Field>
-        <Field
-          label="Modismos prohibidos"
-          htmlFor="banned-expressions"
-          hint="Palabras que nunca deben aparecer en tu contenido, ni siquiera citándolas."
-        >
-          <TagInput
-            id="banned-expressions"
-            value={bannedExpressions}
-            onChange={setBannedExpressions}
-            maxItems={20}
-            maxLength={40}
-          />
-        </Field>
-        {conflictingTerm && (
-          <p className="rounded-md bg-warning-bg p-2 text-xs text-warning">
-            &quot;{conflictingTerm}&quot; está en las dos listas — lo vamos a tratar como prohibido
-            por seguridad.
-          </p>
-        )}
-        <div className="flex items-center gap-3">
-          <Toggle checked={useAnglicisms} onChange={setUseAnglicisms} label="Usar anglicismos" />
-          <span className="text-sm text-fg-secondary">Permitir anglicismos</span>
+        </Campo>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Campo
+            label="Modismos permitidos"
+            htmlFor="allowed-expressions"
+            tono="permitido"
+            estado={auto.estado("allowedExpressions")}
+            hint="Aparecen cuando encajan de forma natural — nunca forzados."
+          >
+            <TagInput
+              id="allowed-expressions"
+              value={allowedExpressions}
+              onChange={(next) => {
+                setAllowedExpressions(next);
+                setQuitadosPorConflicto([]);
+                guardar("allowedExpressions", next, true);
+              }}
+              tono="permitido"
+              enConflicto={(tag) => prohibidosNormalizados.has(normalizeExpression(tag))}
+              maxItems={20}
+              maxLength={40}
+              placeholder="Agregar…"
+            />
+          </Campo>
+          <Campo
+            label="Modismos prohibidos"
+            htmlFor="banned-expressions"
+            tono="prohibido"
+            estado={auto.estado("bannedExpressions")}
+            hint="Nunca aparecen, ni siquiera citados."
+          >
+            <TagInput
+              id="banned-expressions"
+              value={bannedExpressions}
+              onChange={(next) => {
+                setBannedExpressions(next);
+                setQuitadosPorConflicto([]);
+                guardar("bannedExpressions", next, true);
+              }}
+              tono="prohibido"
+              maxItems={20}
+              maxLength={40}
+              placeholder="Agregar…"
+            />
+          </Campo>
         </div>
-      </section>
+        {quitadosPorConflicto.length > 0 && !conflictingTerm && (
+          <Aviso>
+            {quitadosPorConflicto.map((term) => `«${term}»`).join(", ")}{" "}
+            {quitadosPorConflicto.length === 1
+              ? "estaba en las dos listas — lo dejamos"
+              : "estaban en las dos listas — los dejamos"}{" "}
+            solo en <b>prohibidos</b>, por seguridad.
+          </Aviso>
+        )}
+        {conflictingTerm && (
+          <Aviso>
+            <b>«{conflictingTerm}»</b> está en las dos listas — lo tratamos como <b>prohibido</b>{" "}
+            por seguridad.
+          </Aviso>
+        )}
 
-      {/* Bloque C — Contenido */}
-      <section className="flex flex-col gap-4">
-        <h2 className="text-sm font-semibold text-fg-secondary uppercase">Contenido</h2>
-        <Field label="Temas clave" htmlFor="key-topics">
+        <div className="flex items-center justify-between gap-4 rounded-md border border-line bg-surface px-4 py-3.5">
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="font-display text-base font-semibold text-fg">Permitir anglicismos</p>
+              <MarcaDeGuardado estado={auto.estado("useAnglicisms")} />
+            </div>
+            <p className="mt-0.5 text-xs text-fg-secondary">
+              Palabras en inglés como «engagement», «reels» o «tips».
+            </p>
+          </div>
+          <Toggle
+            checked={useAnglicisms}
+            onChange={(next) => {
+              setUseAnglicisms(next);
+              guardar("useAnglicisms", next, true);
+            }}
+            label="Permitir anglicismos"
+          />
+        </div>
+      </Seccion>
+
+      <Seccion icono={LayoutGrid} titulo="Contenido" subtitulo="De qué hablas y cómo cierras.">
+        <Campo
+          label="Temas clave / pilares de contenido"
+          htmlFor="key-topics"
+          estado={auto.estado("keyTopics")}
+        >
           <TagInput
             id="key-topics"
             value={keyTopics}
-            onChange={setKeyTopics}
+            onChange={(next) => {
+              setKeyTopics(next);
+              guardar("keyTopics", next, true);
+            }}
             maxItems={20}
             maxLength={40}
+            placeholder="Escribe y presiona Enter…"
           />
-        </Field>
-        <Field label="CTAs preferidos" htmlFor="preferred-ctas">
+          {keyTopics.length === 0 && <Invitacion>{INVITACION}</Invitacion>}
+        </Campo>
+        <Campo
+          label="CTAs preferidos"
+          htmlFor="preferred-ctas"
+          estado={auto.estado("preferredCtas")}
+        >
           <TagInput
             id="preferred-ctas"
             value={preferredCtas}
-            onChange={setPreferredCtas}
+            onChange={(next) => {
+              setPreferredCtas(next);
+              guardar("preferredCtas", next, true);
+            }}
             maxItems={20}
             maxLength={80}
+            placeholder="Escribe y presiona Enter…"
           />
-        </Field>
-      </section>
+          {preferredCtas.length === 0 && <Invitacion>{INVITACION}</Invitacion>}
+        </Campo>
+      </Seccion>
 
-      {/* Bloque D — Ejemplos de referencia */}
-      <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-fg-secondary uppercase">
-            Ejemplos de referencia
-          </h2>
-          <p className="mt-1 text-xs text-fg-secondary">
-            De todos los campos, este es el que más influye en que el contenido suene a ti — la IA
-            imita el ritmo y el vocabulario de lo que pegues aquí.
-          </p>
-        </div>
-        {[0, 1].map((slot) => {
-          const text = examples[slot] ?? "";
-          return (
-            <div key={slot} className="flex flex-col gap-1">
-              <Textarea
-                value={text}
-                onChange={(e) => updateExample(slot, e.target.value)}
-                rows={3}
-                placeholder="Elige un post de tu Biblioteca o pega uno tuyo"
+      <Seccion
+        icono={Bookmark}
+        titulo="Ejemplos de referencia"
+        subtitulo="Hasta 2 posts que representen tu voz. De todo lo de esta página, es lo que más influye: imitamos su ritmo y su vocabulario."
+      >
+        <div className="flex flex-col gap-2">
+          <div className="grid gap-4 md:grid-cols-2">
+            {([0, 1] as const).map((slot) => (
+              <RanuraEjemplo
+                key={slot}
+                numero={slot === 0 ? 1 : 2}
+                texto={examples[slot]}
+                onGuardar={(texto) => cambiarEjemplo(slot, texto)}
+                onQuitar={() => cambiarEjemplo(slot, "")}
               />
-              {text && (
-                <button
-                  type="button"
-                  onClick={() => updateExample(slot, "")}
-                  className="w-fit text-xs text-fg-muted hover:text-error"
-                >
-                  Quitar
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </section>
-
-      {saveError && <p className="text-sm text-error">{saveError}</p>}
-      {saved && <p className="text-sm text-success">Guardado.</p>}
-      <Button onClick={() => void handleSave()} disabled={submitting} className="w-fit">
-        {submitting ? "Guardando…" : "Guardar"}
-      </Button>
+            ))}
+          </div>
+          <EstadoDeEjemplos estado={auto.estado("referenceExamples")} />
+        </div>
+      </Seccion>
     </div>
+  );
+}
+
+/** La marca de los ejemplos va debajo de las ranuras: no tienen un label propio. */
+function EstadoDeEjemplos({ estado }: { estado: EstadoDeCampo | undefined }) {
+  if (!estado) return null;
+  if (estado.tipo === "error") {
+    return (
+      <p role="alert" className="text-xs text-error-fg">
+        {estado.mensaje}
+      </p>
+    );
+  }
+  return (
+    <div className="flex justify-end">
+      <MarcaDeGuardado estado={estado} />
+    </div>
+  );
+}
+
+/**
+ * El estado de un campo que guarda dos cosas (país y región, nicho y detalle):
+ * un error manda sobre todo, después "guardando", después "guardado".
+ */
+function combinar(...estados: Array<EstadoDeCampo | undefined>): EstadoDeCampo | undefined {
+  return (
+    estados.find((e) => e?.tipo === "error") ??
+    estados.find((e) => e?.tipo === "guardando") ??
+    estados.find((e) => e?.tipo === "guardado")
   );
 }
