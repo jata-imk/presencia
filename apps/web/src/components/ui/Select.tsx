@@ -1,4 +1,5 @@
 import type { SelectHTMLAttributes } from "react";
+import { CAMPO_BASE } from "./campo-estilo.js";
 
 export function Select({
   className = "",
@@ -6,10 +7,7 @@ export function Select({
   ...rest
 }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select
-      className={`rounded-md border border-line bg-card px-3 py-2 text-sm text-fg focus:border-line-focus focus:outline-none ${className}`}
-      {...rest}
-    >
+    <select className={`${CAMPO_BASE} cursor-pointer text-base ${className}`} {...rest}>
       {children}
     </select>
   );

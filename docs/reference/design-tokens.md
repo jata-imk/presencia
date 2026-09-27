@@ -128,6 +128,21 @@ Dos estados hermanos con comportamiento distinto sin que nadie lo decidiera, y e
 
 Ninguno de estos tres bugs aparecía revisando qué clases estaban aplicadas: estaban todas. Solo salen midiendo el estilo computado o leyendo el CSS generado.
 
+## Texto de estado: `--status-*-fg` (F9.7)
+
+`--status-success`, `-warning`, `-error` e `-info` son colores de **relleno e ícono**. Como texto chico sobre blanco no llegan a 4.5:1 (el verde de "Guardado" daba ~2.3:1; el azul de info, sky-blue, casi no se leía). Para texto hay un par propio por estado, un paso más oscuro en claro y uno más claro en oscuro:
+
+| Token                 | Claro     | Oscuro     | Utility           |
+| --------------------- | --------- | ---------- | ----------------- |
+| `--status-success-fg` | `#16A34A` | `#7FD6A4`  | `text-success-fg` |
+| `--status-warning-fg` | `#B45309` | `#FCD34D`  | `text-warning-fg` |
+| `--status-error-fg`   | `#B91C1C` | `#FCA5A5`  | `text-error-fg`   |
+| `--status-info-fg`    | `#1E5AA8` | `blue-200` | `text-info-fg`    |
+
+Regla: **texto de estado usa `-fg`**; `text-success`/`text-error` quedan para íconos y rellenos.
+
+Configuración suma además `--tag-neutro-fg/-border` (chip de los TagInput), `--focus-ring` (halo de los inputs al enfocar), `--formalidad-zona-0..4` (track del slider, con los cortes de `FORMALITY_ZONES`) y `--skeleton`/`--skeleton-brillo` (carga).
+
 ## Movimiento (ADR-014)
 
 Decisión completa en [ADR-014](../explanation/decisions/adr-014-estrategia-de-animacion.md); acá el resumen operativo.

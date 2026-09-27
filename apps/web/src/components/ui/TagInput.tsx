@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 
 interface TagInputProps {
@@ -21,7 +22,20 @@ interface TagInputProps {
    * quien pinta el error sabe así cuándo dejar de pintarlo.
    */
   onInvalid?: (raw: string | null) => void;
+  /** Color de los chips (F9.7): neutro por default; permitidos/prohibidos en Voz de marca. */
+  tono?: TonoDeTag;
+  /** Chips que se tachan en ámbar: el modismo que también está en la otra lista. */
+  enConflicto?: (tag: string) => boolean;
 }
+
+export type TonoDeTag = "neutro" | "permitido" | "prohibido";
+
+const CLASE_TONO: Record<TonoDeTag | "conflicto", string> = {
+  neutro: "border-tag-neutro-border bg-tint-pink text-tag-neutro-fg",
+  permitido: "border-info-border bg-info-bg text-info-fg",
+  prohibido: "border-error-border bg-error-bg text-error-fg",
+  conflicto: "border-warning-border bg-warning-bg text-warning-fg line-through",
+};
 
 // Chips removibles + input de texto libre (Enter o coma agrega). Usado para
 // nicho (onboarding) y, en Configuración, modismos permitidos/prohibidos,
@@ -35,6 +49,8 @@ export function TagInput({
   id,
   normalize,
   onInvalid,
+  tono = "neutro",
+  enConflicto,
 }: TagInputProps) {
   const [draft, setDraft] = useState("");
   const atLimit = maxItems !== undefined && value.length >= maxItems;
@@ -69,20 +85,22 @@ export function TagInput({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-line bg-card px-2 py-1.5 focus-within:border-line-focus">
+    <div className="flex min-h-11.5 flex-wrap items-center gap-2 rounded-md border-[1.5px] border-line bg-card p-2 transition-[border-color,box-shadow] focus-within:border-line-focus focus-within:ring-3 focus-within:ring-focus-ring">
       {value.map((tag) => (
         <span
           key={tag}
-          className="flex items-center gap-1 rounded-sm bg-tint-plum px-2 py-0.5 text-xs text-fg-secondary"
+          className={`inline-flex items-center gap-1 rounded-full border py-1.25 pr-1.5 pl-3 text-[12.5px] leading-tight font-medium ${
+            CLASE_TONO[enConflicto?.(tag) ? "conflicto" : tono]
+          }`}
         >
           {tag}
           <button
             type="button"
             onClick={() => removeTag(tag)}
             aria-label={`Quitar ${tag}`}
-            className="text-fg-muted hover:text-fg"
+            className="inline-flex size-4 items-center justify-center opacity-55 hover:opacity-100"
           >
-            ×
+            <X size={12} strokeWidth={2.4} aria-hidden />
           </button>
         </span>
       ))}
@@ -98,7 +116,7 @@ export function TagInput({
           onBlur={addTag}
           maxLength={maxLength}
           placeholder={value.length === 0 ? placeholder : undefined}
-          className="min-w-20 flex-1 bg-transparent text-sm text-fg placeholder:text-fg-muted focus:outline-none"
+          className="min-w-24 flex-1 bg-transparent p-1 text-sm text-fg placeholder:text-fg-muted focus:outline-none"
         />
       )}
     </div>

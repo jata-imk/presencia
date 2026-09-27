@@ -370,9 +370,9 @@ texto raro solo puede cambiar _qué_ se busca, nunca las reglas.
 
 Guardar no dispara una búsqueda ni cobra nada: los cambios se aplican
 en el siguiente refresco, sea el semanal o uno adelantado desde Ritmo
-("Actualizar ahora", `presencia-ritmo.md`). La página lo dice al pie. Se
-guarda todo de una vez, con el mismo botón "Guardar" del resto de
-Configuración.
+("Actualizar ahora", `presencia-ritmo.md`). La página lo dice al pie.
+Como el resto de Configuración, se guarda sola (sección 11); acá cada
+cambio manda la configuración entera, porque el endpoint la reemplaza.
 
 ### Lo que NO está (V1)
 
@@ -388,3 +388,39 @@ Configuración.
 Con esto ya tengo base sólida para armar el prompt real hacia Claude
 Design. ¿Seguimos directo a construirlo, o quieres ajustar algo de este
 documento primero?
+
+---
+
+## 11. Se guarda sola (F9.7)
+
+Configuración no tiene botón "Guardar": cada campo se guarda solo y dice
+que lo hizo con una marca verde "✓ Guardado" junto a su label, que se
+apaga a los dos segundos. Decidido con Jose el 2026-09-27, siguiendo el
+mock de Claude Design. El motivo es quitar el "se me olvidó guardar": en
+una página larga, el botón quedaba abajo de todo.
+
+Cómo se comporta, y por qué:
+
+- **Los textos esperan a que dejes de escribir** (~0.8 s); los chips, los
+  switches y los selects se guardan al momento. Salir de la página manda
+  lo que falte.
+- **Nunca viajan dos guardados a la vez.** Lo que se cambia mientras uno
+  viaja sale después, junto. Así una respuesta vieja no pisa un cambio
+  nuevo en el servidor.
+- **Un error se dice debajo del campo**, y se queda hasta que el campo
+  vuelve a cambiar, que es también la forma de reintentar. Lo que la
+  pantalla ya sabe que el servidor rechazaría (un país de una letra, el
+  nicho vacío) no se manda: se avisa ahí mismo.
+- **"Prohibido gana" sigue valiendo** (sección 6), pero ahora el servidor
+  lo aplica en un segundo y el chip desaparece de permitidos. Por eso,
+  además del aviso de conflicto mientras escribes, queda un aviso de lo
+  que se movió: _"«neta» estaba en las dos listas — lo dejamos solo en
+  prohibidos, por seguridad."_
+- **Los ejemplos de referencia son la excepción**: pegar tiene su propio
+  "Guardar" en la ranura. Un post pegado a medias no es un ejemplo, y
+  guardarlo mientras se pega alimentaría cada generación con basura.
+- **"Elegir de Biblioteca"** se ve deshabilitado, con un tooltip de
+  "Próximamente", hasta que exista el módulo Biblioteca.
+
+Lo que técnicamente lo sostiene: `apps/web/src/lib/autoguardado.ts`
+(probado con timers falsos) y el hook `use-autoguardado.ts`.
