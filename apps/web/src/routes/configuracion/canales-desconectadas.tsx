@@ -18,7 +18,7 @@ import { useChannels } from "../../lib/use-channels.js";
 // borrado permanente (con modal de confirmación, Jose la pidió explícita:
 // "que en desconectadas sí haya la posibilidad de borrarlas de verdad").
 export function CanalesDesconectadasPage() {
-  const { disconnectedChannels, refreshDisconnected, reactivate } = useChannels();
+  const { disconnectedChannels, refreshDisconnected, reactivate, error: loadError } = useChannels();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -42,7 +42,23 @@ export function CanalesDesconectadasPage() {
 
   const deletingAccount = disconnectedChannels?.find((c) => c.id === deletingId);
 
-  if (disconnectedChannels === null) return <SkeletonDePagina />;
+  // Un fallo al cargar tiene que decirse: sin esto el skeleton se quedaba
+  // para siempre, sin mensaje ni forma de reintentar.
+  if (disconnectedChannels === null) {
+    if (!loadError) return <SkeletonDePagina />;
+    return (
+      <div className="flex flex-col items-start gap-2">
+        <p className="text-sm text-error-fg">{loadError}</p>
+        <button
+          type="button"
+          onClick={refreshDisconnected}
+          className="text-xs text-fg-secondary underline underline-offset-2 hover:text-fg"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div>
