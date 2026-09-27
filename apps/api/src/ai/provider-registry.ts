@@ -173,7 +173,9 @@ export const DEFAULT_IMAGE_MODEL_ID = "google:gemini-3.1-flash-image";
 
 export type EnvSource = Record<string, string | undefined>;
 export type ModelResolver = (modelId?: string) => LanguageModel;
-export type ImageModelResolver = (modelId: string) => ImageModel;
+/** El modelo ya resuelto (nunca el id en texto que `ImageModel` también admite). */
+export type ResolvedImageModel = Exclude<ImageModel, string>;
+export type ImageModelResolver = (modelId: string) => ResolvedImageModel;
 
 /** Valida formato "proveedor:modelo" contra la tabla; error claro si no cumple. */
 export function parseModelId(id: string): { provider: ProviderId; model: string } {
@@ -239,7 +241,7 @@ export function createModelResolver(source: EnvSource, defaultModelId: string): 
  */
 export function createImageModelResolver(source: EnvSource): ImageModelResolver {
   const { registry, assertConfigured } = buildRegistry(source);
-  return (modelId: string): ImageModel => {
+  return (modelId: string): ResolvedImageModel => {
     assertConfigured(modelId);
     return registry.imageModel(modelId as `${string}:${string}`);
   };

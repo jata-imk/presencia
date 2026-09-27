@@ -3,10 +3,9 @@ import {
   generateImage,
   NoImageGeneratedError,
   wrapImageModel,
-  type ImageModel,
   type ImageModelUsage,
 } from "ai";
-import { parseModelId, type ProviderId } from "../ai/provider-registry.js";
+import { parseModelId, type ProviderId, type ResolvedImageModel } from "../ai/provider-registry.js";
 import type {
   ImageAspectRatio,
   ImageProvider,
@@ -60,7 +59,8 @@ export class AiSdkImageProvider implements ImageProvider {
   readonly modelName: string;
 
   constructor(
-    private readonly model: ImageModel,
+    // El objeto, no el id en texto: `wrapImageModel` necesita el modelo ya resuelto.
+    private readonly model: ResolvedImageModel,
     modelId: string,
   ) {
     const { provider, model: modelName } = parseModelId(modelId);
