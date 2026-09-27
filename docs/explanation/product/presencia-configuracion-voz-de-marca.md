@@ -210,6 +210,24 @@ la decisión de diseño que sigue vigente, no el número.
 
 ---
 
+### Cómo quedó implementado (F9.7, 2026-09-27)
+
+- **Botón "Ver ejemplo de tu voz"** al pie de la página, sin precio (el
+  mock traía "≈2 créditos"; el addendum de ADR-012 lo prohíbe). Abre un
+  modal con el post, el aviso "Este es solo un ejemplo, no se guarda",
+  "Regenerar" y "Cerrar".
+- **Usa la voz GUARDADA.** Antes de pedirlo se manda lo que el
+  autoguardado tenga pendiente (sección 11), para que un cambio de hace
+  medio segundo no quede fuera.
+- **Mismo modelo y mismo system prompt que el chat** (`voice_preview`
+  enruta a `AI_MODEL_CHAT`; `buildSystemPrompt`). Un ejemplo escrito con
+  un modelo más barato mentiría sobre lo que el chat produce después.
+- **Texto-first, Instagram, sobre su primer tema clave** (o su nicho),
+  cerrando con uno de sus CTAs si tiene, y sin inventar datos del negocio.
+- **Se cobra por tokens, como un turno de chat**, sin deduplicar: es
+  efímero y cada click es una llamada real. Con la cuota agotada sale el
+  mismo modal de cuota que en el chat y en Ritmo.
+
 ## 6. Estados especiales
 
 ### Voz de marca sin configurar a fondo (solo onboarding)

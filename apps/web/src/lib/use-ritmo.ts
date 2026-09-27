@@ -10,6 +10,7 @@ import type {
   VentanaDeRedDto,
 } from "@presencia/shared";
 import { ApiError } from "./api.js";
+import { cuotaAgotadaDe } from "./cuota-agotada.js";
 import {
   fetchHorarios,
   fetchMetas,
@@ -191,7 +192,7 @@ export function useTendencias() {
         setTendencias((actual) => (actual ? { ...actual, refresco } : actual)),
       )
       .catch((e: unknown) => {
-        const quota = cuotaDe(e);
+        const quota = cuotaAgotadaDe(e);
         if (quota) setCuotaAgotada(quota);
         else setErrorRefresco(mensajeDe(e));
       })
@@ -339,7 +340,7 @@ export function useNarracion(): EstadoNarracion {
       })
       .catch((e: unknown) => {
         if (abort.signal.aborted) return;
-        const quota = cuotaDe(e);
+        const quota = cuotaAgotadaDe(e);
         if (quota) setCuotaAgotada(quota);
         else setError(mensajeDe(e));
       })
@@ -352,12 +353,4 @@ export function useNarracion(): EstadoNarracion {
   const descartarCuota = useCallback(() => setCuotaAgotada(null), []);
 
   return { narracion, generando, error, cuotaAgotada, pedir, descartarCuota };
-}
-
-/** El 402 del gate de cuota, si es lo que llegó. Mismo shape que el chat. */
-function cuotaDe(error: unknown): QuotaStatusDto | null {
-  if (!(error instanceof ApiError) || error.status !== 402) return null;
-  const body = error.body as { code?: unknown; quota?: unknown } | null;
-  if (body?.code !== "quota_exhausted" || !body.quota) return null;
-  return body.quota as QuotaStatusDto;
 }

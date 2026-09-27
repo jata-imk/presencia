@@ -312,3 +312,12 @@ export type BrandVoiceForPrompt = Omit<
   BrandVoiceDto,
   "id" | "name" | "isDefault" | "createdAt" | "updatedAt" | "vertical" | "modo" | "modoDerivado"
 >;
+
+/**
+ * "Ver ejemplo de tu voz" (F9.7, doc de Voz de marca §5): un post de muestra
+ * escrito con la voz guardada. Efímero: no se guarda en ningún lado, así que
+ * el DTO es solo el texto.
+ */
+export interface BrandVoiceExampleDto {
+  text: string;
+}

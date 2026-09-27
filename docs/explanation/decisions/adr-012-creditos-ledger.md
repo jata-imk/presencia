@@ -65,6 +65,8 @@ Dos clicks simultáneos chocan contra el índice único, no contra una condició
 
 ## Addendum (2026-09-24, F9.6 PR2) — `trend_refresh`, y una puerta de cobro en un solo lugar
 
+**`voice_preview` (F9.7) cobra por tokens y sin referencia.** Es el "Ver ejemplo de tu voz" de Configuración: un post de muestra con el mismo modelo y el mismo system prompt que el chat, así que se cobra con `charge()` y la tarifa del chat (`perThousandTokens.voice_preview = CHAT_RATE`). A diferencia de la narración, **no se deduplica**: el ejemplo es efímero y no hay fila a la que apuntar, y cada click es una llamada nueva al modelo que de verdad se paga. Un texto vacío no cobra, pero su fila de `ai_usage_events` se escribe igual. El botón no anuncia precio: el costo se ve en la cuota.
+
 **`trend_refresh` sí tiene tarifa fija**, al revés que `ritmo_narration`, y la distinción vuelve a ser la de F5: se cobra fijo lo que cuesta lo mismo siempre. Acá el grueso del costo ni siquiera son tokens — el fee del grounding se cobra **por consulta de búsqueda** (medidas, cuatro por refresco), y los dos modelos que intervienen aportan unos pocos miles de tokens entre ambos. Cobrarlo con `charge()` subestimaría justo la parte cara.
 
 **El `reference_id` obligó a una tabla, otra vez.** `user_trends` es un upsert: una fila por usuario cuyo id no cambia entre refrescos. Apuntar el asiento ahí habría hecho que el segundo cobro chocara contra `ledger_dedup` y se perdiera **en silencio** — cobrado una vez, gratis para siempre. `trend_refreshes` da un uuid nuevo por refresco, y de paso el candado contra el doble click y el registro de si ese refresco era cobrable.

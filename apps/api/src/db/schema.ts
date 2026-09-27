@@ -91,6 +91,9 @@ export const creditReason = pgEnum("credit_reason", [
   // grounding se cobra POR CONSULTA de búsqueda, no por token, así que
   // cobrarlo por tokens subestimaría justo la parte cara.
   "trend_refresh",
+  // F9.7: el ejemplo de voz de Configuración. Por tokens, como la narración:
+  // cuesta lo que ocupa el post generado.
+  "voice_preview",
   "refund",
   "adjustment",
 ]);

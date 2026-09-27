@@ -66,6 +66,8 @@ export const RATE_CARDS: Record<number, RateCard> = {
       analytics_narration: UTILITY_RATE,
       post_adapt: ADAPT_RATE,
       voice_distill: ADAPT_RATE,
+      // Mismo modelo que el chat (MODEL_BY_TASK), misma tarifa.
+      voice_preview: CHAT_RATE,
     },
     flat: {
       idea_generation: 300,

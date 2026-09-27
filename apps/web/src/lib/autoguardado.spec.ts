@@ -169,4 +169,40 @@ describe("Autoguardado", () => {
     await microtareas();
     expect(envios).toHaveLength(1);
   });
+
+  it("vaciarYa espera lo que ya estaba en vuelo y lo que se juntó detrás", async () => {
+    const { motor, envios } = armar();
+    motor.programar("a", { a: 1 }, { inmediato: true });
+    await microtareas();
+    motor.programar("b", { b: 2 });
+    let termino = false;
+    const listo = motor.vaciarYa().then((ok) => {
+      termino = true;
+      return ok;
+    });
+    await microtareas();
+    expect(termino).toBe(false);
+
+    envios[0]?.resolver();
+    await microtareas();
+    expect(envios.map((e) => e.parche)).toEqual([{ a: 1 }, { b: 2 }]);
+    expect(termino).toBe(false);
+
+    envios[1]?.resolver();
+    expect(await listo).toBe(true);
+  });
+
+  it("vaciarYa dice que no quedó guardado si el reintento vuelve a fallar", async () => {
+    const { motor, envios } = armar();
+    motor.programar("a", { a: 1 }, { inmediato: true });
+    await microtareas();
+    envios[0]?.rechazar(new Error("Sin conexión"));
+    await microtareas();
+
+    const listo = motor.vaciarYa();
+    await microtareas();
+    expect(envios).toHaveLength(2);
+    envios[1]?.rechazar(new Error("Sin conexión"));
+    expect(await listo).toBe(false);
+  });
 });

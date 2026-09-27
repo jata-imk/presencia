@@ -80,6 +80,10 @@ export const AI_TASK_KINDS = [
   // consulta (`ai_usage_events.search_queries`), la estructura solo tokens.
   "trends_search",
   "trends_structure",
+  // F9.7: "Ver ejemplo de tu voz" en Configuración. Tarea propia y no `chat`:
+  // no vive en una conversación, y mezclarla con los turnos ensuciaría
+  // justo la métrica con la que se calibra el costo del chat.
+  "voice_preview",
 ] as const;
 export type AiTaskKind = (typeof AI_TASK_KINDS)[number];
 
@@ -113,6 +117,10 @@ export const MODEL_BY_TASK: Record<RoutedTaskKind, ModelTierEnvVar> = {
   voice_distill: "AI_MODEL_ADAPT",
   analytics_narration: "AI_MODEL_UTILITY",
   trends_structure: "AI_MODEL_UTILITY",
+  // El tier del chat y no utility: lo que el usuario está probando es si
+  // SUENA a él, y eso lo decide el modelo que después le escribe los posts.
+  // Un ejemplo con un modelo más barato mentiría sobre el resultado real.
+  voice_preview: "AI_MODEL_CHAT",
 };
 
 /**
