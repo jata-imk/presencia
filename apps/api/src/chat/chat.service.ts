@@ -9,7 +9,7 @@ import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from 
 import type { BrandVoiceForPrompt, ChatSummary } from "@presencia/shared";
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
-import { AiUsageRepository } from "../ai/ai-usage.repository.js";
+import { AiUsageService } from "../ai/ai-usage.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
 import { CardsRepository } from "../cards/cards.repository.js";
@@ -36,7 +36,7 @@ export class ChatService {
     @Inject(AiService) private readonly aiService: AiService,
     @Inject(CardsRepository) private readonly cardsRepo: CardsRepository,
     @Inject(BrandVoiceService) private readonly brandVoiceService: BrandVoiceService,
-    @Inject(AiUsageRepository) private readonly aiUsageRepo: AiUsageRepository,
+    @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
     @Inject(CreditsService) private readonly creditsService: CreditsService,
     @Inject(FoldersService) private readonly foldersService: FoldersService,
   ) {}
@@ -417,33 +417,25 @@ export class ChatService {
           );
         }
 
-        // Try/catch propio (F4.5): un fallo al registrar usage nunca debe
-        // costar el mensaje ni el cobro, que ya se persistieron arriba.
-        try {
-          await this.dbService.runWithTenant(userId, (tx) =>
-            this.aiUsageRepo.insertEvent(tx, {
-              userId,
-              chatId,
-              taskKind: "chat",
-              provider: resolved.provider,
-              model: resolved.modelName,
-              inputTokens: usage.inputTokens ?? 0,
-              outputTokens: usage.outputTokens ?? 0,
-              cachedInputTokens: usage.inputTokenDetails.cacheReadTokens ?? null,
-              stepsCount: steps.length,
-              durationMs: Date.now() - startedAt,
-              providerRaw: {
-                steps: steps.map((step) => ({
-                  usage: step.usage,
-                  providerMetadata: step.providerMetadata,
-                })),
-                finishReason,
-              },
-            }),
-          );
-        } catch (error) {
-          console.error(`[chat] No se pudo registrar usage para chat ${chatId}:`, error);
-        }
+        // Fuera de la transacción del mensaje, y AiUsageService nunca lanza:
+        // un fallo al registrar usage no puede costar el mensaje ni el cobro,
+        // que ya se persistieron arriba.
+        await this.aiUsage.registrar({
+          userId,
+          chatId,
+          task: "chat",
+          modelo: resolved,
+          usage,
+          stepsCount: steps.length,
+          arranque: startedAt,
+          providerRaw: {
+            steps: steps.map((step) => ({
+              usage: step.usage,
+              providerMetadata: step.providerMetadata,
+            })),
+            finishReason,
+          },
+        });
       },
     });
   }

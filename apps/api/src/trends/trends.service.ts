@@ -6,7 +6,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { generateObject, generateText } from "ai";
+import { generateObject, generateText, NoObjectGeneratedError, type LanguageModelUsage } from "ai";
 import {
   asVerticalId,
   MAX_FREE_TREND_REFRESHES_PER_DAY,
@@ -20,6 +20,7 @@ import {
   type TrendSettingsDto,
   type UpdateTrendSettingsBody,
 } from "@presencia/shared";
+import { AiUsageService } from "../ai/ai-usage.service.js";
 import { AiService } from "../ai/ai.service.js";
 import {
   DEFAULT_TRENDS_MODEL_ID,
@@ -144,6 +145,7 @@ export class TrendsService {
   constructor(
     @Inject(DbService) private readonly dbService: DbService,
     @Inject(AiService) private readonly ai: AiService,
+    @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
     @Inject(TrendsRepository) private readonly repo: TrendsRepository,
     @Inject(BrandVoiceRepository) private readonly voiceRepo: BrandVoiceRepository,
     @Inject(CreditsService) private readonly credits: CreditsService,
@@ -252,6 +254,7 @@ export class TrendsService {
       );
     }
 
+    const arranqueBusqueda = Date.now();
     const busqueda = await generateText({
       model: modelo.model,
       tools: { google_search: GOOGLE_SEARCH_TOOL },
@@ -273,6 +276,27 @@ export class TrendsService {
     const unicas = [...new Map(fuentes.map((f) => [f.title, f])).values()];
     const consultas = contarConsultas(busqueda.steps);
 
+    // Se registra ACÁ, antes de saber si sirvió: la búsqueda ya se pagó, con
+    // sus tokens y su fee por consulta, y los caminos de abajo que la tiran
+    // —sin fuentes, sin items citables, la estructura tronando— son justo los
+    // que antes no dejaban rastro (F9.8).
+    await this.aiUsage.registrar({
+      userId,
+      task: "trends_search",
+      modelo,
+      usage: busqueda.totalUsage,
+      stepsCount: busqueda.steps.length,
+      arranque: arranqueBusqueda,
+      searchQueries: consultas,
+      providerRaw: {
+        steps: busqueda.steps.map((step) => ({
+          usage: step.usage,
+          providerMetadata: step.providerMetadata,
+        })),
+        finishReason: busqueda.finishReason,
+      },
+    });
+
     // Sin páginas no hay nada que citar, y sin cita no hay tendencia. Se corta
     // acá para no pagar la segunda llamada por un resultado ya vacío.
     //
@@ -289,13 +313,35 @@ export class TrendsService {
       return { userId, items: [], fuentes: 0, consultas };
     }
 
-    const estructura = await generateObject({
-      // Se pide el TIER, no una tarea: `resolveForTask` obligaría a declarar
-      // un AiTaskKind, y ninguno de los que existen es esto.
-      model: this.ai.resolve(env.AI_MODEL_UTILITY).model,
-      schema: esquemaDeEstructura,
-      prompt: promptDeEstructura(busqueda.text, unicas),
-    });
+    const modeloEstructura = this.ai.resolveForTask("trends_structure");
+    const arranqueEstructura = Date.now();
+    const registrarEstructura = (usage: LanguageModelUsage, finishReason: unknown) =>
+      this.aiUsage.registrar({
+        userId,
+        task: "trends_structure",
+        modelo: modeloEstructura,
+        usage,
+        stepsCount: 1,
+        arranque: arranqueEstructura,
+        providerRaw: { usage, finishReason },
+      });
+    let estructura;
+    try {
+      estructura = await generateObject({
+        model: modeloEstructura.model,
+        schema: esquemaDeEstructura,
+        prompt: promptDeEstructura(busqueda.text, unicas),
+      });
+    } catch (error) {
+      // Un objeto que no pasa el schema se pagó igual: el SDK trae su usage en
+      // el error. Un rechazo del proveedor antes de generar (el schema que
+      // OpenAI strict no acepta, #92) no trae usage, y no consumió tokens.
+      if (NoObjectGeneratedError.isInstance(error) && error.usage) {
+        await registrarEstructura(error.usage, error.finishReason);
+      }
+      throw error;
+    }
+    await registrarEstructura(estructura.usage, estructura.finishReason);
 
     // El recorte va DESPUÉS de ensamblar, no en el schema. Con un `.max`
     // estricto, un modelo que devolviera once items tiraba la validación
@@ -319,9 +365,9 @@ export class TrendsService {
         expiresAt: new Date(ahora.getTime() + TTL_DIAS * MS_POR_DIA),
         provider: modelo.provider,
         model: modelo.modelName,
+        // Resumen de la tanda, sin tokens: el gasto de cada llamada vive en
+        // `ai_usage_events` (F9.8), donde no se pisa con el siguiente refresco.
         usage: {
-          busqueda: busqueda.usage,
-          estructura: estructura.usage,
           fuentes: unicas.length,
           consultas,
           personalizada: estaPersonalizada(contexto),

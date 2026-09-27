@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException, ServiceUnavailableException } fr
 import { generateText } from "ai";
 import type { RitmoNarracionDto } from "@presencia/shared";
 import { AiService, type ResolvedModel } from "../ai/ai.service.js";
-import { AiUsageRepository } from "../ai/ai-usage.repository.js";
+import { AiUsageService } from "../ai/ai-usage.service.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { DbService } from "../db/db.service.js";
 import { MetricsEngineService } from "../metrics/metrics-engine.service.js";
@@ -55,7 +55,7 @@ export class NarracionService {
   constructor(
     @Inject(DbService) private readonly dbService: DbService,
     @Inject(AiService) private readonly ai: AiService,
-    @Inject(AiUsageRepository) private readonly usageRepo: AiUsageRepository,
+    @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
     @Inject(CreditsService) private readonly credits: CreditsService,
     @Inject(MetricsEngineService) private readonly motor: MetricsEngineService,
     @Inject(ProfileRepository) private readonly profileRepo: ProfileRepository,
@@ -149,41 +149,29 @@ export class NarracionService {
   }
 
   /**
-   * La fila de `ai_usage_events`.
-   *
-   * Try/catch propio (patrón de F4.5 en chat.service.ts): un fallo al registrar
-   * usage nunca puede costar la narración ni el cobro, que ya se persistieron.
+   * La fila de `ai_usage_events`. `AiUsageService` nunca lanza: registrar no
+   * puede costar la narración ni el cobro, que ya se persistieron.
    */
-  private async registrarUsage(
+  private registrarUsage(
     userId: string,
     modelo: ResolvedModel,
     respuesta: RespuestaDeModelo,
     arranque: number,
   ): Promise<void> {
-    try {
-      await this.dbService.runWithTenant(userId, (tx) =>
-        this.usageRepo.insertEvent(tx, {
-          userId,
-          chatId: null,
-          taskKind: TASK_KIND,
-          provider: modelo.provider,
-          model: modelo.modelName,
-          inputTokens: respuesta.usage.inputTokens ?? 0,
-          outputTokens: respuesta.usage.outputTokens ?? 0,
-          cachedInputTokens: respuesta.usage.inputTokenDetails.cacheReadTokens ?? null,
-          // Una llamada, sin tools: no hay pasos que contar.
-          stepsCount: 1,
-          durationMs: Date.now() - arranque,
-          providerRaw: {
-            usage: respuesta.usage,
-            finishReason: respuesta.finishReason,
-            providerMetadata: respuesta.providerMetadata,
-          },
-        }),
-      );
-    } catch (error) {
-      console.error(`[ritmo] No se pudo registrar el usage de la narración de ${userId}:`, error);
-    }
+    return this.aiUsage.registrar({
+      userId,
+      task: TASK_KIND,
+      modelo,
+      usage: respuesta.usage,
+      // Una llamada, sin tools: no hay pasos que contar.
+      stepsCount: 1,
+      arranque,
+      providerRaw: {
+        usage: respuesta.usage,
+        finishReason: respuesta.finishReason,
+        providerMetadata: respuesta.providerMetadata,
+      },
+    });
   }
 
   /**

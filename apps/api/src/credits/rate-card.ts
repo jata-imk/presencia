@@ -10,6 +10,16 @@ import type { AiTaskKind } from "../ai/provider-registry.js";
 export type PlanTier = (typeof planTier.enumValues)[number];
 export type CreditReason = (typeof creditReason.enumValues)[number];
 
+/**
+ * Las tareas que se cobran por tokens.
+ *
+ * Las dos de tendencias quedan fuera: el refresco periódico lo absorbe el
+ * negocio, y adelantarlo se cobra con tarifa fija (`flat.trend_refresh`)
+ * porque el grueso de su costo es el fee por consulta, no los tokens. Que
+ * tengan fila en `ai_usage_events` (F9.8) es telemetría de gasto, no cobro.
+ */
+export type TokenBilledTaskKind = Exclude<AiTaskKind, "trends_search" | "trends_structure">;
+
 export interface TokenRate {
   /** Unidades por cada 1,000 tokens de este tipo. */
   input: number;
@@ -27,7 +37,7 @@ export interface RateCard {
   unitsPerPublication: number;
   /** Gate antes de arrancar un turno de chat (bloqueo suave, no cobro). */
   minimumTurnUnits: number;
-  perThousandTokens: Record<AiTaskKind, TokenRate>;
+  perThousandTokens: Record<TokenBilledTaskKind, TokenRate>;
   /** Costo fijo para acciones que no se miden en tokens del turno de chat. */
   flat: Partial<Record<CreditReason, number>>;
 }
@@ -106,7 +116,7 @@ export interface ChatTurnUsage {
  */
 export function quoteChatTurn(
   usage: ChatTurnUsage,
-  taskKind: AiTaskKind,
+  taskKind: TokenBilledTaskKind,
   version: number = CURRENT_RATE_CARD_VERSION,
 ): number {
   const rate = getRateCard(version).perThousandTokens[taskKind];

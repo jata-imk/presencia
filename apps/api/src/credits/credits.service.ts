@@ -1,6 +1,5 @@
 import { HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
 import type { QuotaState, QuotaStatusDto } from "@presencia/shared";
-import type { AiTaskKind } from "../ai/provider-registry.js";
 import { DbService, type Tx } from "../db/db.service.js";
 import { CreditsRepository } from "./credits.repository.js";
 import { currentCycleWindow } from "./cycle.js";
@@ -15,6 +14,7 @@ import {
   type ChatTurnUsage,
   type CreditReason,
   type PlanTier,
+  type TokenBilledTaskKind,
 } from "./rate-card.js";
 
 export interface QuotaStatus {
@@ -49,7 +49,7 @@ export interface SpendInput {
 export interface ChargeInput {
   userId: string;
   usage: ChatTurnUsage;
-  taskKind: AiTaskKind;
+  taskKind: TokenBilledTaskKind;
   /**
    * Por qué se cobra. Obligatorio y sin default a propósito: mientras estuvo
    * hardcodeado en `chat_message`, el segundo call site habría escrito

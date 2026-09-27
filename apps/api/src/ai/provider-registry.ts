@@ -75,8 +75,24 @@ export const AI_TASK_KINDS = [
   "post_adapt",
   "voice_distill",
   "analytics_narration",
+  // F9.8: las dos llamadas de un refresco de tendencias (ADR-024). Van
+  // separadas porque cuestan distinto: la búsqueda paga además un fee por
+  // consulta (`ai_usage_events.search_queries`), la estructura solo tokens.
+  "trends_search",
+  "trends_structure",
 ] as const;
 export type AiTaskKind = (typeof AI_TASK_KINDS)[number];
+
+/**
+ * Las tareas que se enrutan por tier.
+ *
+ * `trends_search` queda fuera a propósito: no pide "un modelo", pide la
+ * capacidad de buscar con grounding, y se resuelve con `AI_MODEL_TRENDS` y su
+ * propio default (`DEFAULT_TRENDS_MODEL_ID`). Darle un tier sería dejar
+ * abierta una llamada a `resolveForTask("trends_search")` que devuelve un
+ * modelo sin búsqueda; excluida del tipo, esa llamada no compila.
+ */
+export type RoutedTaskKind = Exclude<AiTaskKind, "trends_search">;
 
 // Tiers de modelo (F4.5, addendum ADR-004): AI_MODEL_CHAT es el moat
 // cultural, no se abarata. AI_MODEL_UTILITY es modelo chico (titulares,
@@ -89,13 +105,14 @@ export type ModelTierEnvVar = (typeof MODEL_TIER_ENV_VARS)[number];
 // El call site declara su tarea (AiService.resolveForTask); nunca se infiere
 // con un clasificador previo — eso sería meter un LLM para decidir qué LLM
 // usar, pagado en latencia justo en el primer token.
-export const MODEL_BY_TASK: Record<AiTaskKind, ModelTierEnvVar> = {
+export const MODEL_BY_TASK: Record<RoutedTaskKind, ModelTierEnvVar> = {
   chat: "AI_MODEL_CHAT",
   chat_title: "AI_MODEL_UTILITY",
   history_compaction: "AI_MODEL_UTILITY",
   post_adapt: "AI_MODEL_ADAPT",
   voice_distill: "AI_MODEL_ADAPT",
   analytics_narration: "AI_MODEL_UTILITY",
+  trends_structure: "AI_MODEL_UTILITY",
 };
 
 /**

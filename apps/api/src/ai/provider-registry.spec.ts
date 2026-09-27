@@ -82,11 +82,16 @@ describe("createModelResolver", () => {
 });
 
 describe("MODEL_BY_TASK", () => {
-  it("cubre las 6 tareas de AI_TASK_KINDS, ninguna sin tier", () => {
-    for (const task of AI_TASK_KINDS) {
+  it("cubre toda tarea de AI_TASK_KINDS menos la búsqueda de tendencias", () => {
+    const enrutadas = AI_TASK_KINDS.filter((task) => task !== "trends_search");
+    for (const task of enrutadas) {
       expect(MODEL_TIER_ENV_VARS).toContain(MODEL_BY_TASK[task]);
     }
-    expect(Object.keys(MODEL_BY_TASK).sort()).toEqual([...AI_TASK_KINDS].sort());
+    expect(Object.keys(MODEL_BY_TASK).sort()).toEqual([...enrutadas].sort());
+  });
+
+  it("la búsqueda de tendencias no tiene tier: pide grounding, no un modelo", () => {
+    expect(Object.hasOwn(MODEL_BY_TASK, "trends_search")).toBe(false);
   });
 
   it("chat usa su propio tier — el moat cultural no comparte con utility/adapt", () => {
