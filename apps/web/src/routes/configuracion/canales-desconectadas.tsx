@@ -18,7 +18,12 @@ import { useChannels } from "../../lib/use-channels.js";
 // borrado permanente (con modal de confirmación, Jose la pidió explícita:
 // "que en desconectadas sí haya la posibilidad de borrarlas de verdad").
 export function CanalesDesconectadasPage() {
-  const { disconnectedChannels, refreshDisconnected, reactivate, error: loadError } = useChannels();
+  const {
+    disconnectedChannels,
+    refreshDisconnected,
+    reactivate,
+    disconnectedError: loadError,
+  } = useChannels();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);

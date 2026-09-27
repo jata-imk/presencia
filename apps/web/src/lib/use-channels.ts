@@ -14,6 +14,10 @@ export function useChannels() {
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  // Un error por carga, no uno compartido (F9.7): con uno solo, que cargaran
+  // los conectados borraba el error de los desconectados y esa vista se
+  // quedaba cargando para siempre, o mostraba el error de la otra lista.
+  const [disconnectedError, setDisconnectedError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     apiFetch<ChannelAccountDto[]>("/api/channels")
@@ -28,9 +32,9 @@ export function useChannels() {
     apiFetch<ChannelAccountDto[]>("/api/channels/disconnected")
       .then((rows) => {
         setDisconnectedChannels(rows);
-        setError(null);
+        setDisconnectedError(null);
       })
-      .catch(() => setError("No pudimos cargar tus cuentas desconectadas."));
+      .catch(() => setDisconnectedError("No pudimos cargar tus cuentas desconectadas."));
   }, []);
 
   useEffect(() => {
@@ -80,6 +84,7 @@ export function useChannels() {
     channels,
     disconnectedChannels,
     error,
+    disconnectedError,
     refresh,
     refreshDisconnected,
     createConnectIntent,

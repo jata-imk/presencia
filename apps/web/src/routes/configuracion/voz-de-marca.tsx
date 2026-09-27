@@ -1,5 +1,5 @@
 import { Bookmark, LayoutGrid, SlidersHorizontal, Target } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   macroRegionLabel,
   MODO_ESTRATEGIA_META,
@@ -81,6 +81,11 @@ export function VozDeMarcaPage() {
   // Errores que se ven antes de mandar nada: un país de una letra o un nicho
   // vacío los rechazaría el servidor, y guardar a medias no tiene sentido.
   const [errorPais, setErrorPais] = useState<string | null>(null);
+  // El último país que confirmó el servidor. Si lo escrito deja de ser
+  // válido con un cambio anterior todavía en cola ("Pe" → "P"), ese cambio
+  // se reemplaza por este: si no, se guardaba "Pe" mientras la pantalla
+  // mostraba "P" con un error.
+  const paisGuardado = useRef("");
   const [errorNicho, setErrorNicho] = useState<string | null>(null);
   // Modismos que el servidor sacó de "permitidos" por estar también en
   // "prohibidos". Con autoguardado eso pasa en un segundo, y sin este aviso
@@ -98,6 +103,7 @@ export function VozDeMarcaPage() {
       // mientras viajaba: pisar un campo recién editado con la respuesta del
       // envío anterior borraría lo último que el usuario tecleó.
       setModoDerivado(updated.modoDerivado);
+      paisGuardado.current = updated.marketCountry;
       // "Prohibido gana" (brand-voice.service.ts::resolveConflicts): guardar
       // una lista puede cambiar la otra.
       if (!auto.tienePendiente("allowedExpressions") && !auto.tienePendiente("bannedExpressions")) {
@@ -128,6 +134,7 @@ export function VozDeMarcaPage() {
       .then((data) => {
         setVoice(data);
         setMarketCountry(data.marketCountry);
+        paisGuardado.current = data.marketCountry;
         setMarketRegion(data.marketRegion ?? "");
         setNiche(data.niche);
         setVertical(data.vertical ?? "");
@@ -221,6 +228,9 @@ export function VozDeMarcaPage() {
                 setMarketCountry(valor);
                 if (valor.trim().length < 2) {
                   setErrorPais("Escribe el país: al menos dos letras.");
+                  if (auto.tienePendiente("marketCountry")) {
+                    guardar("marketCountry", paisGuardado.current);
+                  }
                   return;
                 }
                 setErrorPais(null);
@@ -507,7 +517,9 @@ export function VozDeMarcaPage() {
       </Seccion>
 
       {/* Preview manual (doc §5): un botón, nunca en cada cambio. */}
-      <EjemploDeVoz antesDePedir={auto.vaciar} />
+      {/* Un campo que la pantalla ya sabe inválido tampoco está guardado: el
+          ejemplo saldría con el valor anterior, y se cobraría igual. */}
+      <EjemploDeVoz antesDePedir={async () => (await auto.vaciar()) && !errorPais && !errorNicho} />
     </div>
   );
 }
