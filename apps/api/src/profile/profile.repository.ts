@@ -7,7 +7,7 @@ import { omitUndefined } from "../db/omit-undefined.js";
 export type UserRow = typeof users.$inferSelect;
 
 export type UpdateUserPatch = Partial<{
-  displayName: string;
+  displayName: string | null;
   timezone: string;
 }>;
 

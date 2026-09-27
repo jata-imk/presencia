@@ -1,7 +1,13 @@
-import { PlugZap, Trash2 } from "lucide-react";
+import { ArrowLeft, PlugZap, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import { NETWORK_META } from "../../components/cards/NetworkLogos.js";
 import { ModalDeleteChannel } from "../../components/channels/ModalDeleteChannel.js";
+import {
+  EncabezadoDePagina,
+  Seccion,
+  SkeletonDePagina,
+} from "../../components/configuracion/primitivas.js";
 import { ApiError } from "../../lib/api.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
 import { useChannels } from "../../lib/use-channels.js";
@@ -12,7 +18,7 @@ import { useChannels } from "../../lib/use-channels.js";
 // borrado permanente (con modal de confirmación, Jose la pidió explícita:
 // "que en desconectadas sí haya la posibilidad de borrarlas de verdad").
 export function CanalesDesconectadasPage() {
-  const { disconnectedChannels, refreshDisconnected, reactivate } = useChannels();
+  const { disconnectedChannels, refreshDisconnected, reactivate, error: loadError } = useChannels();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -36,67 +42,88 @@ export function CanalesDesconectadasPage() {
 
   const deletingAccount = disconnectedChannels?.find((c) => c.id === deletingId);
 
-  return (
-    <div className="mx-auto max-w-[780px] px-6 py-6">
-      <div className="mb-4 flex items-center gap-2.5">
-        <PlugZap size={16} strokeWidth={1.75} className="text-fg-secondary" />
-        <h1 className="text-base font-bold text-fg">Cuentas desconectadas</h1>
-        {disconnectedChannels && (
-          <span className="text-xs text-fg-muted">
-            {disconnectedChannels.length} cuenta{disconnectedChannels.length === 1 ? "" : "s"}
-          </span>
-        )}
+  // Un fallo al cargar tiene que decirse: sin esto el skeleton se quedaba
+  // para siempre, sin mensaje ni forma de reintentar.
+  if (disconnectedChannels === null) {
+    if (!loadError) return <SkeletonDePagina />;
+    return (
+      <div className="flex flex-col items-start gap-2">
+        <p className="text-sm text-error-fg">{loadError}</p>
+        <button
+          type="button"
+          onClick={refreshDisconnected}
+          className="text-xs text-fg-secondary underline underline-offset-2 hover:text-fg"
+        >
+          Reintentar
+        </button>
       </div>
+    );
+  }
 
+  return (
+    <div>
       <Link
         to="/configuracion/canales"
-        className="mb-4 inline-block text-xs text-fg-muted underline"
+        className="mb-4 inline-flex items-center gap-1.5 text-xs text-fg-secondary hover:text-fg"
       >
-        Volver a canales conectados
+        <ArrowLeft size={13} aria-hidden />
+        Canales conectados
       </Link>
+      <EncabezadoDePagina
+        titulo="Cuentas desconectadas"
+        subtitulo="Recupéralas cuando quieras, o bórralas para siempre."
+      />
 
-      {error && <p className="mb-3 text-sm text-error">{error}</p>}
+      <Seccion
+        icono={PlugZap}
+        titulo={`${String(disconnectedChannels.length)} cuenta${disconnectedChannels.length === 1 ? "" : "s"}`}
+      >
+        {error && <p className="text-sm text-error-fg">{error}</p>}
 
-      {disconnectedChannels === null && <p className="text-sm text-fg-muted">Cargando…</p>}
-      {disconnectedChannels?.length === 0 && (
-        <p className="text-sm text-fg-muted">No tienes cuentas desconectadas.</p>
-      )}
+        {disconnectedChannels.length === 0 && (
+          <p className="text-sm text-fg-muted">No tienes cuentas desconectadas.</p>
+        )}
 
-      {disconnectedChannels && disconnectedChannels.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-line bg-card">
-          {disconnectedChannels.map((channel, i) => (
-            <div
-              key={channel.id}
-              className={`flex items-center gap-3 px-4 py-3 ${
-                i < disconnectedChannels.length - 1 ? "border-b border-line" : ""
-              }`}
-            >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-fg">{NETWORK_LABELS[channel.network]}</p>
-                <p className="mt-0.5 truncate text-xs text-fg-muted">
-                  {channel.displayName ?? "Sin nombre"}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleReactivate(channel.id)}
-                disabled={busyId === channel.id}
-                className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:bg-secondary-hover disabled:opacity-50"
-              >
-                {busyId === channel.id ? "Reconectando…" : "Reconectar"}
-              </button>
-              <button
-                type="button"
-                aria-label={`Eliminar ${NETWORK_LABELS[channel.network]} para siempre`}
-                onClick={() => setDeletingId(channel.id)}
-                className="flex shrink-0 items-center justify-center rounded-md border border-error-border p-1.5 text-error transition-colors hover:bg-error-bg"
-              >
-                <Trash2 size={13} strokeWidth={1.75} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+        {disconnectedChannels.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {disconnectedChannels.map((channel) => {
+              const red = NETWORK_META[channel.network];
+              return (
+                <li
+                  key={channel.id}
+                  className="flex items-center gap-3 rounded-md border border-line bg-surface p-3"
+                >
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-card opacity-70">
+                    <red.Logo size={18} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-display text-base font-semibold text-fg">{red.label}</p>
+                    <p className="mt-0.5 truncate text-xs text-fg-muted">
+                      {channel.displayName ?? "Sin nombre"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleReactivate(channel.id)}
+                    disabled={busyId === channel.id}
+                    className="flex shrink-0 items-center gap-1.5 rounded-md border-[1.5px] border-line bg-card px-3 py-1.75 font-display text-[12.5px] font-semibold text-fg-secondary transition-colors hover:bg-secondary disabled:opacity-50"
+                  >
+                    {busyId === channel.id ? "Reconectando…" : "Reconectar"}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Eliminar ${NETWORK_LABELS[channel.network]} para siempre`}
+                    onClick={() => setDeletingId(channel.id)}
+                    className="flex shrink-0 items-center justify-center rounded-md border border-error-border p-2 text-error-fg transition-colors hover:bg-error-bg"
+                  >
+                    <Trash2 size={14} strokeWidth={1.75} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Seccion>
 
       {deletingAccount && (
         <ModalDeleteChannel
