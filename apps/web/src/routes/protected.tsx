@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Navigate, Outlet, useLocation, useMatches } from "react-router";
 import { Sidebar } from "../components/layout/Sidebar.js";
 import { Topbar } from "../components/layout/Topbar.js";
@@ -6,6 +7,7 @@ import { LiveCards } from "../components/realtime/LiveCards.js";
 import { ScheduleDrawer } from "../components/schedule/ScheduleDrawer.js";
 import { ToastViewport } from "../components/ui/Toast.js";
 import { authClient } from "../lib/auth-client.js";
+import { recordarRutaDeLaApp } from "../lib/ultima-ruta.js";
 
 // Layout de rutas autenticadas: sin sesión → /login. Con sesión pero sin
 // onboarding completo → /onboarding (excepto en la propia ruta, para no
@@ -30,17 +32,30 @@ import { authClient } from "../lib/auth-client.js";
 // ScheduleDrawer es hermano flex del contenido, no un overlay fixed: empuja
 // en vez de taparlo — eso es lo que de raíz evita el doble scroll
 // encimado que reportó Jose. Ver ADR-014.
-/** Rutas que declaran `handle: { ownScroll: true }` (ver App.tsx y ADR-018). */
+/**
+ * Lo que una ruta declara sobre el shell (ver App.tsx).
+ *
+ * - `ownScroll`: maneja su propio alto; se apaga el contenedor con scroll
+ *   (ADR-018).
+ * - `ownShell`: trae su propio shell entero y no lleva Sidebar, Topbar ni
+ *   Drawer. Configuración desde F9.7.
+ */
 interface RouteHandle {
   ownScroll?: boolean;
+  ownShell?: boolean;
 }
 
 export function ProtectedLayout() {
   const { data: session, isPending } = authClient.useSession();
   const location = useLocation();
-  const ownScroll = useMatches().some(
-    (match) => (match.handle as RouteHandle | undefined)?.ownScroll,
-  );
+  const handles = useMatches().map((match) => match.handle as RouteHandle | undefined);
+  const ownScroll = handles.some((handle) => handle?.ownScroll);
+  const ownShell = handles.some((handle) => handle?.ownShell);
+
+  // Para la flecha de "volver" de Configuración (lib/ultima-ruta.ts).
+  useEffect(() => {
+    recordarRutaDeLaApp(location.pathname, location.search);
+  }, [location.pathname, location.search]);
 
   if (isPending) {
     return <main className="p-8">Cargando…</main>;
@@ -62,14 +77,27 @@ export function ProtectedLayout() {
     return <Outlet />;
   }
 
+  // La paleta de comandos (⌘K) y los toasts siguen valiendo dentro de un
+  // shell propio; el Drawer de programación no, ahí no hay nada que programar.
+  if (ownShell) {
+    return (
+      <>
+        <Outlet />
+        <CommandPalette />
+        <ToastViewport />
+        <LiveCards />
+      </>
+    );
+  }
+
   return (
     <div className="flex h-dvh overflow-hidden bg-app">
       <Sidebar />
       <div className="flex min-w-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <Topbar />
-          {/* Zona de scroll por defecto — las páginas viejas (Configuración,
-              la lista de chats pre-PR6) no necesitan saber nada de esto,
+          {/* Zona de scroll por defecto — las páginas viejas (la lista de
+              chats pre-PR6) no necesitan saber nada de esto,
               heredan el scroll de acá sin tocar su propio markup.
               Las pantallas que manejan su propio alto lo dicen con
               `handle: { ownScroll: true }` en su ruta y acá se apaga: si no,

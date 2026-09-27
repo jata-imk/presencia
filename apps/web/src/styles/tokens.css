@@ -333,6 +333,13 @@
   /* El bloque "Gancho": una cita dentro de la tarjeta, con filo de orquídea. */
   --ritmo-gancho-bg: var(--color-plum-50);
   --ritmo-gancho-border: var(--color-pink-orchid);
+  /* Texto de los chips de señal "Estable" y "Nuevo" (F9.7). Antes usaban
+     --status-info y --status-ai, que son pasteles pensados como relleno: como
+     texto sobre su propio tinte apenas se leían en claro (sky-blue sobre
+     azul clarito). Los foreground del mock de Ritmo son los mismos que los de
+     los chips de formato, así que se derivan de ellos y voltean con ellos. */
+  --ritmo-senal-estable-fg: var(--ritmo-formato-post-fg);
+  --ritmo-senal-nuevo-fg: var(--ritmo-formato-carrusel-fg);
 
   /* Layout. --sidebar-width es el DEFAULT, no la ley: desde F6.5 el
      usuario puede arrastrar el borde del sidebar y el valor elegido se
@@ -534,6 +541,8 @@
   --color-ritmo-formato-post-fg: var(--ritmo-formato-post-fg);
   --color-ritmo-gancho: var(--ritmo-gancho-bg);
   --color-ritmo-gancho-border: var(--ritmo-gancho-border);
+  --color-ritmo-senal-estable-fg: var(--ritmo-senal-estable-fg);
+  --color-ritmo-senal-nuevo-fg: var(--ritmo-senal-nuevo-fg);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);

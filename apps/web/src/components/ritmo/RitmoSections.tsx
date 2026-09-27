@@ -217,8 +217,8 @@ export function FilaObjetivo({
 // puede salir de la familia --fg-* (design-tokens.md).
 const CLASE_SENAL: Record<TrendItem["signal"], string> = {
   rising: "bg-accent-cta text-accent-cta-fg",
-  stable: "bg-info-bg text-info",
-  new: "bg-ai-bg text-ai",
+  stable: "bg-info-bg text-ritmo-senal-estable-fg",
+  new: "bg-ai-bg text-ritmo-senal-nuevo-fg",
 };
 
 /**
