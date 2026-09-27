@@ -112,8 +112,13 @@ async function main() {
     m.trim(),
   );
   const only = process.env.IMAGE_BAKEOFF_PROMPTS?.split(",").map((p) => p.trim());
+  // Una edición necesita su base: pedir solo "marquesitas-calida" corre
+  // también "marquesitas", o la edición no tendría qué editar.
+  const bases = PROMPTS.filter((p) => only?.includes(p.id) && p.editOf).map((p) => p.editOf);
   const prompts = only
-    ? PROMPTS.filter((p) => only.includes(p.id) || only.includes(p.editOf ?? ""))
+    ? PROMPTS.filter(
+        (p) => only.includes(p.id) || bases.includes(p.id) || only.includes(p.editOf ?? ""),
+      )
     : PROMPTS;
   const resolve = createImageModelResolver(process.env);
   const fecha = new Date().toISOString().slice(0, 10);
@@ -184,8 +189,13 @@ async function main() {
     ),
     "",
   ].join("\n");
-  const reportFile = path.join(REPORT_DIR, `${fecha}-reporte.md`);
-  await writeFile(reportFile, report);
+  // Nunca pisa un reporte: el de una corrida completa es la evidencia que cita
+  // ADR-025, y una re-corrida parcial del mismo día lo reemplazaría con una
+  // tabla a medias. Cada corrida lleva su hora.
+  const hora = new Date().toISOString().slice(11, 16).replace(":", "");
+  const parcial = only ? "-parcial" : "";
+  const reportFile = path.join(REPORT_DIR, `${fecha}-${hora}-reporte${parcial}.md`);
+  await writeFile(reportFile, report, { flag: "wx" });
   console.log(`\nReporte: ${reportFile}`);
 }
 

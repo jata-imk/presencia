@@ -41,7 +41,7 @@ Es opcional y sin default a propósito: exigir la key de un segundo proveedor pa
 - **Editar es generar con una imagen de referencia** (`reference`): `prompt.images` del SDK. Gemini y OpenAI la aceptan. No hay máscara ni inpainting: ninguna iteración de F10 la pide.
 - **Calidad fija en OpenAI.** Se pide `quality: "medium"` explícito, porque el default `auto` elige en la práctica la calidad alta, que cuesta ~4× lo tarifado.
 - **Bloqueo ≠ error.** Que el proveedor se niegue a dibujar vuelve como `kind: "blocked"`: no se reintenta, no se cobra, y al usuario se le dice qué pedir distinto.
-  - Gemini se niega sin error, respondiendo sin imagen (`NoImageGeneratedError` del SDK).
+  - Gemini se niega sin error: responde sin imagen (`NoImageGeneratedError` del SDK). Pero también responde sin imagen cuando contesta solo con texto o corta antes de tiempo, así que **solo cuenta como bloqueo si el proveedor lo marca**: `promptFeedback.blockReason`, o alguna `safetyRatings[].blocked`. Sin esa señal es una falla reintentable. El usage de esa respuesta se conserva con un middleware, porque Gemini cobra la entrada aunque no dibuje.
   - OpenAI se niega con un 400 `moderation_blocked`.
   - Cualquier otra falla (red, 5xx, key) **lanza**: es del sistema, no del contenido.
 - **Telemetría.** Cada llamada deja su fila en `ai_usage_events` vía `AiUsageService.registrar()`, con tarea `image_generate` o `image_edit` y la columna nueva `images_count`. Ver el addendum F10 de ADR-004.

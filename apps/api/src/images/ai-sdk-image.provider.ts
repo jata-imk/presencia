@@ -1,4 +1,11 @@
-import { APICallError, generateImage, NoImageGeneratedError, type ImageModel } from "ai";
+import {
+  APICallError,
+  generateImage,
+  NoImageGeneratedError,
+  wrapImageModel,
+  type ImageModel,
+  type ImageModelUsage,
+} from "ai";
 import { parseModelId, type ProviderId } from "../ai/provider-registry.js";
 import type {
   ImageAspectRatio,
@@ -20,10 +27,33 @@ const OPENAI_SIZES: Record<ImageAspectRatio, `${number}x${number}`> = {
   "16:9": "1536x1024",
 };
 
-// Lo que el proveedor devuelve cuando su sistema de seguridad rechaza el
-// pedido. OpenAI responde 400 con `moderation_blocked`; Gemini no responde
-// error, responde sin imagen, y eso lo atrapa NoImageGeneratedError.
+// OpenAI rechaza con un 400 que lo dice en el cuerpo.
 const OPENAI_BLOCKED = /moderation_blocked|safety system|safety_violations/i;
+
+/** Lo que devolvió el modelo antes de que `generateImage` decidiera si había imagen. */
+interface Crudo {
+  usage?: ImageModelUsage;
+  providerMetadata?: Record<string, unknown>;
+}
+
+/**
+ * Gemini no rechaza con un error: responde sin imagen. Pero también responde
+ * sin imagen cuando contesta solo con texto o corta antes de tiempo, y eso no
+ * es un bloqueo — tratarlo como uno le diría al usuario "cambia tu pedido"
+ * por algo que se arregla reintentando. Solo cuenta como bloqueo si el
+ * proveedor lo dice: el prompt vino bloqueado o alguna categoría de seguridad
+ * quedó marcada.
+ */
+function geminiBloqueo(crudo: Crudo): boolean {
+  const google = crudo.providerMetadata?.google as
+    | {
+        promptFeedback?: { blockReason?: string | null } | null;
+        safetyRatings?: { blocked?: boolean | null }[] | null;
+      }
+    | undefined;
+  if (google?.promptFeedback?.blockReason) return true;
+  return google?.safetyRatings?.some((rating) => rating.blocked === true) ?? false;
+}
 
 export class AiSdkImageProvider implements ImageProvider {
   readonly provider: ProviderId;
@@ -43,9 +73,27 @@ export class AiSdkImageProvider implements ImageProvider {
       ? { text: request.prompt, images: [request.reference.data] }
       : request.prompt;
 
+    // Cuando no hay imagen, `generateImage` lanza y se lleva el usage y la
+    // metadata que el modelo sí devolvió — y un bloqueo de Gemini igual cobra
+    // los tokens de entrada. El middleware los guarda antes. Uno por llamada,
+    // no uno por instancia: las dos variantes corren en paralelo sobre el
+    // mismo provider.
+    const crudo: Crudo = {};
+    const model = wrapImageModel({
+      model: this.model,
+      middleware: {
+        wrapGenerate: async ({ doGenerate }) => {
+          const result = await doGenerate();
+          crudo.usage = result.usage;
+          crudo.providerMetadata = result.providerMetadata;
+          return result;
+        },
+      },
+    });
+
     try {
       const result = await generateImage({
-        model: this.model,
+        model,
         prompt,
         ...(this.provider === "openai"
           ? {
@@ -69,10 +117,11 @@ export class AiSdkImageProvider implements ImageProvider {
         },
       };
     } catch (error) {
-      if (NoImageGeneratedError.isInstance(error)) {
+      if (NoImageGeneratedError.isInstance(error) && geminiBloqueo(crudo)) {
         return {
           kind: "blocked",
-          providerRaw: { error: error.message, responses: error.responses ?? null },
+          usage: crudo.usage,
+          providerRaw: { error: error.message, ...crudo },
         };
       }
       if (
@@ -84,6 +133,14 @@ export class AiSdkImageProvider implements ImageProvider {
           kind: "blocked",
           providerRaw: { error: error.message, responseBody: error.responseBody ?? null },
         };
+      }
+      // Sin imagen y sin señal de bloqueo: falla del sistema, se puede
+      // reintentar. Se adjunta lo que el modelo sí devolvió para el log.
+      if (NoImageGeneratedError.isInstance(error)) {
+        throw new Error(
+          `El generador respondió sin imagen y sin marcar bloqueo: ${JSON.stringify(crudo.providerMetadata ?? null)}`,
+          { cause: error },
+        );
       }
       throw error;
     }

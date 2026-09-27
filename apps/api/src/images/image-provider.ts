@@ -41,6 +41,11 @@ export type ImageResult =
        * al usuario se le dice qué pedir distinto.
        */
       kind: "blocked";
+      /**
+       * Gemini cobra los tokens de entrada aunque no dibuje: si el proveedor
+       * los reportó, van a la telemetría. OpenAI rechaza antes, sin usage.
+       */
+      usage?: ImageModelUsage;
       providerRaw: unknown;
     };
 

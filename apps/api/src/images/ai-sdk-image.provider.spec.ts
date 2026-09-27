@@ -70,19 +70,43 @@ describe("AiSdkImageProvider", () => {
     expect(llamadas[0]?.files).toHaveLength(1);
   });
 
-  it("sin imagen en la respuesta es un bloqueo, no un error", async () => {
-    const { model } = modelo(() =>
+  const sinImagen = (google: Record<string, unknown>) =>
+    modelo(() =>
       Promise.resolve({
         images: [],
         warnings: [],
+        providerMetadata: { google: { images: [], ...google } },
         response: { timestamp: new Date(), modelId: "m", headers: undefined },
+        usage: { inputTokens: 40, outputTokens: 0, totalTokens: 40 },
       }),
     );
+
+  it("sin imagen y con el prompt bloqueado es un bloqueo, con el usage que sí se cobró", async () => {
+    const { model } = sinImagen({ promptFeedback: { blockReason: "PROHIBITED_CONTENT" } });
+    const provider = new AiSdkImageProvider(model, "google:gemini-3.1-flash-image");
+
+    await expect(provider.generate({ prompt: "x", aspectRatio: "1:1" })).resolves.toMatchObject({
+      kind: "blocked",
+      usage: { inputTokens: 40 },
+    });
+  });
+
+  it("sin imagen y con una categoría de seguridad marcada también es bloqueo", async () => {
+    const { model } = sinImagen({ safetyRatings: [{ category: "X", blocked: true }] });
     const provider = new AiSdkImageProvider(model, "google:gemini-3.1-flash-image");
 
     await expect(provider.generate({ prompt: "x", aspectRatio: "1:1" })).resolves.toMatchObject({
       kind: "blocked",
     });
+  });
+
+  it("sin imagen y sin señal de bloqueo es una falla reintentable, no un bloqueo", async () => {
+    const { model } = sinImagen({ promptFeedback: null, safetyRatings: null });
+    const provider = new AiSdkImageProvider(model, "google:gemini-3.1-flash-image");
+
+    await expect(provider.generate({ prompt: "x", aspectRatio: "1:1" })).rejects.toThrow(
+      /sin imagen y sin marcar bloqueo/,
+    );
   });
 
   it("el rechazo de moderación de OpenAI es un bloqueo", async () => {
