@@ -15,6 +15,11 @@
 //    servidor.
 //  - El estado es por campo: "guardando", "guardado" (que se apaga solo) o
 //    "error" con su mensaje, que se queda hasta que el campo vuelve a cambiar.
+//  - Un envío que falla NO se tira: su parche vuelve a la cola y sale con el
+//    siguiente cambio (de ese campo o de cualquier otro), o al salir de la
+//    página. No se reintenta solo, para no martillar un servidor caído ni
+//    repetir en bucle un rechazo; lo que no puede pasar es que un corte de red
+//    borre en silencio lo que el usuario escribió.
 
 export type EstadoDeCampo =
   { tipo: "guardando" } | { tipo: "guardado" } | { tipo: "error"; mensaje: string };
@@ -105,6 +110,13 @@ export class Autoguardado<P> {
         // aplica: el envío siguiente lleva su valor nuevo.
         if (!this.camposPendientes.has(campo)) this.fijar(campo, { tipo: "error", mensaje });
       }
+      // De vuelta a la cola, DEBAJO de lo que llegó mientras viajaba: lo nuevo
+      // manda sobre lo viejo al combinar. Si no llegó nada nuevo, se queda
+      // esperando al próximo cambio en vez de reintentarse solo.
+      const nuevo = this.pendiente;
+      this.pendiente = nuevo === null ? parche : this.opciones.combinar(parche, nuevo);
+      for (const campo of campos) this.camposPendientes.add(campo);
+      if (nuevo === null) return;
     } finally {
       this.enVuelo = false;
     }

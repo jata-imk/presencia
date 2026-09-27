@@ -14,6 +14,8 @@ import { Tooltip } from "../ui/Tooltip.js";
 // no existe (decidido con Jose, 2026-09-27). Por eso "Pegar texto" es el
 // botón primario mientras tanto.
 
+const MAX_EJEMPLO = 1200;
+
 interface RanuraEjemploProps {
   numero: 1 | 2;
   texto: string;
@@ -38,6 +40,9 @@ export function RanuraEjemplo({ numero, texto, onGuardar, onQuitar }: RanuraEjem
           value={borrador}
           onChange={(e) => setBorrador(e.target.value)}
           autoFocus
+          // El tope del schema (brandVoiceReferenceExampleSchema). Sin él, un
+          // caption largo se veía guardado y el PATCH volvía con 400.
+          maxLength={MAX_EJEMPLO}
           aria-label={`Texto del ejemplo ${String(numero)}`}
           placeholder="Pega aquí el texto de tu post…"
           className="min-h-24 w-full flex-1 resize-none bg-transparent text-sm leading-relaxed text-fg outline-none placeholder:text-fg-muted"

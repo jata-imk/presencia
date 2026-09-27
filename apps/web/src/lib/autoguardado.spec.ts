@@ -118,6 +118,36 @@ describe("Autoguardado", () => {
     expect(estado("niche")).toBeUndefined();
   });
 
+  it("un envío que falla no se pierde: sale con el siguiente cambio", async () => {
+    const { motor, envios, estado } = armar();
+    motor.programar("allowed", { allowed: ["wey"] }, { inmediato: true });
+    await microtareas();
+    envios[0]?.rechazar(new Error("Sin conexión"));
+    await microtareas();
+    // No se reintenta solo.
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(envios).toHaveLength(1);
+    expect(estado("allowed")?.tipo).toBe("error");
+    expect(motor.tienePendiente("allowed")).toBe(true);
+
+    motor.programar("banned", { banned: ["godín"] }, { inmediato: true });
+    await microtareas();
+    expect(envios[1]?.parche).toEqual({ allowed: ["wey"], banned: ["godín"] });
+    envios[1]?.resolver();
+    await microtareas();
+    expect(estado("allowed")).toEqual({ tipo: "guardado" });
+  });
+
+  it("si falla con algo nuevo en cola, lo nuevo manda y sale enseguida", async () => {
+    const { motor, envios } = armar();
+    motor.programar("audience", { audience: "a" }, { inmediato: true });
+    await microtareas();
+    motor.programar("audience", { audience: "ab" }, { inmediato: true });
+    envios[0]?.rechazar(new Error("falló"));
+    await microtareas();
+    expect(envios.map((e) => e.parche)).toEqual([{ audience: "a" }, { audience: "ab" }]);
+  });
+
   it("un campo que cambió mientras viajaba no se marca como guardado", async () => {
     const { motor, envios, estado } = armar();
     motor.programar("audience", { audience: "a" }, { inmediato: true });

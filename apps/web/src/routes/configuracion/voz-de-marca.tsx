@@ -212,6 +212,7 @@ export function VozDeMarcaPage() {
             <TextInput
               id="market-country"
               aria-label="País"
+              maxLength={56}
               value={marketCountry}
               placeholder="País"
               onChange={(e) => {
@@ -227,6 +228,7 @@ export function VozDeMarcaPage() {
             />
             <TextInput
               aria-label="Región"
+              maxLength={80}
               value={marketRegion}
               placeholder="Región (ej. Yucatán)"
               onChange={(e) => {
@@ -264,6 +266,7 @@ export function VozDeMarcaPage() {
           <Textarea
             id="audience"
             aria-label="Detalle de tu audiencia"
+            maxLength={500}
             value={audience}
             onChange={(e) => {
               setAudience(e.target.value);
@@ -416,24 +419,29 @@ export function VozDeMarcaPage() {
           </Aviso>
         )}
 
-        <div className="flex items-center justify-between gap-4 rounded-md border border-line bg-surface px-4 py-3.5">
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="font-display text-base font-semibold text-fg">Permitir anglicismos</p>
-              <MarcaDeGuardado estado={auto.estado("useAnglicisms")} />
+        <div>
+          <div className="flex items-center justify-between gap-4 rounded-md border border-line bg-surface px-4 py-3.5">
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="font-display text-base font-semibold text-fg">Permitir anglicismos</p>
+                <MarcaDeGuardado estado={auto.estado("useAnglicisms")} />
+              </div>
+              <p className="mt-0.5 text-xs text-fg-secondary">
+                Palabras en inglés como «engagement», «reels» o «tips».
+              </p>
             </div>
-            <p className="mt-0.5 text-xs text-fg-secondary">
-              Palabras en inglés como «engagement», «reels» o «tips».
-            </p>
+            <Toggle
+              checked={useAnglicisms}
+              onChange={(next) => {
+                setUseAnglicisms(next);
+                guardar("useAnglicisms", next, true);
+              }}
+              label="Permitir anglicismos"
+            />
           </div>
-          <Toggle
-            checked={useAnglicisms}
-            onChange={(next) => {
-              setUseAnglicisms(next);
-              guardar("useAnglicisms", next, true);
-            }}
-            label="Permitir anglicismos"
-          />
+          {/* El switch no vive en un Campo: su error se dice acá, no solo con
+            el ícono de la marca. */}
+          <ErrorDeGuardado estado={auto.estado("useAnglicisms")} />
         </div>
       </Seccion>
 
@@ -503,17 +511,21 @@ export function VozDeMarcaPage() {
 /** La marca de los ejemplos va debajo de las ranuras: no tienen un label propio. */
 function EstadoDeEjemplos({ estado }: { estado: EstadoDeCampo | undefined }) {
   if (!estado) return null;
-  if (estado.tipo === "error") {
-    return (
-      <p role="alert" className="text-xs text-error-fg">
-        {estado.mensaje}
-      </p>
-    );
-  }
+  if (estado.tipo === "error") return <ErrorDeGuardado estado={estado} />;
   return (
     <div className="flex justify-end">
       <MarcaDeGuardado estado={estado} />
     </div>
+  );
+}
+
+/** El mensaje de un guardado que falló, para lo que no está dentro de un Campo. */
+function ErrorDeGuardado({ estado }: { estado: EstadoDeCampo | undefined }) {
+  if (estado?.tipo !== "error") return null;
+  return (
+    <p role="alert" className="mt-1.5 text-xs text-error-fg">
+      {estado.mensaje}
+    </p>
   );
 }
 
