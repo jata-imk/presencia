@@ -260,6 +260,13 @@
       "when": 1790489955417,
       "tag": "0036_tendencias_en_ai_usage_events",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790493731477,
+      "tag": "0037_ejemplo_de_voz",
+      "breakpoints": true
     }
   ]
 }

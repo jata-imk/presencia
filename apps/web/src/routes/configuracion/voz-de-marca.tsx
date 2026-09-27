@@ -25,6 +25,7 @@ import {
   Seccion,
   SkeletonDePagina,
 } from "../../components/configuracion/primitivas.js";
+import { EjemploDeVoz } from "../../components/configuracion/EjemploDeVoz.js";
 import { RanuraEjemplo } from "../../components/configuracion/RanuraEjemplo.js";
 import { FormalitySlider } from "../../components/ui/FormalitySlider.js";
 import { Select } from "../../components/ui/Select.js";
@@ -504,6 +505,9 @@ export function VozDeMarcaPage() {
           <EstadoDeEjemplos estado={auto.estado("referenceExamples")} />
         </div>
       </Seccion>
+
+      {/* Preview manual (doc §5): un botón, nunca en cada cambio. */}
+      <EjemploDeVoz antesDePedir={auto.vaciar} />
     </div>
   );
 }
