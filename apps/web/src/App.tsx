@@ -12,6 +12,7 @@ import { CanalesPage } from "./routes/configuracion/canales.js";
 import { ConfiguracionLayout } from "./routes/configuracion/layout.js";
 import { MiPerfilPage } from "./routes/configuracion/mi-perfil.js";
 import { PlanPage } from "./routes/configuracion/plan.js";
+import { ProximamentePage } from "./routes/configuracion/proximamente.js";
 import { TendenciasPage } from "./routes/configuracion/tendencias.js";
 import { VozDeMarcaPage } from "./routes/configuracion/voz-de-marca.js";
 import { LoginPage } from "./routes/login.js";
@@ -44,6 +45,8 @@ const router = createBrowserRouter([
       {
         path: "/configuracion",
         element: <ConfiguracionLayout />,
+        // Shell propio (F9.7): header + sub-sidebar en vez del de la app.
+        handle: { ownShell: true },
         children: [
           // Voz de marca es la sub-sección más importante (overview §3) —
           // default al entrar a /configuracion sin sub-ruta.
@@ -61,6 +64,8 @@ const router = createBrowserRouter([
             path: "/configuracion/canales/desconectadas",
             element: <CanalesDesconectadasPage />,
           },
+          { path: "/configuracion/plantillas", element: <ProximamentePage /> },
+          { path: "/configuracion/facturacion", element: <ProximamentePage /> },
         ],
       },
     ],
