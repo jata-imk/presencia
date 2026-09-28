@@ -1,4 +1,6 @@
 import type {
+  CardImageVersionDto,
+  EditCardImageBody,
   GenerateCardImageBody,
   CardStatus,
   PublicationCardDto,
@@ -109,4 +111,24 @@ export function selectCardImage(cardId: string, assetId: string): Promise<Public
     method: "PATCH",
     body: { assetId },
   });
+}
+
+/** "Más cálida", "sin gente": edita la imagen elegida. Devuelve la card generando. */
+export function editCardImage(
+  cardId: string,
+  body: EditCardImageBody,
+): Promise<PublicationCardDto> {
+  return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/images/edit`, { method: "POST", body });
+}
+
+/** Todas las imágenes que tuvo la card, de la más vieja a la más nueva. */
+export function fetchCardImageVersions(cardId: string): Promise<CardImageVersionDto[]> {
+  return apiFetch<CardImageVersionDto[]>(`/api/cards/${cardId}/images`);
+}
+
+export function updateAssetAlt(
+  assetId: string,
+  alt: string,
+): Promise<{ assetId: string; alt: string }> {
+  return apiFetch(`/api/assets/${assetId}`, { method: "PATCH", body: { alt } });
 }

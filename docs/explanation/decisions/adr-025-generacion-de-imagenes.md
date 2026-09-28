@@ -63,3 +63,11 @@ Es opcional y sin default a propósito: exigir la key de un segundo proveedor pa
 - **El recorte a la proporción pedida vive en `images/image-fit.ts`**, fuera del adapter como decía el contrato: centrado y sin reescalar, con 2% de tolerancia. gpt-image 1024×1536 sale 1024×1280 para 4:5; Gemini (928×1152) pasa sin tocarse. El PNG recortado de gpt-image pesa ~3.3 MB, bajo el tope de 10 MB de publicación.
 - **Medido con los generadores reales** (card de Facebook, 4:5, dos variantes en paralelo): Gemini cerró el trabajo en 26 s y gpt-image en 37 s, de click a card actualizada.
 - **Para probar la card sin gastar:** `IMAGE_PROVIDER=fake` con `IMAGE_FAKE_DELAY_MS` (p. ej. 6000) deja ver y medir el estado "generando"; un prompt con `[bloquear]` simula la negativa del proveedor.
+
+## Addendum (2026-09-28, F10 PR4) — editar e historial
+
+- **Editar es la misma cola y el mismo candado que generar**, con `kind: "edit"`, **una** imagen y la elegida como referencia (`reference` del contrato, leída del storage en el worker). La fila guarda `instruction` y `parent_asset_id`, y la telemetría va como `image_edit`. Se cobra una imagen, a la misma tarifa (ADR-012).
+- **El prompt de una edición dice qué NO cambiar** (`composeEditPrompt`): "conserva la composición, el encuadre y el sujeto; sin texto ni logotipos nuevos". Sin esa cola los generadores rehacen la escena entera.
+- **La proporción de una edición es la de su imagen de partida**, llevada a la más cercana que usa la red (`nearestAspect`): una foto subida en 3:2 se edita como 16:9 o 1:1, no se deforma a 4:5.
+- **Historial por card** (`GET /cards/:id/images`): todos los assets de la card con su origen (`assets` ⟕ `image_generations`), de la más vieja a la más nueva. Es lo mismo que Biblioteca (F12) va a necesitar para el linaje.
+- **Texto alternativo** en `assets.metadata.alt`: las generadas nacen con la descripción de la card; una edición hereda el de su imagen de partida; `PATCH /assets/:id` lo cambia. Mandarlo a las redes sigue diferido.

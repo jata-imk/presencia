@@ -93,3 +93,52 @@ export interface ImagesConfigDto {
 
 /** Cuántas imágenes produce un click en "Generar" (decisión de producto de F10). */
 export const IMAGE_VARIANTS_PER_GENERATION = 2;
+
+// ── F10 PR4: iterar la imagen ─────────────────────────────────────────
+
+/**
+ * "Más cálida", "sin gente": se edita la imagen elegida, con ella como
+ * referencia, en vez de generar otra desde cero. Una sola imagen: la
+ * instrucción ya dice qué cambiar, no hay nada que elegir entre dos.
+ */
+export const editCardImageBodySchema = z.object({
+  instruction: z.string().trim().min(3).max(500),
+  provider: imageProviderSlotSchema.default("primary"),
+});
+export type EditCardImageBody = z.infer<typeof editCardImageBodySchema>;
+
+/**
+ * Los atajos de la card (mock: "Regenerar imagen" con dirección y "Variar
+ * estilo"). La etiqueta es lo que se ve; la instrucción, lo que se le pide al
+ * generador.
+ */
+export const IMAGE_EDIT_SUGGESTIONS = [
+  { label: "Más cálida", instruction: "Hazla más cálida, con luz dorada." },
+  { label: "Sin gente", instruction: "Quita a las personas de la imagen." },
+  { label: "Otro fondo", instruction: "Cambia el fondo por otro que combine con el tema." },
+  { label: "Más minimalista", instruction: "Hazla más minimalista, con menos elementos." },
+  { label: "Más colorida", instruction: "Hazla más colorida y vibrante." },
+  { label: "Ilustración", instruction: "Conviértela en una ilustración, conservando la escena." },
+] as const;
+
+/**
+ * Una imagen de la card en su historial (todas las que tuvo: generadas,
+ * editadas, subidas). Es lo que ve la tira de versiones y, en F12,
+ * Biblioteca.
+ */
+export interface CardImageVersionDto {
+  assetId: string;
+  source: "generated" | "uploaded";
+  /** Solo las generadas: si salió de cero o editando otra. */
+  kind: "generate" | "edit" | null;
+  /** Solo las ediciones: lo que se pidió ("Quita a las personas"). */
+  instruction: string | null;
+  /** De qué imagen salió una edición: el linaje. */
+  parentAssetId: string | null;
+  /** Texto alternativo; null si nadie lo escribió (las subidas nacen sin él). */
+  alt: string | null;
+  createdAt: string;
+}
+
+export const updateAssetAltBodySchema = z.object({ alt: z.string().trim().max(500) });
+export type UpdateAssetAltBody = z.infer<typeof updateAssetAltBodySchema>;

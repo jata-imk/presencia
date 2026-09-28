@@ -1,14 +1,16 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Inject,
   NotFoundException,
   Param,
+  Patch,
   Res,
 } from "@nestjs/common";
 import type { Response } from "express";
-import { cardIdParamSchema } from "@presencia/shared";
+import { cardIdParamSchema, updateAssetAltBodySchema } from "@presencia/shared";
 import type { SessionUser } from "../auth/auth.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import { AssetsService } from "./assets.service.js";
@@ -25,6 +27,22 @@ import { AssetsService } from "./assets.service.js";
 @Controller("assets")
 export class AssetsController {
   constructor(@Inject(AssetsService) private readonly service: AssetsService) {}
+
+  /** El texto alternativo de una imagen (F10): lo que lee un lector de pantalla. */
+  @Patch(":id")
+  async updateAlt(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<{ assetId: string; alt: string }> {
+    const parsed = cardIdParamSchema.safeParse({ id });
+    if (!parsed.success) throw new BadRequestException("El id de la imagen no es válido.");
+    const payload = updateAssetAltBodySchema.safeParse(body);
+    if (!payload.success) throw new BadRequestException("El texto alternativo es demasiado largo.");
+    const row = await this.service.updateAlt(user.id, parsed.data.id, payload.data.alt);
+    if (!row) throw new NotFoundException("No encontramos esa imagen.");
+    return { assetId: row.id, alt: payload.data.alt };
+  }
 
   @Get(":id/content")
   async content(

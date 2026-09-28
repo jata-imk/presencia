@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ComponentType } from "react";
+import { useEffect, useId, useRef, useState, type ComponentType } from "react";
 import {
   Copy,
   ImageOff,
@@ -8,11 +8,14 @@ import {
   Shuffle,
   Sparkles,
   Upload,
+  Wand2,
 } from "lucide-react";
 import {
   ASSET_UPLOAD_MIME_TYPES,
   assetContentUrl,
+  IMAGE_EDIT_SUGGESTIONS,
   type CardImageJob,
+  type CardImageVersionDto,
   type ImageAspectRatio,
   type ImageProviderSlot,
 } from "@presencia/shared";
@@ -41,6 +44,13 @@ export interface CardImageGeneration {
   alternateAvailable: boolean;
   /** Las proporciones de esta red; la primera es la default. */
   aspectOptions: readonly ImageAspectRatio[];
+  /** "Más cálida", "sin gente": edita la imagen elegida (una imagen). */
+  edit: (instruction: string, provider: ImageProviderSlot) => void;
+  /** Lo que cuesta una edición, en % del mes. */
+  editPercent: number;
+  /** Todas las imágenes que tuvo la card, de la más vieja a la más nueva. */
+  versions: CardImageVersionDto[];
+  updateAlt: (assetId: string, alt: string) => Promise<void>;
 }
 
 export interface CardMediaActions {
@@ -237,46 +247,205 @@ export function UploadImageButton({
   );
 }
 
+/** Cómo se llama una versión en la tira: lo que se pidió, o de dónde salió. */
+function versionLabel(version: CardImageVersionDto, index: number): string {
+  if (version.source === "uploaded") return "Subida por ti";
+  if (version.kind === "edit" && version.instruction) return version.instruction;
+  return `Generada ${String(index + 1)}`;
+}
+
 /**
- * Las dos variantes del último "Generar", para elegir (mock A8). Solo cuando
- * salió más de una: con una sola no hay nada que elegir.
+ * Todas las imágenes que tuvo la card (mock A8: las miniaturas bajo la
+ * imagen), de la más vieja a la más nueva: las dos variantes de cada
+ * "Generar", las ediciones y las subidas. Tocar una la vuelve la elegida. Es
+ * una fila de botones con scroll horizontal: con teclado se recorre con Tab,
+ * y el que recibe el foco se trae a la vista.
  */
-export function VariantStrip({
-  generation,
+export function VersionStrip({
+  versions,
   selectedId,
   onPick,
+  disabled,
 }: {
-  generation: CardImageGeneration;
+  versions: CardImageVersionDto[];
   selectedId: string | undefined;
   onPick: (assetId: string) => void;
+  disabled: boolean;
 }) {
-  const { job } = generation;
-  if (job?.status !== "done" || job.assetIds.length < 2) return null;
+  // La elegida suele ser la más nueva, al final de la fila: en móvil quedaba
+  // fuera de la vista. Se trae con el scroll de la fila y no con
+  // scrollIntoView, que también movería la página.
+  const row = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const container = row.current;
+    const button = container?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!container || !button) return;
+    const left = button.offsetLeft - container.offsetLeft;
+    if (
+      left < container.scrollLeft ||
+      left + button.offsetWidth > container.scrollLeft + container.clientWidth
+    ) {
+      container.scrollLeft = left + button.offsetWidth - container.clientWidth;
+    }
+  }, [selectedId, versions.length]);
+  if (versions.length < 2) return null;
   return (
-    <div className="mt-2.5 flex flex-wrap items-center gap-2">
-      <span className="text-[11px] font-semibold tracking-wide text-fg-muted uppercase">
-        Elige una
-      </span>
-      {job.assetIds.map((id, index) => {
-        const selected = id === selectedId;
-        return (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={selected}
-            aria-label={`Variante ${String(index + 1)}${selected ? " (elegida)" : ""}`}
-            onClick={() => {
-              if (!selected) onPick(id);
-            }}
-            className={`size-14 overflow-hidden rounded-md border-2 ${
-              selected ? "border-primary" : "border-line"
-            }`}
-          >
-            <img src={assetContentUrl(id)} alt="" className="size-full object-cover" />
-          </button>
-        );
-      })}
+    <div className="mt-2.5">
+      <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-fg-muted uppercase">
+        Versiones · {versions.length}
+      </p>
+      <div ref={row} className="flex gap-2 overflow-x-auto pb-1">
+        {versions.map((version, index) => {
+          const selected = version.assetId === selectedId;
+          const label = versionLabel(version, index);
+          return (
+            <button
+              key={version.assetId}
+              type="button"
+              title={label}
+              aria-pressed={selected}
+              aria-label={`${label}${selected ? " (elegida)" : ""}`}
+              disabled={disabled}
+              onFocus={(event) =>
+                event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" })
+              }
+              onClick={() => {
+                if (!selected) onPick(version.assetId);
+              }}
+              className={`size-14 shrink-0 overflow-hidden rounded-md border-2 disabled:opacity-60 ${
+                selected ? "border-primary" : "border-line"
+              }`}
+            >
+              <img
+                src={assetContentUrl(version.assetId)}
+                alt=""
+                className="size-full object-cover"
+              />
+            </button>
+          );
+        })}
+      </div>
     </div>
+  );
+}
+
+/**
+ * Ajustar la imagen elegida sin empezar de cero (plan F10, decisión 3):
+ * atajos para lo más común y texto libre para lo demás, con el precio a la
+ * vista. Cada ajuste es una imagen nueva que queda en el historial.
+ */
+function AdjustBar({ generation }: { generation: CardImageGeneration }) {
+  const [instruction, setInstruction] = useState("");
+  const busy = isBusy(generation);
+  const inputId = useId();
+  function apply(text: string) {
+    if (text.trim().length < 3) return;
+    generation.edit(text.trim(), "primary");
+    setInstruction("");
+  }
+  return (
+    <div className="mt-2.5 flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-[11px] font-semibold tracking-wide text-fg-muted uppercase">
+          Ajustar
+        </span>
+        {IMAGE_EDIT_SUGGESTIONS.map((suggestion) => (
+          <button
+            key={suggestion.label}
+            type="button"
+            disabled={busy}
+            onClick={() => apply(suggestion.instruction)}
+            className="rounded-full border border-line bg-card px-2.5 py-1 text-xs font-medium text-fg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {suggestion.label}
+          </button>
+        ))}
+      </div>
+      <form
+        className="flex items-center gap-1.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          apply(instruction);
+        }}
+      >
+        <label htmlFor={inputId} className="sr-only">
+          Pide un cambio a la imagen
+        </label>
+        <input
+          id={inputId}
+          value={instruction}
+          onChange={(event) => setInstruction(event.target.value)}
+          maxLength={500}
+          placeholder="Pide un cambio: otro fondo, más luz, sin la taza…"
+          className="min-w-0 flex-1 rounded-md border border-line bg-card px-2.5 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
+        />
+        <button
+          type="submit"
+          disabled={busy || instruction.trim().length < 3}
+          className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-card px-2.5 py-1.5 text-xs font-medium whitespace-nowrap text-fg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Wand2 size={13} strokeWidth={1.75} />
+          Aplicar
+        </button>
+      </form>
+      <p className="text-[11px] text-fg-muted">
+        Cada ajuste: {priceLabel(generation.editPercent)}. La imagen de antes se queda en tus
+        versiones.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * El texto alternativo de la imagen elegida: lo que lee un lector de
+ * pantalla. Las generadas nacen con la descripción que se pidió; las subidas,
+ * vacías hasta que el usuario lo escriba.
+ */
+function AltTextEditor({
+  assetId,
+  initial,
+  generation,
+}: {
+  assetId: string;
+  initial: string;
+  generation: CardImageGeneration;
+}) {
+  const [value, setValue] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const inputId = useId();
+  const dirty = value.trim() !== initial.trim();
+  return (
+    <details className="mt-2 text-xs">
+      <summary className="cursor-pointer text-fg-muted">Texto alternativo</summary>
+      <form
+        className="mt-1.5 flex items-center gap-1.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!dirty) return;
+          setSaving(true);
+          void generation.updateAlt(assetId, value.trim()).finally(() => setSaving(false));
+        }}
+      >
+        <label htmlFor={inputId} className="sr-only">
+          Texto alternativo de la imagen
+        </label>
+        <input
+          id={inputId}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          maxLength={500}
+          placeholder="Describe la imagen para quien no la ve"
+          className="min-w-0 flex-1 rounded-md border border-line bg-card px-2.5 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
+        />
+        <button
+          type="submit"
+          disabled={!dirty || saving}
+          className="shrink-0 rounded-md border border-line bg-card px-2.5 py-1.5 font-medium text-fg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving ? "Guardando…" : "Guardar"}
+        </button>
+      </form>
+    </details>
   );
 }
 
@@ -488,6 +657,7 @@ export function SelectedImage({
   // parecía no hacer nada). Si la API la rechaza, vuelve a la que había.
   const [picked, setPicked] = useState<string | null>(null);
   const shown = picked ?? assetId;
+  const versionAlt = generation?.versions.find((v) => v.assetId === shown)?.alt ?? null;
   function pick(id: string) {
     if (!generation) return;
     setPicked(id);
@@ -498,19 +668,35 @@ export function SelectedImage({
       {job?.status === "generating" ? (
         <GeneratingImage aspectRatio={job.aspectRatio} />
       ) : (
-        <CardImage key={shown} assetId={shown} alt={alt} />
+        <CardImage key={shown} assetId={shown} alt={versionAlt ?? alt} />
       )}
       {(job?.status === "failed" || job?.status === "blocked") && (
         <div className="mt-2">
           <JobNotice job={job} />
         </div>
       )}
-      {generation && <VariantStrip generation={generation} selectedId={shown} onPick={pick} />}
+      {generation && (
+        <VersionStrip
+          versions={generation.versions}
+          selectedId={shown}
+          onPick={pick}
+          disabled={isBusy(generation)}
+        />
+      )}
       {media && (
         <ImageActionStrip
           media={media}
           prompt={prompt}
           aspectRatio={job?.aspectRatio ?? generation?.aspectOptions[0]}
+        />
+      )}
+      {generation && <AdjustBar generation={generation} />}
+      {generation && (
+        <AltTextEditor
+          key={`alt-${shown}`}
+          assetId={shown}
+          initial={versionAlt ?? ""}
+          generation={generation}
         />
       )}
     </>

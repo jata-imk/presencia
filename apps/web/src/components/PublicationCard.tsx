@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { IMAGE_ASPECT_OPTIONS, IMAGE_JOB_STALE_MS, type QuotaStatusDto } from "@presencia/shared";
+import {
+  IMAGE_ASPECT_OPTIONS,
+  IMAGE_JOB_STALE_MS,
+  type CardImageVersionDto,
+  type ImageProviderSlot,
+  type QuotaStatusDto,
+} from "@presencia/shared";
 import { CardToolbar } from "./cards/CardToolbar.js";
 import type { CardMediaActions, GenerateInput } from "./cards/CardMedia.js";
 import { PublicationCardView } from "./cards/PublicationCardView.js";
@@ -8,9 +14,12 @@ import { ApiError } from "../lib/api.js";
 import { effectiveImageJob, imageFileProblem } from "../lib/cards/card-image.js";
 import {
   cancelCardSchedule,
+  editCardImage,
+  fetchCardImageVersions,
   generateCardImage,
   rescheduleCard,
   selectCardImage,
+  updateAssetAlt,
   uploadCardImage,
 } from "../lib/cards-api.js";
 import { cuotaAgotadaDe } from "../lib/cuota-agotada.js";
@@ -57,6 +66,33 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
     return () => clearTimeout(timer);
   }, [rawJob?.id, rawJob?.status, rawJob?.startedAt]);
   const imageJob = effectiveImageJob(rawJob, Math.max(now, Date.now()));
+
+  // El historial de imágenes (F10 PR4). Se vuelve a pedir cuando cambia algo
+  // que lo cambia: termina un trabajo o se elige/sube otra imagen. Solo en
+  // cards editables, que son las únicas que muestran la tira.
+  const [versions, setVersions] = useState<CardImageVersionDto[]>([]);
+  const editable = liveCard?.status === "draft" || liveCard?.status === "failed";
+  const selectedImage = liveCard?.content.assetIds[0] ?? null;
+  const versionsKey =
+    liveCard && editable && (selectedImage || rawJob)
+      ? `${liveCard.id}|${rawJob?.id ?? ""}|${rawJob?.status ?? ""}|${selectedImage ?? ""}`
+      : null;
+  useEffect(() => {
+    if (!versionsKey || !liveCard) return;
+    let alive = true;
+    fetchCardImageVersions(liveCard.id)
+      .then((list) => {
+        if (alive) setVersions(list);
+      })
+      .catch(() => {
+        // Sin historial la card sigue sirviendo: solo no muestra la tira.
+      });
+    return () => {
+      alive = false;
+    };
+    // liveCard.id va dentro de la llave: pedirlo con cada cambio de la card
+    // (hashtags, hora) sería una petición por evento del stream.
+  }, [versionsKey]);
 
   const siblingCards = useMemo(
     () =>
@@ -125,6 +161,11 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
                 percent: imagesConfig.generatePercent,
                 alternateAvailable: imagesConfig.alternateAvailable,
                 aspectOptions: IMAGE_ASPECT_OPTIONS[network],
+                edit: (instruction, provider) =>
+                  void handleEdit(liveCard.id, instruction, provider),
+                editPercent: imagesConfig.editPercent,
+                versions,
+                updateAlt: (assetId, alt) => handleUpdateAlt(assetId, alt),
               }
             : undefined,
         }
@@ -147,6 +188,36 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
         });
     } finally {
       setRequestingImage(false);
+    }
+  }
+
+  async function handleEdit(cardId: string, instruction: string, provider: ImageProviderSlot) {
+    setRequestingImage(true);
+    try {
+      applyCards(await editCardImage(cardId, { instruction, provider }));
+    } catch (err) {
+      const agotada = cuotaAgotadaDe(err);
+      if (agotada) setCuota(agotada);
+      else
+        toast({
+          title: "No se pudo ajustar la imagen",
+          description: err instanceof ApiError ? err.message : "Inténtalo de nuevo.",
+        });
+    } finally {
+      setRequestingImage(false);
+    }
+  }
+
+  async function handleUpdateAlt(assetId: string, alt: string) {
+    try {
+      await updateAssetAlt(assetId, alt);
+      setVersions((list) => list.map((v) => (v.assetId === assetId ? { ...v, alt } : v)));
+      toast({ title: "Texto alternativo guardado" });
+    } catch (err) {
+      toast({
+        title: "No se pudo guardar el texto alternativo",
+        description: err instanceof ApiError ? err.message : "Inténtalo de nuevo.",
+      });
     }
   }
 
