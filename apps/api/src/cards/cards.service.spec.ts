@@ -12,6 +12,21 @@ import type { DbService as DbServiceType } from "../db/db.service.js";
 import type { ChannelsRepository as ChannelsRepositoryType } from "../channels/channels.repository.js";
 import type { CardsRepository as CardsRepositoryType } from "./cards.repository.js";
 import type { CardsService as CardsServiceType } from "./cards.service.js";
+import type { AssetsService as AssetsServiceType } from "../assets/assets.service.js";
+
+// F10: CardsService lee la imagen elegida de Biblioteca para mandarla al
+// proveedor. Acá no importa el storage: cualquier id devuelve un PNG chico,
+// así las cards con `assetIds` inventados de estos tests se pueden programar.
+const assetsStub = {
+  find: () =>
+    Promise.resolve({
+      id: "asset",
+      mimeType: "image/png",
+      storageKey: "u/asset.png",
+      metadata: {},
+    }),
+  readBytes: () => Promise.resolve(new Uint8Array([1, 2, 3])),
+} as unknown as AssetsServiceType;
 
 // El ciclo de vida (CardsService.schedule/cancelSchedule/reconcileDueCards)
 // necesita Postgres real: runWithTenant, RLS y el orden de dos transacciones
@@ -26,6 +41,7 @@ let CardsServiceCtor: new (
   cardsRepo: CardsRepositoryType,
   channelsRepo: ChannelsRepositoryType,
   provider: FakePublishingProvider,
+  assets: AssetsServiceType,
 ) => CardsServiceType;
 let service: CardsServiceType;
 let provider: FakePublishingProvider;
@@ -227,7 +243,7 @@ describe("CardsService", () => {
 
   beforeEach(() => {
     provider = new FakePublishingProvider();
-    service = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, provider);
+    service = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, provider, assetsStub);
   });
 
   async function createCard(content: CardContent, network: SocialNetwork) {
@@ -379,6 +395,20 @@ describe("CardsService", () => {
       scheduledAt: future(10),
     });
     expect(scheduled.status).toBe("scheduled");
+    // F10: la imagen elegida viajó al proveedor, ya preparada.
+    expect(provider.scheduled.at(-1)?.media).toEqual({
+      ref: [{ mimeType: "image/png", bytes: 3 }],
+    });
+  });
+
+  it("un post de texto sin imagen va sin media", { timeout: 15_000 }, async () => {
+    const account = await connectAccount(userA, "linkedin");
+    const card = await createCard(TEXT_CONTENT, "linkedin");
+    await service.schedule(userA, card.id, {
+      socialAccountId: account.id,
+      scheduledAt: future(10),
+    });
+    expect(provider.scheduled.at(-1)?.media).toBeNull();
   });
 
   // Regresión (code review 2026-08-20): videoScriptContentSchema no tenía
@@ -488,7 +518,13 @@ describe("CardsService", () => {
     { timeout: 15_000 },
     async () => {
       const rejecting = new ReschedRejectingProvider();
-      const rejectingService = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, rejecting);
+      const rejectingService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        rejecting,
+        assetsStub,
+      );
       const card = await createCard(TEXT_CONTENT, "linkedin");
       const account = await connectAccount(userA, "linkedin");
 
@@ -534,7 +570,13 @@ describe("CardsService", () => {
           await cardsRepo.cancelSchedule(tx, card.id);
         }),
       );
-      const racingService = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, provider);
+      const racingService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        provider,
+        assetsStub,
+      );
 
       await racingService.schedule(userA, card.id, {
         socialAccountId: account.id,
@@ -560,7 +602,13 @@ describe("CardsService", () => {
     { timeout: 15_000 },
     async () => {
       const ambiguous = new ReschedAmbiguousProvider();
-      const ambiguousService = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, ambiguous);
+      const ambiguousService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        ambiguous,
+        assetsStub,
+      );
       const card = await createCard(TEXT_CONTENT, "linkedin");
       const account = await connectAccount(userA, "linkedin");
 
@@ -621,6 +669,7 @@ describe("CardsService", () => {
         cardsRepo,
         channelsRepo,
         new RejectingProvider(),
+        assetsStub,
       );
 
       await expect(
@@ -652,6 +701,7 @@ describe("CardsService", () => {
         cardsRepo,
         channelsRepo,
         new AmbiguousProvider(),
+        assetsStub,
       );
       const scheduledAt = future(10);
 
@@ -686,6 +736,7 @@ describe("CardsService", () => {
         cardsRepo,
         channelsRepo,
         new AmbiguousProvider(),
+        assetsStub,
       );
 
       await expect(
@@ -708,6 +759,7 @@ describe("CardsService", () => {
         cardsRepo,
         channelsRepo,
         new FlakyProvider(),
+        assetsStub,
       );
 
       await expect(
@@ -750,6 +802,7 @@ describe("CardsService", () => {
         cardsRepo,
         channelsRepo,
         new FlakyProvider(),
+        assetsStub,
       );
 
       const results = await mixedService.scheduleGroup(userA, {
@@ -783,6 +836,7 @@ describe("CardsService", () => {
         cardsRepo,
         channelsRepo,
         new AmbiguousProvider(),
+        assetsStub,
       );
       await expect(
         ambiguousService.schedule(userA, card.id, {
@@ -830,7 +884,13 @@ describe("CardsService", () => {
         }
       }
       const racyProvider = new RacyCancelProvider();
-      const raceService = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, racyProvider);
+      const raceService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        racyProvider,
+        assetsStub,
+      );
       serviceRef.current = raceService;
 
       const result = await raceService.schedule(userA, card.id, {
@@ -896,6 +956,7 @@ describe("CardsService", () => {
         content: TEXT_CONTENT,
         scheduledAt: pastDate,
         accountProviderRef: account.providerRef,
+        media: null,
       });
       await dbService.runWithTenant(userA, async (tx) => {
         await cardsRepo.markScheduling(tx, cardPublished.id, {
@@ -944,7 +1005,13 @@ describe("CardsService", () => {
     { timeout: 15_000 },
     async () => {
       const provider = new NoUrlProvider();
-      const noUrlService = new CardsServiceCtor(dbService, cardsRepo, channelsRepo, provider);
+      const noUrlService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        provider,
+        assetsStub,
+      );
       const card = await createCard(TEXT_CONTENT, "linkedin");
       const account = await connectAccount(userA, "linkedin");
 
@@ -977,6 +1044,7 @@ describe("CardsService", () => {
         cardsRepo,
         channelsRepo,
         countingProvider,
+        assetsStub,
       );
 
       // userB necesita su propio chat: hasta acá todas las cards colgaban de A.
@@ -1002,6 +1070,7 @@ describe("CardsService", () => {
           content: TEXT_CONTENT,
           scheduledAt: pastDate,
           accountProviderRef: account.providerRef,
+          media: null,
         });
         await dbService.runWithTenant(userId, async (tx) => {
           await cardsRepo.markScheduling(tx, card.id, {

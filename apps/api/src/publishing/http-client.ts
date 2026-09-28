@@ -44,6 +44,47 @@ import {
  * proveedor, en vez de borrarle un post real por la espalda.
  */
 const REQUEST_TIMEOUT_MS = 30_000;
+/**
+ * PUT de un archivo a una URL firmada (el bucket del proveedor, no su API):
+ * sin headers de auth, con el Content-Type que se firmó. Mismo corte de
+ * tiempo y misma traducción de errores que el cliente, por la misma razón.
+ */
+export async function putToSignedUrl(
+  providerName: string,
+  signedUrl: string,
+  data: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(signedUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: new Blob([new Uint8Array(data)], { type: contentType }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new PublishingUnavailableError(
+      `No se pudo subir la imagen a ${providerName} (error de red o sin respuesta).`,
+      error,
+    );
+  }
+  if (res.status >= 500) {
+    throw new PublishingUnavailableError(
+      `${providerName} respondió ${res.status} al subir la imagen.`,
+      {
+        status: res.status,
+      },
+    );
+  }
+  if (!res.ok) {
+    throw new PublishingRejectedError(`${providerName} rechazó la imagen (${res.status}).`, {
+      status: res.status,
+      body: await res.text().catch(() => null),
+    });
+  }
+}
+
 export class ProviderHttpClient {
   constructor(
     private readonly providerName: string,

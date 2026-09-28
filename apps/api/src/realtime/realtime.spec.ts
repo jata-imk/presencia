@@ -156,6 +156,8 @@ describe("NOTIFY → LISTEN → stream", { timeout: 30_000 }, () => {
       cardsRepo,
       new ChannelsRepository(),
       new FakePublishingProvider(),
+      // No programa nada: la imagen no se lee nunca.
+      {} as never,
     );
     registry = new StreamRegistry();
     listener = new CardListener(registry, service);

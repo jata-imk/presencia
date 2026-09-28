@@ -48,6 +48,29 @@ export interface SchedulePostRequest {
   scheduledAt: Date;
   /** providerRef de la social_accounts fila destino. */
   accountProviderRef: string;
+  /**
+   * F10: la imagen del post, ya preparada con `prepareMedia`. `null` = el
+   * post va sin media (texto solo). Opaca para el dominio: qué hay adentro
+   * es asunto de cada adapter.
+   */
+  media: PreparedMedia | null;
+}
+
+/** Una imagen para publicar: los bytes ya leídos del storage de Biblioteca. */
+export interface PublishMedia {
+  data: Uint8Array;
+  mimeType: string;
+  filename: string;
+}
+
+/**
+ * La media tal como el proveedor la necesita al crear el post (PostFast: las
+ * `key` de su bucket; Upload-Post: los mismos bytes, que viajan en el
+ * multipart). La arma el adapter en `prepareMedia` y la lee el mismo adapter
+ * en `schedule`/`reschedule`; nadie más la abre.
+ */
+export interface PreparedMedia {
+  readonly ref: unknown;
 }
 
 export type ProviderPostStatus = "scheduled" | "published" | "failed";
@@ -123,6 +146,18 @@ export interface PublishingProvider {
     connectUrl: string;
     expiresAt: Date;
   }>;
+  /**
+   * F10: deja la media lista en el proveedor ANTES de programar. Va aparte de
+   * `schedule` y no adentro, y el motivo es de tiempo: mientras `schedule`
+   * corre, la card está `scheduled` sin `provider_ref`, y si eso dura más
+   * que el margen de gracia de la reconciliación (2 min) el barrido la da por
+   * huérfana (ver ProviderHttpClient). Subir una imagen son hasta dos
+   * llamadas más en PostFast (pedir la URL firmada y el PUT); hechas acá, la
+   * card todavía no cambió de estado y un fallo solo contesta un error.
+   *
+   * Puede hacer red: llamarlo fuera de una transacción de base de datos.
+   */
+  prepareMedia(media: readonly PublishMedia[]): Promise<PreparedMedia>;
   schedule(req: SchedulePostRequest): Promise<{ providerRef: string }>;
   /**
    * Mueve de horario un post que el proveedor YA tiene, conservándolo

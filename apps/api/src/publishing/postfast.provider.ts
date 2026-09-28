@@ -1,6 +1,6 @@
 import type { SocialNetwork } from "@presencia/shared";
 import { PublishingRejectedError, PublishingUnavailableError } from "./errors.js";
-import { isStatus, ProviderHttpClient } from "./http-client.js";
+import { isStatus, ProviderHttpClient, putToSignedUrl } from "./http-client.js";
 import { parseMetricNumber } from "./metric-values.js";
 import { parsePlatformPostId } from "./platform-post-id.js";
 import { buildPostText } from "./post-text.js";
@@ -8,11 +8,20 @@ import type {
   PostMetricsQuery,
   PostMetricsSnapshot,
   ProviderAccount,
+  PreparedMedia,
   ProviderPostState,
   PublishingProvider,
+  PublishMedia,
   SchedulePostRequest,
   WorkspaceRef,
 } from "./publishing.provider.js";
+
+/** Lo que PostFast espera en `mediaItems` (postfa.st/docs/posts/create). */
+interface PostfastMediaItem {
+  key: string;
+  type: "IMAGE";
+  sortOrder: number;
+}
 
 // Adapter real contra postfa.st (ADR-009). Verificado contra la referencia
 // pública en postfa.st/docs.md (2026-08-15) — la API key es por WORKSPACE,
@@ -162,16 +171,41 @@ export class PostFastProvider implements PublishingProvider {
     };
   }
 
+  /**
+   * F10: sube cada imagen al bucket de PostFast (verificado contra
+   * postfa.st/docs/files/upload): pedir una URL firmada con su tipo, y un
+   * `PUT` crudo a esa URL con el MISMO Content-Type. Lo que queda es la
+   * `key`, que `schedule` manda en `mediaItems`. Una URL por imagen, en
+   * orden: hoy la card lleva una sola.
+   */
+  async prepareMedia(media: readonly PublishMedia[]): Promise<PreparedMedia> {
+    const items: PostfastMediaItem[] = [];
+    for (const [index, item] of media.entries()) {
+      const [signed] = await this.http.request<{ key?: string; signedUrl?: string }[]>(
+        "POST",
+        "/file/get-signed-upload-urls",
+        { contentType: item.mimeType, count: 1 },
+      );
+      if (!signed?.key || !signed.signedUrl) {
+        throw new PublishingUnavailableError("PostFast no devolvió dónde subir la imagen.", {
+          reason: "no_signed_url_in_response",
+          body: signed ?? null,
+        });
+      }
+      await putToSignedUrl("PostFast", signed.signedUrl, item.data, item.mimeType);
+      items.push({ key: signed.key, type: "IMAGE", sortOrder: index });
+    }
+    return { ref: items };
+  }
+
   async schedule(req: SchedulePostRequest): Promise<{ providerRef: string }> {
     const body = await this.http.request<{ postIds?: string[] }>("POST", "/social-posts", {
       posts: [
         {
           content: buildPostText(req.content),
-          // Media real (subir el asset a PostFast y referenciarlo aquí) es
-          // trabajo de F10/F11 — hasta entonces, CardsService rechaza antes
-          // de llegar aquí cualquier red que exija media (instagram, tiktok,
-          // youtube). Enviar [] es seguro para las redes que sí llegan.
-          mediaItems: [],
+          // Las `key` que dejó `prepareMedia`. Sin media es un post de
+          // texto: CardsService ya rechazó antes las redes que la exigen.
+          mediaItems: (req.media?.ref as PostfastMediaItem[] | undefined) ?? [],
           scheduledAt: req.scheduledAt.toISOString(),
           socialMediaId: req.accountProviderRef,
           status: "SCHEDULED",

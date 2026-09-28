@@ -3,8 +3,10 @@ import type {
   PostMetricsQuery,
   PostMetricsSnapshot,
   ProviderAccount,
+  PreparedMedia,
   ProviderPostState,
   PublishingProvider,
+  PublishMedia,
   SchedulePostRequest,
   WorkspaceRef,
 } from "./publishing.provider.js";
@@ -56,7 +58,17 @@ export class FakePublishingProvider implements PublishingProvider {
     });
   }
 
+  /** Lo que le llegó a `schedule`, para que los tests vean la media que viajó. */
+  readonly scheduled: SchedulePostRequest[] = [];
+
+  prepareMedia(media: readonly PublishMedia[]): Promise<PreparedMedia> {
+    return Promise.resolve({
+      ref: media.map((m) => ({ mimeType: m.mimeType, bytes: m.data.byteLength })),
+    });
+  }
+
   schedule(req: SchedulePostRequest): Promise<{ providerRef: string }> {
+    this.scheduled.push(req);
     this.counter += 1;
     const providerRef = `fake_${this.counter}`;
     this.posts.set(providerRef, { scheduledAt: req.scheduledAt });

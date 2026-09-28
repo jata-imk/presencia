@@ -13,8 +13,10 @@ import type {
   PostMetricsQuery,
   PostMetricsSnapshot,
   ProviderAccount,
+  PreparedMedia,
   ProviderPostState,
   PublishingProvider,
+  PublishMedia,
   SchedulePostRequest,
   WorkspaceRef,
 } from "./publishing.provider.js";
@@ -129,6 +131,18 @@ const PLATFORM_BY_NETWORK: Record<SocialNetwork, string> = {
 // y no de "te falta una imagen", que sería mentirle al usuario justo cuando
 // sí la tiene.
 const TEXT_PLATFORMS: ReadonlySet<string> = new Set(["linkedin", "x", "facebook", "threads"]);
+
+// Redes nuestras que `POST /upload_photos` acepta con imagen (PhotoPlatformEnum
+// del openapi.json, verificado 2026-09-28). TikTok también está en el enum,
+// pero en Presencia TikTok es guion de video: una foto ahí no es el post que
+// la card describe.
+const PHOTO_PLATFORMS: ReadonlySet<string> = new Set([
+  "instagram",
+  "facebook",
+  "linkedin",
+  "x",
+  "threads",
+]);
 
 // Plataformas que se le ofrecen al usuario en la página de conexión. Es el
 // cruce de nuestro enum con el que acepta generate-jwt.
@@ -344,11 +358,26 @@ export class UploadPostProvider implements PublishingProvider {
     return { connectUrl: body.access_url, expiresAt: new Date(Date.now() + CONNECT_LINK_TTL_MS) };
   }
 
+  /**
+   * F10: Upload-Post no tiene un paso previo de subida — la imagen viaja
+   * dentro del mismo multipart que crea el post (`photos[]` en binario,
+   * openapi de `/upload_photos`). Preparar es quedarse con los bytes.
+   *
+   * Se mandan bytes y no una URL de nuestro bucket, aunque el endpoint acepte
+   * URLs: con `scheduled_date` no sabemos cuándo la va a ir a buscar, y la
+   * URL firmada vence en minutos.
+   */
+  prepareMedia(media: readonly PublishMedia[]): Promise<PreparedMedia> {
+    return Promise.resolve({ ref: media });
+  }
+
   async schedule(req: SchedulePostRequest): Promise<{ providerRef: string }> {
     const { profile, platform } = parseAccountRef(req.accountProviderRef);
-    if (!TEXT_PLATFORMS.has(platform)) {
+    const media = (req.media?.ref as readonly PublishMedia[] | undefined) ?? [];
+    const withPhotos = media.length > 0 && PHOTO_PLATFORMS.has(platform);
+    if (!withPhotos && !TEXT_PLATFORMS.has(platform)) {
       throw new PublishingRejectedError(
-        `Todavía no podemos publicar en ${platform}: esa red exige imagen o video, y subir el archivo al proveedor llega en una fase próxima.`,
+        `Todavía no podemos publicar en ${platform}: esa red exige video, y subir video al proveedor llega en una fase próxima.`,
         { reason: "media_upload_not_implemented", platform },
       );
     }
@@ -357,6 +386,13 @@ export class UploadPostProvider implements PublishingProvider {
     // aceptan JSON. `platform[]` va con corchetes en el nombre del campo,
     // como lo declara el openapi.
     const form = new FormData();
+    for (const item of withPhotos ? media : []) {
+      form.append(
+        "photos[]",
+        new Blob([new Uint8Array(item.data)], { type: item.mimeType }),
+        item.filename,
+      );
+    }
     form.set("user", profile);
     form.append("platform[]", platform);
     form.set("title", buildPostText(req.content));
@@ -367,7 +403,11 @@ export class UploadPostProvider implements PublishingProvider {
     // de zona horaria del ScheduleDrawer.
     form.set("timezone", "UTC");
 
-    const body = await this.http.request<{ job_id?: string }>("POST", "/upload_text", form);
+    const body = await this.http.request<{ job_id?: string }>(
+      "POST",
+      withPhotos ? "/upload_photos" : "/upload_text",
+      form,
+    );
     const providerRef = body.job_id;
     if (!providerRef) {
       // Misma lección que el incidente 2026-08-18 de PostFast: un 2xx cuyo
