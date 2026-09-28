@@ -159,6 +159,28 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     expect(second.content.assetIds[0]).not.toBe(first.content.assetIds[0]);
   });
 
+  it("subir la propia limpia el aviso de un intento fallido", async () => {
+    const cardId = await createCard(VISUAL);
+    await dbService.runWithTenant(userA, (tx) =>
+      tx
+        .update(publicationCards)
+        .set({
+          imageJob: {
+            id: randomUUID(),
+            status: "failed",
+            provider: "primary",
+            kind: "generate",
+            aspectRatio: "4:5",
+            assetIds: [],
+            startedAt: new Date().toISOString(),
+          },
+        })
+        .where(eq(publicationCards.id, cardId)),
+    );
+    const dto = await media.attachUpload(userA, cardId, PNG);
+    expect(dto.imageJob).toBeNull();
+  });
+
   it("un guion de video no lleva imagen", async () => {
     const cardId = await createCard(VIDEO);
     await expect(media.attachUpload(userA, cardId, PNG)).rejects.toThrow(/guion de video/);

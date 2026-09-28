@@ -74,7 +74,9 @@ export class CardMediaService {
         ...(current.content as CardContent),
         assetIds: [stored.id],
       });
-      const updated = await this.repo.updateContentIfEditable(tx, cardId, content);
+      const updated = await this.repo.updateContentIfEditable(tx, cardId, content, {
+        clearFinishedImageJob: true,
+      });
       if (!updated) throw new ConflictException(NOT_EDITABLE_MESSAGE);
       return toDto(updated);
     });

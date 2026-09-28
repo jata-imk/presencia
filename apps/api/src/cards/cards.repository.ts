@@ -180,10 +180,23 @@ export class CardsRepository {
     tx: Tx,
     id: string,
     content: CardContent,
+    options: { clearFinishedImageJob?: boolean } = {},
   ): Promise<CardRow | undefined> {
+    // `clearFinishedImageJob`: el usuario resolvió la imagen por otro lado
+    // (subió la suya), así que el aviso del último intento —"no se pudo
+    // generar"— y sus variantes ya no dicen nada. Uno que sigue generando se
+    // respeta: su resultado todavía tiene que llegar.
     const [row] = await tx
       .update(publicationCards)
-      .set({ content, updatedAt: WRITTEN_AT })
+      .set({
+        content,
+        ...(options.clearFinishedImageJob
+          ? {
+              imageJob: sql`case when ${publicationCards.imageJob}->>'status' = 'generating' then ${publicationCards.imageJob} else null end`,
+            }
+          : {}),
+        updatedAt: WRITTEN_AT,
+      })
       .where(
         and(eq(publicationCards.id, id), inArray(publicationCards.status, EDITABLE_CARD_STATUSES)),
       )
@@ -202,19 +215,30 @@ export class CardsRepository {
    * muerto (el worker se reinició a la mitad) y se deja pisar, o el botón
    * quedaría apagado para siempre.
    *
-   * Si viene `content`, se guarda en la misma escritura: es el prompt que el
-   * usuario editó antes de apretar "Generar".
+   * Si viene `imagePrompt`, se guarda en la misma escritura: es el prompt
+   * que el usuario editó antes de apretar "Generar". Se fusiona en SQL sobre
+   * la fila que se escribe, y no con un contenido armado antes: entre leer la
+   * card y llegar acá pasan varias idas a la base, y una imagen subida en ese
+   * hueco (otra pestaña) se habría pisado con la lectura vieja.
    */
   async startImageJob(
     tx: Tx,
     id: string,
     job: CardImageJob,
-    content?: CardContent,
+    imagePrompt?: string,
   ): Promise<CardRow | undefined> {
     const staleBefore = new Date(Date.now() - IMAGE_JOB_STALE_MS).toISOString();
     const [row] = await tx
       .update(publicationCards)
-      .set({ imageJob: job, ...(content ? { content } : {}), updatedAt: WRITTEN_AT })
+      .set({
+        imageJob: job,
+        ...(imagePrompt !== undefined
+          ? {
+              content: sql`jsonb_set(${publicationCards.content}, '{imagePrompt}', to_jsonb(${imagePrompt}::text))`,
+            }
+          : {}),
+        updatedAt: WRITTEN_AT,
+      })
       .where(
         and(
           eq(publicationCards.id, id),

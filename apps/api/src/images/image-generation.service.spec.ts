@@ -291,6 +291,57 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(1);
   });
 
+  it("un job que la card ya reemplazó no dibuja ni cobra", async () => {
+    const primary = new FakeImageProvider();
+    const service = make({ primary, alternate: null });
+    const cardId = await createCard();
+    const dto = await service.request(userId, cardId, {
+      provider: "primary",
+      prompt: VISUAL.imagePrompt!,
+      aspectRatio: "4:5",
+    });
+    // La cola se atrasó, la card lo dio por muerto y el usuario pidió otro.
+    await dbService.runWithTenant(userId, (tx) =>
+      tx
+        .update(publicationCards)
+        .set({ imageJob: { ...dto.imageJob!, id: randomUUID() } })
+        .where(eq(publicationCards.id, cardId)),
+    );
+
+    await service.run({ userId, cardId, batchId: dto.imageJob!.id });
+
+    expect(primary.requests).toHaveLength(0);
+    const rows = await batchRows(dto.imageJob!.id);
+    expect(rows.every((r) => r.status === "failed")).toBe(true);
+    expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(0);
+  });
+
+  it("guardar el prompt editado no pisa la imagen que llegó después de leer la card", async () => {
+    const { CardsRepository } = await import("../cards/cards.repository.js");
+    const cardId = await createCard();
+    const subida = randomUUID();
+    // Otra pestaña eligió una imagen entre la lectura y la escritura.
+    await dbService.runWithTenant(userId, (tx) =>
+      tx
+        .update(publicationCards)
+        .set({ content: { ...VISUAL, assetIds: [subida] } })
+        .where(eq(publicationCards.id, cardId)),
+    );
+    const job: CardImageJob = {
+      id: randomUUID(),
+      status: "generating",
+      provider: "primary",
+      kind: "generate",
+      aspectRatio: "4:5",
+      assetIds: [],
+      startedAt: new Date().toISOString(),
+    };
+    const row = await dbService.runWithTenant(userId, (tx) =>
+      new CardsRepository().startImageJob(tx, cardId, job, "Prompt editado"),
+    );
+    expect(row?.content).toMatchObject({ imagePrompt: "Prompt editado", assetIds: [subida] });
+  });
+
   it("'Probar con otro generador' sin uno configurado es un 400", async () => {
     const service = make(fake());
     const cardId = await createCard();

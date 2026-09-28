@@ -8,7 +8,6 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import {
-  cardContentSchema,
   IMAGE_ASPECT_OPTIONS,
   IMAGE_VARIANTS_PER_GENERATION,
   type CardContent,
@@ -159,13 +158,11 @@ export class ImageGenerationService {
     };
     // El prompt editado se guarda en la card: la próxima vez la card muestra
     // lo que de verdad se generó, no la sugerencia original del chat.
-    const editedContent =
-      "imagePrompt" in content && content.imagePrompt === body.prompt
-        ? undefined
-        : cardContentSchema.parse({ ...content, imagePrompt: body.prompt });
+    const editedPrompt =
+      "imagePrompt" in content && content.imagePrompt === body.prompt ? undefined : body.prompt;
 
     const started = await this.dbService.runWithTenant(userId, async (tx) => {
-      const row = await this.cards.startImageJob(tx, cardId, job, editedContent);
+      const row = await this.cards.startImageJob(tx, cardId, job, editedPrompt);
       if (!row) return null;
       await this.generations.insertMany(
         tx,
@@ -224,6 +221,15 @@ export class ImageGenerationService {
     );
     const pending = rows.filter((row) => row.status === "pending");
     if (!card || pending.length === 0) return;
+
+    // El trabajo de la card ya no es este: la cola se atrasó más que el corte
+    // de "generando" y el usuario, que lo vio fallido, pidió otro. Dibujarlo
+    // ahora cobraría imágenes que nunca va a ver en la card.
+    const current = card.imageJob as CardImageJob | null;
+    if (current?.id !== batchId || current.status !== "generating") {
+      await this.settleBatch(userId, batchId, "reemplazado por otro intento");
+      return;
+    }
 
     const provider = this.providerFor(
       pending[0]!.providerSlot === "alternate" ? "alternate" : "primary",

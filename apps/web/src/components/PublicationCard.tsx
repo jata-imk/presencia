@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
-import { IMAGE_ASPECT_OPTIONS, type QuotaStatusDto } from "@presencia/shared";
+import { useEffect, useMemo, useState } from "react";
+import { IMAGE_ASPECT_OPTIONS, IMAGE_JOB_STALE_MS, type QuotaStatusDto } from "@presencia/shared";
 import { CardToolbar } from "./cards/CardToolbar.js";
 import type { CardMediaActions, GenerateInput } from "./cards/CardMedia.js";
 import { PublicationCardView } from "./cards/PublicationCardView.js";
 import { QuotaExhaustedModal } from "./QuotaExhaustedModal.js";
 import { ApiError } from "../lib/api.js";
-import { imageFileProblem } from "../lib/cards/card-image.js";
+import { effectiveImageJob, imageFileProblem } from "../lib/cards/card-image.js";
 import {
   cancelCardSchedule,
   generateCardImage,
@@ -45,6 +45,19 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
 
   const cardId = part.state === "output-available" ? part.output.cardId : undefined;
   const liveCard = useCard(cardId);
+  // Un trabajo "generando" que no termina (el worker murió a la mitad) no
+  // manda ningún evento: la card lo da por fallido sola al cumplirse el corte
+  // de IMAGE_JOB_STALE_MS, con un timer que la vuelve a pintar a esa hora.
+  const rawJob = liveCard?.imageJob ?? null;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (rawJob?.status !== "generating") return;
+    const due = Date.parse(rawJob.startedAt) + IMAGE_JOB_STALE_MS - Date.now();
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(due, 0) + 500);
+    return () => clearTimeout(timer);
+  }, [rawJob?.id, rawJob?.status, rawJob?.startedAt]);
+  const imageJob = effectiveImageJob(rawJob, Math.max(now, Date.now()));
+
   const siblingCards = useMemo(
     () =>
       liveCard?.groupId
@@ -108,7 +121,7 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
                 generate: (input) => void handleGenerate(liveCard.id, input),
                 select: (assetId) => handleSelect(liveCard.id, assetId),
                 requesting: requestingImage,
-                job: liveCard.imageJob,
+                job: imageJob,
                 percent: imagesConfig.generatePercent,
                 alternateAvailable: imagesConfig.alternateAvailable,
                 aspectOptions: IMAGE_ASPECT_OPTIONS[network],

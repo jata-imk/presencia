@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { imageFileProblem, missingImageNote } from "./card-image.js";
+import type { CardImageJob } from "@presencia/shared";
+import { effectiveImageJob, imageFileProblem, missingImageNote } from "./card-image.js";
 
 describe("imageFileProblem", () => {
   it("acepta JPG, PNG y WebP hasta 10 MB", () => {
@@ -24,5 +25,28 @@ describe("missingImageNote", () => {
     expect(missingImageNote("facebook")).toMatch(/solo el texto/);
     expect(missingImageNote("facebook")).not.toMatch(/necesita/);
     expect(missingImageNote("instagram")).toMatch(/necesita/);
+  });
+});
+
+describe("effectiveImageJob", () => {
+  const job = (startedAt: string): CardImageJob => ({
+    id: "j",
+    status: "generating",
+    provider: "primary",
+    kind: "generate",
+    aspectRatio: "4:5",
+    assetIds: [],
+    startedAt,
+  });
+  const t0 = Date.parse("2026-09-27T12:00:00Z");
+
+  it("un trabajo reciente sigue generando", () => {
+    expect(effectiveImageJob(job("2026-09-27T12:00:00Z"), t0 + 60_000)?.status).toBe("generating");
+  });
+
+  it("pasados 5 minutos se muestra fallido aunque la API no haya escrito nada", () => {
+    expect(effectiveImageJob(job("2026-09-27T12:00:00Z"), t0 + 5 * 60_000 + 1)?.status).toBe(
+      "failed",
+    );
   });
 });
