@@ -1,4 +1,12 @@
 import type { CardContent, SocialNetwork } from "@presencia/shared";
+import { selectedAssetId } from "../../lib/cards/card-image.js";
+import {
+  CardImage,
+  ImageActionStrip,
+  ImagePromptBox,
+  UploadImageButton,
+  type CardMediaActions,
+} from "./CardMedia.js";
 import { Hashtags } from "./Hashtags.js";
 
 type TextFirstContent = Extract<CardContent, { archetype: "text_first" }>;
@@ -18,12 +26,16 @@ const MAX_CHARS: Partial<Record<SocialNetwork, number>> = {
 export function TextCardBody({
   content,
   network,
+  media,
 }: {
   content: TextFirstContent;
   network: SocialNetwork;
+  /** F10: solo cuando la card se puede editar. */
+  media?: CardMediaActions;
 }) {
   const max = MAX_CHARS[network];
   const over = max !== undefined && content.body.length > max;
+  const assetId = selectedAssetId(content);
 
   return (
     <div className="px-4 py-3.5">
@@ -44,6 +56,23 @@ export function TextCardBody({
         </div>
       )}
       <Hashtags tags={content.hashtags} />
+      {/* La imagen acompañante (F10) es secundaria en estas redes: va
+          después del texto, y sin imagen ni card editable no ocupa nada. */}
+      {assetId ? (
+        <div className="mt-3">
+          <CardImage assetId={assetId} alt={content.imagePrompt ?? "Imagen de la publicación"} />
+          {media && <ImageActionStrip media={media} />}
+        </div>
+      ) : (
+        media && (
+          <div className="mt-3 flex flex-col gap-2">
+            {content.imagePrompt && <ImagePromptBox prompt={content.imagePrompt} copyable />}
+            <div>
+              <UploadImageButton media={media} label="Agregar imagen" />
+            </div>
+          </div>
+        )
+      )}
     </div>
   );
 }

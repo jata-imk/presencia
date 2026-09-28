@@ -350,6 +350,22 @@ El tratamiento depende del arquetipo de la card:
   y acompañante. Si la IA generó una, aparece el preview con
   las mismas opciones de regeneración, pero la sección es
   secundaria frente al editor de texto.
+
+> **F10 (2026-09-27), lo que ya existe en la card del chat.** La imagen
+> vive en la card misma (el panel expandido llega después) y se
+> resuelve en dos modos que conviven:
+>
+> - **Traerla de afuera, sin costo:** el prompt sugerido con
+>   "Copiar" y "Subir imagen" (JPG, PNG o WebP de hasta 10 MB). La
+>   subida queda como la imagen elegida y se guarda en Biblioteca.
+> - **Generarla aquí**, con cobro: llega en el siguiente PR de F10.
+>
+> Sin imagen, la card dice qué pasa en esa red, sin inventar: Instagram
+> la necesita para programar; Facebook publica solo el texto; en
+> LinkedIn/X/Threads es opcional y la sección aparece discreta, después
+> del texto. Solo una card en borrador (o fallida) ofrece acciones de
+> imagen: una programada ya viajó al proveedor con la suya.
+
 - **Guion-video (TikTok/Reels/Shorts):** esta sección **no
   aplica** (no se genera imagen ni video). En su lugar, el
   panel muestra el editor del paquete de guion (hook, beats,

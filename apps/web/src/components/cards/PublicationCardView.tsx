@@ -3,6 +3,7 @@ import type { CardContent, CardStatus, SocialNetwork } from "@presencia/shared";
 import { type BadgeKind } from "./Badge.js";
 import { PublishedBanner, ScheduledBanner } from "./Banner.js";
 import { CardHeader } from "./CardHeader.js";
+import type { CardMediaActions } from "./CardMedia.js";
 import { GlowFrame } from "./GlowFrame.js";
 import { TextCardBody } from "./TextCardBody.js";
 import { VideoCardBody } from "./VideoCardBody.js";
@@ -57,6 +58,11 @@ export interface PublicationCardViewProps {
    * atención ya no aporta y compite con el contenido.
    */
   glow?: boolean;
+  /**
+   * F10: las acciones sobre la imagen (subir, y después generar). Solo las
+   * pasa quien puede editar la card; sin esto la imagen es de solo lectura.
+   */
+  media?: CardMediaActions;
 }
 
 export function PublicationCardView({
@@ -70,6 +76,7 @@ export function PublicationCardView({
   footer,
   showCalendarLink = true,
   glow = true,
+  media,
 }: PublicationCardViewProps) {
   const inner = (
     <>
@@ -91,11 +98,15 @@ export function PublicationCardView({
             "No se pudo confirmar esta publicación con el proveedor. Puedes reintentar."}
         </div>
       )}
-      {content.archetype === "visual_first" && <VisualCardBody content={content} />}
+      {content.archetype === "visual_first" && (
+        <VisualCardBody content={content} network={network} media={media} />
+      )}
       {content.archetype === "video_script" && (
         <VideoCardBody content={content} showWaitingForMaterial={status === "draft"} />
       )}
-      {content.archetype === "text_first" && <TextCardBody content={content} network={network} />}
+      {content.archetype === "text_first" && (
+        <TextCardBody content={content} network={network} media={media} />
+      )}
       {footer}
     </>
   );

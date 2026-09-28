@@ -661,7 +661,7 @@ function pushInto<T>(map: Map<string, T[]>, key: string, value: T): void {
   else map.set(key, [value]);
 }
 
-function toDto(row: CardRow): PublicationCardDto {
+export function toDto(row: CardRow): PublicationCardDto {
   return {
     id: row.id,
     chatId: row.chatId,

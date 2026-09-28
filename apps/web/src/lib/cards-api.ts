@@ -6,7 +6,7 @@ import type {
   ScheduleGroupResultItem,
   SocialNetwork,
 } from "@presencia/shared";
-import { apiFetch } from "./api.js";
+import { ApiError, apiFetch } from "./api.js";
 
 // Un solo camino para programar (1 card o un grupo entero): siempre
 // schedule-group, incluso para una sola card — evita mantener dos formas de
@@ -67,4 +67,29 @@ export function fetchCardsInRange(
 /** Borradores sin fecha — la bandeja del panel izquierdo (F7 PR3). */
 export function fetchDraftCards(signal?: AbortSignal): Promise<PublicationCardDto[]> {
   return apiFetch<PublicationCardDto[]>("/api/cards/drafts", { signal });
+}
+
+// ── F10 (imagen de la card) ───────────────────────────────────────────
+
+/**
+ * "Subir propia": el archivo va como body crudo, no como multipart ni JSON
+ * (por eso no pasa por `apiFetch`, que serializa a JSON). El nombre viaja en
+ * un header, codificado porque un header no admite acentos. Devuelve la card
+ * ya con la imagen elegida.
+ */
+export async function uploadCardImage(cardId: string, file: File): Promise<PublicationCardDto> {
+  const res = await fetch(`/api/cards/${cardId}/assets`, {
+    method: "POST",
+    headers: { "Content-Type": file.type, "X-File-Name": encodeURIComponent(file.name) },
+    body: file,
+  });
+  if (!res.ok) {
+    const parsed = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new ApiError(
+      parsed?.message ?? "No se pudo subir la imagen. Inténtalo de nuevo.",
+      res.status,
+      parsed,
+    );
+  }
+  return (await res.json()) as PublicationCardDto;
 }

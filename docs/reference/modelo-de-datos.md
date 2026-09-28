@@ -105,8 +105,9 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 **`assets`** — Biblioteca (ADR-011).
 
-- `id`, `user_id`, `chat_id` (nullable — "linkea de vuelta a su chat de origen"), `card_id` (nullable), `storage_key` (key S3, prefijo `user_id/`), `mime_type`, `size_bytes`, `source` enum (`generated`, `uploaded`), `metadata` jsonb (prompt de generación, dimensiones), `created_at`.
-- El binario vive en Object Storage; la tabla es el índice.
+- `id`, `user_id`, `chat_id` (nullable — "linkea de vuelta a su chat de origen"), `card_id` (nullable), `storage_key` (`user_id/asset_id.ext`, sin la card: el asset la sobrevive), `mime_type` (lo decide sharp leyendo los bytes, nunca el navegador), `size_bytes`, `source` enum (`generated`, `uploaded`), `metadata` jsonb (`width`, `height` y, si la subió el usuario, `originalName`), `created_at`.
+- El binario vive en Object Storage; la tabla es el índice. Se escribe **después** de subir los bytes y en la misma transacción que pone la imagen en la card (ADR-011, addendum F10).
+- La card apunta a sus imágenes por `content.assetIds` (jsonb, sin FK): hoy una sola, la elegida. "Elegida" o "descartada" se deriva de eso, no se guarda. El contenido de una card solo cambia en `draft`/`failed` (`updateContentIfEditable`), con el estado revisado en el `WHERE`.
 
 ### Canales y cuentas
 

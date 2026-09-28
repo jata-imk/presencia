@@ -56,3 +56,45 @@ creyendo que hay respaldo. Verificado por mutación: sin esa regla, el test corr
 
 **Lo que este addendum NO cubre:** los assets de Biblioteca, que siguen sin implementarse (F10). Cuando
 lleguen, reusan el mismo bucket con prefijo por usuario o uno propio; la decisión se toma ahí.
+
+## Addendum (2026-09-27, F10 PR2) — los assets de Biblioteca, por fin
+
+**Bucket propio, `presencia-assets`, privado.** No el de backups: aquel tiene una lifecycle rule que
+borra a los 30 días y los assets viven lo que viva la cuenta. Reusa el endpoint y las credenciales
+(`S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`), así que el token de R2 necesita permiso
+sobre los dos buckets; solo el nombre es aparte (`ASSETS_S3_BUCKET`). Con eso, "tener credenciales" ya
+no significa "quiero backup": el todo-o-nada del backup ahora lo dispara `S3_BUCKET` o
+`BACKUP_DATABASE_URL`, no el endpoint.
+
+**Un puerto, dos implementaciones** (`apps/api/src/assets/asset-storage.ts`, `ASSETS_STORAGE`):
+`r2` para producción y `local` (disco, `ASSETS_LOCAL_DIR`) para dev y tests, donde nadie tiene bucket.
+Con `NODE_ENV=production`, `local` **es un error de arranque**: es justo lo que este ADR prohíbe, y un
+deploy que olvidara la variable guardaría las imágenes en el disco del contenedor, que se pierde en el
+siguiente `up -d`. Eso incluye el stack de dev del VPS, que también corre con `NODE_ENV=production`.
+
+**La llave es `userId/assetId.ext`.** El prefijo por usuario de arriba, y nada más. No lleva la card: un
+asset sobrevive a su card (`assets.card_id` es `ON DELETE SET NULL`), Biblioteca va a dejar subir sin
+card (diseño de F12), y una llave de objeto no se puede renombrar.
+
+**El navegador nunca ve el bucket.** `GET /api/assets/:id/content` pasa por el guard de sesión y por el
+RLS (un id ajeno no existe) y responde un **302 a una URL firmada de 10 minutos**; el `302` se cachea 5
+minutos, menos que la firma. Así el bucket sirve los bytes y Node no carga con megas por cada card que
+se pinta. Con `local`, la API sirve los bytes ella misma, con caché larga: un asset nunca cambia, una
+imagen nueva es un asset nuevo.
+
+**Subir: body crudo, 10 MB, y sharp decide qué es.** `POST /api/cards/:id/assets` recibe el archivo
+tal cual (sin multer ni multipart), con tope de 10 MB —el menor entre los proveedores de publicación—
+contado mientras se lee, no confiando en el `Content-Length`. El tipo lo decide `sharp` decodificando
+los bytes, no el `Content-Type` ni la extensión: solo JPG, PNG y WebP. sharp trae su binario nativo
+como dependencia opcional por plataforma; el Dockerfile lo carga al construir para que un binario
+faltante truene en CI y no en la primera subida.
+
+**Dos pasos, y el orden importa.** Primero los bytes al storage (red, lento, fuera de transacción);
+después, en una sola transacción, la fila de `assets` y la imagen elegida en la card. Una imagen nunca
+aparece en una card sin su fila ni una fila sin sus bytes. Lo inverso sí puede pasar —bytes sin fila si
+la transacción falla— y se acepta: es basura de centavos que no se ve en ningún lado. El día que pese,
+se limpia con un barrido.
+
+**Sin lifecycle en este bucket, y no se borra lo descartado.** Biblioteca es el repositorio total (una
+variante que no se eligió se guarda), y a ~1.5 MB por imagen, cien imágenes al mes son ~$0.002 por
+usuario al mes en R2. El borrado llega con la pantalla de Biblioteca (F12).

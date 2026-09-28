@@ -70,8 +70,9 @@ SSH al VPS, `docker compose pull`, `up -d` — receta completa en
 
 ## Object Storage — ~€0/mes hoy
 
-**Cloudflare R2** (API S3, free tier de 10 GB y egress $0). Buckets: backups y, cuando exista
-Biblioteca, assets con prefijo por usuario. Ver ADR-011.
+**Cloudflare R2** (API S3, free tier de 10 GB y egress $0). Buckets: `presencia-backups` (lifecycle de
+30 días) y `presencia-assets` (Biblioteca, prefijo por usuario, sin lifecycle; desde F10). Mismo token
+para los dos. Ver ADR-011.
 
 ## Backups y riesgos aceptados
 

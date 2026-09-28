@@ -67,6 +67,12 @@ COPY --from=prune /app/apps/web/dist ./apps/web/dist
 USER node
 WORKDIR /app/apps/api
 
+# sharp (F10) trae su binario nativo como dependencia opcional por plataforma
+# (@img/sharp-linuxmusl-x64 acá). Si la resolución de pnpm dejara afuera el de
+# Alpine, la API arrancaría igual y tronaría en la primera imagen subida; así
+# truena el build, que CI construye en cada PR.
+RUN node -e "require('sharp')().metadata; console.log('sharp ok')"
+
 # El default es la API. El servicio `worker` del compose lo sobreescribe con
 # `node dist/worker.js` — misma imagen, distinto entrypoint (ADR-008).
 CMD ["node", "dist/main.js"]

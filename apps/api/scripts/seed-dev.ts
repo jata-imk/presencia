@@ -19,11 +19,14 @@
  * Nunca corre contra algo que no sea local o el VPS de dev: ver assertDev().
  */
 import { eq } from "drizzle-orm";
+import { buildAssetStorage } from "../src/assets/assets.module.js";
 import { auth } from "../src/auth/auth.js";
 import { db } from "../src/db/client.js";
 import { DbService } from "../src/db/db.service.js";
 import { env } from "../src/env.js";
+import { solidPng } from "../src/images/fake-image.provider.js";
 import {
+  assets,
   brandVoices,
   chats,
   folders,
@@ -227,6 +230,38 @@ function visualDe(caption: string): CardContent {
 
 type CuentaDe = (network: SocialNetwork) => string | null;
 
+/**
+ * F10: las cards visuales del seed necesitan una imagen DE VERDAD — la card
+ * ahora la pinta desde Biblioteca, y un id inventado sin fila ni archivo
+ * sería una imagen rota. Un PNG liso por card, en el storage que diga el
+ * entorno (en dev, disco local).
+ */
+async function seedAssets(
+  tx: Tx,
+  userId: string,
+  cards: { id: string; chatId: string | null; content: unknown }[],
+): Promise<void> {
+  const storage = buildAssetStorage();
+  for (const card of cards) {
+    const assetId = (card.content as CardContent).assetIds[0];
+    if (!assetId) continue;
+    const data = solidPng(64, 80, [180, 120, 200]);
+    const storageKey = `${userId}/${assetId}.png`;
+    await storage.put(storageKey, data, "image/png");
+    await tx.insert(assets).values({
+      id: assetId,
+      userId,
+      cardId: card.id,
+      chatId: card.chatId,
+      storageKey,
+      mimeType: "image/png",
+      sizeBytes: data.byteLength,
+      source: "uploaded",
+      metadata: { width: 64, height: 80 },
+    });
+  }
+}
+
 async function seedCalendar(
   tx: Tx,
   userId: string,
@@ -392,26 +427,34 @@ async function seedCalendar(
     return semilla.published ? "published" : "scheduled";
   };
 
-  await tx.insert(publicationCards).values(
-    semillas.map((semilla) => ({
-      userId,
-      chatId: semilla.chatId ?? null,
-      archetype: semilla.content.archetype,
-      network: semilla.network,
-      content: semilla.content,
-      groupId: semilla.groupId ?? null,
-      status: statusDe(semilla),
-      scheduledAt: semilla.scheduledAt ?? null,
-      publishedAt: semilla.published ? (semilla.scheduledAt ?? null) : null,
-      socialAccountId: semilla.scheduledAt ? cuentaDe(semilla.network) : null,
-      providerRef: semilla.scheduledAt ? `pf_seed_${crypto.randomUUID()}` : null,
-      // F7.5: enlace falso pero con forma de enlace, solo en las publicadas.
-      // Sin esto, "Ver en la red" no se puede recorrer en dev — con el
-      // provider fake nada llega nunca a publicarse de verdad, y con
-      // PostFast la URL es null por diseño.
-      postUrl: semilla.published ? `https://ejemplo.local/p/${crypto.randomUUID()}` : null,
-    })),
-  );
+  const cards = await tx
+    .insert(publicationCards)
+    .values(
+      semillas.map((semilla) => ({
+        userId,
+        chatId: semilla.chatId ?? null,
+        archetype: semilla.content.archetype,
+        network: semilla.network,
+        content: semilla.content,
+        groupId: semilla.groupId ?? null,
+        status: statusDe(semilla),
+        scheduledAt: semilla.scheduledAt ?? null,
+        publishedAt: semilla.published ? (semilla.scheduledAt ?? null) : null,
+        socialAccountId: semilla.scheduledAt ? cuentaDe(semilla.network) : null,
+        providerRef: semilla.scheduledAt ? `pf_seed_${crypto.randomUUID()}` : null,
+        // F7.5: enlace falso pero con forma de enlace, solo en las publicadas.
+        // Sin esto, "Ver en la red" no se puede recorrer en dev — con el
+        // provider fake nada llega nunca a publicarse de verdad, y con
+        // PostFast la URL es null por diseño.
+        postUrl: semilla.published ? `https://ejemplo.local/p/${crypto.randomUUID()}` : null,
+      })),
+    )
+    .returning({
+      id: publicationCards.id,
+      chatId: publicationCards.chatId,
+      content: publicationCards.content,
+    });
+  await seedAssets(tx, userId, cards);
 
   // Las cuentas conectadas las crea esta función; Ritmo cuelga su historial
   // de las mismas en vez de inventar otras, para que el usuario de dev tenga

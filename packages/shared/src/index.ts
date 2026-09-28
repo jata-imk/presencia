@@ -1,3 +1,4 @@
+export * from "./assets.js";
 export * from "./brand-voice.js";
 export * from "./channels.js";
 export * from "./chat.js";

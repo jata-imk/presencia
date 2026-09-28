@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import { CardToolbar } from "./cards/CardToolbar.js";
+import type { CardMediaActions } from "./cards/CardMedia.js";
 import { PublicationCardView } from "./cards/PublicationCardView.js";
 import { ApiError } from "../lib/api.js";
-import { cancelCardSchedule, rescheduleCard } from "../lib/cards-api.js";
+import { imageFileProblem } from "../lib/cards/card-image.js";
+import { cancelCardSchedule, rescheduleCard, uploadCardImage } from "../lib/cards-api.js";
 import type { CardToolPart } from "../lib/chat-types.js";
 import { useCard, useCardsStore, useChatCards } from "../stores/cards-store.js";
 import { useScheduleDrawerStore } from "../stores/schedule-drawer-store.js";
@@ -26,6 +28,7 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
   const chatCards = useChatCards(chatId);
   const applyCards = useCardsStore((s) => s.apply);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const cardId = part.state === "output-available" ? part.output.cardId : undefined;
   const liveCard = useCard(cardId);
@@ -55,7 +58,12 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
 
   if (part.state !== "output-available") return null;
 
-  const { content, network } = part.output;
+  const { network } = part.output;
+  // F10: el contenido vivo manda. El del tool part es el de nacimiento,
+  // congelado en messages.parts — sin esto, la imagen que se sube o se
+  // genera después nunca aparecería en la card del chat. Solo cae al del
+  // tool part mientras cards-store no tiene la fila (un instante al crearla).
+  const content = liveCard?.content ?? part.output.content;
 
   // Mensajes persistidos antes de que la tool devolviera `content` (previo
   // a F3 PR3) traen output sin ese campo — sin este guard, truena al leer
@@ -73,6 +81,33 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
   // liveCard todavía, se degrada a "draft": es el estado real al nacer la
   // card y nunca miente sobre algo peor.
   const status = liveCard?.status ?? "draft";
+
+  // Las acciones de imagen solo existen mientras la card se puede editar: una
+  // card programada ya viajó al proveedor con su imagen (la API lo impide
+  // igual, esto es para no ofrecer lo que va a fallar).
+  const media: CardMediaActions | undefined =
+    liveCard && (status === "draft" || status === "failed") && content.archetype !== "video_script"
+      ? { upload: (file) => void handleUpload(liveCard.id, file), uploading }
+      : undefined;
+
+  async function handleUpload(cardId: string, file: File) {
+    const problem = imageFileProblem(file);
+    if (problem) {
+      toast({ title: "No se pudo subir la imagen", description: problem });
+      return;
+    }
+    setUploading(true);
+    try {
+      applyCards(await uploadCardImage(cardId, file));
+    } catch (err) {
+      toast({
+        title: "No se pudo subir la imagen",
+        description: err instanceof ApiError ? err.message : "Inténtalo de nuevo.",
+      });
+    } finally {
+      setUploading(false);
+    }
+  }
 
   function openScheduleDrawer() {
     if (!liveCard) return;
@@ -131,6 +166,7 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
       scheduledAt={liveCard?.scheduledAt}
       publishedAt={liveCard?.publishedAt}
       errorMessage={liveCard?.errorMessage}
+      media={media}
       footer={
         liveCard ? (
           <CardToolbar

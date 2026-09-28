@@ -112,6 +112,16 @@ const envSchema = z
     // no a las 08:00 UTC dentro del job, donde con retryLimit 0 fallaría todos
     // los días con la única señal en pgboss.job.
     BACKUP_DATABASE_URL: z.url().optional(),
+    // --- Assets de Biblioteca (F10, ADR-011) ---
+    // "r2" es el bucket; reusa S3_ENDPOINT y las credenciales del backup, con
+    // su propio bucket (privado). "local" guarda en disco y SOLO existe para
+    // dev y tests, donde nadie tiene bucket: ADR-011 prohíbe los archivos en
+    // el disco del servidor, así que en producción es un error de arranque.
+    ASSETS_STORAGE: z.enum(["local", "r2"]).default("local"),
+    ASSETS_S3_BUCKET: z.string().min(1).optional(),
+    // Relativo al cwd del proceso (apps/api en dev).
+    ASSETS_LOCAL_DIR: z.string().min(1).default(".data/assets"),
+    NODE_ENV: z.string().optional(),
   })
   .superRefine((value, ctx) => {
     // Fail-fast: toda var de modelo (AI_MODEL + los 3 tiers opcionales) debe
@@ -177,6 +187,10 @@ const envSchema = z
 
     // El backup es todo o nada. Media configuración sería lo peor de los dos
     // mundos: el operador cree que hay respaldo y el job no se registra.
+    //
+    // Desde F10 el endpoint y las credenciales también los usa el bucket de
+    // assets, así que tenerlos no significa "quiero backup": lo que lo pide es
+    // el bucket del backup o su conexión.
     const backupVars = [
       "S3_ENDPOINT",
       "S3_BUCKET",
@@ -185,7 +199,8 @@ const envSchema = z
       "BACKUP_DATABASE_URL",
     ] as const;
     const backupSet = backupVars.filter((name) => value[name]);
-    if (backupSet.length > 0 && backupSet.length < backupVars.length) {
+    const wantsBackup = Boolean(value.S3_BUCKET || value.BACKUP_DATABASE_URL);
+    if (wantsBackup && backupSet.length < backupVars.length) {
       const missing = backupVars.filter((name) => !value[name]);
       for (const name of missing) {
         ctx.addIssue({
@@ -194,6 +209,34 @@ const envSchema = z
           message: `El backup diario se configura completo o no se configura: falta ${name} (hay ${backupSet.join(", ")})`,
         });
       }
+    }
+
+    // Assets: con R2, el bucket y las credenciales tienen que estar. En
+    // producción, además, R2 es la única opción (ADR-011): un deploy que
+    // olvidó la variable guardaría las imágenes en el disco del contenedor,
+    // que se pierde en el siguiente `up -d`.
+    if (value.ASSETS_STORAGE === "r2") {
+      for (const name of [
+        "ASSETS_S3_BUCKET",
+        "S3_ENDPOINT",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+      ] as const) {
+        if (!value[name]) {
+          ctx.addIssue({
+            code: "custom",
+            path: [name],
+            message: `ASSETS_STORAGE="r2" requiere ${name} en el entorno`,
+          });
+        }
+      }
+    } else if (value.NODE_ENV === "production") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["ASSETS_STORAGE"],
+        message:
+          'En producción los assets van al bucket (ADR-011): configura ASSETS_STORAGE="r2" y ASSETS_S3_BUCKET',
+      });
     }
   });
 
