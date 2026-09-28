@@ -61,6 +61,13 @@ export interface CalendarFilters {
  */
 const WRITTEN_AT = sql`clock_timestamp()`;
 
+/**
+ * Los estados en que el contenido de una card todavía se puede cambiar: lo
+ * que no se ha mandado al proveedor. `failed` entra porque reintentar
+ * programa de nuevo con el contenido que haya en ese momento.
+ */
+export const EDITABLE_CARD_STATUSES: CardStatus[] = ["draft", "failed"];
+
 /** Lo mínimo que hace falta para avisar: de quién es la card y cuál. */
 type ChangedRow = Pick<CardRow, "id" | "userId">;
 
@@ -151,6 +158,31 @@ export class CardsRepository {
 
   async findById(tx: Tx, id: string): Promise<CardRow | undefined> {
     const [row] = await tx.select().from(publicationCards).where(eq(publicationCards.id, id));
+    return row;
+  }
+
+  /**
+   * F10: cambia el contenido (la imagen elegida, el prompt) de una card que
+   * todavía se puede editar. `undefined` si ya no se puede.
+   *
+   * El estado se revisa en el WHERE y no antes, en un `if`: entre leer la
+   * card y escribirla, otro request puede programarla, y un post programado
+   * ya viajó al proveedor con el contenido de antes. Cambiarlo acá dejaría la
+   * card mostrando una imagen que no es la que se va a publicar.
+   */
+  async updateContentIfEditable(
+    tx: Tx,
+    id: string,
+    content: CardContent,
+  ): Promise<CardRow | undefined> {
+    const [row] = await tx
+      .update(publicationCards)
+      .set({ content, updatedAt: WRITTEN_AT })
+      .where(
+        and(eq(publicationCards.id, id), inArray(publicationCards.status, EDITABLE_CARD_STATUSES)),
+      )
+      .returning();
+    if (row) await notifyChanged(tx, [row]);
     return row;
   }
 

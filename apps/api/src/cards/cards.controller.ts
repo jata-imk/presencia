@@ -7,8 +7,11 @@ import {
   Param,
   Post,
   Query,
+  Req,
 } from "@nestjs/common";
+import type { Request } from "express";
 import {
+  ASSET_UPLOAD_MAX_BYTES,
   cardIdParamSchema,
   chatIdParamSchema,
   conflictsQuerySchema,
@@ -20,6 +23,8 @@ import {
 } from "@presencia/shared";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { SessionUser } from "../auth/auth.js";
+import { readRawBody } from "../assets/read-body.js";
+import { CardMediaService } from "./card-media.service.js";
 import { CardsService } from "./cards.service.js";
 
 // Sin prefijo de clase: las rutas viven en dos namespaces distintos
@@ -27,7 +32,10 @@ import { CardsService } from "./cards.service.js";
 // /cards/..., el ciclo de vida propio). Cada método declara su path completo.
 @Controller()
 export class CardsController {
-  constructor(@Inject(CardsService) private readonly service: CardsService) {}
+  constructor(
+    @Inject(CardsService) private readonly service: CardsService,
+    @Inject(CardMediaService) private readonly media: CardMediaService,
+  ) {}
 
   @Get("chats/:chatId/cards")
   listByChat(
@@ -107,9 +115,38 @@ export class CardsController {
     return this.service.cancelSchedule(user.id, this.parseCardId(id));
   }
 
+  /**
+   * "Subir propia" (F10): el archivo viaja como body crudo, con su tipo en
+   * Content-Type y el nombre original en X-File-Name (URI-encoded, porque un
+   * header no admite acentos). El tipo declarado no se usa para decidir nada:
+   * sharp mira los bytes.
+   */
+  @Post("cards/:id/assets")
+  async uploadImage(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Req() req: Request,
+  ): Promise<PublicationCardDto> {
+    const cardId = this.parseCardId(id);
+    const data = await readRawBody(req, ASSET_UPLOAD_MAX_BYTES);
+    if (data.byteLength === 0) throw new BadRequestException("No llegó ningún archivo.");
+    return this.media.attachUpload(user.id, cardId, data, fileNameFrom(req));
+  }
+
   private parseCardId(id: string): string {
     const parsed = cardIdParamSchema.safeParse({ id });
     if (!parsed.success) throw new BadRequestException("El id de la publicación no es válido.");
     return parsed.data.id;
+  }
+}
+
+/** El nombre original del archivo, o nada si no vino o no se puede leer. */
+function fileNameFrom(req: Request): string | undefined {
+  const raw = req.headers["x-file-name"];
+  if (typeof raw !== "string" || raw.length === 0) return undefined;
+  try {
+    return decodeURIComponent(raw).slice(0, 255);
+  } catch {
+    return undefined;
   }
 }

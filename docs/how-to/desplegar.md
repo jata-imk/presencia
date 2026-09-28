@@ -154,6 +154,27 @@ S3_SECRET_ACCESS_KEY=...
 **Todo o nada:** con algunas de las cinco y otras no, la API **no arranca**. Es deliberado: el modo de
 fallo peligroso es creer que hay respaldo y que el job nunca se haya registrado.
 
+### 4b. Assets de Biblioteca (obligatorio desde F10)
+
+Las imágenes de las cards viven en R2, nunca en el disco del contenedor (ADR-011). Con
+`NODE_ENV=production` —que el compose fija en los dos stacks del VPS, también el de dev— la API **no
+arranca** sin esto.
+
+1. Crear en R2 un bucket privado `presencia-assets`, **sin** lifecycle rule (los assets viven lo que viva
+   la cuenta).
+2. Darle al API Token del paso 4 permiso _Object Read & Write_ también sobre ese bucket. Es el mismo
+   token: la API usa un solo par de credenciales para los dos buckets.
+3. Agregar al `.env` (el endpoint y las credenciales ya están si hiciste el paso 4; si no, agrega esas
+   tres también):
+
+```
+ASSETS_STORAGE=r2
+ASSETS_S3_BUCKET=presencia-assets
+```
+
+Para comprobarlo: subir una imagen a una card en borrador y abrirla. El `<img>` pide
+`/api/assets/<id>/content`, que responde un 302 hacia `<account-id>.r2.cloudflarestorage.com`.
+
 ### 5. El vhost de CloudPanel
 
 Sitio tipo **Reverse Proxy** hacia `http://127.0.0.1:3001`, y certificado de Let's Encrypt (el DNS tiene

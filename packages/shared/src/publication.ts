@@ -60,6 +60,18 @@ export const textFirstContentSchema = z.object({
   archetype: z.literal("text_first"),
   body: z.string(),
   hashtags: z.array(z.string()).default([]),
+  // F10: la imagen acompañante de LinkedIn/X/Threads es opcional (overview
+  // §3). El modelo la sugiere solo cuando suma: la mayoría de estos posts no
+  // la llevan, y un prompt de relleno invitaría a gastar en algo que nadie
+  // pidió.
+  imagePrompt: z
+    .string()
+    .optional()
+    .describe(
+      "Opcional. Solo si una imagen acompañante suma de verdad al post: " +
+        "describe la imagen, sin texto dentro. Omítelo en la mayoría de los " +
+        "posts de texto.",
+    ),
   assetIds: z.array(z.uuid()).default([]),
 });
 
