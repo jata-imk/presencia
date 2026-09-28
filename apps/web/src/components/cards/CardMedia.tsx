@@ -657,7 +657,12 @@ export function SelectedImage({
   // parecía no hacer nada). Si la API la rechaza, vuelve a la que había.
   const [picked, setPicked] = useState<string | null>(null);
   const shown = picked ?? assetId;
-  const versionAlt = generation?.versions.find((v) => v.assetId === shown)?.alt ?? null;
+  // La versión elegida dentro del historial, que llega aparte y después
+  // (PublicationCard lo pide cuando cambia la card). Mientras no llega no se
+  // sabe su texto alternativo, y el editor no se monta: montado con "" y un
+  // "Guardar" borraría el que el servidor sí tiene.
+  const shownVersion = generation?.versions.find((v) => v.assetId === shown);
+  const versionAlt = shownVersion?.alt ?? null;
   function pick(id: string) {
     if (!generation) return;
     setPicked(id);
@@ -691,9 +696,9 @@ export function SelectedImage({
         />
       )}
       {generation && <AdjustBar generation={generation} />}
-      {generation && (
+      {generation && shownVersion && (
         <AltTextEditor
-          key={`alt-${shown}`}
+          key={`alt-${shown}-${versionAlt ?? ""}`}
           assetId={shown}
           initial={versionAlt ?? ""}
           generation={generation}
