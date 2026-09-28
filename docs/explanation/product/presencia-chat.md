@@ -358,7 +358,17 @@ El tratamiento depende del arquetipo de la card:
 > - **Traerla de afuera, sin costo:** el prompt sugerido con
 >   "Copiar" y "Subir imagen" (JPG, PNG o WebP de hasta 10 MB). La
 >   subida queda como la imagen elegida y se guarda en Biblioteca.
-> - **Generarla aquí**, con cobro: llega en el siguiente PR de F10.
+> - **Generarla aquí**, con cobro. El prompt sugerido se puede editar
+>   antes, se elige el formato (4:5 o 1:1 en IG/FB, 1:1 o 16:9 en
+>   LinkedIn, etc.) y el botón dice el precio antes del click:
+>   "Generar imagen · 4.7% de tu mes". Nunca se genera sola. Cada click
+>   da **dos variantes**: la primera queda elegida y la otra se elige
+>   con un toque; las dos se guardan en Biblioteca. "Regenerar" repite
+>   con el mismo generador y "Probar con otro generador" usa el
+>   alternativo (ADR-025). Mientras genera (10 a 60 s) la card muestra
+>   el hueco con la proporción pedida y se puede seguir en el chat: el
+>   resultado llega solo. Si el generador se niega (personas reales,
+>   marcas) o falla, la card lo dice y **no se cobra**.
 >
 > Sin imagen, la card dice qué pasa en esa red, sin inventar: Instagram
 > la necesita para programar; Facebook publica solo el texto; en

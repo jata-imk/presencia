@@ -5,6 +5,8 @@ import { CardsJobs } from "../cards/cards.jobs.js";
 import { CardsModule } from "../cards/cards.module.js";
 import { CreditsJobs } from "../credits/credits.jobs.js";
 import { CreditsModule } from "../credits/credits.module.js";
+import { ImagesJobs } from "../images/images.jobs.js";
+import { ImagesModule } from "../images/images.module.js";
 import { MetricsJobs } from "../metrics/metrics.jobs.js";
 import { MetricsModule } from "../metrics/metrics.module.js";
 import { TrendsJobs } from "../trends/trends.jobs.js";
@@ -16,7 +18,15 @@ import { JobsModule } from "./jobs.module.js";
 // la lista una sola vez es lo que evita que el worker y la API terminen
 // corriendo jobs distintos sin que nadie lo note.
 @Module({
-  imports: [JobsModule, CardsModule, CreditsModule, BackupsModule, MetricsModule, TrendsModule],
-  providers: [CardsJobs, CreditsJobs, BackupsJobs, MetricsJobs, TrendsJobs],
+  imports: [
+    JobsModule,
+    CardsModule,
+    CreditsModule,
+    BackupsModule,
+    MetricsModule,
+    TrendsModule,
+    ImagesModule,
+  ],
+  providers: [CardsJobs, CreditsJobs, BackupsJobs, MetricsJobs, TrendsJobs, ImagesJobs],
 })
 export class ScheduledJobsModule {}

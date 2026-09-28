@@ -1,12 +1,8 @@
+import { useState } from "react";
+import { Plus } from "lucide-react";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
-import { selectedAssetId } from "../../lib/cards/card-image.js";
-import {
-  CardImage,
-  ImageActionStrip,
-  ImagePromptBox,
-  UploadImageButton,
-  type CardMediaActions,
-} from "./CardMedia.js";
+import { missingImageNote, selectedAssetId } from "../../lib/cards/card-image.js";
+import { EmptyImageState, SelectedImage, type CardMediaActions } from "./CardMedia.js";
 import { Hashtags } from "./Hashtags.js";
 
 type TextFirstContent = Extract<CardContent, { archetype: "text_first" }>;
@@ -60,23 +56,54 @@ export function TextCardBody({
           después del texto, y sin imagen ni card editable no ocupa nada. */}
       {assetId ? (
         <div className="mt-3">
-          <CardImage
-            key={assetId}
+          <SelectedImage
             assetId={assetId}
             alt={content.imagePrompt ?? "Imagen de la publicación"}
+            prompt={content.imagePrompt}
+            media={media}
           />
-          {media && <ImageActionStrip media={media} />}
         </div>
       ) : (
-        media && (
-          <div className="mt-3 flex flex-col gap-2">
-            {content.imagePrompt && <ImagePromptBox prompt={content.imagePrompt} copyable />}
-            <div>
-              <UploadImageButton media={media} label="Agregar imagen" />
-            </div>
-          </div>
-        )
+        media && <OptionalImage prompt={content.imagePrompt} network={network} media={media} />
       )}
+    </div>
+  );
+}
+
+/**
+ * Sin imagen, en una red de texto: cerrada, porque la mayoría de estos posts
+ * no la llevan. Se abre sola si hay un trabajo en curso o que acaba de
+ * terminar mal, para que el usuario vea en qué quedó.
+ */
+function OptionalImage({
+  prompt,
+  network,
+  media,
+}: {
+  prompt: string | undefined;
+  network: SocialNetwork;
+  media: CardMediaActions;
+}) {
+  const [open, setOpen] = useState(false);
+  const job = media.generation?.job;
+  if (open || (job && job.status !== "done")) {
+    return (
+      <div className="mt-3">
+        <EmptyImageState note={missingImageNote(network)} prompt={prompt} media={media} />
+      </div>
+    );
+  }
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 rounded-md border border-line bg-card px-2.5 py-1.5 text-xs font-medium text-fg-secondary"
+      >
+        <Plus size={13} strokeWidth={1.75} />
+        Agregar imagen
+      </button>
+      {prompt && <span className="text-[11px] text-fg-muted">El chat sugirió una.</span>}
     </div>
   );
 }

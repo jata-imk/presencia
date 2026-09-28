@@ -1,4 +1,5 @@
 import type {
+  GenerateCardImageBody,
   CardStatus,
   PublicationCardDto,
   ScheduleCardBody,
@@ -92,4 +93,20 @@ export async function uploadCardImage(cardId: string, file: File): Promise<Publi
     );
   }
   return (await res.json()) as PublicationCardDto;
+}
+
+/** "Generar imagen": la API encola y devuelve la card en "generando". */
+export function generateCardImage(
+  cardId: string,
+  body: GenerateCardImageBody,
+): Promise<PublicationCardDto> {
+  return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/images`, { method: "POST", body });
+}
+
+/** Elegir otra de las imágenes de la card (una variante, una versión anterior). */
+export function selectCardImage(cardId: string, assetId: string): Promise<PublicationCardDto> {
+  return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/image`, {
+    method: "PATCH",
+    body: { assetId },
+  });
 }

@@ -11,8 +11,11 @@ export interface RegistroDeUso {
   /** Solo el chat tiene uno; el resto de las tareas no viven en una conversación. */
   chatId?: string | null;
   task: AiTaskKind;
-  /** El modelo que DE VERDAD corrió: la identidad sale del mismo `ResolvedModel`. */
-  modelo: Pick<ResolvedModel, "provider" | "modelName">;
+  /**
+   * El modelo que DE VERDAD corrió: la identidad sale del mismo `ResolvedModel`
+   * o, en las imágenes, del `ImageProvider` que dibujó (F10).
+   */
+  modelo: { provider: string; modelName: ResolvedModel["modelName"] };
   /**
    * El usage de un modelo de texto, o el de uno de imagen, que solo trae
    * tokens de entrada y salida (y a veces ni eso: sin dato cuenta como 0).

@@ -1,0 +1,95 @@
+import { z } from "zod";
+import type { SocialNetwork } from "./publication.js";
+
+// F10: generar la imagen de una card (ADR-025). Lo que comparten la API y el
+// navegador: las proporciones que se piden, qué se manda al generar y cómo
+// viaja el estado del trabajo en la card.
+
+/** Las proporciones que la app pide. Cada adapter las traduce a lo que su API entiende. */
+export const IMAGE_ASPECT_RATIOS = ["1:1", "4:5", "16:9"] as const;
+export const imageAspectRatioSchema = z.enum(IMAGE_ASPECT_RATIOS);
+export type ImageAspectRatio = z.infer<typeof imageAspectRatioSchema>;
+
+/**
+ * Qué proporciones ofrece la card para cada red; la primera es la default.
+ * Solo formatos de feed: stories y reels no son del arquetipo visual (chat §4).
+ *
+ * - Instagram y Facebook: 4:5, lo más alto que el feed muestra sin recortar.
+ * - LinkedIn: cuadrada, que el feed muestra entera en móvil y escritorio.
+ * - X: 16:9, lo único que la línea de tiempo no recorta.
+ * - Threads: 4:5 como Instagram, de donde viene su feed.
+ *
+ * Las redes de video no llevan imagen: lista vacía.
+ */
+export const IMAGE_ASPECT_OPTIONS: Record<SocialNetwork, readonly ImageAspectRatio[]> = {
+  instagram: ["4:5", "1:1"],
+  facebook: ["4:5", "1:1"],
+  linkedin: ["1:1", "16:9"],
+  x: ["16:9", "1:1"],
+  threads: ["4:5", "1:1"],
+  tiktok: [],
+  youtube: [],
+};
+
+/** "primary" es el generador de siempre; "alternate", el de "Probar con otro generador". */
+export const imageProviderSlotSchema = z.enum(["primary", "alternate"]);
+export type ImageProviderSlot = z.infer<typeof imageProviderSlotSchema>;
+
+/**
+ * Lo que manda "Generar imagen". El prompt viaja siempre, aunque sea el que
+ * sugirió el chat: el usuario lo pudo editar antes de apretar, y lo que se
+ * genera es lo que vio en pantalla, no lo que quedó guardado.
+ */
+export const generateCardImageBodySchema = z.object({
+  provider: imageProviderSlotSchema.default("primary"),
+  prompt: z.string().trim().min(3).max(2000),
+  aspectRatio: imageAspectRatioSchema,
+});
+export type GenerateCardImageBody = z.infer<typeof generateCardImageBodySchema>;
+
+/** Elegir otra de las imágenes de la card (una variante, una versión anterior). */
+export const selectCardImageBodySchema = z.object({ assetId: z.uuid() });
+export type SelectCardImageBody = z.infer<typeof selectCardImageBodySchema>;
+
+/**
+ * El último trabajo de imagen de la card, tal como lo ve el navegador.
+ *
+ * - `generating`: el job está corriendo (10 a 60 s).
+ * - `done`: terminó y al menos una imagen salió. `assetIds` son las que salieron.
+ * - `failed`: el sistema falló (red, proveedor caído). No se cobró.
+ * - `blocked`: el proveedor se negó a dibujar lo pedido. No se cobró.
+ */
+export interface CardImageJob {
+  id: string;
+  status: "generating" | "done" | "failed" | "blocked";
+  provider: ImageProviderSlot;
+  kind: "generate" | "edit";
+  /** La proporción pedida: con ella la card dibuja el hueco mientras genera. */
+  aspectRatio: ImageAspectRatio;
+  assetIds: string[];
+  startedAt: string;
+}
+
+/**
+ * Cuánto dura "generando" antes de darlo por muerto. Un job que no termina
+ * —el worker se reinició a la mitad— dejaría el botón apagado para siempre;
+ * pasado esto la card lo muestra como fallido y deja volver a intentar.
+ * Holgado a propósito: gpt-image tarda hasta ~2 min en los prompts pesados.
+ */
+export const IMAGE_JOB_STALE_MS = 5 * 60 * 1000;
+
+/**
+ * Lo que la card necesita para ofrecer la generación: el precio, siempre como
+ * porcentaje del mes y nunca en unidades (addendum ADR-012), y si hay un
+ * segundo generador configurado.
+ */
+export interface ImagesConfigDto {
+  /** Un click en "Generar": dos variantes. */
+  generatePercent: number;
+  /** Una edición con instrucción: una imagen. */
+  editPercent: number;
+  alternateAvailable: boolean;
+}
+
+/** Cuántas imágenes produce un click en "Generar" (decisión de producto de F10). */
+export const IMAGE_VARIANTS_PER_GENERATION = 2;

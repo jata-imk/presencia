@@ -274,6 +274,13 @@
       "when": 1790523023956,
       "tag": "0038_imagenes_en_ai_usage_events",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790564851599,
+      "tag": "0039_generacion_de_imagenes",
+      "breakpoints": true
     }
   ]
 }

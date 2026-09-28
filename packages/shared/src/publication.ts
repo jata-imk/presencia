@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CardImageJob } from "./images.js";
 
 // Contratos núcleo de publication_cards (docs/reference/modelo-de-datos.md).
 // El backend valida el JSONB `content` con el schema del arquetipo; el
@@ -240,6 +241,12 @@ export interface PublicationCardDto {
    * escritura de cards.repository.ts lo fija.
    */
   updatedAt: string;
+  /**
+   * F10: el último trabajo de imagen de la card (generar o editar), o null si
+   * nunca tuvo uno. Viaja en la card y no aparte para que el stream de cards
+   * (F8.6) lo actualice solo: el worker termina y la card cambia.
+   */
+  imageJob: CardImageJob | null;
 }
 
 export const cardIdParamSchema = z.object({ id: z.uuid() });

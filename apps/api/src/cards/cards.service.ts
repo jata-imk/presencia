@@ -7,13 +7,15 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type {
-  CardContent,
-  PublicationCardDto,
-  ScheduleCardBody,
-  ScheduleGroupBody,
-  ScheduleGroupResultItem,
-  SocialNetwork,
+import {
+  IMAGE_JOB_STALE_MS,
+  type CardContent,
+  type CardImageJob,
+  type PublicationCardDto,
+  type ScheduleCardBody,
+  type ScheduleGroupBody,
+  type ScheduleGroupResultItem,
+  type SocialNetwork,
 } from "@presencia/shared";
 import { ChannelsRepository } from "../channels/channels.repository.js";
 import { DbService } from "../db/db.service.js";
@@ -679,7 +681,22 @@ export function toDto(row: CardRow): PublicationCardDto {
     postUrl: parseHttpUrl(row.postUrl),
     errorMessage: errorMessageFrom(row.errorDetail),
     updatedAt: row.updatedAt.toISOString(),
+    imageJob: imageJobFrom(row.imageJob),
   };
+}
+
+/**
+ * El trabajo de imagen como lo ve el navegador. Uno que lleva "generando" más
+ * de IMAGE_JOB_STALE_MS se muestra como fallido: el worker murió a la mitad y
+ * no va a terminar, y así la card deja volver a intentar (el candado de
+ * `startImageJob` usa el mismo corte).
+ */
+function imageJobFrom(raw: unknown): CardImageJob | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const job = raw as CardImageJob;
+  const stale =
+    job.status === "generating" && Date.now() - Date.parse(job.startedAt) > IMAGE_JOB_STALE_MS;
+  return stale ? { ...job, status: "failed" } : job;
 }
 
 /**

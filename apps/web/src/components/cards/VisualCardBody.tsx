@@ -1,11 +1,6 @@
 import type { CardContent, SocialNetwork } from "@presencia/shared";
 import { missingImageNote, selectedAssetId } from "../../lib/cards/card-image.js";
-import {
-  CardImage,
-  EmptyImageState,
-  ImageActionStrip,
-  type CardMediaActions,
-} from "./CardMedia.js";
+import { EmptyImageState, SelectedImage, type CardMediaActions } from "./CardMedia.js";
 import { Hashtags } from "./Hashtags.js";
 
 type VisualFirstContent = Extract<CardContent, { archetype: "visual_first" }>;
@@ -33,14 +28,12 @@ export function VisualCardBody({
   return (
     <div className="px-4 pt-3.5 pb-1">
       {assetId ? (
-        <>
-          <CardImage
-            key={assetId}
-            assetId={assetId}
-            alt={content.imagePrompt ?? "Imagen de la publicación"}
-          />
-          {media && <ImageActionStrip media={media} />}
-        </>
+        <SelectedImage
+          assetId={assetId}
+          alt={content.imagePrompt ?? "Imagen de la publicación"}
+          prompt={content.imagePrompt}
+          media={media}
+        />
       ) : (
         <EmptyImageState
           note={missingImageNote(network)}

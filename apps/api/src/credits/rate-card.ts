@@ -166,7 +166,21 @@ export function flatActionPercentOfQuota(
   tier: PlanTier,
   version: number = CURRENT_RATE_CARD_VERSION,
 ): number {
-  const units = quoteFlatAction(reason, version);
+  return flatActionsPercentOfQuota(reason, 1, tier, version);
+}
+
+/**
+ * Lo mismo para `count` acciones de un golpe — un click de "Generar imagen"
+ * son dos imágenes (F10). Se redondea UNA vez sobre el total: sumar dos
+ * porcentajes ya redondeados daría 4.6% por algo que cuesta 4.7%.
+ */
+export function flatActionsPercentOfQuota(
+  reason: CreditReason,
+  count: number,
+  tier: PlanTier,
+  version: number = CURRENT_RATE_CARD_VERSION,
+): number {
+  const units = quoteFlatAction(reason, version) * count;
   const quota = PLAN_QUOTAS[tier];
   if (quota <= 0) return 0;
   return Math.max(Math.round((units / quota) * 1000) / 10, 0.1);

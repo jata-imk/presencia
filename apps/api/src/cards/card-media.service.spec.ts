@@ -193,6 +193,25 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
       expect(Buffer.from(propio.delivery.data).equals(Buffer.from(PNG))).toBe(true);
     }
   });
+
+  // ── selectImage ──
+
+  it("elige otra imagen de la misma card", async () => {
+    const cardId = await createCard(VISUAL);
+    const first = await media.attachUpload(userA, cardId, PNG);
+    await media.attachUpload(userA, cardId, solidPng(10, 10, [1, 2, 3]));
+    const back = await media.selectImage(userA, cardId, first.content.assetIds[0]!);
+    expect(back.content.assetIds).toEqual(first.content.assetIds);
+  });
+
+  it("no acepta una imagen de otra card", async () => {
+    const cardA = await createCard(VISUAL);
+    const cardB = await createCard(VISUAL);
+    const other = await media.attachUpload(userA, cardB, PNG);
+    await expect(media.selectImage(userA, cardA, other.content.assetIds[0]!)).rejects.toThrow(
+      /no es de esta publicación/,
+    );
+  });
 });
 
 describe("readRawBody", () => {

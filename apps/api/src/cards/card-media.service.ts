@@ -80,6 +80,29 @@ export class CardMediaService {
     });
   }
 
+  /**
+   * Elegir otra de las imágenes de la card: la otra variante, o una versión
+   * anterior. Solo imágenes de ESTA card: un id de otra (o de otro usuario,
+   * que por RLS no existe) se rechaza igual.
+   */
+  async selectImage(userId: string, cardId: string, assetId: string): Promise<PublicationCardDto> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const asset = await this.assets.find(tx, assetId);
+      if (!asset || asset.cardId !== cardId) {
+        throw new NotFoundException("Esa imagen no es de esta publicación.");
+      }
+      const current = await this.repo.findById(tx, cardId);
+      if (!current) throw new NotFoundException("No encontramos esa publicación.");
+      const content = cardContentSchema.parse({
+        ...(current.content as CardContent),
+        assetIds: [assetId],
+      });
+      const updated = await this.repo.updateContentIfEditable(tx, cardId, content);
+      if (!updated) throw new ConflictException(NOT_EDITABLE_MESSAGE);
+      return toDto(updated);
+    });
+  }
+
   private assertCanChangeImage(card: CardRow): void {
     if (!acceptsImage(card.content as CardContent)) {
       throw new BadRequestException("Esta publicación es un guion de video: no lleva imagen.");

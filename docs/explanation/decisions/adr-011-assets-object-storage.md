@@ -70,7 +70,8 @@ no significa "quiero backup": el todo-o-nada del backup ahora lo dispara `S3_BUC
 `r2` para producción y `local` (disco, `ASSETS_LOCAL_DIR`) para dev y tests, donde nadie tiene bucket.
 Con `NODE_ENV=production`, `local` **es un error de arranque**: es justo lo que este ADR prohíbe, y un
 deploy que olvidara la variable guardaría las imágenes en el disco del contenedor, que se pierde en el
-siguiente `up -d`. Eso incluye el stack de dev del VPS, que también corre con `NODE_ENV=production`.
+siguiente `up -d`. El stack de dev del VPS no corre la app (solo Postgres): la API de dev corre en
+la laptop, sin `NODE_ENV=production`, y guarda en disco.
 
 **La llave es `userId/assetId.ext`.** El prefijo por usuario de arriba, y nada más. No lleva la card: un
 asset sobrevive a su card (`assets.card_id` es `ON DELETE SET NULL`), Biblioteca va a dejar subir sin

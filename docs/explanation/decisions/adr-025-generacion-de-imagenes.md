@@ -56,3 +56,10 @@ Es opcional y sin default a propósito: exigir la key de un segundo proveedor pa
   - cambie la tabla de precios de alguno de los dos;
   - Flash Lite deje de meter marcas (volver a correr `pnpm --filter @presencia/api bakeoff:imagenes`);
   - o aparezca demanda de texto en imagen con plantillas.
+
+## Addendum (2026-09-27, F10 PR3) — generar desde la card
+
+- **El prompt que viaja se compone** (`images/image-prompt.ts`): lo que escribió el chat o el usuario, más el nicho de su Voz de marca, más el estilo por defecto **condicionado** ("si la descripción no pide otro estilo: fotografía natural…, sin texto ni logotipos"). Si el usuario pide "estilo ilustración", manda lo que escribió. La fila de `image_generations` guarda el prompt compuesto, no solo el del usuario.
+- **El recorte a la proporción pedida vive en `images/image-fit.ts`**, fuera del adapter como decía el contrato: centrado y sin reescalar, con 2% de tolerancia. gpt-image 1024×1536 sale 1024×1280 para 4:5; Gemini (928×1152) pasa sin tocarse. El PNG recortado de gpt-image pesa ~3.3 MB, bajo el tope de 10 MB de publicación.
+- **Medido con los generadores reales** (card de Facebook, 4:5, dos variantes en paralelo): Gemini cerró el trabajo en 26 s y gpt-image en 37 s, de click a card actualizada.
+- **Para probar la card sin gastar:** `IMAGE_PROVIDER=fake` con `IMAGE_FAKE_DELAY_MS` (p. ej. 6000) deja ver y medir el estado "generando"; un prompt con `[bloquear]` simula la negativa del proveedor.

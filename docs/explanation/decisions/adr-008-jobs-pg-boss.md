@@ -186,6 +186,10 @@ recrea dentro de la misma transacción con `ROLLBACK` antes de reaplicarla. La a
 los dos roles, porque `presencia_worker` sigue siendo el que prueba que los `REVOKE` de `0020` hacen su
 trabajo.
 
+## Addendum (2026-09-27, F10 PR3) — `images.generate`
+
+Cola on-demand (`short`, `retryLimit: 0`), mismo patrón que `trends.refresh.manual`: la API valida, anuncia el cobro, deja la card en "generando" y encola; el worker dibuja, guarda, cobra y cierra el trabajo en la card, que avisa al stream. Sin reintentos porque cada intento le paga al generador; una variante que falla se reintenta a mano desde la card. `singletonKey` es el lote, y el payload (`ImageGenerationJob`) va tipado al encolar (la cicatriz de F9.6). `expireInSeconds` = 4 min, por debajo de los 5 que la card tarda en dar un trabajo por muerto: para cuando la card deja volver a intentar, la cola ya lo soltó.
+
 ## Addendum (2026-09-19, F8.7) — `metrics.ingest`, la cuarta cola
 
 La ingesta de métricas (ADR-021) sigue el patrón de este ADR sin novedad: enumerar con `runWorkerScan` → agrupar por usuario → `try/catch` por tenant → `summarizeFailures` y relanzar. Tres cosas que sí son propias de esta cola:

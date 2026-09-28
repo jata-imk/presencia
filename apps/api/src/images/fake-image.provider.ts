@@ -27,8 +27,20 @@ export class FakeImageProvider implements ImageProvider {
   readonly modelName = "solid-png";
   readonly requests: ImageRequest[] = [];
 
-  generate(request: ImageRequest): Promise<ImageResult> {
+  /**
+   * `delayMs` imita lo que tarda un generador de verdad (IMAGE_FAKE_DELAY_MS
+   * en dev): sin él, el estado "generando" de la card dura un parpadeo y no
+   * hay cómo verlo ni medirlo en el navegador.
+   */
+  constructor(private readonly delayMs = 0) {}
+
+  async generate(request: ImageRequest): Promise<ImageResult> {
     this.requests.push(request);
+    if (this.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+    return this.draw(request);
+  }
+
+  private draw(request: ImageRequest): Promise<ImageResult> {
     if (request.prompt.includes(FAKE_BLOCK_MARKER)) {
       return Promise.resolve({ kind: "blocked", providerRaw: { fake: true, blocked: true } });
     }

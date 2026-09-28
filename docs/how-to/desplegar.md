@@ -157,8 +157,9 @@ fallo peligroso es creer que hay respaldo y que el job nunca se haya registrado.
 ### 4b. Assets de Biblioteca (obligatorio desde F10)
 
 Las imágenes de las cards viven en R2, nunca en el disco del contenedor (ADR-011). Con
-`NODE_ENV=production` —que el compose fija en los dos stacks del VPS, también el de dev— la API **no
-arranca** sin esto.
+`NODE_ENV=production` —que el compose fija en el stack de prod— la API **no arranca** sin esto. El
+stack de dev del VPS no corre la app (solo Postgres), así que no lleva estas variables; la API de dev,
+en la laptop, usa disco local.
 
 1. Crear en R2 un bucket privado `presencia-assets`, **sin** lifecycle rule (los assets viven lo que viva
    la cuenta).
