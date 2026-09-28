@@ -30,3 +30,18 @@ export function composeImagePrompt(description: string, voice: VoiceForImage | n
   parts.push(`Si la descripción no pide otro estilo: ${DEFAULT_IMAGE_STYLE}`);
   return parts.join("\n\n");
 }
+
+/**
+ * El prompt de una edición ("más cálida", "sin gente"). Va con la imagen
+ * elegida como referencia, y lo que más importa es lo que NO se pide: sin
+ * esa cola, los generadores tienden a rehacer la escena entera y la edición
+ * deja de parecerse a la foto que el usuario quería ajustar (bake-off de
+ * ADR-025: con ella, Gemini conservó composición y rostro).
+ */
+export function composeEditPrompt(instruction: string): string {
+  return (
+    `${instruction.trim()}\n\n` +
+    "Conserva todo lo que no se pidió cambiar: la composición, el encuadre y el sujeto. " +
+    "Sin texto, letras ni logotipos nuevos."
+  );
+}

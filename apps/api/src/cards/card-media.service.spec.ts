@@ -181,6 +181,28 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     expect(dto.imageJob).toBeNull();
   });
 
+  it("el historial trae todas las imágenes de la card, de la más vieja a la más nueva", async () => {
+    const cardId = await createCard(VISUAL);
+    const a = await media.attachUpload(userA, cardId, PNG, "uno.png");
+    const b = await media.attachUpload(userA, cardId, solidPng(10, 10, [9, 9, 9]));
+    const versions = await media.versions(userA, cardId);
+    expect(versions.map((v) => v.assetId)).toEqual([a.content.assetIds[0], b.content.assetIds[0]]);
+    expect(versions[0]).toMatchObject({ source: "uploaded", kind: null, alt: null });
+    await expect(media.versions(userB, cardId)).rejects.toThrow(/No encontramos/);
+  });
+
+  it("el texto alternativo se guarda y no se puede tocar el ajeno", async () => {
+    const cardId = await createCard(VISUAL);
+    const dto = await media.attachUpload(userA, cardId, PNG);
+    const assetId = dto.content.assetIds[0]!;
+    expect(await assetsService.updateAlt(userB, assetId, "intruso")).toBeNull();
+    expect(
+      await assetsService.updateAlt(userA, assetId, "Taza de café en la barra"),
+    ).not.toBeNull();
+    const [version] = await media.versions(userA, cardId);
+    expect(version!.alt).toBe("Taza de café en la barra");
+  });
+
   it("un guion de video no lleva imagen", async () => {
     const cardId = await createCard(VIDEO);
     await expect(media.attachUpload(userA, cardId, PNG)).rejects.toThrow(/guion de video/);

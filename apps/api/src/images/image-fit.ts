@@ -35,3 +35,20 @@ export async function fitToAspect(data: Uint8Array, aspect: ImageAspectRatio): P
     .toBuffer();
   return new Uint8Array(cropped);
 }
+
+/**
+ * La proporción de la lista más cercana a la de una imagen: con qué
+ * proporción se pide la edición de una foto que el usuario subió en 3:2.
+ */
+export function nearestAspect(
+  width: number,
+  height: number,
+  options: readonly ImageAspectRatio[],
+): ImageAspectRatio {
+  const actual = width / height;
+  let best = options[0]!;
+  for (const option of options) {
+    if (Math.abs(ratioOf(option) - actual) < Math.abs(ratioOf(best) - actual)) best = option;
+  }
+  return best;
+}

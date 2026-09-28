@@ -6,7 +6,13 @@ import {
   NotFoundException,
   UnsupportedMediaTypeException,
 } from "@nestjs/common";
-import { cardContentSchema, type CardContent, type PublicationCardDto } from "@presencia/shared";
+import {
+  cardContentSchema,
+  type CardContent,
+  type CardImageVersionDto,
+  type PublicationCardDto,
+} from "@presencia/shared";
+import type { AssetMetadata } from "../assets/assets.repository.js";
 import { AssetsService } from "../assets/assets.service.js";
 import { InvalidImageError } from "../assets/image-inspect.js";
 import { DbService } from "../db/db.service.js";
@@ -102,6 +108,29 @@ export class CardMediaService {
       const updated = await this.repo.updateContentIfEditable(tx, cardId, content);
       if (!updated) throw new ConflictException(NOT_EDITABLE_MESSAGE);
       return toDto(updated);
+    });
+  }
+
+  /**
+   * Todas las imágenes que tuvo la card, de la más vieja a la más nueva, con
+   * cómo nació cada una: la tira de versiones. Se puede pedir en cualquier
+   * estado de la card (una programada también muestra su historial); lo que
+   * no deja es elegir otra.
+   */
+  async versions(userId: string, cardId: string): Promise<CardImageVersionDto[]> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const card = await this.repo.findById(tx, cardId);
+      if (!card) throw new NotFoundException("No encontramos esa publicación.");
+      const rows = await this.assets.listByCard(tx, cardId);
+      return rows.map(({ asset, kind, instruction, parentAssetId }) => ({
+        assetId: asset.id,
+        source: asset.source,
+        kind,
+        instruction,
+        parentAssetId,
+        alt: (asset.metadata as AssetMetadata).alt ?? null,
+        createdAt: asset.createdAt.toISOString(),
+      }));
     });
   }
 

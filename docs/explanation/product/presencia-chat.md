@@ -369,6 +369,18 @@ El tratamiento depende del arquetipo de la card:
 >   el hueco con la proporción pedida y se puede seguir en el chat: el
 >   resultado llega solo. Si el generador se niega (personas reales,
 >   marcas) o falla, la card lo dice y **no se cobra**.
+> - **Ajustarla sin empezar de cero**: atajos ("Más cálida", "Sin
+>   gente", "Otro fondo", "Más minimalista", "Más colorida",
+>   "Ilustración") o un cambio escrito a mano ("Pide un cambio…"). Se
+>   edita la imagen elegida, con ella como referencia, y sale **una**
+>   imagen (la instrucción ya dice qué cambiar), con su precio a la
+>   vista. La nueva queda elegida y la de antes se queda en la tira de
+>   **versiones**: todas las imágenes que tuvo la card (variantes,
+>   ajustes, subidas), de la más vieja a la más nueva; tocar una la
+>   vuelve la elegida.
+> - **Texto alternativo** editable bajo la imagen. Las generadas nacen
+>   con la descripción que se pidió (un ajuste hereda el de su imagen
+>   de partida); las subidas, vacías hasta que el usuario lo escriba.
 >
 > Sin imagen, la card dice qué pasa en esa red, sin inventar: Instagram
 > la necesita para programar; Facebook publica solo el texto; en

@@ -6,6 +6,7 @@ import {
   AssetsRepository,
   type AssetMetadata,
   type AssetRow,
+  type AssetWithOrigin,
   type InsertAssetInput,
 } from "./assets.repository.js";
 import { extensionFor, inspectImage } from "./image-inspect.js";
@@ -67,6 +68,27 @@ export class AssetsService {
       source: input.source,
       metadata,
     };
+  }
+
+  /**
+   * Los bytes de un asset, para editarlo (la imagen de referencia) o, en F10
+   * PR5, subirlo al proveedor de publicación.
+   */
+  readBytes(row: AssetRow): Promise<Uint8Array> {
+    return this.storage.get(row.storageKey);
+  }
+
+  /** El historial de imágenes de una card, en la transacción del llamador. */
+  listByCard(tx: Tx, cardId: string): Promise<AssetWithOrigin[]> {
+    return this.repo.listByCard(tx, cardId);
+  }
+
+  /** Texto alternativo: `null` si el asset no existe o no es suyo (RLS). */
+  async updateAlt(userId: string, assetId: string, alt: string): Promise<AssetRow | null> {
+    const row = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.updateAlt(tx, assetId, alt),
+    );
+    return row ?? null;
   }
 
   /** Un asset por id, en la transacción del llamador (RLS: uno ajeno no existe). */

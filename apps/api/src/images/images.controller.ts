@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Inject, Param, Post } from "@nestjs/common";
 import {
   cardIdParamSchema,
+  editCardImageBodySchema,
   generateCardImageBodySchema,
   type ImagesConfigDto,
   type PublicationCardDto,
@@ -33,5 +34,19 @@ export class ImagesController {
     const parsed = generateCardImageBodySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Describe la imagen que quieres generar.");
     return this.service.request(user.id, cardId.data.id, parsed.data);
+  }
+
+  /** "Más cálida", "sin gente": edita la imagen elegida. Encola igual que generar. */
+  @Post("cards/:id/images/edit")
+  edit(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<PublicationCardDto> {
+    const cardId = cardIdParamSchema.safeParse({ id });
+    if (!cardId.success) throw new BadRequestException("El id de la publicación no es válido.");
+    const parsed = editCardImageBodySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("Escribe qué quieres cambiar de la imagen.");
+    return this.service.requestEdit(user.id, cardId.data.id, parsed.data);
   }
 }

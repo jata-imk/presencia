@@ -20,6 +20,7 @@ import {
   scheduleCardBodySchema,
   scheduleGroupBodySchema,
   selectCardImageBodySchema,
+  type CardImageVersionDto,
   type PublicationCardDto,
   type ScheduleGroupResultItem,
 } from "@presencia/shared";
@@ -133,6 +134,15 @@ export class CardsController {
     const data = await readRawBody(req, ASSET_UPLOAD_MAX_BYTES);
     if (data.byteLength === 0) throw new BadRequestException("No llegó ningún archivo.");
     return this.media.attachUpload(user.id, cardId, data, fileNameFrom(req));
+  }
+
+  /** El historial de imágenes de la card (F10): generadas, editadas y subidas. */
+  @Get("cards/:id/images")
+  imageVersions(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+  ): Promise<CardImageVersionDto[]> {
+    return this.media.versions(user.id, this.parseCardId(id));
   }
 
   /** Elegir otra de las imágenes de la card (F10): una variante, una versión anterior. */

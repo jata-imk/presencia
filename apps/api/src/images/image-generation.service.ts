@@ -12,12 +12,15 @@ import {
   IMAGE_VARIANTS_PER_GENERATION,
   type CardContent,
   type CardImageJob,
+  type EditCardImageBody,
   type GenerateCardImageBody,
   type ImageAspectRatio,
+  type ImageProviderSlot,
   type ImagesConfigDto,
   type PublicationCardDto,
 } from "@presencia/shared";
 import { AiUsageService } from "../ai/ai-usage.service.js";
+import type { AssetMetadata } from "../assets/assets.repository.js";
 import { AssetsService } from "../assets/assets.service.js";
 import { BrandVoiceRepository } from "../brand-voice/brand-voice.repository.js";
 import { NOT_EDITABLE_MESSAGE } from "../cards/card-media.service.js";
@@ -35,13 +38,18 @@ import {
 } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
 import { BossService } from "../jobs/boss.service.js";
-import { fitToAspect } from "./image-fit.js";
+import { fitToAspect, nearestAspect } from "./image-fit.js";
 import {
   ImageGenerationsRepository,
   type ImageGenerationRow,
 } from "./image-generations.repository.js";
-import { composeImagePrompt } from "./image-prompt.js";
-import { IMAGE_PROVIDERS, type ImageProvider, type ImageProviders } from "./image-provider.js";
+import { composeEditPrompt, composeImagePrompt } from "./image-prompt.js";
+import {
+  IMAGE_PROVIDERS,
+  type ImageProvider,
+  type ImageProviders,
+  type ReferenceImage,
+} from "./image-provider.js";
 
 // Generar la imagen de una card (F10 PR3, ADR-025).
 //
@@ -117,65 +125,149 @@ export class ImageGenerationService {
     cardId: string,
     body: GenerateCardImageBody,
   ): Promise<PublicationCardDto> {
-    const provider = this.providerFor(body.provider);
-    if (!provider) throw new BadRequestException("No hay otro generador configurado.");
-
-    const card = await this.dbService.runWithTenant(userId, (tx) =>
-      this.cards.findById(tx, cardId),
-    );
-    if (!card) throw new NotFoundException("No encontramos esa publicación.");
-    const content = card.content as CardContent;
-    if (!acceptsImage(content)) {
-      throw new BadRequestException("Esta publicación es un guion de video: no lleva imagen.");
-    }
-    if (!EDITABLE_CARD_STATUSES.includes(card.status)) {
-      throw new ConflictException(NOT_EDITABLE_MESSAGE);
-    }
+    const provider = this.requireProvider(body.provider);
+    const card = await this.loadEditableCard(userId, cardId);
     if (!IMAGE_ASPECT_OPTIONS[card.network].includes(body.aspectRatio)) {
       throw new BadRequestException("Esa proporción no se usa en esta red.");
     }
-
-    // El gate ANTES de encolar: `spend` corre cuando el proveedor ya cobró.
-    // Esto contesta 402 sin gastar nada.
-    await this.credits.assertQuotaOr402(
-      userId,
-      quoteFlatAction(REASON) * IMAGE_VARIANTS_PER_GENERATION,
-    );
+    const content = card.content as CardContent;
 
     const voice = await this.dbService.runWithTenant(userId, (tx) =>
       this.brandVoice.findDefault(tx),
     );
     const prompt = composeImagePrompt(body.prompt, voice ?? null);
-    const batchId = randomUUID();
-    const job: CardImageJob = {
-      id: batchId,
-      status: "generating",
-      provider: body.provider,
-      kind: "generate",
-      aspectRatio: body.aspectRatio,
-      assetIds: [],
-      startedAt: new Date().toISOString(),
-    };
     // El prompt editado se guarda en la card: la próxima vez la card muestra
     // lo que de verdad se generó, no la sugerencia original del chat.
     const editedPrompt =
       "imagePrompt" in content && content.imagePrompt === body.prompt ? undefined : body.prompt;
 
+    return this.startJob(userId, cardId, {
+      kind: "generate",
+      slot: body.provider,
+      provider,
+      aspectRatio: body.aspectRatio,
+      count: IMAGE_VARIANTS_PER_GENERATION,
+      prompt,
+      instruction: null,
+      parentAssetId: null,
+      editedPrompt,
+    });
+  }
+
+  /**
+   * "Más cálida", "sin gente": edita la imagen elegida, con ella como
+   * referencia. Una imagen, no dos: la instrucción ya dice qué cambiar.
+   * Queda como hija de la elegida (`parent_asset_id`): el historial de
+   * versiones y Biblioteca muestran de dónde salió.
+   */
+  async requestEdit(
+    userId: string,
+    cardId: string,
+    body: EditCardImageBody,
+  ): Promise<PublicationCardDto> {
+    const provider = this.requireProvider(body.provider);
+    const card = await this.loadEditableCard(userId, cardId);
+    const parentId = (card.content as CardContent).assetIds[0];
+    if (!parentId) {
+      throw new BadRequestException("Primero genera o sube una imagen para poder ajustarla.");
+    }
+    const parent = await this.dbService.runWithTenant(userId, (tx) =>
+      this.assets.find(tx, parentId),
+    );
+    if (!parent || parent.cardId !== cardId) {
+      throw new NotFoundException("No encontramos la imagen que quieres ajustar.");
+    }
+    const { width, height } = parent.metadata as AssetMetadata;
+    // La proporción de la imagen que se edita, llevada a la más cercana que
+    // usa la red: una foto subida en 3:2 se edita como 16:9 o 1:1, lo que
+    // quede más cerca, y no se deforma a 4:5.
+    const aspectRatio = nearestAspect(width, height, IMAGE_ASPECT_OPTIONS[card.network]);
+
+    return this.startJob(userId, cardId, {
+      kind: "edit",
+      slot: body.provider,
+      provider,
+      aspectRatio,
+      count: 1,
+      prompt: composeEditPrompt(body.instruction),
+      instruction: body.instruction,
+      parentAssetId: parentId,
+      editedPrompt: undefined,
+    });
+  }
+
+  private requireProvider(slot: ImageProviderSlot): ImageProvider {
+    const provider = this.providerFor(slot);
+    if (!provider) throw new BadRequestException("No hay otro generador configurado.");
+    return provider;
+  }
+
+  /** La card, si existe, es suya, lleva imagen y todavía se puede editar. */
+  private async loadEditableCard(userId: string, cardId: string): Promise<CardRow> {
+    const card = await this.dbService.runWithTenant(userId, (tx) =>
+      this.cards.findById(tx, cardId),
+    );
+    if (!card) throw new NotFoundException("No encontramos esa publicación.");
+    if (!acceptsImage(card.content as CardContent)) {
+      throw new BadRequestException("Esta publicación es un guion de video: no lleva imagen.");
+    }
+    if (!EDITABLE_CARD_STATUSES.includes(card.status)) {
+      throw new ConflictException(NOT_EDITABLE_MESSAGE);
+    }
+    return card;
+  }
+
+  /**
+   * Lo común a generar y editar: el gate de cuota por las imágenes que se
+   * piden, el candado en la card, las filas de `image_generations` y el job.
+   */
+  private async startJob(
+    userId: string,
+    cardId: string,
+    spec: {
+      kind: "generate" | "edit";
+      slot: ImageProviderSlot;
+      provider: ImageProvider;
+      aspectRatio: ImageAspectRatio;
+      count: number;
+      prompt: string;
+      instruction: string | null;
+      parentAssetId: string | null;
+      editedPrompt: string | undefined;
+    },
+  ): Promise<PublicationCardDto> {
+    // El gate ANTES de encolar: `spend` corre cuando el proveedor ya cobró.
+    // Esto contesta 402 sin gastar nada.
+    await this.credits.assertQuotaOr402(userId, quoteFlatAction(REASON) * spec.count);
+
+    const batchId = randomUUID();
+    const job: CardImageJob = {
+      id: batchId,
+      status: "generating",
+      provider: spec.slot,
+      kind: spec.kind,
+      aspectRatio: spec.aspectRatio,
+      assetIds: [],
+      startedAt: new Date().toISOString(),
+    };
+
     const started = await this.dbService.runWithTenant(userId, async (tx) => {
-      const row = await this.cards.startImageJob(tx, cardId, job, editedPrompt);
+      const row = await this.cards.startImageJob(tx, cardId, job, spec.editedPrompt);
       if (!row) return null;
       await this.generations.insertMany(
         tx,
-        Array.from({ length: IMAGE_VARIANTS_PER_GENERATION }, () => ({
+        Array.from({ length: spec.count }, () => ({
           userId,
           cardId,
           batchId,
-          kind: "generate" as const,
-          providerSlot: body.provider,
-          provider: provider.provider,
-          model: provider.modelName,
-          prompt,
-          aspectRatio: body.aspectRatio,
+          kind: spec.kind,
+          providerSlot: spec.slot,
+          provider: spec.provider.provider,
+          model: spec.provider.modelName,
+          prompt: spec.prompt,
+          instruction: spec.instruction,
+          parentAssetId: spec.parentAssetId,
+          aspectRatio: spec.aspectRatio,
         })),
       );
       return row;
@@ -278,11 +370,31 @@ export class ImageGenerationService {
     }
     const aspectRatio = row.aspectRatio as ImageAspectRatio;
     const modelo = { provider: provider.provider, modelName: provider.modelName };
-    const arranque = Date.now();
+    const task = row.kind === "edit" ? "image_edit" : "image_generate";
 
+    // Una edición manda la imagen de partida. Sin ella no hay edición posible,
+    // y se falla antes de pagarle al generador.
+    let reference: ReferenceImage | undefined;
+    let parentAlt: string | undefined;
+    if (row.parentAssetId) {
+      try {
+        const parent = await this.dbService.runWithTenant(userId, (tx) =>
+          this.assets.find(tx, row.parentAssetId!),
+        );
+        if (!parent) throw new Error(`no existe el asset ${row.parentAssetId}`);
+        reference = { data: await this.assets.readBytes(parent), mediaType: parent.mimeType };
+        parentAlt = (parent.metadata as AssetMetadata).alt;
+      } catch (error) {
+        console.error(`[images] no se pudo leer la imagen de referencia de ${row.id}:`, error);
+        await this.settle(userId, row.id, { status: "failed", errorMessage: messageOf(error) });
+        return { status: "failed" };
+      }
+    }
+
+    const arranque = Date.now();
     let result;
     try {
-      result = await provider.generate({ prompt: row.prompt, aspectRatio });
+      result = await provider.generate({ prompt: row.prompt, aspectRatio, reference });
     } catch (error) {
       console.error(`[images] ${provider.provider} falló en ${row.id}:`, error);
       await this.settle(userId, row.id, { status: "failed", errorMessage: messageOf(error) });
@@ -294,7 +406,7 @@ export class ImageGenerationService {
       await this.aiUsage.registrar({
         userId,
         chatId: card.chatId,
-        task: "image_generate",
+        task,
         modelo,
         usage: result.usage ?? {
           inputTokens: undefined,
@@ -313,7 +425,7 @@ export class ImageGenerationService {
     await this.aiUsage.registrar({
       userId,
       chatId: card.chatId,
-      task: "image_generate",
+      task,
       modelo,
       usage: result.usage,
       stepsCount: 1,
@@ -330,6 +442,10 @@ export class ImageGenerationService {
         chatId: card.chatId,
         data,
         source: "generated",
+        // El texto alternativo nace de lo que se pidió: la descripción de la
+        // card al generar; al editar, el de la imagen de partida, que la
+        // edición no cambia de tema.
+        metadata: altFor(row, card, parentAlt),
       });
       // Asset, liquidación y cobro juntos: o la imagen existe y está cobrada,
       // o ninguna de las dos. Sobregiro permitido: el proveedor ya cobró, y
@@ -355,7 +471,7 @@ export class ImageGenerationService {
     }
   }
 
-  private providerFor(slot: "primary" | "alternate"): ImageProvider | null {
+  private providerFor(slot: ImageProviderSlot): ImageProvider | null {
     return slot === "alternate" ? this.providers.alternate : this.providers.primary;
   }
 
@@ -401,6 +517,16 @@ export class ImageGenerationService {
       console.error(`[images] no se pudo cerrar el trabajo ${job.id} de ${cardId}:`, error);
     }
   }
+}
+
+function altFor(
+  row: ImageGenerationRow,
+  card: CardRow,
+  parentAlt: string | undefined,
+): { alt?: string } {
+  const description = (card.content as CardContent & { imagePrompt?: string }).imagePrompt;
+  const alt = row.kind === "edit" ? (parentAlt ?? description) : description;
+  return alt ? { alt: alt.slice(0, 500) } : {};
 }
 
 function messageOf(error: unknown): string {

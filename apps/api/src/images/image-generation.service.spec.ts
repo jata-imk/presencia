@@ -19,8 +19,8 @@ import {
 import type { DbService as DbServiceType } from "../db/db.service.js";
 import type { BossService } from "../jobs/boss.service.js";
 import { FAKE_BLOCK_MARKER, FakeImageProvider } from "./fake-image.provider.js";
-import { fitToAspect } from "./image-fit.js";
-import { composeImagePrompt, DEFAULT_IMAGE_STYLE } from "./image-prompt.js";
+import { fitToAspect, nearestAspect } from "./image-fit.js";
+import { composeEditPrompt, composeImagePrompt, DEFAULT_IMAGE_STYLE } from "./image-prompt.js";
 import type { ImageProviders, ImageRequest, ImageResult } from "./image-provider.js";
 import type {
   ImageGenerationJob,
@@ -397,6 +397,65 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     expect((await batchRows(job.id)).every((r) => r.status === "failed")).toBe(true);
   });
 
+  it("editar sin imagen elegida es un 400", async () => {
+    const service = make(fake());
+    const cardId = await createCard();
+    await expect(
+      service.requestEdit(userId, cardId, { instruction: "Hazla más cálida", provider: "primary" }),
+    ).rejects.toThrow(/Primero genera o sube/);
+  });
+
+  it("editar manda la elegida como referencia, cobra una y la deja como hija", async () => {
+    const primary = new FakeImageProvider();
+    const service = make({ primary, alternate: null });
+    const cardId = await createCard();
+    const generated = await service.request(userId, cardId, {
+      provider: "primary",
+      prompt: VISUAL.imagePrompt!,
+      aspectRatio: "4:5",
+    });
+    await service.run({ userId, cardId, batchId: generated.imageJob!.id });
+    const parentId = ((await card(cardId)).content as CardContent).assetIds[0]!;
+
+    const dto = await service.requestEdit(userId, cardId, {
+      instruction: "Quita a las personas",
+      provider: "primary",
+    });
+    expect(dto.imageJob).toMatchObject({ kind: "edit", aspectRatio: "4:5", status: "generating" });
+    const rows = await batchRows(dto.imageJob!.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: "edit",
+      instruction: "Quita a las personas",
+      parentAssetId: parentId,
+    });
+    expect(rows[0]!.prompt).toContain("Conserva todo lo que no se pidió cambiar");
+
+    await service.run({ userId, cardId, batchId: dto.imageJob!.id });
+
+    const last = primary.requests.at(-1)!;
+    expect(last.reference?.mediaType).toBe("image/png");
+    const final = await card(cardId);
+    const job = final.imageJob as CardImageJob;
+    expect(job).toMatchObject({ status: "done", kind: "edit" });
+    expect((final.content as CardContent).assetIds).toEqual(job.assetIds);
+    expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(1);
+
+    const [child] = await dbService.runWithTenant(userId, (tx) =>
+      tx.select().from(assets).where(eq(assets.id, job.assetIds[0]!)),
+    );
+    // La edición hereda el texto alternativo de su imagen de partida.
+    expect(child!.metadata).toMatchObject({ alt: VISUAL.imagePrompt });
+
+    const usage = await dbService.runWithTenant(userId, (tx) =>
+      tx
+        .select()
+        .from(aiUsageEvents)
+        .where(and(eq(aiUsageEvents.chatId, chatId), eq(aiUsageEvents.taskKind, "image_edit"))),
+    );
+    expect(usage.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("el config anuncia el precio en %, nunca en unidades", async () => {
     const config = await make(fake()).config(userId);
     // Plan creator: 30,000 unidades; 2 × 700 = 4.7%, 700 = 2.3%.
@@ -414,6 +473,22 @@ describe("composeImagePrompt", () => {
 
   it("sin voz de marca no inventa un nicho", () => {
     expect(composeImagePrompt("Taza", null)).not.toContain("creador de contenido de");
+  });
+});
+
+describe("composeEditPrompt", () => {
+  it("pide conservar lo que no se pidió cambiar", () => {
+    const prompt = composeEditPrompt("  Hazla más cálida ");
+    expect(prompt.startsWith("Hazla más cálida")).toBe(true);
+    expect(prompt).toContain("Conserva todo lo que no se pidió cambiar");
+  });
+});
+
+describe("nearestAspect", () => {
+  it("una foto 3:2 se edita como la proporción más cercana que usa la red", () => {
+    expect(nearestAspect(1536, 1024, ["16:9", "1:1"])).toBe("16:9");
+    expect(nearestAspect(1536, 1024, ["4:5", "1:1"])).toBe("1:1");
+    expect(nearestAspect(928, 1152, ["4:5", "1:1"])).toBe("4:5");
   });
 });
 
