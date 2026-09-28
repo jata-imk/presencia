@@ -60,7 +60,11 @@ export function TextCardBody({
           después del texto, y sin imagen ni card editable no ocupa nada. */}
       {assetId ? (
         <div className="mt-3">
-          <CardImage assetId={assetId} alt={content.imagePrompt ?? "Imagen de la publicación"} />
+          <CardImage
+            key={assetId}
+            assetId={assetId}
+            alt={content.imagePrompt ?? "Imagen de la publicación"}
+          />
           {media && <ImageActionStrip media={media} />}
         </div>
       ) : (

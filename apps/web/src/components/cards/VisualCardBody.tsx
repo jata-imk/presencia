@@ -34,7 +34,11 @@ export function VisualCardBody({
     <div className="px-4 pt-3.5 pb-1">
       {assetId ? (
         <>
-          <CardImage assetId={assetId} alt={content.imagePrompt ?? "Imagen de la publicación"} />
+          <CardImage
+            key={assetId}
+            assetId={assetId}
+            alt={content.imagePrompt ?? "Imagen de la publicación"}
+          />
           {media && <ImageActionStrip media={media} />}
         </>
       ) : (

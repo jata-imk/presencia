@@ -16,7 +16,8 @@ export interface CardMediaActions {
 /**
  * La imagen elegida, en su proporción real: una foto subida no tiene por qué
  * ser 4:5. Si no carga (la URL firmada venció a media sesión, el asset ya no
- * está), un aviso en vez del ícono roto del navegador.
+ * está), un aviso en vez del ícono roto del navegador. Quien la usa le pone
+ * `key={assetId}`: una imagen nueva vuelve a intentar, no hereda el fallo.
  */
 export function CardImage({ assetId, alt }: { assetId: string; alt: string }) {
   const [failed, setFailed] = useState(false);
