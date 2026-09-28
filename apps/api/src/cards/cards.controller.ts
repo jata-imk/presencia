@@ -5,6 +5,7 @@ import {
   Get,
   Inject,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -18,6 +19,7 @@ import {
   listCardsQuerySchema,
   scheduleCardBodySchema,
   scheduleGroupBodySchema,
+  selectCardImageBodySchema,
   type PublicationCardDto,
   type ScheduleGroupResultItem,
 } from "@presencia/shared";
@@ -131,6 +133,19 @@ export class CardsController {
     const data = await readRawBody(req, ASSET_UPLOAD_MAX_BYTES);
     if (data.byteLength === 0) throw new BadRequestException("No llegó ningún archivo.");
     return this.media.attachUpload(user.id, cardId, data, fileNameFrom(req));
+  }
+
+  /** Elegir otra de las imágenes de la card (F10): una variante, una versión anterior. */
+  @Patch("cards/:id/image")
+  selectImage(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<PublicationCardDto> {
+    const cardId = this.parseCardId(id);
+    const parsed = selectCardImageBodySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("El id de la imagen no es válido.");
+    return this.media.selectImage(user.id, cardId, parsed.data.assetId);
   }
 
   private parseCardId(id: string): string {

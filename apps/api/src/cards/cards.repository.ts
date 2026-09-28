@@ -14,7 +14,13 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import type { CardContent, CardStatus, SocialNetwork } from "@presencia/shared";
+import {
+  IMAGE_JOB_STALE_MS,
+  type CardContent,
+  type CardImageJob,
+  type CardStatus,
+  type SocialNetwork,
+} from "@presencia/shared";
 import { chats, publicationCards } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 import { CARD_CHANGED_CHANNEL, encodeCardChanged } from "../realtime/card-events.js";
@@ -174,13 +180,115 @@ export class CardsRepository {
     tx: Tx,
     id: string,
     content: CardContent,
+    options: { clearFinishedImageJob?: boolean } = {},
   ): Promise<CardRow | undefined> {
+    // `clearFinishedImageJob`: el usuario resolvió la imagen por otro lado
+    // (subió la suya), así que el aviso del último intento —"no se pudo
+    // generar"— y sus variantes ya no dicen nada. Uno que sigue generando se
+    // respeta: su resultado todavía tiene que llegar.
     const [row] = await tx
       .update(publicationCards)
-      .set({ content, updatedAt: WRITTEN_AT })
+      .set({
+        content,
+        ...(options.clearFinishedImageJob
+          ? {
+              imageJob: sql`case when ${publicationCards.imageJob}->>'status' = 'generating' then ${publicationCards.imageJob} else null end`,
+            }
+          : {}),
+        updatedAt: WRITTEN_AT,
+      })
       .where(
         and(eq(publicationCards.id, id), inArray(publicationCards.status, EDITABLE_CARD_STATUSES)),
       )
+      .returning();
+    if (row) await notifyChanged(tx, [row]);
+    return row;
+  }
+
+  /**
+   * F10: arranca un trabajo de imagen, o `undefined` si no se puede: la card
+   * ya no es editable, o ya hay uno corriendo.
+   *
+   * Es el candado contra el doble click, y por eso la condición vive en el
+   * WHERE: dos requests simultáneos no pueden pasar los dos. "Corriendo" es
+   * `generating` con menos de IMAGE_JOB_STALE_MS; uno más viejo se da por
+   * muerto (el worker se reinició a la mitad) y se deja pisar, o el botón
+   * quedaría apagado para siempre.
+   *
+   * Si viene `imagePrompt`, se guarda en la misma escritura: es el prompt
+   * que el usuario editó antes de apretar "Generar". Se fusiona en SQL sobre
+   * la fila que se escribe, y no con un contenido armado antes: entre leer la
+   * card y llegar acá pasan varias idas a la base, y una imagen subida en ese
+   * hueco (otra pestaña) se habría pisado con la lectura vieja.
+   */
+  async startImageJob(
+    tx: Tx,
+    id: string,
+    job: CardImageJob,
+    imagePrompt?: string,
+  ): Promise<CardRow | undefined> {
+    const staleBefore = new Date(Date.now() - IMAGE_JOB_STALE_MS).toISOString();
+    const [row] = await tx
+      .update(publicationCards)
+      .set({
+        imageJob: job,
+        ...(imagePrompt !== undefined
+          ? {
+              content: sql`jsonb_set(${publicationCards.content}, '{imagePrompt}', to_jsonb(${imagePrompt}::text))`,
+            }
+          : {}),
+        updatedAt: WRITTEN_AT,
+      })
+      .where(
+        and(
+          eq(publicationCards.id, id),
+          inArray(publicationCards.status, EDITABLE_CARD_STATUSES),
+          or(
+            isNull(publicationCards.imageJob),
+            sql`${publicationCards.imageJob}->>'status' <> 'generating'`,
+            sql`${publicationCards.imageJob}->>'startedAt' < ${staleBefore}`,
+          ),
+        ),
+      )
+      .returning();
+    if (row) await notifyChanged(tx, [row]);
+    return row;
+  }
+
+  /**
+   * F10: cierra el trabajo de imagen con su resultado y, si la card sigue
+   * siendo editable y salió alguna imagen, deja elegida `selectAssetId`.
+   * El contenido se arma acá, sobre la fila bloqueada, y no antes: así no
+   * pisa un cambio que haya llegado mientras el generador trabajaba.
+   *
+   * Solo toca la card si el trabajo en ella sigue siendo ESTE (`job.id`): si
+   * el usuario dio por muerto uno lento y arrancó otro, el viejo al terminar
+   * no le pisa el estado al nuevo. La fila se bloquea para que el chequeo y
+   * la escritura no tengan otra escritura en medio.
+   */
+  async finishImageJob(
+    tx: Tx,
+    id: string,
+    job: CardImageJob,
+    selectAssetId?: string,
+  ): Promise<CardRow | undefined> {
+    const [current] = await tx
+      .select()
+      .from(publicationCards)
+      .where(eq(publicationCards.id, id))
+      .for("update");
+    if (!current || (current.imageJob as CardImageJob | null)?.id !== job.id) return undefined;
+    const editable = EDITABLE_CARD_STATUSES.includes(current.status);
+    const [row] = await tx
+      .update(publicationCards)
+      .set({
+        imageJob: job,
+        ...(selectAssetId && editable
+          ? { content: { ...(current.content as CardContent), assetIds: [selectAssetId] } }
+          : {}),
+        updatedAt: WRITTEN_AT,
+      })
+      .where(eq(publicationCards.id, id))
       .returning();
     if (row) await notifyChanged(tx, [row]);
     return row;

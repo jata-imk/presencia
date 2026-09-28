@@ -9,6 +9,7 @@ import { DbModule } from "./db/db.module.js";
 import { env } from "./env.js";
 import { FoldersModule } from "./folders/folders.module.js";
 import { HealthController } from "./health.controller.js";
+import { ImagesModule } from "./images/images.module.js";
 import { ScheduledJobsModule } from "./jobs/scheduled-jobs.module.js";
 import { ProfileModule } from "./profile/profile.module.js";
 import { RealtimeModule } from "./realtime/realtime.module.js";
@@ -27,6 +28,10 @@ import { SearchModule } from "./search/search.module.js";
     SearchModule,
     RitmoModule,
     RealtimeModule,
+    // F10: la generación de imágenes. Tiene que estar acá y no solo en
+    // ScheduledJobsModule: con WORKER_INLINE=false (prod) esa lista no se
+    // carga en la API, y sin esto los endpoints de imágenes no existirían.
+    ImagesModule,
     // WORKER_INLINE: en dev la cola vive en este mismo proceso (ADR-008
     // addendum F8). Con el flag apagado, quien la consume es worker.ts.
     ...(env.WORKER_INLINE ? [ScheduledJobsModule] : []),

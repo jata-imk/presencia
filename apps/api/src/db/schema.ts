@@ -14,6 +14,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { MODOS_ESTRATEGIA } from "@presencia/shared";
 import { AI_TASK_KINDS } from "../ai/provider-registry.js";
@@ -61,6 +62,15 @@ export const cardStatus = pgEnum("card_status", [
 ]);
 
 export const assetSource = pgEnum("asset_source", ["generated", "uploaded"]);
+
+// F10: una imagen pedida a un generador (ADR-025).
+export const imageGenerationKind = pgEnum("image_generation_kind", ["generate", "edit"]);
+export const imageGenerationStatus = pgEnum("image_generation_status", [
+  "pending",
+  "succeeded",
+  "failed",
+  "blocked",
+]);
 
 export const channelLinkStatus = pgEnum("channel_link_status", ["pending", "active", "revoked"]);
 
@@ -374,12 +384,65 @@ export const publicationCards = pgTable(
     // (PostFast no lo incluye en su respuesta de estado).
     platformPostId: text("platform_post_id"),
     errorDetail: jsonb("error_detail"),
+    // F10: el último trabajo de imagen (CardImageJob de @presencia/shared).
+    // En la card y no solo en image_generations porque es lo que el
+    // navegador tiene que ver cambiar: toda escritura de la card avisa al
+    // stream (F8.6), y así "generando → lista" llega sin que nadie pregunte.
+    // Es además el candado contra el doble click (ver
+    // CardsRepository.startImageJob).
+    imageJob: jsonb("image_job"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("cards_calendar").on(t.userId, t.scheduledAt),
     index("cards_by_group").on(t.groupId),
+  ],
+);
+
+// F10: una fila por imagen PEDIDA a un generador — las dos variantes de un
+// click son dos filas del mismo `batch_id`. Tres trabajos:
+//
+//  - Es el `reference_id` del asiento: se cobra por imagen, y dos variantes
+//    con la misma referencia chocarían contra `ledger_dedup` y la segunda se
+//    perdería en silencio.
+//  - Guarda con qué se pidió (prompt completo, instrucción, proporción,
+//    generador): Biblioteca muestra el prompt y el historial de versiones.
+//  - `parent_asset_id` es el linaje: una edición sale de otra imagen.
+//
+// Se escribe al pedir (`pending`) y se liquida al volver del proveedor.
+export const imageGenerations = pgTable(
+  "image_generations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    cardId: uuid("card_id").references(() => publicationCards.id, { onDelete: "set null" }),
+    batchId: uuid("batch_id").notNull(),
+    kind: imageGenerationKind("kind").notNull(),
+    // "primary" | "alternate": qué botón se apretó. provider/model: quién
+    // dibujó de verdad, que depende del entorno de ese momento.
+    providerSlot: text("provider_slot").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    // El prompt que se mandó, ya compuesto con el estilo por defecto.
+    prompt: text("prompt").notNull(),
+    // Solo en ediciones: lo que pidió el usuario ("más cálida").
+    instruction: text("instruction"),
+    parentAssetId: uuid("parent_asset_id").references((): AnyPgColumn => assets.id, {
+      onDelete: "set null",
+    }),
+    aspectRatio: text("aspect_ratio").notNull(),
+    status: imageGenerationStatus("status").notNull().default("pending"),
+    assetId: uuid("asset_id").references((): AnyPgColumn => assets.id, { onDelete: "set null" }),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("image_generations_batch").on(t.batchId),
+    index("image_generations_card").on(t.cardId),
   ],
 );
 

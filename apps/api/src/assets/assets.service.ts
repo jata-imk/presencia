@@ -69,6 +69,11 @@ export class AssetsService {
     };
   }
 
+  /** Un asset por id, en la transacción del llamador (RLS: uno ajeno no existe). */
+  find(tx: Tx, id: string): Promise<AssetRow | undefined> {
+    return this.repo.findById(tx, id);
+  }
+
   /** El segundo paso: la fila, en la transacción del llamador. */
   record(tx: Tx, stored: StoredAsset): Promise<AssetRow> {
     return this.repo.insert(tx, stored);

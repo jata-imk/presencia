@@ -1,3 +1,4 @@
+import type { ImageAspectRatio } from "@presencia/shared";
 import type { ImageModelUsage } from "ai";
 
 // El contrato del generador de imágenes (F10, ADR-025). Mismo patrón que
@@ -9,9 +10,8 @@ import type { ImageModelUsage } from "ai";
 // imagen se cobra y se guarda por separado — si una de las dos falla, la otra
 // no tiene por qué perderse con ella.
 
-/** Las proporciones que la app pide. Cada adapter las traduce a lo que su API entiende. */
-export const IMAGE_ASPECT_RATIOS = ["1:1", "4:5", "16:9"] as const;
-export type ImageAspectRatio = (typeof IMAGE_ASPECT_RATIOS)[number];
+// Las proporciones viven en @presencia/shared: la card las ofrece como chips.
+export type { ImageAspectRatio };
 
 export interface ReferenceImage {
   data: Uint8Array;

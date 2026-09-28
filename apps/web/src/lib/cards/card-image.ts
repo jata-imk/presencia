@@ -1,5 +1,7 @@
 import {
   ASSET_UPLOAD_MAX_BYTES,
+  IMAGE_JOB_STALE_MS,
+  type CardImageJob,
   formatBytes,
   isAssetUploadMimeType,
   type CardContent,
@@ -36,4 +38,16 @@ export function missingImageNote(network: SocialNetwork): string {
   if (network === "instagram") return "Instagram necesita una imagen para poder programar.";
   if (network === "facebook") return "Si no agregas una, se publicará solo el texto.";
   return "La imagen es opcional en esta red.";
+}
+
+/**
+ * El trabajo de imagen como hay que mostrarlo AHORA. La API ya da por muerto
+ * uno que lleva "generando" más de IMAGE_JOB_STALE_MS, pero solo cuando la card
+ * se vuelve a pedir: si el worker murió a la mitad nadie escribe la card, el
+ * stream no trae nada y el navegador se quedaría con los botones apagados.
+ * Mismo corte, del lado del navegador.
+ */
+export function effectiveImageJob(job: CardImageJob | null, now: number): CardImageJob | null {
+  if (job?.status !== "generating") return job;
+  return now - Date.parse(job.startedAt) > IMAGE_JOB_STALE_MS ? { ...job, status: "failed" } : job;
 }

@@ -159,6 +159,28 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     expect(second.content.assetIds[0]).not.toBe(first.content.assetIds[0]);
   });
 
+  it("subir la propia limpia el aviso de un intento fallido", async () => {
+    const cardId = await createCard(VISUAL);
+    await dbService.runWithTenant(userA, (tx) =>
+      tx
+        .update(publicationCards)
+        .set({
+          imageJob: {
+            id: randomUUID(),
+            status: "failed",
+            provider: "primary",
+            kind: "generate",
+            aspectRatio: "4:5",
+            assetIds: [],
+            startedAt: new Date().toISOString(),
+          },
+        })
+        .where(eq(publicationCards.id, cardId)),
+    );
+    const dto = await media.attachUpload(userA, cardId, PNG);
+    expect(dto.imageJob).toBeNull();
+  });
+
   it("un guion de video no lleva imagen", async () => {
     const cardId = await createCard(VIDEO);
     await expect(media.attachUpload(userA, cardId, PNG)).rejects.toThrow(/guion de video/);
@@ -192,6 +214,25 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     if (propio?.delivery.kind === "bytes") {
       expect(Buffer.from(propio.delivery.data).equals(Buffer.from(PNG))).toBe(true);
     }
+  });
+
+  // ── selectImage ──
+
+  it("elige otra imagen de la misma card", async () => {
+    const cardId = await createCard(VISUAL);
+    const first = await media.attachUpload(userA, cardId, PNG);
+    await media.attachUpload(userA, cardId, solidPng(10, 10, [1, 2, 3]));
+    const back = await media.selectImage(userA, cardId, first.content.assetIds[0]!);
+    expect(back.content.assetIds).toEqual(first.content.assetIds);
+  });
+
+  it("no acepta una imagen de otra card", async () => {
+    const cardA = await createCard(VISUAL);
+    const cardB = await createCard(VISUAL);
+    const other = await media.attachUpload(userA, cardB, PNG);
+    await expect(media.selectImage(userA, cardA, other.content.assetIds[0]!)).rejects.toThrow(
+      /no es de esta publicación/,
+    );
   });
 });
 

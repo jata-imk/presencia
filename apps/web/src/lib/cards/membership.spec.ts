@@ -23,6 +23,7 @@ function card(overrides: Partial<PublicationCardDto> = {}): PublicationCardDto {
     postUrl: null,
     errorMessage: null,
     updatedAt: "2026-09-01T00:00:00.000Z",
+    imageJob: null,
     ...overrides,
   };
 }

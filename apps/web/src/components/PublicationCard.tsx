@@ -1,10 +1,20 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { IMAGE_ASPECT_OPTIONS, IMAGE_JOB_STALE_MS, type QuotaStatusDto } from "@presencia/shared";
 import { CardToolbar } from "./cards/CardToolbar.js";
-import type { CardMediaActions } from "./cards/CardMedia.js";
+import type { CardMediaActions, GenerateInput } from "./cards/CardMedia.js";
 import { PublicationCardView } from "./cards/PublicationCardView.js";
+import { QuotaExhaustedModal } from "./QuotaExhaustedModal.js";
 import { ApiError } from "../lib/api.js";
-import { imageFileProblem } from "../lib/cards/card-image.js";
-import { cancelCardSchedule, rescheduleCard, uploadCardImage } from "../lib/cards-api.js";
+import { effectiveImageJob, imageFileProblem } from "../lib/cards/card-image.js";
+import {
+  cancelCardSchedule,
+  generateCardImage,
+  rescheduleCard,
+  selectCardImage,
+  uploadCardImage,
+} from "../lib/cards-api.js";
+import { cuotaAgotadaDe } from "../lib/cuota-agotada.js";
+import { useImagesConfig } from "../lib/use-images-config.js";
 import type { CardToolPart } from "../lib/chat-types.js";
 import { useCard, useCardsStore, useChatCards } from "../stores/cards-store.js";
 import { useScheduleDrawerStore } from "../stores/schedule-drawer-store.js";
@@ -29,9 +39,25 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
   const applyCards = useCardsStore((s) => s.apply);
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [requestingImage, setRequestingImage] = useState(false);
+  const [cuota, setCuota] = useState<QuotaStatusDto | null>(null);
+  const imagesConfig = useImagesConfig();
 
   const cardId = part.state === "output-available" ? part.output.cardId : undefined;
   const liveCard = useCard(cardId);
+  // Un trabajo "generando" que no termina (el worker murió a la mitad) no
+  // manda ningún evento: la card lo da por fallido sola al cumplirse el corte
+  // de IMAGE_JOB_STALE_MS, con un timer que la vuelve a pintar a esa hora.
+  const rawJob = liveCard?.imageJob ?? null;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (rawJob?.status !== "generating") return;
+    const due = Date.parse(rawJob.startedAt) + IMAGE_JOB_STALE_MS - Date.now();
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(due, 0) + 500);
+    return () => clearTimeout(timer);
+  }, [rawJob?.id, rawJob?.status, rawJob?.startedAt]);
+  const imageJob = effectiveImageJob(rawJob, Math.max(now, Date.now()));
+
   const siblingCards = useMemo(
     () =>
       liveCard?.groupId
@@ -87,8 +113,53 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
   // igual, esto es para no ofrecer lo que va a fallar).
   const media: CardMediaActions | undefined =
     liveCard && (status === "draft" || status === "failed") && content.archetype !== "video_script"
-      ? { upload: (file) => void handleUpload(liveCard.id, file), uploading }
+      ? {
+          upload: (file) => void handleUpload(liveCard.id, file),
+          uploading,
+          generation: imagesConfig
+            ? {
+                generate: (input) => void handleGenerate(liveCard.id, input),
+                select: (assetId) => handleSelect(liveCard.id, assetId),
+                requesting: requestingImage,
+                job: imageJob,
+                percent: imagesConfig.generatePercent,
+                alternateAvailable: imagesConfig.alternateAvailable,
+                aspectOptions: IMAGE_ASPECT_OPTIONS[network],
+              }
+            : undefined,
+        }
       : undefined;
+
+  // La respuesta trae la card ya "generando"; el resultado llega después por
+  // el stream de cards, cuando el worker termina. Un 402 no es un error de
+  // red: abre la pantalla de cuota agotada, igual que en el chat.
+  async function handleGenerate(cardId: string, input: GenerateInput) {
+    setRequestingImage(true);
+    try {
+      applyCards(await generateCardImage(cardId, input));
+    } catch (err) {
+      const agotada = cuotaAgotadaDe(err);
+      if (agotada) setCuota(agotada);
+      else
+        toast({
+          title: "No se pudo generar la imagen",
+          description: err instanceof ApiError ? err.message : "Inténtalo de nuevo.",
+        });
+    } finally {
+      setRequestingImage(false);
+    }
+  }
+
+  async function handleSelect(cardId: string, assetId: string) {
+    try {
+      applyCards(await selectCardImage(cardId, assetId));
+    } catch (err) {
+      toast({
+        title: "No se pudo elegir esa imagen",
+        description: err instanceof ApiError ? err.message : "Inténtalo de nuevo.",
+      });
+    }
+  }
 
   async function handleUpload(cardId: string, file: File) {
     const problem = imageFileProblem(file);
@@ -158,34 +229,37 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
   }
 
   return (
-    <PublicationCardView
-      cardId={liveCard?.id}
-      content={content}
-      network={network}
-      status={status}
-      scheduledAt={liveCard?.scheduledAt}
-      publishedAt={liveCard?.publishedAt}
-      errorMessage={liveCard?.errorMessage}
-      media={media}
-      footer={
-        liveCard ? (
-          <CardToolbar
-            status={status}
-            busy={busy}
-            postUrl={liveCard.postUrl}
-            onSchedule={openScheduleDrawer}
-            onCancel={() => void handleCancel()}
-          />
-        ) : (
-          // La card ya existe (el tool part la trajo) pero cards-store
-          // todavía no tiene su estado vivo — pasa un instante si el modelo
-          // sigue hablando después de crearla (se refresca al terminar el
-          // turno, ver chat.tsx).
-          <p className="border-t border-line px-4 py-2.5 text-xs text-fg-muted">
-            Cargando acciones…
-          </p>
-        )
-      }
-    />
+    <>
+      {cuota && <QuotaExhaustedModal quota={cuota} onDismiss={() => setCuota(null)} />}
+      <PublicationCardView
+        cardId={liveCard?.id}
+        content={content}
+        network={network}
+        status={status}
+        scheduledAt={liveCard?.scheduledAt}
+        publishedAt={liveCard?.publishedAt}
+        errorMessage={liveCard?.errorMessage}
+        media={media}
+        footer={
+          liveCard ? (
+            <CardToolbar
+              status={status}
+              busy={busy}
+              postUrl={liveCard.postUrl}
+              onSchedule={openScheduleDrawer}
+              onCancel={() => void handleCancel()}
+            />
+          ) : (
+            // La card ya existe (el tool part la trajo) pero cards-store
+            // todavía no tiene su estado vivo — pasa un instante si el modelo
+            // sigue hablando después de crearla (se refresca al terminar el
+            // turno, ver chat.tsx).
+            <p className="border-t border-line px-4 py-2.5 text-xs text-fg-muted">
+              Cargando acciones…
+            </p>
+          )
+        }
+      />
+    </>
   );
 }

@@ -66,6 +66,9 @@ const envSchema = z
     // PUBLISHING_PROVIDER, pero default "real": generar es el producto, y una
     // instalación nueva que dibuja cuadros grises en silencio engaña.
     IMAGE_PROVIDER: z.enum(["real", "fake"]).default("real"),
+    // Solo con el fake: cuánto tarda en "dibujar", para ver y medir el estado
+    // "generando" de la card en dev. Un generador real tarda 10-60 s.
+    IMAGE_FAKE_DELAY_MS: z.coerce.number().int().min(0).default(0),
     ZEPTOMAIL_TOKEN: z.string().min(1),
     MAIL_FROM: z.email(),
     PORT: z.coerce.number().int().positive().default(3000),
