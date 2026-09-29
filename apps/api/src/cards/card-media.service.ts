@@ -81,7 +81,7 @@ export class CardMediaService {
         assetIds: [stored.id],
       });
       const updated = await this.repo.updateContentIfEditable(tx, cardId, content, {
-        clearFinishedImageJob: true,
+        imageJob: "clearUnlessRunning",
       });
       if (!updated) throw new ConflictException(NOT_EDITABLE_MESSAGE);
       return toDto(updated);
@@ -105,7 +105,9 @@ export class CardMediaService {
         ...(current.content as CardContent),
         assetIds: [assetId],
       });
-      const updated = await this.repo.updateContentIfEditable(tx, cardId, content);
+      const updated = await this.repo.updateContentIfEditable(tx, cardId, content, {
+        imageJob: "supersedeStale",
+      });
       if (!updated) throw new ConflictException(NOT_EDITABLE_MESSAGE);
       return toDto(updated);
     });

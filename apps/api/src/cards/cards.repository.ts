@@ -180,21 +180,35 @@ export class CardsRepository {
     tx: Tx,
     id: string,
     content: CardContent,
-    options: { clearFinishedImageJob?: boolean } = {},
+    options: { imageJob?: "keep" | "clearUnlessRunning" | "supersedeStale" } = {},
   ): Promise<CardRow | undefined> {
-    // `clearFinishedImageJob`: el usuario resolvió la imagen por otro lado
-    // (subió la suya), así que el aviso del último intento —"no se pudo
-    // generar"— y sus variantes ya no dicen nada. Uno que sigue generando se
-    // respeta: su resultado todavía tiene que llegar.
+    const staleBefore = new Date(Date.now() - IMAGE_JOB_STALE_MS).toISOString();
+    const running = sql`(${publicationCards.imageJob}->>'status' = 'generating' and ${publicationCards.imageJob}->>'startedAt' >= ${staleBefore})`;
+    const stale = sql`(${publicationCards.imageJob}->>'status' = 'generating' and ${publicationCards.imageJob}->>'startedAt' < ${staleBefore})`;
+    // Qué pasa con el último trabajo de imagen cuando el usuario elige o
+    // sube otra:
+    //
+    // - `clearUnlessRunning` (subir la propia): el usuario resolvió la imagen
+    //   por otro lado, y el aviso del último intento ya no dice nada. Solo se
+    //   respeta uno que de verdad sigue corriendo.
+    // - `supersedeStale` (elegir otra versión): un "generando" que ya pasó el
+    //   corte se da por reemplazado.
+    //
+    // En los dos casos lo que importa es el trabajo viejo: la card ya le dijo
+    // al usuario que falló, y el usuario ya eligió. Sin borrarlo, si ese job
+    // terminara tarde pisaría la imagen elegida (`finishImageJob` compara
+    // solo el id) y cobraría algo que se anunció como no cobrado.
+    const imageJob =
+      options.imageJob === "clearUnlessRunning"
+        ? sql`case when ${running} then ${publicationCards.imageJob} else null end`
+        : options.imageJob === "supersedeStale"
+          ? sql`case when ${stale} then null else ${publicationCards.imageJob} end`
+          : undefined;
     const [row] = await tx
       .update(publicationCards)
       .set({
         content,
-        ...(options.clearFinishedImageJob
-          ? {
-              imageJob: sql`case when ${publicationCards.imageJob}->>'status' = 'generating' then ${publicationCards.imageJob} else null end`,
-            }
-          : {}),
+        ...(imageJob ? { imageJob } : {}),
         updatedAt: WRITTEN_AT,
       })
       .where(
@@ -266,6 +280,35 @@ export class CardsRepository {
    * no le pisa el estado al nuevo. La fila se bloquea para que el chequeo y
    * la escritura no tengan otra escritura en medio.
    */
+  /**
+   * F10: ¿este lote sigue siendo el trabajo vivo de la card? Bloquea la fila:
+   * se llama en la transacción que cobra, y la respuesta tiene que valer
+   * hasta que el cobro se escriba.
+   *
+   * Vivo es: el mismo id, todavía `generating` y sin pasar el corte de
+   * IMAGE_JOB_STALE_MS. Pasado el corte, la card ya le dijo al usuario "no
+   * se pudo generar, no se cobró", y eso se cumple aunque el job termine.
+   *
+   * `FOR NO KEY UPDATE` y no `FOR UPDATE`: las dos variantes cobran en
+   * paralelo e insertan un asset con FK a esta card, y ese insert toma
+   * `KEY SHARE` sobre la fila. `FOR UPDATE` choca con él y las dos
+   * transacciones se esperaban mutuamente (deadlock en CI); `NO KEY UPDATE`
+   * es compatible y sigue ordenando a las escrituras de la card.
+   */
+  async isImageJobCurrent(tx: Tx, id: string, batchId: string): Promise<boolean> {
+    const [row] = await tx
+      .select({ imageJob: publicationCards.imageJob })
+      .from(publicationCards)
+      .where(eq(publicationCards.id, id))
+      .for("no key update");
+    const job = row?.imageJob as CardImageJob | null | undefined;
+    return (
+      job?.id === batchId &&
+      job.status === "generating" &&
+      Date.now() - Date.parse(job.startedAt) <= IMAGE_JOB_STALE_MS
+    );
+  }
+
   async finishImageJob(
     tx: Tx,
     id: string,

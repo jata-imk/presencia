@@ -188,7 +188,7 @@ trabajo.
 
 ## Addendum (2026-09-27, F10 PR3) — `images.generate`
 
-Cola on-demand (`short`, `retryLimit: 0`), mismo patrón que `trends.refresh.manual`: la API valida, anuncia el cobro, deja la card en "generando" y encola; el worker dibuja, guarda, cobra y cierra el trabajo en la card, que avisa al stream. Sin reintentos porque cada intento le paga al generador; una variante que falla se reintenta a mano desde la card. `singletonKey` es el lote, y el payload (`ImageGenerationJob`) va tipado al encolar (la cicatriz de F9.6). `expireInSeconds` = 4 min, por debajo de los 5 que la card tarda en dar un trabajo por muerto: para cuando la card deja volver a intentar, la cola ya lo soltó.
+Cola on-demand (`short`, `retryLimit: 0`), mismo patrón que `trends.refresh.manual`: la API valida, anuncia el cobro, deja la card en "generando" y encola; el worker dibuja, guarda, cobra y cierra el trabajo en la card, que avisa al stream. Sin reintentos porque cada intento le paga al generador; una variante que falla se reintenta a mano desde la card. `singletonKey` es el lote, y el payload (`ImageGenerationJob`) va tipado al encolar (la cicatriz de F9.6). `expireInSeconds` = 4 min, por debajo de los 5 que la card tarda en dar un trabajo por muerto: para cuando la card deja volver a intentar, la cola ya lo soltó. **Corre 4 jobs en paralelo por proceso** (`localConcurrency`, que `registerOnDemand` ahora acepta; el default sigue en 1): casi todo el trabajo es esperar al generador, y de a uno, tres o cuatro usuarios generando en el mismo minuto dejaban al último esperando más que ese corte (review de la fase F10).
 
 ## Addendum (2026-09-19, F8.7) — `metrics.ingest`, la cuarta cola
 

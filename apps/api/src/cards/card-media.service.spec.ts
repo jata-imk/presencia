@@ -203,6 +203,31 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     expect(version!.alt).toBe("Taza de café en la barra");
   });
 
+  it("subir o elegir otra borra un 'generando' que ya pasó el corte", async () => {
+    const cardId = await createCard(VISUAL);
+    const stale = {
+      id: randomUUID(),
+      status: "generating",
+      provider: "primary",
+      kind: "generate",
+      aspectRatio: "4:5",
+      assetIds: [],
+      startedAt: new Date(Date.now() - 6 * 60_000).toISOString(),
+    };
+    const setJob = () =>
+      dbService.runWithTenant(userA, (tx) =>
+        tx.update(publicationCards).set({ imageJob: stale }).where(eq(publicationCards.id, cardId)),
+      );
+
+    await setJob();
+    const uploaded = await media.attachUpload(userA, cardId, PNG);
+    expect(uploaded.imageJob).toBeNull();
+
+    await setJob();
+    const selected = await media.selectImage(userA, cardId, uploaded.content.assetIds[0]!);
+    expect(selected.imageJob).toBeNull();
+  });
+
   it("un guion de video no lleva imagen", async () => {
     const cardId = await createCard(VIDEO);
     await expect(media.attachUpload(userA, cardId, PNG)).rejects.toThrow(/guion de video/);
