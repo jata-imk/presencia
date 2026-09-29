@@ -4,7 +4,7 @@ import { devtools } from "zustand/middleware";
 // F6 PR4: reemplaza el Context/ToastProvider de PR3 por un store — mismo
 // API pública (show({title, ...})), sin envolver <App> en un provider.
 // "kit crudo sobre tokens" ya quedaba bien con Context; el cambio es para
-// que ScheduleDrawer y PublicationCard puedan mostrar un toast sin
+// que ScheduleDrawer y las acciones de una card (useCardController) puedan mostrar un toast sin
 // depender de que el árbol de componentes los tenga como descendientes de
 // un provider específico — coherente con los otros 2 stores de este PR.
 

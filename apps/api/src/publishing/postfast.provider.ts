@@ -1,9 +1,9 @@
-import type { SocialNetwork } from "@presencia/shared";
+import { buildPostText, type SocialNetwork } from "@presencia/shared";
 import { PublishingRejectedError, PublishingUnavailableError } from "./errors.js";
 import { isStatus, ProviderHttpClient, putToSignedUrl } from "./http-client.js";
 import { parseMetricNumber } from "./metric-values.js";
 import { parsePlatformPostId } from "./platform-post-id.js";
-import { buildPostText } from "./post-text.js";
+
 import type {
   PostMetricsQuery,
   PostMetricsSnapshot,

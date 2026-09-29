@@ -5,6 +5,7 @@ export * from "./chat.js";
 export * from "./credits.js";
 export * from "./folders.js";
 export * from "./images.js";
+export * from "./post-text.js";
 export * from "./profile.js";
 export * from "./publication.js";
 export * from "./ritmo.js";

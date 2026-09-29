@@ -315,6 +315,20 @@ Sin ella, una sesión de iteración de 30 minutos genera un
 muro de cards expandidas que abruma visualmente. Click en
 cualquier card colapsada la vuelve a expandir.
 
+> **F10.5 (implementado, reemplaza la auto-colapsación):** la
+> card del chat es siempre compacta — una fila con miniatura,
+> red, estado, la primera línea del texto y "Abrir". La
+> publicación completa vive en el panel lateral (abajo). Las
+> cards de un mismo mensaje van juntas en un contenedor con
+> encabezado ("4 borradores · Facebook, LinkedIn…").
+>
+> **El glow animado se conserva** (decisión del founder,
+> 2026-09-29; el diseño del rediseño lo quitaba): una card
+> suelta lo lleva mientras está en borrador, y en un grupo lo
+> lleva el contenedor mientras quede algún borrador — un glow
+> por fila dentro de un borde se ve ruidoso. Cada fila suma la
+> pill de estado.
+
 ### Jose quiere refinar a fondo: abre el panel lateral
 
 Después de iterar un par de veces, Jose tiene una versión
@@ -874,6 +888,44 @@ tiempo de lectura es nice-to-have informativo.
 
 **Qué es:** El panel que se abre cuando el usuario hace
 click en "⛶ Pantalla completa" en una card.
+
+> **F10.5 (implementado):** el panel es el lugar de la
+> publicación, tipo artifact (Chat Rediseño.html en Claude
+> Design). Lo que se construyó y lo que cambió respecto a lo
+> de abajo:
+>
+> - **Se abre con "Abrir"** en la card compacta. Las cards del
+>   mismo mensaje entran como pestañas (red + punto de estado).
+> - **Autoapertura:** en escritorio se abre solo cuando nace el
+>   primer borrador de un turno y suma pestañas mientras nacen
+>   las demás. Si el usuario lo cierra en un chat, ese chat no
+>   lo vuelve a abrir solo (se recuerda en este navegador). En
+>   móvil nunca se abre solo: la card dice "Ver vista previa".
+> - **Ancho:** ~45% del área, mínimo 360 px y máximo 60%, con
+>   un handle que lo ajusta y lo recuerda. Mientras está
+>   abierto el sidebar se encoge a riel (56 px) para que el
+>   chat conserve su ancho de lectura. En 768–1023 entra como
+>   drawer de 520 px con scrim; en móvil, pantalla completa.
+>   Esc lo cierra. "Expandir a pantalla completa" no existe: el
+>   chat siempre queda visible (el porqué está abajo).
+> - **Vista previa / Editar** (Ctrl+E). La vista previa es fiel
+>   por red (Instagram, Facebook, LinkedIn con móvil/escritorio,
+>   X con lo que sobra de 280 resaltado, Threads, y el guion de
+>   TikTok/YouTube tal cual): nombre de la cuenta conectada,
+>   iniciales en vez de foto, **sin métricas inventadas**. Los
+>   avisos van arriba, en contexto: Instagram sin imagen,
+>   Facebook "se publicará solo el texto", texto excedido,
+>   cuenta sin conectar.
+> - **Editar**, en esta primera iteración, lleva la imagen
+>   (todo lo de F10: generar, ajustar, versiones, subir) y el
+>   texto y hashtags de solo lectura con el contador de la red.
+>   La edición del texto y sus versiones llegan en el PR3 de
+>   F10.5; "pedir un cambio a la IA", en el PR4.
+> - **Acciones al pie según el estado:** Programar, Adaptar a
+>   otra red (precarga el chat: adaptar es pedir otra card),
+>   Reprogramar, Cancelar programación, Ver en la red,
+>   Reintentar.
+> - Las variantes A/B no entran.
 
 **Por qué existe:** Las cards inline son perfectas para
 iteración rápida en el flujo conversacional. Pero hay

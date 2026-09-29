@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ConvHeader } from "../components/chat/ConvHeader.js";
 import { Composer } from "../components/chat/Composer.js";
+import { PublicationPanel } from "../components/panel/PublicationPanel.js";
 import { AssistantMessage } from "../components/chat/AssistantMessage.js";
 import { MessageUser } from "../components/chat/MessageUser.js";
 import { TypingDots } from "../components/chat/TypingDots.js";
@@ -62,6 +63,19 @@ function ChatView({
   });
   const busy = status === "submitted" || status === "streaming";
   const bottomRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  // "Adaptar a otra red" del panel (F10.5): precarga el composer y le da el
+  // foco — adaptar es pedirle otra card al chat (flujo 1), no un endpoint.
+  function prefillComposer(text: string) {
+    setInput(text);
+    requestAnimationFrame(() => {
+      const box = composerRef.current;
+      if (!box) return;
+      box.focus();
+      box.setSelectionRange(text.length, text.length);
+    });
+  }
 
   // routes/chats.tsx crea el chat y navega acá con el prompt de la
   // sugerencia/composer grande en el state de router (no en la URL — no es
@@ -150,74 +164,80 @@ function ChatView({
   const showTyping = status === "submitted" && (!lastMessage || lastMessage.role !== "assistant");
 
   return (
-    <div className="flex h-full flex-col">
-      <ConvHeader
-        chatId={chatId}
-        title={chatTitle}
-        folderId={chatFolderId}
-        onRename={async (title) => {
-          await renameChat(chatId, title);
-        }}
-      />
+    // El panel de publicación (F10.5) es hermano del chat: en escritorio lo
+    // empuja, abajo de 1024 se superpone dentro de esta misma caja (relative).
+    <div className="relative flex h-full">
+      <div className="flex h-full min-w-0 flex-1 flex-col">
+        <ConvHeader
+          chatId={chatId}
+          title={chatTitle}
+          folderId={chatFolderId}
+          onRename={async (title) => {
+            await renameChat(chatId, title);
+          }}
+        />
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-[732px] flex-col gap-5 px-4 py-6">
-          {messages.map((message, mi) => {
-            const isLastMessage = mi === messages.length - 1;
-            if (message.role === "user") {
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex max-w-[732px] flex-col gap-5 px-4 py-6">
+            {messages.map((message, mi) => {
+              const isLastMessage = mi === messages.length - 1;
+              if (message.role === "user") {
+                return (
+                  <div key={message.id} className="flex flex-col gap-[18px]">
+                    {message.parts.map((part, i) =>
+                      part.type === "text" ? <MessageUser key={i} text={part.text} /> : null,
+                    )}
+                  </div>
+                );
+              }
               return (
-                <div key={message.id} className="flex flex-col gap-[18px]">
-                  {message.parts.map((part, i) =>
-                    part.type === "text" ? <MessageUser key={i} text={part.text} /> : null,
-                  )}
-                </div>
+                <AssistantMessage
+                  key={message.id}
+                  message={message}
+                  chatId={chatId}
+                  isLast={isLastMessage}
+                  streamingNow={status === "streaming"}
+                  canRegenerate={isLastMessage && !busy}
+                  onRegenerate={() => void regenerate()}
+                />
               );
-            }
-            return (
-              <AssistantMessage
-                key={message.id}
-                message={message}
-                chatId={chatId}
-                isLast={isLastMessage}
-                streamingNow={status === "streaming"}
-                canRegenerate={isLastMessage && !busy}
-                onRegenerate={() => void regenerate()}
-              />
-            );
-          })}
-          {showTyping && <TypingDots />}
-          {error && !quotaExhaustedError && (
-            <p className="flex items-center gap-2 text-sm text-error">
-              Algo salió mal generando la respuesta.
-              <button type="button" className="underline" onClick={() => void regenerate()}>
-                Reintentar
-              </button>
-            </p>
-          )}
-          <div ref={bottomRef} />
+            })}
+            {showTyping && <TypingDots />}
+            {error && !quotaExhaustedError && (
+              <p className="flex items-center gap-2 text-sm text-error">
+                Algo salió mal generando la respuesta.
+                <button type="button" className="underline" onClick={() => void regenerate()}>
+                  Reintentar
+                </button>
+              </p>
+            )}
+            <div ref={bottomRef} />
+          </div>
         </div>
-      </div>
 
-      <div className="shrink-0 px-4 pb-4">
-        <div className="mx-auto flex max-w-[752px] flex-col gap-2">
-          {quota && !bannerDismissed && (
-            <QuotaBanner quota={quota} onDismiss={() => setBannerDismissed(true)} />
-          )}
-          {quotaExhaustedError && !modalDismissed && (
-            <QuotaExhaustedModal
-              quota={quotaExhaustedError}
-              onDismiss={() => setModalDismissed(true)}
+        <div className="shrink-0 px-4 pb-4">
+          <div className="mx-auto flex max-w-[752px] flex-col gap-2">
+            {quota && !bannerDismissed && (
+              <QuotaBanner quota={quota} onDismiss={() => setBannerDismissed(true)} />
+            )}
+            {quotaExhaustedError && !modalDismissed && (
+              <QuotaExhaustedModal
+                quota={quotaExhaustedError}
+                onDismiss={() => setModalDismissed(true)}
+              />
+            )}
+            <Composer
+              value={input}
+              onChange={setInput}
+              onSubmit={handleSubmit}
+              busy={busy}
+              onStop={() => void stop()}
+              inputRef={composerRef}
             />
-          )}
-          <Composer
-            value={input}
-            onChange={setInput}
-            onSubmit={handleSubmit}
-            busy={busy}
-            onStop={() => void stop()}
-          />
+          </div>
         </div>
       </div>
+      <PublicationPanel chatId={chatId} onAdapt={prefillComposer} />
     </div>
   );
 }

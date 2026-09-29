@@ -27,8 +27,11 @@ export function Sidebar() {
   const toggleCollapsed = useSidebarStore((s) => s.toggleCollapsed);
   const closeMobile = useSidebarStore((s) => s.closeMobile);
   const clearUserCollapsed = useSidebarStore((s) => s.clearUserCollapsed);
+  const forcedCollapsed = useSidebarStore((s) => s.forcedCollapsed);
+  const setForcedCollapsed = useSidebarStore((s) => s.setForcedCollapsed);
 
-  const collapsed = userCollapsed ?? !isDesktop;
+  // El panel de publicación (F10.5) lo encoge mientras está abierto.
+  const collapsed = forcedCollapsed || (userCollapsed ?? !isDesktop);
 
   // Aplica el ancho persistido al montar (y si cambia por teclado). El
   // arrastre escribe la var directo y no pasa por acá.
@@ -60,7 +63,14 @@ export function Sidebar() {
         collapsed ? "w-(--sidebar-width-collapsed)" : "w-(--sidebar-width)"
       }`}
     >
-      <SidebarNav collapsed={collapsed} onToggleCollapsed={() => toggleCollapsed(collapsed)} />
+      <SidebarNav
+        collapsed={collapsed}
+        // Con el riel impuesto por el panel, expandir solo levanta la
+        // imposición: no es una preferencia nueva que valga la pena guardar.
+        onToggleCollapsed={() =>
+          forcedCollapsed ? setForcedCollapsed(false) : toggleCollapsed(collapsed)
+        }
+      />
       {!collapsed && <SidebarResizeHandle />}
     </nav>
   );

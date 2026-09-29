@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
-import type { CardContent, SocialNetwork } from "@presencia/shared";
+import {
+  NETWORK_TEXT_LIMITS,
+  buildPostText,
+  type CardContent,
+  type SocialNetwork,
+} from "@presencia/shared";
 import { missingImageNote, selectedAssetId } from "../../lib/cards/card-image.js";
 import { EmptyImageState, SelectedImage, type CardMediaActions } from "./CardMedia.js";
 import { Hashtags } from "./Hashtags.js";
@@ -13,11 +18,6 @@ type TextFirstContent = Extract<CardContent, { archetype: "text_first" }>;
 // falsa (no es el perfil real conectado) y el tiempo de lectura estimado
 // (dato inventado); se conserva el conteo de caracteres — ese sí es
 // real, calculado del contenido tal cual.
-const MAX_CHARS: Partial<Record<SocialNetwork, number>> = {
-  linkedin: 3000,
-  x: 280,
-  threads: 500,
-};
 
 export function TextCardBody({
   content,
@@ -29,8 +29,11 @@ export function TextCardBody({
   /** F10: solo cuando la card se puede editar. */
   media?: CardMediaActions;
 }) {
-  const max = MAX_CHARS[network];
-  const over = max !== undefined && content.body.length > max;
+  // Mismo límite y mismo texto que la vista previa del panel (F10.5): el
+  // que se publica, con hashtags incluidos (buildPostText).
+  const max = NETWORK_TEXT_LIMITS[network];
+  const used = buildPostText(content).length;
+  const over = used > max;
   const assetId = selectedAssetId(content);
 
   return (
@@ -38,19 +41,17 @@ export function TextCardBody({
       <div className="rounded-lg border border-line bg-app px-3.5 py-3">
         <p className="text-sm leading-relaxed whitespace-pre-wrap text-fg">{content.body}</p>
       </div>
-      {max !== undefined && (
-        <div className="mt-2 flex items-center gap-2">
-          <div className="h-1 flex-1 overflow-hidden rounded-full bg-line">
-            <div
-              className={`h-full rounded-full ${over ? "bg-error" : "bg-success"}`}
-              style={{ width: `${Math.min((content.body.length / max) * 100, 100)}%` }}
-            />
-          </div>
-          <span className={`text-[11px] font-semibold ${over ? "text-error" : "text-fg-muted"}`}>
-            {content.body.length} / {max}
-          </span>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-line">
+          <div
+            className={`h-full rounded-full ${over ? "bg-error" : "bg-success"}`}
+            style={{ width: `${Math.min((used / max) * 100, 100)}%` }}
+          />
         </div>
-      )}
+        <span className={`text-[11px] font-semibold ${over ? "text-error" : "text-fg-muted"}`}>
+          {used} / {max}
+        </span>
+      </div>
       <Hashtags tags={content.hashtags} />
       {/* La imagen acompañante (F10) es secundaria en estas redes: va
           después del texto, y sin imagen ni card editable no ocupa nada. */}
