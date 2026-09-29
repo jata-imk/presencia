@@ -454,13 +454,16 @@ export class ImageGenerationService {
       // o ninguna de las dos. Sobregiro permitido: el proveedor ya cobró, y
       // negarse solo tiraría la imagen sin devolver ese dinero (ADR-012).
       await this.dbService.runWithTenant(userId, async (tx) => {
-        await this.assets.record(tx, stored);
-        await this.generations.settle(tx, row.id, { status: "succeeded", assetId: stored.id });
         // Se vuelve a preguntar AQUÍ, con la card bloqueada, y no solo al
         // arrancar el job: una imagen puede tardar hasta que la card lo dé
         // por muerto y le diga al usuario "no se cobró". Si pasó eso, la
-        // imagen se guarda (queda en sus versiones) pero no se cobra.
-        if (await this.cards.isImageJobCurrent(tx, card.id, row.batchId)) {
+        // imagen se guarda (queda en sus versiones) pero no se cobra. Va
+        // primero en la transacción: el lock de la card antes que el del
+        // insert del asset, el mismo orden en las dos variantes.
+        const current = await this.cards.isImageJobCurrent(tx, card.id, row.batchId);
+        await this.assets.record(tx, stored);
+        await this.generations.settle(tx, row.id, { status: "succeeded", assetId: stored.id });
+        if (current) {
           await this.credits.spend(tx, {
             userId,
             reason: REASON,

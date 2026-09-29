@@ -288,13 +288,19 @@ export class CardsRepository {
    * Vivo es: el mismo id, todavía `generating` y sin pasar el corte de
    * IMAGE_JOB_STALE_MS. Pasado el corte, la card ya le dijo al usuario "no
    * se pudo generar, no se cobró", y eso se cumple aunque el job termine.
+   *
+   * `FOR NO KEY UPDATE` y no `FOR UPDATE`: las dos variantes cobran en
+   * paralelo e insertan un asset con FK a esta card, y ese insert toma
+   * `KEY SHARE` sobre la fila. `FOR UPDATE` choca con él y las dos
+   * transacciones se esperaban mutuamente (deadlock en CI); `NO KEY UPDATE`
+   * es compatible y sigue ordenando a las escrituras de la card.
    */
   async isImageJobCurrent(tx: Tx, id: string, batchId: string): Promise<boolean> {
     const [row] = await tx
       .select({ imageJob: publicationCards.imageJob })
       .from(publicationCards)
       .where(eq(publicationCards.id, id))
-      .for("update");
+      .for("no key update");
     const job = row?.imageJob as CardImageJob | null | undefined;
     return (
       job?.id === batchId &&
