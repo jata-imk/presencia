@@ -1,14 +1,12 @@
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, isStaticToolUIPart } from "ai";
+import { DefaultChatTransport } from "ai";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ConvHeader } from "../components/chat/ConvHeader.js";
 import { Composer } from "../components/chat/Composer.js";
-import { MessageAI } from "../components/chat/MessageAI.js";
+import { AssistantMessage } from "../components/chat/AssistantMessage.js";
 import { MessageUser } from "../components/chat/MessageUser.js";
-import { PresenciaAvatar } from "../components/chat/PresenciaAvatar.js";
 import { TypingDots } from "../components/chat/TypingDots.js";
-import { PublicationCard } from "../components/PublicationCard.js";
 import { QuotaBanner } from "../components/QuotaBanner.js";
 import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
 import { parseQuotaExhaustedError } from "../lib/chat-error.js";
@@ -163,7 +161,7 @@ function ChatView({
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-[820px] flex-col gap-[18px] px-4 py-5">
+        <div className="mx-auto flex max-w-[732px] flex-col gap-5 px-4 py-6">
           {messages.map((message, mi) => {
             const isLastMessage = mi === messages.length - 1;
             if (message.role === "user") {
@@ -176,46 +174,18 @@ function ChatView({
               );
             }
             return (
-              <div key={message.id} className="flex flex-col gap-[18px]">
-                {message.parts.map((part, i) => {
-                  const isLastPart = isLastMessage && i === message.parts.length - 1;
-                  if (part.type === "text") {
-                    const streaming =
-                      status === "streaming" && isLastPart && part.state === "streaming";
-                    return (
-                      <MessageAI
-                        key={i}
-                        text={part.text}
-                        streaming={streaming}
-                        canRegenerate={isLastMessage && !busy}
-                        onRegenerate={() => void regenerate()}
-                      />
-                    );
-                  }
-                  if (part.type === "step-start") return null;
-                  if (isStaticToolUIPart(part)) {
-                    return (
-                      <div key={i} className="flex items-start gap-2.5">
-                        <PresenciaAvatar size={28} />
-                        <div className="max-w-[95%] min-w-0 flex-1 sm:max-w-[82%]">
-                          <PublicationCard part={part} chatId={chatId} />
-                        </div>
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
-              </div>
+              <AssistantMessage
+                key={message.id}
+                message={message}
+                chatId={chatId}
+                isLast={isLastMessage}
+                streamingNow={status === "streaming"}
+                canRegenerate={isLastMessage && !busy}
+                onRegenerate={() => void regenerate()}
+              />
             );
           })}
-          {showTyping && (
-            <div className="flex items-start gap-2.5">
-              <PresenciaAvatar size={28} />
-              <div className="rounded-[3px_12px_12px_12px] border border-line bg-card px-[15px] py-3 shadow-xs">
-                <TypingDots />
-              </div>
-            </div>
-          )}
+          {showTyping && <TypingDots />}
           {error && !quotaExhaustedError && (
             <p className="flex items-center gap-2 text-sm text-error">
               Algo salió mal generando la respuesta.
@@ -229,7 +199,7 @@ function ChatView({
       </div>
 
       <div className="shrink-0 px-4 pb-4">
-        <div className="mx-auto flex max-w-[820px] flex-col gap-2">
+        <div className="mx-auto flex max-w-[752px] flex-col gap-2">
           {quota && !bannerDismissed && (
             <QuotaBanner quota={quota} onDismiss={() => setBannerDismissed(true)} />
           )}

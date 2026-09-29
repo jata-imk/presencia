@@ -1,8 +1,8 @@
 // Tres puntos "escribiendo" — @keyframes dotPulse del mockup, portado a
-// dot-pulse en app.css. Solo mientras status==="submitted" (el turno se
-// envió, ningún token llegó todavía) — un estado real del AI SDK, no un
-// paso de progreso inventado (ver MessageAI.tsx para por qué no hay
-// "ToolSteps" con texto tipo "Analizando tendencias…"). Orchid literal
+// dot-pulse en app.css. Mientras status==="submitted" (el turno se envió,
+// ningún token llegó todavía) y mientras un bloque de texto nace vacío — un
+// estado real del AI SDK, no un paso de progreso inventado (los pasos que
+// sí se muestran salen de los tool calls, ver Steps.tsx). Orchid literal
 // (capa 1, no un token semántico) — el mockup usa el mismo valor en claro
 // y oscuro, es decoración, no UI que cambie de significado con el tema.
 export function TypingDots() {

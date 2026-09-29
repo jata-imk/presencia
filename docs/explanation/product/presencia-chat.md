@@ -159,6 +159,12 @@ El mensaje de Jose aparece a la derecha en un bubble con el
 color de la marca (Plum Light). La respuesta de la IA empieza
 a generarse a la izquierda.
 
+> **F10.5 (implementado):** la respuesta de la IA ya no va en
+> burbuja ni lleva avatar. Se lee como documento, a un ancho
+> de ~700 px, y la burbuja se queda solo para lo que escribe
+> el usuario, que es lo que distingue quién habla. Copiar y
+> Regenerar aparecen en hover al pie del mensaje completo.
+
 Pero no es solo "está cargando..." y después aparece todo.
 Es una experiencia construida en fases:
 
@@ -176,10 +182,19 @@ haciendo la IA internamente:
 > 🔍 Revisando tendencias en marketing de contenido...
 
 Cada step se va marcando como completado con un checkmark.
-Esta transparencia es estratégica: comunica que la IA está
-haciendo trabajo real y diferenciado, no solo generando
-texto random. Es la diferencia visual entre "ChatGPT
-genérico" y "asistente con contexto".
+
+> **F10.5 (implementado):** los steps salen solo de lo que el
+> backend de verdad reporta: los tool calls del turno. Hoy las
+> únicas tools son las de crear borradores (ADR-005), así que
+> la línea dice "Creando borradores…" con una fila por red y,
+> al terminar, se pliega a "Creé 3 borradores". No se muestran
+> pasos inventados ("Analizando tendencias…") que no ocurren.
+> Si el mensaje trae varias cards seguidas, van bajo un
+> encabezado "3 borradores · Instagram, LinkedIn, X".
+> Esta transparencia es estratégica: comunica que la IA está
+> haciendo trabajo real y diferenciado, no solo generando
+> texto random. Es la diferencia visual entre "ChatGPT
+> genérico" y "asistente con contexto".
 
 **Fase 3 — Streaming de la respuesta (5-10 segundos)**
 La IA empieza a escribir su respuesta con efecto typewriter.
