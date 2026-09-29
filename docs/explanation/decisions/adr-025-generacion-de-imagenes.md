@@ -71,3 +71,17 @@ Es opcional y sin default a propósito: exigir la key de un segundo proveedor pa
 - **La proporción de una edición es la de su imagen de partida**, llevada a la más cercana que usa la red (`nearestAspect`): una foto subida en 3:2 se edita como 16:9 o 1:1, no se deforma a 4:5.
 - **Historial por card** (`GET /cards/:id/images`): todos los assets de la card con su origen (`assets` ⟕ `image_generations`), de la más vieja a la más nueva. Es lo mismo que Biblioteca (F12) va a necesitar para el linaje.
 - **Texto alternativo** en `assets.metadata.alt`: las generadas nacen con la descripción de la card; una edición hereda el de su imagen de partida; `PATCH /assets/:id` lo cambia. Mandarlo a las redes sigue diferido.
+
+## Addendum (2026-09-29, QA de F10 en prod)
+
+- **El generador alternativo pasa a `openai:gpt-image-2`.** En el QA, gpt-image-1.5 entregó 2:3 para una card 4:5, y el recorte, junto con un prompt de "5 diapositivas", dejó una imagen cortada. gpt-image-2 acepta tamaños libres: el adapter le pide la proporción exacta (`EXACT_OPENAI_SIZES`: 1024×1280, 1536×864) y no hay recorte. En el mini bake-off (`docs/reference/bakeoff-imagenes/2026-09-29-0458-reporte-parcial.md`):
+  - escribió exacto el texto que 1.5 fallaba;
+  - cuesta ~$0.045 por imagen contra ~$0.064;
+  - la contra: tarda 30–39 s contra 15–22 s.
+    gpt-image-1.5 sigue soportado con recorte.
+- **Encuadre seguro en todos los prompts** (`SAFE_FRAMING`): nada importante en los bordes, margen alrededor del sujeto y del texto, lo importante al centro. Así, si algo se recorta, es fondo.
+- **El copy del bloqueo ya no promete una regla que no existe.** Decía "el generador no permite logos ni marcas", y el QA mostró que sí los dibuja. Ahora: "El generador se negó a crear esta imagen (suele pasar con personas reales o contenido sensible)". Qué publica el creator, logos incluidos, es decisión suya; el estilo por defecto igual pide "sin logotipos".
+- **UI:**
+  - **"Cambiar prompt"** en una card que ya tiene imagen: abre el mismo composer de una card vacía y genera desde cero. Las anteriores se quedan en versiones.
+  - **"Ajustar esta imagen"** lleva la miniatura de la elegida, para que se vea sobre cuál se aplica.
+  - **Se quitó el atajo "Sin gente".**

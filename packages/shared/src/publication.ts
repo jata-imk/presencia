@@ -36,7 +36,17 @@ export const visualFirstContentSchema = z.object({
   archetype: z.literal("visual_first"),
   caption: z.string(),
   hashtags: z.array(z.string()).default([]),
-  imagePrompt: z.string().optional(),
+  // Una sola imagen hasta que exista el carrusel (F10.5). Sin esta línea el
+  // modelo proponía "carrusel de 5 diapositivas" en un solo prompt, y el
+  // generador dibujaba una tira de paneles cortada que igual se cobraba.
+  imagePrompt: z
+    .string()
+    .optional()
+    .describe(
+      "Describe UNA sola imagen (no carruseles, no varias diapositivas ni paneles): " +
+        "qué se ve, dónde y con qué luz. Si el tema da para varias partes, dibuja la " +
+        "portada y deja el resto en el caption.",
+    ),
   assetIds: z.array(z.uuid()).default([]),
 });
 
@@ -142,7 +152,7 @@ export const CARD_ARCHETYPE_TOOLS = [
     archetype: "visual_first",
     toolName: "crear_borrador_visual",
     description:
-      "Crea un borrador de publicación visual (imagen o carrusel) para " +
+      "Crea un borrador de publicación visual (una sola imagen) para " +
       "Instagram o Facebook. Úsala solo cuando el usuario pida explícitamente " +
       "un post listo para esas redes — no para lluvia de ideas.",
     networks: NETWORKS_BY_ARCHETYPE.visual_first,

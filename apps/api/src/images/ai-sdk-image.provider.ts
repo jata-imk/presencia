@@ -26,6 +26,18 @@ const OPENAI_SIZES: Record<ImageAspectRatio, `${number}x${number}`> = {
   "16:9": "1536x1024",
 };
 
+// gpt-image-2 acepta tamaños libres (múltiplos de 16, proporción entre 1:3 y
+// 3:1): la proporción pedida sale exacta y no hay nada que recortar después.
+const EXACT_OPENAI_SIZES: Record<ImageAspectRatio, `${number}x${number}`> = {
+  "1:1": "1024x1024",
+  "4:5": "1024x1280",
+  "16:9": "1536x864",
+};
+
+function openaiSize(modelName: string, aspect: ImageAspectRatio): `${number}x${number}` {
+  return modelName.startsWith("gpt-image-2") ? EXACT_OPENAI_SIZES[aspect] : OPENAI_SIZES[aspect];
+}
+
 // OpenAI rechaza con un 400 que lo dice en el cuerpo.
 const OPENAI_BLOCKED = /moderation_blocked|safety system|safety_violations/i;
 
@@ -97,7 +109,7 @@ export class AiSdkImageProvider implements ImageProvider {
         prompt,
         ...(this.provider === "openai"
           ? {
-              size: OPENAI_SIZES[request.aspectRatio],
+              size: openaiSize(this.modelName, request.aspectRatio),
               // Explícito: el default de gpt-image es "auto", que en la
               // práctica elige "high" y cuesta 4x lo que se tarifó (ADR-025).
               providerOptions: { openai: { quality: "medium" } },
