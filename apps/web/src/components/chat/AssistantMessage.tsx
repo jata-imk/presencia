@@ -75,12 +75,12 @@ export function AssistantMessage({
 
   return (
     <div className="group/msg flex flex-col gap-3">
-      <Steps parts={toolParts} />
+      <Steps parts={toolParts} streaming={streaming} />
       {blocks.map((block) =>
         block.kind === "text" ? (
           <MessageAI key={block.index} text={block.text} streaming={block.streaming} />
         ) : (
-          <CardBlock key={block.index} parts={block.parts} chatId={chatId} />
+          <CardBlock key={block.index} parts={block.parts} chatId={chatId} streaming={streaming} />
         ),
       )}
       {!streaming && (fullText || canRegenerate) && (
@@ -103,18 +103,38 @@ export function AssistantMessage({
   );
 }
 
-function CardBlock({ parts, chatId }: { parts: CardToolPart[]; chatId: string }) {
-  const cards = parts.map((part, i) => (
+function CardBlock({
+  parts,
+  chatId,
+  streaming,
+}: {
+  parts: CardToolPart[];
+  chatId: string;
+  streaming: boolean;
+}) {
+  // Un tool call que nunca terminó (el usuario detuvo el turno, el stream se
+  // cortó) no va a terminar ya: su "Generando…" sería una promesa falsa. Se
+  // oculta y Steps dice que se detuvo. Los que fallaron sí se quedan, con su
+  // error.
+  const shown = streaming
+    ? parts
+    : parts.filter((p) => p.state === "output-available" || p.state === "output-error");
+  if (shown.length === 0) return null;
+  const cards = shown.map((part, i) => (
     <div key={part.toolCallId ?? i} className="w-full sm:max-w-[82%]">
       <PublicationCard part={part} chatId={chatId} />
     </div>
   ));
-  if (parts.length === 1) return <>{cards}</>;
+  if (shown.length === 1) return <>{cards}</>;
 
+  // Cuenta lo que existe, no lo que se intentó: un tool call que falló no
+  // es un borrador (y así el encabezado coincide con "Creé N" de Steps).
+  // Mientras el turno llega, todavía cuentan los que se están creando.
   const networks = parts
     .map((p) => (p.state === "output-available" ? NETWORK_LABELS[p.output.network] : null))
     .filter((n): n is string => n !== null);
-  const title = `${parts.length} borradores${networks.length > 0 ? ` · ${networks.join(", ")}` : ""}`;
+  const count = streaming ? parts.length : networks.length;
+  const title = `${count} ${count === 1 ? "borrador" : "borradores"}${networks.length > 0 ? ` · ${networks.join(", ")}` : ""}`;
 
   return (
     <section aria-label={title} className="flex flex-col gap-2.5">

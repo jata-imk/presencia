@@ -13,7 +13,7 @@ import { NETWORK_LABELS } from "../../lib/network-labels.js";
 // Abierta mientras se crean (se ve el avance por red) y plegada al terminar;
 // si el usuario la toca, manda lo que eligió.
 
-type StepState = "live" | "done" | "error";
+type StepState = "live" | "done" | "error" | "stopped";
 
 function networkOf(part: CardToolPart): SocialNetwork | null {
   if (part.state === "output-available") return part.output.network;
@@ -24,25 +24,34 @@ function networkOf(part: CardToolPart): SocialNetwork | null {
   return parsed.success ? parsed.data : null;
 }
 
-function stateOf(part: CardToolPart): StepState {
+// Un tool call sin output solo sigue "en curso" mientras el turno llega. Si
+// el usuario lo detuvo o el stream se cortó, ese part nunca va a terminar:
+// mostrarlo girando sería prometer un trabajo que ya nadie está haciendo.
+function stateOf(part: CardToolPart, streaming: boolean): StepState {
   if (part.state === "output-available") return "done";
   if (part.state === "output-error") return "error";
-  return "live";
+  return streaming ? "live" : "stopped";
 }
 
-export function Steps({ parts }: { parts: CardToolPart[] }) {
+export function Steps({ parts, streaming }: { parts: CardToolPart[]; streaming: boolean }) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   if (parts.length === 0) return null;
 
-  const items = parts.map((part) => ({ network: networkOf(part), state: stateOf(part) }));
+  const items = parts.map((part) => ({
+    network: networkOf(part),
+    state: stateOf(part, streaming),
+  }));
   const live = items.some((i) => i.state === "live");
   const done = items.filter((i) => i.state === "done").length;
   const open = userOpen ?? live;
 
+  const stopped = items.some((i) => i.state === "stopped");
   const label = live
     ? "Creando borradores…"
     : done === 0
-      ? "No pude crear el borrador"
+      ? stopped
+        ? `Se detuvo la creación ${items.length === 1 ? "del borrador" : "de los borradores"}`
+        : "No pude crear el borrador"
       : `Creé ${done} ${done === 1 ? "borrador" : "borradores"}`;
 
   return (
@@ -68,7 +77,7 @@ export function Steps({ parts }: { parts: CardToolPart[] }) {
             <li key={i} className="flex items-center gap-2">
               {item.state === "live" ? (
                 <Spinner />
-              ) : item.state === "error" ? (
+              ) : item.state === "error" || item.state === "stopped" ? (
                 <AlertCircle size={12} strokeWidth={2} className="text-error" aria-hidden="true" />
               ) : (
                 <Check size={12} strokeWidth={2.25} className="text-success" aria-hidden="true" />
@@ -86,6 +95,7 @@ function stepText(network: SocialNetwork | null, state: StepState): string {
   const red = network ? ` para ${NETWORK_LABELS[network]}` : "";
   if (state === "live") return `Creando borrador${red}…`;
   if (state === "error") return `No pude crear el borrador${red}`;
+  if (state === "stopped") return `Se detuvo el borrador${red}`;
   return `Borrador${red}`;
 }
 
