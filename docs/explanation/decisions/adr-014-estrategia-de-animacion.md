@@ -71,3 +71,11 @@ Declarativo en la ruta y no un contexto nuevo: es información estática de la p
 La grilla del mes, además, **no scrollea**: son 5-6 filas `1fr` que llenan el alto, con cap de 3 posts por celda y chip "+N más". Es la forma de tener menos ejes, no más.
 
 **Segundo handle (F9.7, 2026-09-27): `ownShell`.** Configuración deja de vivir dentro del App Shell, como ya pedía el overview ("página standalone con su propio sub-sidebar"): su ruta declara `handle: { ownShell: true }` y `ProtectedLayout` no pinta Sidebar, Topbar ni Drawer, solo el `<Outlet/>` más lo que sigue valiendo en cualquier pantalla autenticada (paleta de comandos, toasts, stream de cards). El layout de Configuración trae su propio `h-dvh` con un único eje de scroll en el contenido, así que la regla de arriba se cumple igual. Mismo mecanismo que `ownScroll` y por la misma razón: es información estática de la ruta.
+
+## Addendum (2026-09-29, F10.5 PR2) — el panel de publicación del chat
+
+El panel de publicación (`components/panel/PublicationPanel.tsx`) sigue la misma regla que el drawer de programar: **en escritorio es hermano flex, no overlay**. Empuja al chat y cada uno tiene su propio eje de scroll, en regiones hermanas (addendum F7).
+
+- **Riel forzado.** Mientras está abierto en ≥1024, el sidebar se encoge a riel con `sidebar-store.forcedCollapsed`. Es una imposición temporal, no una preferencia: no se persiste ni toca `userCollapsed`, y el botón de expandir solo la levanta.
+- **Abajo de 1024 sí es overlay.** Entre 768 y 1023 no caben chat y panel sin romper la lectura, así que el panel es un drawer de 520 px con scrim dentro de la caja del chat (`relative`). En <768 es pantalla completa. Los dos entran con `sheetRight`.
+- **Cede el paso al drawer de programar.** Mientras el drawer está abierto el panel no se pinta, aunque conserva sus pestañas: dos regiones empujando dejarían al chat sin ancho.

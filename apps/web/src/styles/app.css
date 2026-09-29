@@ -380,3 +380,8 @@ body[data-dragging] {
 .slider-formalidad:focus-visible::-moz-range-thumb {
   box-shadow: 0 0 0 4px var(--focus-ring);
 }
+
+/* Aro de historias en la vista previa de Instagram (F10.5, PreviewParts.tsx). */
+.preview-story-ring {
+  background: var(--brand-instagram-ring);
+}

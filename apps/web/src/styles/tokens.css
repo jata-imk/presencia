@@ -189,6 +189,9 @@
      literal desaparecía contra --bg-card en dark. No es retokenizar un
      color de tercero — es la versión correcta del mismo logo. */
   --brand-monochrome: #000000;
+  /* F10.5: el aro de historias de la vista previa de Instagram. Colores de la
+     marca de Instagram, iguales en los dos temas (como su logo). */
+  --brand-instagram-ring: linear-gradient(45deg, #f58529, #dd2a7b, #8134af);
 
   /* Color de las sombras. Ver la nota en @theme §Sombras: viven acá y no
      inline en --shadow-* porque un var() es lo único que sobrevive al

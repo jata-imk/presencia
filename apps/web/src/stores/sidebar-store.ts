@@ -71,6 +71,14 @@ interface SidebarState extends Persisted {
   mobileOpen: boolean;
   /** Carpeta abierta en el acordeón (F6.5 PR3). No se persiste. */
   expandedFolderId: string | null;
+  /**
+   * F10.5: el panel de publicación del chat encoge el sidebar a riel mientras
+   * está abierto, para que el chat conserve su ancho de lectura. Es una
+   * imposición temporal, no una decisión del usuario: no se persiste ni toca
+   * `userCollapsed`, y al cerrarse el panel vuelve lo que había.
+   */
+  forcedCollapsed: boolean;
+  setForcedCollapsed: (forced: boolean) => void;
   /** `effective` es el estado que se está viendo ahora, no el guardado. */
   toggleCollapsed: (effective: boolean) => void;
   /** Vuelve al default por viewport sin borrar lo persistido. */
@@ -87,6 +95,9 @@ export const useSidebarStore = create<SidebarState>()(
       ...readPersisted(),
       mobileOpen: false,
       expandedFolderId: null,
+      forcedCollapsed: false,
+      setForcedCollapsed: (forcedCollapsed) =>
+        set({ forcedCollapsed }, false, "sidebar/setForcedCollapsed"),
 
       // Devuelve el mando al viewport. Lo llama Sidebar al cruzar por debajo de
       // 1024px: la preferencia guardada solo se respeta donde hay ancho para

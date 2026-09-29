@@ -1,9 +1,13 @@
 import { Copy, Layers, RefreshCw } from "lucide-react";
 import { isStaticToolUIPart } from "ai";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CardToolPart, ChatUIMessage } from "../../lib/chat-types.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
-import { PublicationCard } from "../PublicationCard.js";
+import { useMediaQuery } from "../../lib/use-media-query.js";
+import { useCardsByIds } from "../../stores/cards-store.js";
+import { usePublicationPanelStore } from "../../stores/publication-panel-store.js";
+import { CompactCard } from "../cards/CompactCard.js";
+import { GlowFrame } from "../cards/GlowFrame.js";
 import { MessageAI } from "./MessageAI.js";
 import { Steps } from "./Steps.js";
 
@@ -65,6 +69,9 @@ export function AssistantMessage({
     .join("\n\n")
     .trim();
   const streaming = isLast && streamingNow;
+  // Un turno con texto entre sus cards se parte en varios bloques; solo el
+  // primero abre el panel, los demás suman pestañas (ver CardBlock).
+  const firstCardsIndex = blocks.find((b) => b.kind === "cards")?.index;
 
   function handleCopy() {
     void navigator.clipboard.writeText(fullText).then(() => {
@@ -80,7 +87,13 @@ export function AssistantMessage({
         block.kind === "text" ? (
           <MessageAI key={block.index} text={block.text} streaming={block.streaming} />
         ) : (
-          <CardBlock key={block.index} parts={block.parts} chatId={chatId} streaming={streaming} />
+          <CardBlock
+            key={block.index}
+            parts={block.parts}
+            chatId={chatId}
+            streaming={streaming}
+            leadsTurn={block.index === firstCardsIndex}
+          />
         ),
       )}
       {!streaming && (fullText || canRegenerate) && (
@@ -107,11 +120,20 @@ function CardBlock({
   parts,
   chatId,
   streaming,
+  leadsTurn,
 }: {
   parts: CardToolPart[];
   chatId: string;
   streaming: boolean;
+  /** El primer bloque de cards del turno: el único que abre el panel. */
+  leadsTurn: boolean;
 }) {
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const isMobile = !useMediaQuery("(min-width: 768px)");
+  const openPanel = usePublicationPanelStore((s) => s.open);
+  const activeId = usePublicationPanelStore((s) => s.activeId);
+  const panelChatId = usePublicationPanelStore((s) => s.chatId);
+
   // Un tool call que nunca terminó (el usuario detuvo el turno, el stream se
   // cortó) no va a terminar ya: su "Generando…" sería una promesa falsa. Se
   // oculta y Steps dice que se detuvo. Los que fallaron sí se quedan, con su
@@ -119,13 +141,53 @@ function CardBlock({
   const shown = streaming
     ? parts
     : parts.filter((p) => p.state === "output-available" || p.state === "output-error");
+  const ids = shown.flatMap((p) => (p.state === "output-available" ? [p.output.cardId] : []));
+  const liveCards = useCardsByIds(ids);
+  const idsKey = ids.join(",");
+
+  // Autoapertura (nota de decisiones del diseño): en escritorio el panel se
+  // abre solo cuando nace el primer borrador del turno, y suma pestañas
+  // mientras nacen las demás. Si el usuario lo cerró en este chat, no se
+  // vuelve a abrir solo. Solo mientras el turno llega: abrir un chat viejo
+  // no abre nada.
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (!streaming || !isDesktop || ids.length === 0) return;
+    const panel = usePublicationPanelStore.getState();
+    if (panel.dismissedChats.has(chatId)) return;
+    if (leadsTurn && !autoOpened.current) {
+      autoOpened.current = true;
+      panel.open(chatId, ids, ids[0]);
+    } else if (panel.activeId !== null) {
+      panel.addCards(chatId, ids);
+    }
+    // idsKey resume `ids`: el arreglo es nuevo en cada render.
+  }, [streaming, isDesktop, chatId, idsKey, leadsTurn]);
+
   if (shown.length === 0) return null;
-  const cards = shown.map((part, i) => (
-    <div key={part.toolCallId ?? i} className="w-full sm:max-w-[82%]">
-      <PublicationCard part={part} chatId={chatId} />
-    </div>
-  ));
-  if (shown.length === 1) return <>{cards}</>;
+
+  // Glow animado mientras quede algún borrador (decisión de F10.5: el diseño
+  // lo quitaba y se conservó, es el lenguaje de estados de presencia-chat.md).
+  // Uno solo por contenedor: un glow por fila dentro de un borde se ve ruidoso.
+  const anyDraft =
+    shown.some((p) => p.state !== "output-available" && p.state !== "output-error") ||
+    ids.some((id) => (liveCards.find((c) => c.id === id)?.status ?? "draft") === "draft");
+
+  const rows = shown.map((part, i) => {
+    const cardId = part.state === "output-available" ? part.output.cardId : null;
+    return (
+      <div key={part.toolCallId ?? i} className={i > 0 ? "border-t border-line" : undefined}>
+        <CompactCard
+          part={part}
+          mobile={isMobile}
+          open={cardId !== null && panelChatId === chatId && activeId === cardId}
+          onOpen={() => {
+            if (cardId) openPanel(chatId, ids, cardId);
+          }}
+        />
+      </div>
+    );
+  });
 
   // Cuenta lo que existe, no lo que se intentó: un tool call que falló no
   // es un borrador (y así el encabezado coincide con "Creé N" de Steps).
@@ -136,14 +198,23 @@ function CardBlock({
   const count = streaming ? parts.length : networks.length;
   const title = `${count} ${count === 1 ? "borrador" : "borradores"}${networks.length > 0 ? ` · ${networks.join(", ")}` : ""}`;
 
-  return (
-    <section aria-label={title} className="flex flex-col gap-2.5">
-      <div className="flex items-center gap-2 font-display text-[12.5px] font-semibold text-fg-secondary">
-        <Layers size={14} strokeWidth={1.75} className="text-fg-muted" aria-hidden="true" />
-        {title}
-      </div>
-      {cards}
-    </section>
+  const body =
+    shown.length === 1 ? (
+      rows
+    ) : (
+      <section aria-label={title}>
+        <div className="flex items-center gap-2 border-b border-line px-3 py-2.5 font-display text-[12.5px] font-semibold text-fg">
+          <Layers size={14} strokeWidth={1.75} className="text-fg-muted" aria-hidden="true" />
+          {title}
+        </div>
+        {rows}
+      </section>
+    );
+
+  return anyDraft ? (
+    <GlowFrame radius={12}>{body}</GlowFrame>
+  ) : (
+    <div className="overflow-hidden rounded-xl border border-line bg-card">{body}</div>
   );
 }
 

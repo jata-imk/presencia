@@ -200,8 +200,8 @@ export const useCardsStore = create<CardsState>()(
           );
         } catch {
           // Silencioso a propósito (mismo criterio que use-quota.ts): sin
-          // estado vivo, PublicationCard cae al tool part — el chat sigue
-          // usable, solo se pierde el badge/toolbar actualizados.
+          // estado vivo, la card compacta cae al tool part — el chat sigue
+          // usable, solo se pierde el estado actualizado.
         }
       },
 
@@ -409,8 +409,11 @@ export function useCardsByIds(ids: string[] | null | undefined): PublicationCard
   return useCardsStore(useShallow((state) => pick(state.byId, ids)));
 }
 
-export function useChatCards(chatId: string): PublicationCardDto[] {
-  return useCardsStore(useShallow((state) => pick(state.byId, state.chatIds[chatId])));
+/** `undefined` (una card huérfana, sin chat) da lista vacía. */
+export function useChatCards(chatId: string | undefined): PublicationCardDto[] {
+  return useCardsStore(
+    useShallow((state) => pick(state.byId, chatId ? state.chatIds[chatId] : undefined)),
+  );
 }
 
 export function useRangeCards(): PublicationCardDto[] {

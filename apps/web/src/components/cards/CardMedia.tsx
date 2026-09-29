@@ -721,7 +721,7 @@ export function SelectedImage({
   const [composing, setComposing] = useState(false);
   const shown = picked ?? assetId;
   // La versión elegida dentro del historial, que llega aparte y después
-  // (PublicationCard lo pide cuando cambia la card). Mientras no llega no se
+  // (useCardController lo pide cuando cambia la card). Mientras no llega no se
   // sabe su texto alternativo, y el editor no se monta: montado con "" y un
   // "Guardar" borraría el que el servidor sí tiene.
   const shownVersion = generation?.versions.find((v) => v.assetId === shown);
