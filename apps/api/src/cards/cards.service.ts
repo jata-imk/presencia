@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import {
   IMAGE_JOB_STALE_MS,
@@ -329,12 +330,20 @@ export class CardsService {
     if (!assetId) return { assetId: null, media: null };
 
     const asset = await this.dbService.runWithTenant(userId, (tx) => this.assets.find(tx, assetId));
-    if (!asset) {
-      throw new BadRequestException(
-        "La imagen de esta publicación ya no está en tu Biblioteca. Sube o genera otra.",
+    if (!asset) throw new BadRequestException(MISSING_IMAGE_MESSAGE);
+    let data: Uint8Array;
+    try {
+      data = await this.assets.readBytes(asset);
+    } catch (error) {
+      // La fila existe pero el archivo no (se borró del bucket, una subida
+      // que no llegó): para el usuario es lo mismo que si no existiera. Un
+      // storage caído es otra cosa, y se dice como tal.
+      if (isMissingObject(error)) throw new BadRequestException(MISSING_IMAGE_MESSAGE);
+      console.error(`[cards] no se pudo leer la imagen ${asset.id} de ${cardId}:`, error);
+      throw new ServiceUnavailableException(
+        "No pudimos leer la imagen de tu Biblioteca. Inténtalo en un momento.",
       );
     }
-    const data = await this.assets.readBytes(asset);
     try {
       const media = await this.provider.prepareMedia([
         { data, mimeType: asset.mimeType, filename: asset.storageKey.split("/").pop() ?? asset.id },
@@ -759,6 +768,16 @@ function errorMessageFrom(errorDetail: unknown): string | null {
   if (typeof errorDetail !== "object" || errorDetail === null) return null;
   const message = (errorDetail as { message?: unknown }).message;
   return typeof message === "string" ? message : null;
+}
+
+const MISSING_IMAGE_MESSAGE =
+  "La imagen de esta publicación ya no está en tu Biblioteca. Sube o genera otra.";
+
+/** El archivo no existe en el storage: `NoSuchKey` de R2/S3, `ENOENT` del disco local. */
+function isMissingObject(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { name, code } = error as { name?: unknown; code?: unknown };
+  return name === "NoSuchKey" || code === "ENOENT";
 }
 
 /** La imagen elegida de una card que lleva imagen, o null. */

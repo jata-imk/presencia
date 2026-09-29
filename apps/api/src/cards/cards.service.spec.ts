@@ -401,6 +401,36 @@ describe("CardsService", () => {
     });
   });
 
+  it(
+    "si el archivo de la imagen ya no existe, es un 400 y la card no se mueve",
+    { timeout: 15_000 },
+    async () => {
+      const missing = {
+        find: assetsStub.find,
+        readBytes: () =>
+          Promise.reject(Object.assign(new Error("no existe"), { name: "NoSuchKey" })),
+      } as unknown as AssetsServiceType;
+      const missingService = new CardsServiceCtor(
+        dbService,
+        cardsRepo,
+        channelsRepo,
+        provider,
+        missing,
+      );
+      const account = await connectAccount(userA, "instagram");
+      const card = await createCard(VISUAL_CONTENT_WITH_MEDIA, "instagram");
+
+      await expect(
+        missingService.schedule(userA, card.id, {
+          socialAccountId: account.id,
+          scheduledAt: future(10),
+        }),
+      ).rejects.toThrow(/ya no está en tu Biblioteca/);
+      const after = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
+      expect(after?.status).toBe("draft");
+    },
+  );
+
   it("un post de texto sin imagen va sin media", { timeout: 15_000 }, async () => {
     const account = await connectAccount(userA, "linkedin");
     const card = await createCard(TEXT_CONTENT, "linkedin");
