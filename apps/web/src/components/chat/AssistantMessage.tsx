@@ -69,6 +69,9 @@ export function AssistantMessage({
     .join("\n\n")
     .trim();
   const streaming = isLast && streamingNow;
+  // Un turno con texto entre sus cards se parte en varios bloques; solo el
+  // primero abre el panel, los demás suman pestañas (ver CardBlock).
+  const firstCardsIndex = blocks.find((b) => b.kind === "cards")?.index;
 
   function handleCopy() {
     void navigator.clipboard.writeText(fullText).then(() => {
@@ -84,7 +87,13 @@ export function AssistantMessage({
         block.kind === "text" ? (
           <MessageAI key={block.index} text={block.text} streaming={block.streaming} />
         ) : (
-          <CardBlock key={block.index} parts={block.parts} chatId={chatId} streaming={streaming} />
+          <CardBlock
+            key={block.index}
+            parts={block.parts}
+            chatId={chatId}
+            streaming={streaming}
+            leadsTurn={block.index === firstCardsIndex}
+          />
         ),
       )}
       {!streaming && (fullText || canRegenerate) && (
@@ -111,10 +120,13 @@ function CardBlock({
   parts,
   chatId,
   streaming,
+  leadsTurn,
 }: {
   parts: CardToolPart[];
   chatId: string;
   streaming: boolean;
+  /** El primer bloque de cards del turno: el único que abre el panel. */
+  leadsTurn: boolean;
 }) {
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const isMobile = !useMediaQuery("(min-width: 768px)");
@@ -143,14 +155,14 @@ function CardBlock({
     if (!streaming || !isDesktop || ids.length === 0) return;
     const panel = usePublicationPanelStore.getState();
     if (panel.dismissedChats.has(chatId)) return;
-    if (!autoOpened.current) {
+    if (leadsTurn && !autoOpened.current) {
       autoOpened.current = true;
       panel.open(chatId, ids, ids[0]);
     } else if (panel.activeId !== null) {
       panel.addCards(chatId, ids);
     }
     // idsKey resume `ids`: el arreglo es nuevo en cada render.
-  }, [streaming, isDesktop, chatId, idsKey]);
+  }, [streaming, isDesktop, chatId, idsKey, leadsTurn]);
 
   if (shown.length === 0) return null;
 

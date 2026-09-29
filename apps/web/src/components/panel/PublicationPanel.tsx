@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { backdropFade, sheetRight } from "../../lib/motion.js";
+import { useChannels } from "../../lib/use-channels.js";
 import { useMediaQuery } from "../../lib/use-media-query.js";
 import {
   PANEL_WIDTH_MIN_PX,
@@ -41,9 +42,26 @@ export function PublicationPanel({
   const reset = usePublicationPanelStore((s) => s.reset);
   const drawerOpen = useScheduleDrawerStore((s) => s.cardIds !== null);
   const setForcedCollapsed = useSidebarStore((s) => s.setForcedCollapsed);
+  // Aquí y no en PanelCard: esa se remonta en cada cambio de pestaña, y las
+  // cuentas no cambian con la pestaña.
+  const { channels } = useChannels();
 
   const open = activeId !== null && panelChatId === chatId;
   const visible = open && !drawerOpen;
+
+  // "Adaptar a otra red" escribe en el composer del chat. Abajo de 1024 el
+  // panel lo tapa (drawer con scrim o pantalla completa): se quita del medio
+  // para que se vea lo que se precargó. Sin recordarlo como "cerrado por el
+  // usuario": no lo cerró él.
+  function adapt(text: string) {
+    if (!isDesktop) reset();
+    onAdapt(text);
+  }
+
+  // Una card, un controller: el estado de las acciones en curso (subiendo,
+  // generando, el historial de imágenes) es de ESA card. Con la llave, cambiar
+  // de pestaña monta uno nuevo en vez de heredar el de la anterior.
+  const card = <PanelCard key={activeId} channels={channels} onAdapt={adapt} mobile={!isTablet} />;
 
   // Las pestañas son de este chat: al salir de él el panel se va con él.
   useEffect(() => () => reset(), [reset]);
@@ -80,7 +98,7 @@ export function PublicationPanel({
             minWidth: PANEL_WIDTH_MIN_PX,
           }}
         >
-          <PanelCard onAdapt={onAdapt} />
+          {card}
         </div>
       </>
     );
@@ -115,7 +133,7 @@ export function PublicationPanel({
                 : "fixed inset-0 z-40 flex flex-col"
             }
           >
-            <PanelCard onAdapt={onAdapt} mobile={!isTablet} />
+            {card}
           </motion.div>
         </>
       )}
@@ -132,6 +150,16 @@ function ResizeHandle() {
   const setWidth = usePublicationPanelStore((s) => s.setWidth);
   const width = usePublicationPanelStore((s) => s.width);
   const ref = useRef<HTMLDivElement>(null);
+
+  // Si el panel desaparece a media arrastrada (Esc, se abre el drawer de
+  // programar, la ventana cruza 1024) el pointerup nunca llega: sin esto el
+  // cursor y la selección de texto quedarían bloqueados en todo el documento.
+  useEffect(
+    () => () => {
+      delete document.body.dataset.resizing;
+    },
+    [],
+  );
 
   function fractionAt(clientX: number): number | null {
     const row = ref.current?.parentElement;

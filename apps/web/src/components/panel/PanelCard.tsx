@@ -27,11 +27,11 @@ import {
   NETWORK_TEXT_LIMITS,
   buildPostText,
   type CardStatus,
+  type ChannelAccountDto,
   type PublicationCardDto,
 } from "@presencia/shared";
 import { missingImageNote } from "../../lib/cards/card-image.js";
 import { useCardController, type CardController } from "../../lib/cards/use-card-controller.js";
-import { useChannels } from "../../lib/use-channels.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
 import { useCardsByIds } from "../../stores/cards-store.js";
 import { usePublicationPanelStore, type PanelMode } from "../../stores/publication-panel-store.js";
@@ -52,9 +52,12 @@ import { QuotaExhaustedModal } from "../QuotaExhaustedModal.js";
 const EDITABLE: CardStatus[] = ["draft", "failed"];
 
 export function PanelCard({
+  channels,
   onAdapt,
   mobile = false,
 }: {
+  /** Las cuentas conectadas; null mientras cargan. */
+  channels: ChannelAccountDto[] | null;
   onAdapt: (text: string) => void;
   mobile?: boolean;
 }) {
@@ -66,7 +69,6 @@ export function PanelCard({
   const cards = useCardsByIds(cardIds);
   const controller = useCardController(activeId ?? undefined);
   const { card } = controller;
-  const { channels } = useChannels();
 
   const editable = card ? EDITABLE.includes(card.status) : false;
   const effectiveMode: PanelMode = editable ? mode : "preview";
@@ -158,7 +160,7 @@ export function PanelCard({
 /** La cuenta con la que se publicaría: la elegida al programar, o la conectada de esa red. */
 function accountFor(
   card: PublicationCardDto | undefined,
-  channels: { id: string; network: string; displayName: string | null; status: string }[] | null,
+  channels: ChannelAccountDto[] | null,
 ): PreviewAccount | null {
   if (!card || !channels) return null;
   const chosen =
