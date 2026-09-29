@@ -114,7 +114,6 @@ export type EditCardImageBody = z.infer<typeof editCardImageBodySchema>;
  */
 export const IMAGE_EDIT_SUGGESTIONS = [
   { label: "Más cálida", instruction: "Hazla más cálida, con luz dorada." },
-  { label: "Sin gente", instruction: "Quita a las personas de la imagen." },
   { label: "Otro fondo", instruction: "Cambia el fondo por otro que combine con el tema." },
   { label: "Más minimalista", instruction: "Hazla más minimalista, con menos elementos." },
   { label: "Más colorida", instruction: "Hazla más colorida y vibrante." },

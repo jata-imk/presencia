@@ -12,6 +12,16 @@
  * "Sin logotipos" es derechos: una imagen que el creator publica con la marca
  * de otro es un problema suyo que nosotros le causamos.
  */
+/**
+ * Encuadre completo, siempre. Algunos generadores entregan otra proporción que
+ * la pedida y se recorta al guardar (ADR-025), y aun sin recorte un prompt
+ * cargado tiende a sacar el sujeto o el texto por el borde (QA de F10: una
+ * tira de paneles cortada a los dos lados). Pedir margen hace que lo que se
+ * recorte sea fondo.
+ */
+export const SAFE_FRAMING =
+  "Encuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.";
+
 export const DEFAULT_IMAGE_STYLE =
   "Fotografía natural y realista, con luz cálida, ambientada en México. " +
   "Sin texto, letras, marcas de agua ni logotipos dentro de la imagen.";
@@ -27,6 +37,7 @@ export function composeImagePrompt(description: string, voice: VoiceForImage | n
   if (niche.length > 0) {
     parts.push(`Es para una publicación de un creador de contenido de ${niche.join(", ")}.`);
   }
+  parts.push(SAFE_FRAMING);
   parts.push(`Si la descripción no pide otro estilo: ${DEFAULT_IMAGE_STYLE}`);
   return parts.join("\n\n");
 }
@@ -42,6 +53,7 @@ export function composeEditPrompt(instruction: string): string {
   return (
     `${instruction.trim()}\n\n` +
     "Conserva todo lo que no se pidió cambiar: la composición, el encuadre y el sujeto. " +
-    "Sin texto, letras ni logotipos nuevos."
+    "Sin texto, letras ni logotipos nuevos.\n\n" +
+    SAFE_FRAMING
   );
 }
