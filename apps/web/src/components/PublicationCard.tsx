@@ -154,7 +154,7 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
           uploading,
           generation: imagesConfig
             ? {
-                generate: (input) => void handleGenerate(liveCard.id, input),
+                generate: (input) => handleGenerate(liveCard.id, input),
                 select: (assetId) => handleSelect(liveCard.id, assetId),
                 requesting: requestingImage,
                 job: imageJob,
@@ -174,10 +174,11 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
   // La respuesta trae la card ya "generando"; el resultado llega después por
   // el stream de cards, cuando el worker termina. Un 402 no es un error de
   // red: abre la pantalla de cuota agotada, igual que en el chat.
-  async function handleGenerate(cardId: string, input: GenerateInput) {
+  async function handleGenerate(cardId: string, input: GenerateInput): Promise<boolean> {
     setRequestingImage(true);
     try {
       applyCards(await generateCardImage(cardId, input));
+      return true;
     } catch (err) {
       const agotada = cuotaAgotadaDe(err);
       if (agotada) setCuota(agotada);
@@ -186,6 +187,7 @@ export function PublicationCard({ part, chatId }: { part: CardToolPart; chatId: 
           title: "No se pudo generar la imagen",
           description: err instanceof ApiError ? err.message : "Inténtalo de nuevo.",
         });
+      return false;
     } finally {
       setRequestingImage(false);
     }

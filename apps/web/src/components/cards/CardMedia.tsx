@@ -34,7 +34,8 @@ export interface GenerateInput {
 }
 
 export interface CardImageGeneration {
-  generate: (input: GenerateInput) => void;
+  /** Resuelve `true` si la API aceptó el pedido (la card quedó generando). */
+  generate: (input: GenerateInput) => Promise<boolean>;
   /** Resuelve cuando la API respondió (bien o mal): la tira muestra la elección mientras tanto. */
   select: (assetId: string) => Promise<void>;
   /** El POST va en camino (el trabajo todavía no aparece en la card). */
@@ -338,13 +339,20 @@ export function VersionStrip({
 function AdjustBar({
   generation,
   assetId,
+  selecting,
 }: {
   generation: CardImageGeneration;
   /** La imagen elegida: sobre la que se aplica el ajuste. Se muestra para que no haya duda. */
   assetId: string;
+  /**
+   * Hay una elección de versión guardándose: la miniatura ya muestra la nueva,
+   * pero el servidor todavía tiene la anterior, y un ajuste ahora editaría la
+   * que NO se ve. Se apaga hasta que la elección se confirma.
+   */
+  selecting: boolean;
 }) {
   const [instruction, setInstruction] = useState("");
-  const busy = isBusy(generation);
+  const busy = isBusy(generation) || selecting;
   const inputId = useId();
   function apply(text: string) {
     if (text.trim().length < 3) return;
@@ -491,7 +499,7 @@ export function ImageActionStrip({
           Icon={RefreshCw}
           label="Regenerar"
           disabled={busy}
-          onClick={() => generation.generate({ prompt, aspectRatio, provider: "primary" })}
+          onClick={() => void generation.generate({ prompt, aspectRatio, provider: "primary" })}
         />
       )}
       {canRegenerate && generation.alternateAvailable && (
@@ -499,7 +507,7 @@ export function ImageActionStrip({
           Icon={Shuffle}
           label="Probar con otro generador"
           disabled={busy}
-          onClick={() => generation.generate({ prompt, aspectRatio, provider: "alternate" })}
+          onClick={() => void generation.generate({ prompt, aspectRatio, provider: "alternate" })}
         />
       )}
       {generation && onChangePrompt && (
@@ -599,8 +607,13 @@ function ImageComposer({
           primary
           disabled={busy || !ready}
           onClick={() => {
-            generation.generate({ prompt: prompt.trim(), aspectRatio, provider: "primary" });
-            onGenerate?.();
+            // Se cierra solo si la API aceptó: con un 402 o un error de red, el
+            // prompt que el usuario reescribió se queda en el campo.
+            void generation
+              .generate({ prompt: prompt.trim(), aspectRatio, provider: "primary" })
+              .then((ok) => {
+                if (ok) onGenerate?.();
+              });
           }}
         />
         {generation.alternateAvailable && (
@@ -609,8 +622,11 @@ function ImageComposer({
             label="Con otro generador"
             disabled={busy || !ready}
             onClick={() => {
-              generation.generate({ prompt: prompt.trim(), aspectRatio, provider: "alternate" });
-              onGenerate?.();
+              void generation
+                .generate({ prompt: prompt.trim(), aspectRatio, provider: "alternate" })
+                .then((ok) => {
+                  if (ok) onGenerate?.();
+                });
             }}
           />
         )}
@@ -755,7 +771,9 @@ export function SelectedImage({
               onChangePrompt={() => setComposing(true)}
             />
           )}
-          {generation && <AdjustBar generation={generation} assetId={shown} />}
+          {generation && (
+            <AdjustBar generation={generation} assetId={shown} selecting={picked !== null} />
+          )}
         </>
       )}
       {generation && shownVersion && (
