@@ -65,6 +65,7 @@ export const assetSource = pgEnum("asset_source", ["generated", "uploaded"]);
 
 // F10: una imagen pedida a un generador (ADR-025).
 export const imageGenerationKind = pgEnum("image_generation_kind", ["generate", "edit"]);
+export const cardVersionSource = pgEnum("card_version_source", ["chat", "manual", "ai", "restore"]);
 export const imageGenerationStatus = pgEnum("image_generation_status", [
   "pending",
   "succeeded",
@@ -444,6 +445,42 @@ export const imageGenerations = pgTable(
     index("image_generations_batch").on(t.batchId),
     index("image_generations_card").on(t.cardId),
   ],
+);
+
+// F10.5: el historial del TEXTO de una card (versiones de contenido). La
+// imagen tiene el suyo (image_generations + assets): restaurar el texto no
+// cambia la imagen elegida, que pudo costar cuota.
+//
+// - `n` es el número que ve el usuario ("Versión 3"), consecutivo por card.
+// - `source`: de dónde salió. `chat` es la original, escrita solo la primera
+//   vez que la card cambia (antes de eso no hace falta guardarla aparte: es
+//   su contenido).
+// - Una sesión de edición manual es UNA versión (decisión de F10.5): mientras
+//   llegan autoguardados con el mismo `edit_session_id`, la última versión se
+//   actualiza en su lugar en vez de sumar una por cada tecla.
+// - `content` es la card sin `assetIds`: solo lo que la versión restaura.
+export const cardVersions = pgTable(
+  "card_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    cardId: uuid("card_id")
+      .notNull()
+      .references(() => publicationCards.id, { onDelete: "cascade" }),
+    n: integer("n").notNull(),
+    content: jsonb("content").notNull(),
+    source: cardVersionSource("source").notNull(),
+    // Solo en las de la IA: lo que se pidió ("Más corto").
+    instruction: text("instruction"),
+    // Solo en los restores: qué número se restauró.
+    restoredFrom: integer("restored_from"),
+    editSessionId: uuid("edit_session_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("card_versions_card_n").on(t.cardId, t.n)],
 );
 
 export const assets = pgTable("assets", {

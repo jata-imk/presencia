@@ -17,6 +17,7 @@
     "@presencia/shared": "workspace:*",
     "ai": "7.0.31",
     "better-auth": "1.6.23",
+    "diff": "^8.0.4",
     "lucide-react": "^1.31.0",
     "motion": "^13.1.0",
     "react": "^19.1.0",

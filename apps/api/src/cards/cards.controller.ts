@@ -14,19 +14,24 @@ import type { Request } from "express";
 import {
   ASSET_UPLOAD_MAX_BYTES,
   cardIdParamSchema,
+  cardVersionParamSchema,
   chatIdParamSchema,
   conflictsQuerySchema,
   listCardsQuerySchema,
   scheduleCardBodySchema,
   scheduleGroupBodySchema,
   selectCardImageBodySchema,
+  updateCardContentBodySchema,
+  type CardContentChangeDto,
   type CardImageVersionDto,
+  type CardVersionDto,
   type PublicationCardDto,
   type ScheduleGroupResultItem,
 } from "@presencia/shared";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { SessionUser } from "../auth/auth.js";
 import { readRawBody } from "../assets/read-body.js";
+import { CardContentService } from "./card-content.service.js";
 import { CardMediaService } from "./card-media.service.js";
 import { CardsService } from "./cards.service.js";
 
@@ -38,6 +43,7 @@ export class CardsController {
   constructor(
     @Inject(CardsService) private readonly service: CardsService,
     @Inject(CardMediaService) private readonly media: CardMediaService,
+    @Inject(CardContentService) private readonly content: CardContentService,
   ) {}
 
   @Get("chats/:chatId/cards")
@@ -156,6 +162,44 @@ export class CardsController {
     const parsed = selectCardImageBodySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("El id de la imagen no es válido.");
     return this.media.selectImage(user.id, cardId, parsed.data.assetId);
+  }
+
+  /**
+   * Editar a mano el texto de la card (F10.5). Autoguardado: llega cada vez
+   * que el usuario deja de escribir, y la API decide si es una versión nueva
+   * o la misma sesión de edición.
+   */
+  @Patch("cards/:id/content")
+  editContent(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<CardContentChangeDto> {
+    const cardId = this.parseCardId(id);
+    const parsed = updateCardContentBodySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("El contenido no es válido.");
+    return this.content.edit(user.id, cardId, parsed.data.fields, parsed.data.editSessionId);
+  }
+
+  /** El historial del texto de la card (F10.5), de la más vieja a la más nueva. */
+  @Get("cards/:id/versions")
+  contentVersions(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+  ): Promise<CardVersionDto[]> {
+    return this.content.list(user.id, this.parseCardId(id));
+  }
+
+  /** Restaurar una versión: vuelve como una versión nueva, no se borra ninguna. */
+  @Post("cards/:id/versions/:n/restore")
+  restoreVersion(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Param("n") n: string,
+  ): Promise<CardContentChangeDto> {
+    const parsed = cardVersionParamSchema.safeParse({ id, n });
+    if (!parsed.success) throw new BadRequestException("Esa versión no es válida.");
+    return this.content.restore(user.id, parsed.data.id, parsed.data.n);
   }
 
   private parseCardId(id: string): string {

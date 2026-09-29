@@ -71,3 +71,11 @@ El nginx de CloudPanel corta a los 900 s una conexión que no manda nada (`despl
 **El cliente** aplica la card al store normalizado (addendum de ADR-018) sin volver a pedirla. Vive en `components/realtime/LiveCards.tsx`, montado en el shell autenticado: si el
 stream responde algo que no es un stream (un 502 de nginx durante un deploy, un 401), `EventSource` se
 cierra para siempre, así que ahí el cliente reintenta a mano con espera creciente (3 s a 60 s).
+
+## Addendum (2026-09-29, F10.5 PR3) — el modelo ve la card viva
+
+Desde F10.5 una card cambia después de nacer: se edita a mano, se restaura una versión y, en el PR4, la IA la ajusta. El output de la tool en `messages.parts` sigue siendo la card **al nacer**, congelada (los mensajes son append-only). Si el historial viajara así, "hazme otra como esa" partiría de un texto que ya no existe.
+
+- **`withLiveCards`** (`chat/context-diet.ts`) sustituye contenido y estado de cada output de card por los vivos antes de armar el contexto del modelo. Va **antes** de la dieta de contexto, así que el resumen de las cards viejas también sale del contenido vivo. Es una sola query por turno (`findContentByIds`). Si falla, el turno sigue con la foto del historial: peor contexto, no un chat caído.
+- El navegador ya leía el contenido vivo de cards-store (F8.6); esto lo iguala del lado del modelo.
+- **Regenerar un turno ya no borra cards que salieron a la red.** Si la respuesta tiene alguna card programada o publicada, la API responde 409 (`hasSentCards`). Antes la borraba sin cancelarla en el proveedor, y el post se publicaba sin card que lo representara. Si alguna card tiene ediciones (más de una versión), el navegador pide confirmación antes de regenerar, porque regenerar borra las cards con sus versiones.

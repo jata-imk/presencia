@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from "ai";
-import type { BrandVoiceForPrompt, ChatSummary } from "@presencia/shared";
+import type { BrandVoiceForPrompt, CardContent, ChatSummary } from "@presencia/shared";
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import { AiUsageService } from "../ai/ai-usage.service.js";
@@ -19,7 +19,12 @@ import { getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
 import { FoldersService } from "../folders/folders.service.js";
 import { ChatRepository, type MessageRow } from "./chat.repository.js";
-import { compressToolOutputsForModel } from "./context-diet.js";
+import {
+  cardIdsIn,
+  compressToolOutputsForModel,
+  withLiveCards,
+  type LiveCard,
+} from "./context-diet.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
@@ -202,6 +207,29 @@ export class ChatService {
   // paralelo con la carga del historial (no depende de ella) en vez de
   // encadenarse después, para no pagar dos round-trips secuenciales a la
   // DB en el hot path de cada turno.
+  /**
+   * El contenido y estado de hoy de las cards del historial. Si falla, el
+   * turno sigue con la foto del historial: peor contexto, no un chat caído.
+   */
+  private async loadLiveCards(
+    userId: string,
+    history: UIMessage[],
+  ): Promise<Map<string, LiveCard>> {
+    const ids = cardIdsIn(history);
+    if (ids.length === 0) return new Map();
+    try {
+      const rows = await this.dbService.runWithTenant(userId, (tx) =>
+        this.cardsRepo.findContentByIds(tx, ids),
+      );
+      return new Map(
+        rows.map((row) => [row.id, { content: row.content as CardContent, status: row.status }]),
+      );
+    } catch (error) {
+      console.error("[chat] No se pudo leer el contenido vivo de las cards:", error);
+      return new Map();
+    }
+  }
+
   private loadVoiceForPrompt(userId: string): Promise<BrandVoiceForPrompt | null> {
     return this.brandVoiceService.getDefaultForPrompt(userId).catch((error: unknown) => {
       console.error(
@@ -258,6 +286,11 @@ export class ChatService {
         targetIndex === all.length - 2 && staleReply?.role === "assistant";
       if (!target || target.role !== "user" || !(isLast || isSecondToLastWithReply)) {
         throw new NotFoundException("Ese mensaje no se puede reintentar.");
+      }
+      if (staleReply && (await this.cardsRepo.hasSentCards(tx, staleReply.id))) {
+        throw new ConflictException(
+          "Esta respuesta tiene publicaciones programadas o publicadas. Cancela la programación antes de regenerarla.",
+        );
       }
       if (staleReply) {
         // Cards antes que mensaje: el FK message_id es "set null", no
@@ -337,7 +370,13 @@ export class ChatService {
       // item". El reasoning sigue viajando completo en cada turno; es un
       // hueco de contexto conocido (ver ADR-006 addendum), no algo que se
       // pueda recortar del lado del cliente sin cambiar de API mode.
-      messages: await convertToModelMessages(compressToolOutputsForModel(history)),
+      // F10.5: con el contenido VIVO de cada card (editada, restaurada,
+      // cambiada por la IA), no el que quedó congelado en messages.parts.
+      messages: await convertToModelMessages(
+        compressToolOutputsForModel(
+          withLiveCards(history, await this.loadLiveCards(userId, history)),
+        ),
+      ),
       tools,
       stopWhen: stepCountIs(MAX_AGENT_STEPS),
       abortSignal: abortController.signal,

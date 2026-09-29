@@ -916,11 +916,30 @@ click en "⛶ Pantalla completa" en una card.
 >   avisos van arriba, en contexto: Instagram sin imagen,
 >   Facebook "se publicará solo el texto", texto excedido,
 >   cuenta sin conectar.
-> - **Editar**, en esta primera iteración, lleva la imagen
->   (todo lo de F10: generar, ajustar, versiones, subir) y el
->   texto y hashtags de solo lectura con el contador de la red.
->   La edición del texto y sus versiones llegan en el PR3 de
->   F10.5; "pedir un cambio a la IA", en el PR4.
+> - **Editar** lleva la imagen (todo lo de F10: generar,
+>   ajustar, versiones de imagen, subir), el texto con el
+>   contador de la red y los hashtags. Todo se guarda solo
+>   ("Guardando… / Guardado · v4"). "Pedir un cambio a la IA"
+>   llega en el PR4.
+> - **Versiones del texto** (PR3). Los tres flujos de cambio:
+>   1. Pedir otra en el chat sigue creando una **card nueva**
+>      (abajo, "Jose itera con la IA").
+>   2. Editar a mano crea **una versión por sesión de
+>      edición**: abrir el panel o entrar a Editar abre la
+>      sesión, y 10 minutos sin guardar la cierran. No es una
+>      versión por tecla.
+>   3. Pedirle un cambio a la IA sobre la card crea una
+>      versión (PR4).
+>   El selector "Versión N" lista todas, con su origen
+>   ("Original · del chat", "Editada por ti", "Restaurada de la
+>   Versión 1"). Se puede ver una en la vista previa,
+>   compararla palabra por palabra con la actual o restaurarla.
+>   **Restaurar crea una versión nueva; no se borra ninguna.**
+>   La imagen no viaja con las versiones: tiene su propio
+>   historial.
+> - **Regenerar** una respuesta cuyos borradores tienen
+>   ediciones pide confirmación. Si alguno ya está programado o
+>   publicado, no se deja regenerar.
 > - **Acciones al pie según el estado:** Programar, Adaptar a
 >   otra red (precarga el chat: adaptar es pedir otra card),
 >   Reprogramar, Cancelar programación, Ver en la red,
