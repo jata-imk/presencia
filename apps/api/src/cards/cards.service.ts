@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import {
   IMAGE_JOB_STALE_MS,
@@ -17,6 +18,7 @@ import {
   type ScheduleGroupResultItem,
   type SocialNetwork,
 } from "@presencia/shared";
+import { AssetsService } from "../assets/assets.service.js";
 import { ChannelsRepository } from "../channels/channels.repository.js";
 import { DbService } from "../db/db.service.js";
 import { summarizeFailures } from "../jobs/summarize-failures.js";
@@ -27,6 +29,7 @@ import {
 } from "../publishing/errors.js";
 import {
   PUBLISHING_PROVIDER,
+  type PreparedMedia,
   type PublishingProvider,
   type SchedulePostRequest,
 } from "../publishing/publishing.provider.js";
@@ -121,6 +124,7 @@ export class CardsService {
     @Inject(CardsRepository) private readonly repo: CardsRepository,
     @Inject(ChannelsRepository) private readonly channelsRepo: ChannelsRepository,
     @Inject(PUBLISHING_PROVIDER) private readonly provider: PublishingProvider,
+    @Inject(AssetsService) private readonly assets: AssetsService,
   ) {}
 
   async listByChat(userId: string, chatId: string): Promise<PublicationCardDto[]> {
@@ -176,6 +180,12 @@ export class CardsService {
       throw new BadRequestException("Elige un horario al menos 5 minutos en el futuro.");
     }
 
+    // F10: la imagen se deja lista en el proveedor ANTES de marcar la card,
+    // que es cuando empieza a correr el margen de la reconciliación (ver
+    // PublishingProvider.prepareMedia). Un fallo acá no cambió nada: la card
+    // sigue como estaba y el usuario ve el error.
+    const prepared = await this.prepareMedia(userId, cardId);
+
     const { card, accountProviderRef, previousProviderRef, isReschedule, previousScheduledAt } =
       await this.dbService.runWithTenant(userId, async (tx) => {
         const existing = await this.repo.findById(tx, cardId);
@@ -193,6 +203,13 @@ export class CardsService {
           throw new BadRequestException("Esa cuenta no corresponde a la red de esta publicación.");
         }
         assertHasMedia(existing);
+        // Lo que se preparó tiene que ser la imagen que la card tiene AHORA:
+        // entre preparar y llegar acá, otra pestaña pudo elegir otra.
+        if (imageAssetOf(existing) !== prepared.assetId) {
+          throw new ConflictException(
+            "La imagen de la publicación cambió mientras la programabas. Vuelve a intentar.",
+          );
+        }
 
         // scheduled: hay que cancelar el post viejo antes de programar el
         // nuevo (reprogramar). failed: puede traer un provider_ref viejo de
@@ -245,6 +262,7 @@ export class CardsService {
       content: card.content as CardContent,
       scheduledAt,
       accountProviderRef,
+      media: prepared.media,
     };
 
     if (isReschedule && previousProviderRef && previousScheduledAt) {
@@ -295,6 +313,46 @@ export class CardsService {
     }
 
     return this.persistProviderRef(userId, cardId, providerRef);
+  }
+
+  /**
+   * F10: la imagen elegida de la card, leída de Biblioteca y preparada en el
+   * proveedor. Solo las cards que llevan imagen (visual y texto); el guion
+   * de video espera un video, que todavía no se sube, y sigue su camino de
+   * siempre. Una imagen que ya no existe es un 400 con qué hacer, no un 500.
+   */
+  private async prepareMedia(
+    userId: string,
+    cardId: string,
+  ): Promise<{ assetId: string | null; media: PreparedMedia | null }> {
+    const row = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, cardId));
+    const assetId = row ? imageAssetOf(row) : null;
+    if (!assetId) return { assetId: null, media: null };
+
+    const asset = await this.dbService.runWithTenant(userId, (tx) => this.assets.find(tx, assetId));
+    if (!asset) throw new BadRequestException(MISSING_IMAGE_MESSAGE);
+    let data: Uint8Array;
+    try {
+      data = await this.assets.readBytes(asset);
+    } catch (error) {
+      // La fila existe pero el archivo no (se borró del bucket, una subida
+      // que no llegó): para el usuario es lo mismo que si no existiera. Un
+      // storage caído es otra cosa, y se dice como tal.
+      if (isMissingObject(error)) throw new BadRequestException(MISSING_IMAGE_MESSAGE);
+      console.error(`[cards] no se pudo leer la imagen ${asset.id} de ${cardId}:`, error);
+      throw new ServiceUnavailableException(
+        "No pudimos leer la imagen de tu Biblioteca. Inténtalo en un momento.",
+      );
+    }
+    try {
+      const media = await this.provider.prepareMedia([
+        { data, mimeType: asset.mimeType, filename: asset.storageKey.split("/").pop() ?? asset.id },
+      ]);
+      return { assetId, media };
+    } catch (error) {
+      console.error(`[cards] prepareMedia() falló para ${cardId}:`, error);
+      throw toProviderHttpException(error);
+    }
   }
 
   /**
@@ -710,6 +768,23 @@ function errorMessageFrom(errorDetail: unknown): string | null {
   if (typeof errorDetail !== "object" || errorDetail === null) return null;
   const message = (errorDetail as { message?: unknown }).message;
   return typeof message === "string" ? message : null;
+}
+
+const MISSING_IMAGE_MESSAGE =
+  "La imagen de esta publicación ya no está en tu Biblioteca. Sube o genera otra.";
+
+/** El archivo no existe en el storage: `NoSuchKey` de R2/S3, `ENOENT` del disco local. */
+function isMissingObject(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { name, code } = error as { name?: unknown; code?: unknown };
+  return name === "NoSuchKey" || code === "ENOENT";
+}
+
+/** La imagen elegida de una card que lleva imagen, o null. */
+function imageAssetOf(card: CardRow): string | null {
+  const content = card.content as CardContent;
+  if (content.archetype !== "visual_first" && content.archetype !== "text_first") return null;
+  return content.assetIds[0] ?? null;
 }
 
 /** instagram/tiktok/youtube no aceptan un post sin media (límite real de la plataforma, no nuestro). */

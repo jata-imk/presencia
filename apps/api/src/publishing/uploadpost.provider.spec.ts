@@ -328,6 +328,7 @@ describe("UploadPostProvider", () => {
         content: TEXT_CONTENT,
         scheduledAt: new Date("2026-09-10T18:00:00.000Z"),
         accountProviderRef: `${PROFILE}:linkedin`,
+        media: null,
       });
 
       expect(result).toEqual({ providerRef: "job_123" });
@@ -361,6 +362,7 @@ describe("UploadPostProvider", () => {
           content: TEXT_CONTENT,
           scheduledAt: new Date("2026-09-10T18:00:00.000Z"),
           accountProviderRef: `${PROFILE}:linkedin`,
+          media: null,
         });
       } catch (error) {
         caught = error;
@@ -373,6 +375,53 @@ describe("UploadPostProvider", () => {
       });
     });
 
+    it("con imagen va por /upload_photos con los bytes en photos[]", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(202, { success: true, job_id: "job_foto" }));
+      const provider = makeProvider();
+      const media = await provider.prepareMedia([
+        { data: new Uint8Array([137, 80, 78, 71]), mimeType: "image/png", filename: "a.png" },
+      ]);
+
+      const result = await provider.schedule({
+        network: "instagram",
+        content: TEXT_CONTENT,
+        scheduledAt: new Date("2026-09-10T18:00:00.000Z"),
+        accountProviderRef: `${PROFILE}:instagram`,
+        media,
+      });
+
+      expect(result).toEqual({ providerRef: "job_foto" });
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe("https://api.upload-post.com/api/upload_photos");
+      const form = init.body as FormData;
+      expect(form.getAll("platform[]")).toEqual(["instagram"]);
+      expect(form.get("scheduled_date")).toBe("2026-09-10T18:00:00.000Z");
+      const photo = form.get("photos[]") as File;
+      expect(photo).toBeInstanceOf(Blob);
+      expect(photo.type).toBe("image/png");
+      expect(photo.size).toBe(4);
+      expect(photo.name).toBe("a.png");
+      // Preparar no llama a nadie: la imagen viaja en el mismo multipart.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("una red de video se rechaza aunque venga imagen", async () => {
+      const provider = makeProvider();
+      const media = await provider.prepareMedia([
+        { data: new Uint8Array([1]), mimeType: "image/png", filename: "a.png" },
+      ]);
+      await expect(
+        provider.schedule({
+          network: "tiktok",
+          content: TEXT_CONTENT,
+          scheduledAt: new Date("2026-09-10T18:00:00.000Z"),
+          accountProviderRef: `${PROFILE}:tiktok`,
+          media,
+        }),
+      ).rejects.toBeInstanceOf(PublishingRejectedError);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it("una red que exige media se rechaza sin llamar a la API", async () => {
       const provider = makeProvider();
 
@@ -382,6 +431,7 @@ describe("UploadPostProvider", () => {
           content: TEXT_CONTENT,
           scheduledAt: new Date("2026-09-10T18:00:00.000Z"),
           accountProviderRef: `${PROFILE}:instagram`,
+          media: null,
         }),
       ).rejects.toBeInstanceOf(PublishingRejectedError);
       expect(fetchMock).not.toHaveBeenCalled();
@@ -396,6 +446,7 @@ describe("UploadPostProvider", () => {
           content: TEXT_CONTENT,
           scheduledAt: new Date("2026-09-10T18:00:00.000Z"),
           accountProviderRef: "solo-el-perfil",
+          media: null,
         }),
       ).rejects.toBeInstanceOf(PublishingRejectedError);
       expect(fetchMock).not.toHaveBeenCalled();
@@ -411,6 +462,7 @@ describe("UploadPostProvider", () => {
           content: TEXT_CONTENT,
           scheduledAt: new Date("2026-09-10T18:00:00.000Z"),
           accountProviderRef: `${PROFILE}:linkedin`,
+          media: null,
         }),
       ).rejects.toBeInstanceOf(PublishingRateLimitError);
     });
@@ -434,6 +486,7 @@ describe("UploadPostProvider", () => {
         content: TEXT_CONTENT,
         scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
         accountProviderRef: `${PROFILE}:linkedin`,
+        media: null,
       });
 
       expect(result).toEqual({ providerRef: "job_123" });
@@ -457,6 +510,7 @@ describe("UploadPostProvider", () => {
           content: TEXT_CONTENT,
           scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
           accountProviderRef: `${PROFILE}:linkedin`,
+          media: null,
         }),
       ).rejects.toBeInstanceOf(PublishingUnavailableError);
     });
@@ -475,6 +529,7 @@ describe("UploadPostProvider", () => {
         content: TEXT_CONTENT,
         scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
         accountProviderRef: `${PROFILE}:linkedin`,
+        media: null,
       });
 
       expect(result).toEqual({ providerRef: "job_nuevo" });
@@ -500,6 +555,7 @@ describe("UploadPostProvider", () => {
           content: TEXT_CONTENT,
           scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
           accountProviderRef: `${PROFILE}:linkedin`,
+          media: null,
         }),
       ).rejects.toBeInstanceOf(PublishingUnavailableError);
     });
@@ -516,6 +572,7 @@ describe("UploadPostProvider", () => {
           content: TEXT_CONTENT,
           scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
           accountProviderRef: `${PROFILE}:linkedin`,
+          media: null,
         }),
       ).rejects.toBeInstanceOf(PublishingRejectedError);
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -862,6 +919,7 @@ describe("UploadPostProvider", () => {
   describe("getPostMetrics", () => {
     const FACEBOOK_POST = {
       accountProviderRef: `${PROFILE}:facebook`,
+      media: null,
       network: "facebook" as const,
       platformPostId: "1251762594688211_122115803355439372",
       publishedAt: new Date("2026-09-17T07:10:05.705Z"),

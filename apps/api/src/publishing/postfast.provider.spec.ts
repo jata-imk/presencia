@@ -38,6 +38,66 @@ describe("PostFastProvider", () => {
     vi.unstubAllGlobals();
   });
 
+  // F10: postfa.st/docs/files/upload — URL firmada, PUT crudo con el mismo
+  // Content-Type, y la `key` en mediaItems (verificado 2026-09-28).
+  it("prepara la imagen (URL firmada + PUT) y la manda como mediaItems", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(201, [
+          { key: "image/abc.png", signedUrl: "https://s3.example.com/image/abc.png?sig=1" },
+        ]),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse(201, { postIds: ["pf_foto"] }));
+    const provider: PublishingProvider = new PostFastProvider("test-key");
+
+    const media = await provider.prepareMedia([
+      { data: new Uint8Array([137, 80, 78, 71]), mimeType: "image/png", filename: "a.png" },
+    ]);
+    const result = await provider.schedule({
+      network: "instagram",
+      content: TEXT_CONTENT,
+      scheduledAt: new Date("2026-09-01T18:00:00.000Z"),
+      accountProviderRef: "acc_ig",
+      media,
+    });
+
+    expect(result).toEqual({ providerRef: "pf_foto" });
+    const [signUrl, signInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(signUrl).toBe("https://api.postfa.st/file/get-signed-upload-urls");
+    expect(JSON.parse(signInit.body as string)).toEqual({ contentType: "image/png", count: 1 });
+    const [putUrl, putInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(putUrl).toBe("https://s3.example.com/image/abc.png?sig=1");
+    expect(putInit.method).toBe("PUT");
+    expect(putInit.headers).toEqual({ "Content-Type": "image/png" });
+    // La URL firmada es del bucket: la API key de PostFast no viaja ahí.
+    expect(JSON.stringify(putInit.headers)).not.toContain("pf-api-key");
+    const body = JSON.parse(
+      (fetchMock.mock.calls[2] as [string, RequestInit])[1].body as string,
+    ) as {
+      posts: Array<{ mediaItems: unknown[] }>;
+    };
+    expect(body.posts[0]?.mediaItems).toEqual([
+      { key: "image/abc.png", type: "IMAGE", sortOrder: 0 },
+    ]);
+  });
+
+  it("si el PUT al bucket falla, preparar lanza y no se crea ningún post", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(201, [{ key: "image/abc.png", signedUrl: "https://s3.example.com/x" }]),
+      )
+      .mockResolvedValueOnce(new Response("expired", { status: 403 }));
+    const provider: PublishingProvider = new PostFastProvider("test-key");
+
+    await expect(
+      provider.prepareMedia([
+        { data: new Uint8Array([1]), mimeType: "image/png", filename: "a.png" },
+      ]),
+    ).rejects.toBeInstanceOf(PublishingRejectedError);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   // Shape real confirmado contra postfa.st/docs/posts/create (2026-08-19):
   // la respuesta 201 es { postIds: string[] }, no el envelope { data: [...] }
   // que se había inferido (y que causó el incidente 2026-08-18 — ver
@@ -51,6 +111,7 @@ describe("PostFastProvider", () => {
       content: TEXT_CONTENT,
       scheduledAt: new Date("2026-09-01T18:00:00.000Z"),
       accountProviderRef: "acc_1",
+      media: null,
     });
 
     expect(result).toEqual({ providerRef: "pf_123" });
@@ -98,6 +159,7 @@ describe("PostFastProvider", () => {
         content: TEXT_CONTENT,
         scheduledAt: new Date("2026-09-01T18:00:00.000Z"),
         accountProviderRef: "acc_1",
+        media: null,
       });
     } catch (error) {
       caught = error;
@@ -120,6 +182,7 @@ describe("PostFastProvider", () => {
         content: TEXT_CONTENT,
         scheduledAt: new Date("2026-09-01T18:00:00.000Z"),
         accountProviderRef: "acc_1",
+        media: null,
       }),
     ).rejects.toBeInstanceOf(PublishingUnavailableError);
   });
@@ -201,6 +264,7 @@ describe("PostFastProvider", () => {
       content: TEXT_CONTENT,
       scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
       accountProviderRef: "acc_1",
+      media: null,
     });
 
     expect(result).toEqual({ providerRef: "pf_nuevo" });
@@ -225,6 +289,7 @@ describe("PostFastProvider", () => {
         content: TEXT_CONTENT,
         scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
         accountProviderRef: "acc_1",
+        media: null,
       }),
     ).rejects.toBeInstanceOf(PublishingRejectedError);
     // Una sola llamada: la de crear. Nunca se intentó el DELETE.
@@ -244,6 +309,7 @@ describe("PostFastProvider", () => {
       content: TEXT_CONTENT,
       scheduledAt: new Date("2026-09-12T18:00:00.000Z"),
       accountProviderRef: "acc_1",
+      media: null,
     });
 
     expect(result).toEqual({ providerRef: "pf_nuevo" });
@@ -276,6 +342,7 @@ describe("PostFastProvider", () => {
         content: TEXT_CONTENT,
         scheduledAt: new Date(),
         accountProviderRef: "acc_1",
+        media: null,
       }),
     ).rejects.toBeInstanceOf(PublishingRateLimitError);
   });
@@ -292,6 +359,7 @@ describe("PostFastProvider", () => {
         content: TEXT_CONTENT,
         scheduledAt: new Date(),
         accountProviderRef: "acc_bad",
+        media: null,
       }),
     ).rejects.toThrow("socialMediaId inválido");
   });
@@ -377,6 +445,7 @@ describe("PostFastProvider", () => {
   describe("getPostMetrics", () => {
     const POST = {
       accountProviderRef: "sm_linkedin",
+      media: null,
       network: "linkedin" as const,
       platformPostId: "urn:li:share:7506411715882811392",
       publishedAt: new Date("2026-09-10T18:00:00.000Z"),
@@ -526,6 +595,7 @@ describe("PostFastProvider", () => {
         content: TEXT_CONTENT,
         scheduledAt: new Date(),
         accountProviderRef: "acc_1",
+        media: null,
       }),
     ).rejects.toBeInstanceOf(PublishingRejectedError);
   });
