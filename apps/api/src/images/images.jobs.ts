@@ -1,6 +1,9 @@
 import { Inject, Injectable, type OnApplicationBootstrap } from "@nestjs/common";
 import { BossService } from "../jobs/boss.service.js";
 import { enProcesoWorker } from "../jobs/process-role.js";
+
+/** Trabajos de imagen en paralelo por proceso (ver la cola abajo). */
+const IMAGE_QUEUE_CONCURRENCY = 4;
 import {
   IMAGE_JOB_EXPIRE_SECONDS,
   IMAGE_QUEUE,
@@ -29,6 +32,12 @@ export class ImagesJobs implements OnApplicationBootstrap {
       await this.boss.registerOnDemand<ImageGenerationJob>({
         queue: IMAGE_QUEUE,
         expireInSeconds: IMAGE_JOB_EXPIRE_SECONDS,
+        // De a uno, una fila de tres o cuatro "Generar" en el mismo minuto
+        // (cada uno hasta ~2 min con gpt-image) dejaba al último esperando
+        // más que el corte de 5 min: la card lo mostraba fallido mientras
+        // seguía en la cola. Casi todo el trabajo es esperar al generador,
+        // así que correr varios no le cuesta al worker.
+        localConcurrency: IMAGE_QUEUE_CONCURRENCY,
         handler: (data) => this.images.run(data),
       });
     } catch (error) {

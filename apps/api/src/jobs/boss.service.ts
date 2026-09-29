@@ -65,6 +65,13 @@ export interface OnDemandJob<T> {
   retryLimit?: number;
   expireInSeconds: number;
   handler: (data: T) => Promise<void>;
+  /**
+   * Cuántos jobs de esta cola corre el proceso a la vez. Default 1 (el de
+   * pg-boss). Solo lo sube una cola cuyos jobs pasan casi todo el tiempo
+   * esperando a un tercero, como las imágenes (F10): de a uno, tres usuarios
+   * que generan en el mismo minuto se forman en fila.
+   */
+  localConcurrency?: number;
 }
 
 export interface RecurringJob {
@@ -233,9 +240,13 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
           `"${ON_DEMAND_QUEUE_POLICY}". createQueue no la cambia: hay que recrear la cola.`,
       );
     }
-    await this.boss.work<T>(job.queue, async ([trabajo]) => {
-      if (trabajo) await job.handler(trabajo.data);
-    });
+    await this.boss.work<T>(
+      job.queue,
+      { localConcurrency: job.localConcurrency ?? 1 },
+      async ([trabajo]) => {
+        if (trabajo) await job.handler(trabajo.data);
+      },
+    );
     this.colasListas.add(job.queue);
     console.info(`[jobs] ${job.queue} escuchando`);
   }

@@ -316,6 +316,67 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(0);
   });
 
+  it("un job que arranca ya pasado el corte no dibuja: la card ya lo mostró fallido", async () => {
+    const primary = new FakeImageProvider();
+    const service = make({ primary, alternate: null });
+    const cardId = await createCard();
+    const dto = await service.request(userId, cardId, {
+      provider: "primary",
+      prompt: VISUAL.imagePrompt!,
+      aspectRatio: "4:5",
+    });
+    await dbService.runWithTenant(userId, (tx) =>
+      tx
+        .update(publicationCards)
+        .set({
+          imageJob: {
+            ...dto.imageJob!,
+            startedAt: new Date(Date.now() - 6 * 60_000).toISOString(),
+          },
+        })
+        .where(eq(publicationCards.id, cardId)),
+    );
+
+    await service.run({ userId, cardId, batchId: dto.imageJob!.id });
+
+    expect(primary.requests).toHaveLength(0);
+    const rows = await batchRows(dto.imageJob!.id);
+    expect(rows.every((r) => r.status === "failed")).toBe(true);
+    expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(0);
+  });
+
+  it("si el job se vuelve reemplazado mientras dibuja, guarda la imagen pero no la cobra", async () => {
+    let cardId = "";
+    // Mientras "dibuja", el usuario sube la suya: la card deja de tener
+    // este trabajo como el vivo.
+    class SupersededWhileDrawing extends FakeImageProvider {
+      override async generate(request: ImageRequest): Promise<ImageResult> {
+        await dbService.runWithTenant(userId, (tx) =>
+          tx
+            .update(publicationCards)
+            .set({ imageJob: null })
+            .where(eq(publicationCards.id, cardId)),
+        );
+        return super.generate(request);
+      }
+    }
+    const service = make({ primary: new SupersededWhileDrawing(), alternate: null });
+    cardId = await createCard();
+    const dto = await service.request(userId, cardId, {
+      provider: "primary",
+      prompt: VISUAL.imagePrompt!,
+      aspectRatio: "4:5",
+    });
+
+    await service.run({ userId, cardId, batchId: dto.imageJob!.id });
+
+    const rows = await batchRows(dto.imageJob!.id);
+    expect(rows.every((r) => r.status === "succeeded" && r.assetId)).toBe(true);
+    expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(0);
+    // Y no pisa lo que la card tenga: el job ya no es el suyo.
+    expect(((await card(cardId)).content as CardContent).assetIds).toEqual([]);
+  });
+
   it("guardar el prompt editado no pisa la imagen que llegó después de leer la card", async () => {
     const { CardsRepository } = await import("../cards/cards.repository.js");
     const cardId = await createCard();

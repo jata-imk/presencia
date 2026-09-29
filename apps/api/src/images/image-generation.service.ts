@@ -9,6 +9,7 @@ import {
 } from "@nestjs/common";
 import {
   IMAGE_ASPECT_OPTIONS,
+  IMAGE_JOB_STALE_MS,
   IMAGE_VARIANTS_PER_GENERATION,
   type CardContent,
   type CardImageJob,
@@ -318,7 +319,9 @@ export class ImageGenerationService {
     // de "generando" y el usuario, que lo vio fallido, pidió otro. Dibujarlo
     // ahora cobraría imágenes que nunca va a ver en la card.
     const current = card.imageJob as CardImageJob | null;
-    if (current?.id !== batchId || current.status !== "generating") {
+    const stale =
+      current !== null && Date.now() - Date.parse(current.startedAt) > IMAGE_JOB_STALE_MS;
+    if (current?.id !== batchId || current.status !== "generating" || stale) {
       await this.settleBatch(userId, batchId, "reemplazado por otro intento");
       return;
     }
@@ -453,13 +456,19 @@ export class ImageGenerationService {
       await this.dbService.runWithTenant(userId, async (tx) => {
         await this.assets.record(tx, stored);
         await this.generations.settle(tx, row.id, { status: "succeeded", assetId: stored.id });
-        await this.credits.spend(tx, {
-          userId,
-          reason: REASON,
-          referenceType: "image_generation",
-          referenceId: row.id,
-          allowOverdraft: true,
-        });
+        // Se vuelve a preguntar AQUÍ, con la card bloqueada, y no solo al
+        // arrancar el job: una imagen puede tardar hasta que la card lo dé
+        // por muerto y le diga al usuario "no se cobró". Si pasó eso, la
+        // imagen se guarda (queda en sus versiones) pero no se cobra.
+        if (await this.cards.isImageJobCurrent(tx, card.id, row.batchId)) {
+          await this.credits.spend(tx, {
+            userId,
+            reason: REASON,
+            referenceType: "image_generation",
+            referenceId: row.id,
+            allowOverdraft: true,
+          });
+        }
       });
       return { status: "succeeded", assetId: stored.id };
     } catch (error) {
