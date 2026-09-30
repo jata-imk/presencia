@@ -106,6 +106,20 @@ describe("carrusel", () => {
     expect(content).not.toHaveProperty("carouselImagePrompts");
   });
 
+  it("una portada propia en imagePrompt no se pierde, y un prompt largo no tumba la card", () => {
+    const content = build(visualTool, {
+      network: "instagram",
+      caption: "c",
+      hashtags: [],
+      imagePrompt: "portada",
+      carouselImagePrompts: ["paso 1", "x".repeat(2500)],
+    });
+    const slides = content.archetype === "visual_first" ? content.slides! : [];
+    expect(slides.map((s) => s.imagePrompt?.slice(0, 6))).toEqual(["portad", "paso 1", "xxxxxx"]);
+    expect(slides[2]!.imagePrompt).toHaveLength(2000);
+    expect(content).toMatchObject({ imagePrompt: "portada" });
+  });
+
   it("respeta el tope de la red y un solo prompt no es carrusel", () => {
     const x = build(textTool, {
       network: "x",

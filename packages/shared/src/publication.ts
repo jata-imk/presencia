@@ -72,7 +72,8 @@ export const visualFirstContentSchema = z.object({
     .describe(
       "Describe UNA sola imagen, nunca una tira de paneles ni un collage: el " +
         "sujeto, la escena, dónde ocurre y la composición. Si el post es un " +
-        "carrusel, esta es la portada. NO describas el estilo, la técnica, la " +
+        "carrusel, repite aquí el primer prompt de carouselImagePrompts (la " +
+        "portada). NO describas el estilo, la técnica, la " +
         "paleta de colores ni la iluminación: eso lo pone el estilo visual del creator.",
     ),
   assetIds: z.array(z.uuid()).default([]),
@@ -151,8 +152,15 @@ function withCarousel<C extends { imagePrompt?: string; assetIds: string[] }>(
   prompts: string[] | undefined,
   network: SocialNetwork,
 ): C {
-  const clean = (prompts ?? []).map((p) => p.trim()).filter((p) => p.length > 0);
-  const capped = clean.slice(0, CAROUSEL_MAX_BY_NETWORK[network]);
+  // Cada slide acepta hasta 2000 caracteres: un prompt más largo se recorta
+  // en vez de tumbar la card entera (el caption incluido).
+  const clean = (prompts ?? []).map((p) => p.trim().slice(0, 2000)).filter((p) => p.length > 0);
+  // Si el modelo puso una portada propia en `imagePrompt` y en la lista solo
+  // los pasos, la portada va primero en vez de perderse.
+  const cover = content.imagePrompt?.trim();
+  const ordered =
+    clean.length > 0 && cover && cover !== clean[0] ? [cover.slice(0, 2000), ...clean] : clean;
+  const capped = ordered.slice(0, CAROUSEL_MAX_BY_NETWORK[network]);
   if (capped.length < 2) {
     return capped[0] && !content.imagePrompt ? { ...content, imagePrompt: capped[0] } : content;
   }
