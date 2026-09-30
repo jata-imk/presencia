@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 import { AlertCircle, Check, CheckCircle2, Clock, Sparkles } from "lucide-react";
-import type { CardStatus } from "@presencia/shared";
+import type { CardContent, CardStatus } from "@presencia/shared";
 
 // Portado de arquetipos.jsx (Claude Design "Presencia - Chat"). El mockup
 // no diseñó "failed" (nuestro estado real de reconciliación, F6 PR2) ni
@@ -8,6 +8,14 @@ import type { CardStatus } from "@presencia/shared";
 // lenguaje visual (pastilla redondeada, ícono + label) con tokens de
 // estado ya existentes, no colores nuevos inventados.
 export type BadgeKind = CardStatus | "waiting";
+
+// video_script en draft nunca tiene material listo (Presencia no genera
+// video) — el badge lo dice en vez de fingir "Borrador" genérico. Vivía en
+// PublicationCardView, que se fue en F10.5.
+export function badgeKindFor(archetype: CardContent["archetype"], status: CardStatus): BadgeKind {
+  if (archetype === "video_script" && status === "draft") return "waiting";
+  return status;
+}
 
 interface BadgeVariant {
   Icon: ComponentType<{ size?: number; strokeWidth?: number }>;

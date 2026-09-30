@@ -1,7 +1,7 @@
 import { BarChart2, Clock, Eye, Link2, MessageSquare, MoreVertical, XCircle } from "lucide-react";
 import type { PublicationCardDto } from "@presencia/shared";
 import { Badge } from "../cards/Badge.js";
-import { badgeKindFor } from "../cards/PublicationCardView.js";
+import { badgeKindFor } from "../cards/Badge.js";
 import { cardPreviewText } from "../cards/card-text.js";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
 import { MENU_ITEM_CLASS, Menu } from "../ui/Menu.js";
@@ -95,7 +95,7 @@ function CardRow({
                 disabled={card.chatId === null}
                 title={card.chatId === null ? "El chat que la originó ya no existe" : undefined}
               >
-                <MessageSquare size={14} strokeWidth={1.75} /> Editar en Chat
+                <MessageSquare size={14} strokeWidth={1.75} /> Abrir en el chat
               </Menu.Item>
               {canAct && (
                 <>

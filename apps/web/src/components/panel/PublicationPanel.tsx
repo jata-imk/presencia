@@ -63,8 +63,21 @@ export function PublicationPanel({
   // de pestaña monta uno nuevo en vez de heredar el de la anterior.
   const card = <PanelCard key={activeId} channels={channels} onAdapt={adapt} mobile={!isTablet} />;
 
-  // Las pestañas son de este chat: al salir de él el panel se va con él.
-  useEffect(() => () => reset(), [reset]);
+  // Las pestañas son de este chat: al salir de él el panel se va con él, y
+  // al volver empieza cerrado. La excepción es llegar con una card ya abierta
+  // (el "Abrir en el chat" del Calendario, handoffChatId): ese desmontaje no
+  // reinicia. La marca se consume en el tick siguiente al montaje, DESPUÉS del
+  // desmontaje-remontaje que StrictMode hace en dev, que si no la borraba.
+  useEffect(() => {
+    const consume = setTimeout(() => {
+      const panel = usePublicationPanelStore.getState();
+      if (panel.handoffChatId === chatId) panel.clearHandoff();
+    }, 0);
+    return () => {
+      clearTimeout(consume);
+      if (usePublicationPanelStore.getState().handoffChatId !== chatId) reset();
+    };
+  }, [chatId, reset]);
 
   useEffect(() => {
     if (!visible || !isDesktop) return;

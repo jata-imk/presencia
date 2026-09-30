@@ -587,7 +587,7 @@ mensajes donde lo creaste. El modal "Ver" satisface esa
 intención sin contexto conversacional.
 
 **Por qué es modal centrado y no panel:** porque "Ver" es
-un foco temporal. Lo abrís, lo leés, lo cerrás. No es
+un foco temporal. Lo abres, lo lees, lo cierras. No es
 exploratorio (como el panel del día), no es persistente
 (como el panel de borradores). Modal central comunica
 exactamente eso: foco temporal sobre un elemento.
@@ -597,6 +597,14 @@ es el mismo componente. Diseñar una "vista resumen" distinta
 sería duplicar el componente y crear deuda técnica. Una
 sola fuente de verdad para "cómo se ve una publicación",
 usada en Chat, en el modal "Ver", en cualquier lado.
+
+> **F10.5 (implementado):** desde el rediseño del chat, esa
+> fuente única es la **vista previa fiel por red** del panel
+> de publicación (`NetworkPreview`), con el mismo banner de
+> estado. El modal la muestra de solo lectura. "Editar en
+> Chat" pasa a ser **"Abrir en el chat"** y lleva al chat
+> con esa card ya abierta en el panel, que es donde se
+> edita.
 
 **Por qué las acciones del footer cambian según el estado:**
 porque las acciones disponibles son distintas para un
