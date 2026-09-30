@@ -313,7 +313,12 @@ async function main(): Promise<void> {
   const outDir = path.join(repoRoot, "docs", "reference", "suite-cultural");
   await mkdir(outDir, { recursive: true });
   const suffix = `${voices.length > 0 ? "-voces" : ""}${promptFilter ? "-parcial" : ""}`;
-  const outFile = path.join(outDir, `${date}-reporte${suffix}.md`);
+  // Nunca pisa un reporte: dos corridas el mismo día (la de la mañana y la de
+  // la tarde) son dos reportes, -2, -3…
+  let outFile = path.join(outDir, `${date}-reporte${suffix}.md`);
+  for (let n = 2; existsSync(outFile); n++) {
+    outFile = path.join(outDir, `${date}-reporte${suffix}-${String(n)}.md`);
+  }
   await writeFile(outFile, lines.join("\n"), "utf8");
   console.log(`\n✔ Reporte: ${path.relative(repoRoot, outFile)}`);
 }

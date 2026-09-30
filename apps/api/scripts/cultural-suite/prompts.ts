@@ -65,4 +65,18 @@ export const culturalPrompts: CulturalPrompt[] = [
     text: "Arma un post para LinkedIn presentando mi nuevo servicio de fotografía profesional para restaurantes en Mérida, se llama 'Lente y Sazón', tono corporativo pero cercano, con llamada a que me escriban por DM.",
     expectsTool: true,
   },
+  {
+    // F10.6 PR5: el tema pide varias imágenes (pasos). Se espera un carrusel
+    // en `carouselImagePrompts`, cada prompt de UNA imagen y sin estilo.
+    id: "tool-carrusel-pasos",
+    text: "Hazme un carrusel para Instagram con los 5 pasos para preparar un buen café de olla en casa, para mi cafetería 'La Canela'. Una imagen por paso.",
+    expectsTool: true,
+  },
+  {
+    // F10.6 PR5: el contrario. Una promo de un solo producto no necesita
+    // carrusel: se espera UNA imagen, no un carrusel de relleno que cobra más.
+    id: "tool-una-imagen",
+    text: "Hazme un post para Facebook anunciando que ya abrimos la terraza de mi cafetería 'La Canela' en el centro de Mérida, a partir de este sábado.",
+    expectsTool: true,
+  },
 ];

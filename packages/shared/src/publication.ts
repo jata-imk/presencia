@@ -57,9 +57,10 @@ export const visualFirstContentSchema = z.object({
   archetype: z.literal("visual_first"),
   caption: z.string(),
   hashtags: z.array(z.string()).default([]),
-  // Una sola imagen hasta que exista el carrusel (F10.6 PR5). Sin esta línea
-  // el modelo proponía "carrusel de 5 diapositivas" en un solo prompt, y el
-  // generador dibujaba una tira de paneles cortada que igual se cobraba.
+  // Siempre UNA imagen por prompt. Antes del carrusel (F10.6 PR5) el modelo
+  // metía "carrusel de 5 diapositivas" en este campo y el generador dibujaba
+  // una tira de paneles cortada que igual se cobraba; ahora las varias
+  // imágenes van en `carouselImagePrompts` (solo en la tool), una por slide.
   //
   // F10.6: el prompt describe QUÉ se ve, no CÓMO se dibuja. El estilo sale de
   // la Voz de marca o del chip de la imagen (image-styles.ts); cuando el chat
@@ -69,11 +70,12 @@ export const visualFirstContentSchema = z.object({
     .string()
     .optional()
     .describe(
-      "Describe UNA sola imagen (no carruseles, no varias diapositivas ni paneles): " +
-        "el sujeto, la escena, dónde ocurre y la composición. NO describas el estilo, " +
-        "la técnica, la paleta de colores ni la iluminación: eso lo pone el estilo " +
-        "visual del creator. Si el tema da para varias partes, dibuja la portada y " +
-        "deja el resto en el caption.",
+      "Describe UNA sola imagen, nunca una tira de paneles ni un collage: el " +
+        "sujeto, la escena, dónde ocurre y la composición. Si el post es un " +
+        "carrusel, repite aquí el primer prompt de carouselImagePrompts (la " +
+        "portada). NO describas el estilo, la técnica, la " +
+        "paleta de colores ni la iluminación: eso lo pone el estilo visual del creator. " +
+        "Escríbelo en español: el creator lo lee y lo edita.",
     ),
   assetIds: z.array(z.uuid()).default([]),
   slides: slidesSchema,
@@ -112,7 +114,7 @@ export const textFirstContentSchema = z.object({
       "Opcional. Solo si una imagen acompañante suma de verdad al post: " +
         "describe el sujeto y la escena, sin texto dentro y sin estilo, técnica, " +
         "paleta ni iluminación (eso lo pone el estilo visual del creator). " +
-        "Omítelo en la mayoría de los posts de texto.",
+        "En español. Omítelo en la mayoría de los posts de texto.",
     ),
   assetIds: z.array(z.uuid()).default([]),
   slides: slidesSchema,
@@ -126,11 +128,71 @@ export const cardContentSchema = z.discriminatedUnion("archetype", [
 ]);
 export type CardContent = z.infer<typeof cardContentSchema>;
 
-// `slides` fuera de las tools hasta que el chat proponga carruseles (F10.6
-// PR5): con el campo a la vista el modelo lo llenaría antes de tiempo.
+/**
+ * F10.6 PR5: el chat propone carruseles. La tool NO recibe `slides` (ids,
+ * imágenes: cosas de la app) sino una lista de prompts, uno por slide; la
+ * forma más simple de llenar para un modelo. `buildContent` la vuelve slides.
+ */
+const carouselImagePromptsSchema = z
+  .array(z.string())
+  .optional()
+  .describe(
+    "Solo si el tema se cuenta mejor en varias imágenes (pasos, una lista de " +
+      "tips, antes y después, varios productos): un prompt por slide, en orden; " +
+      "el primero es la portada. Cada prompt describe UNA imagen (sujeto, escena " +
+      "y composición), sin texto dentro y sin estilo, técnica, paleta ni " +
+      "iluminación. En español. Entre 2 y 10 (en X, máximo 4). Omítelo si basta una imagen.",
+  );
+
+/**
+ * Los prompts del carrusel vueltos slides, con el tope de la red. Uno solo (o
+ * ninguno) no es carrusel: queda como la imagen suelta de siempre.
+ */
+function withCarousel<C extends { imagePrompt?: string; assetIds: string[] }>(
+  content: C,
+  prompts: string[] | undefined,
+  network: SocialNetwork,
+): C {
+  // Cada slide acepta hasta 2000 caracteres: un prompt más largo se recorta
+  // en vez de tumbar la card entera (el caption incluido).
+  const clean = (prompts ?? []).map((p) => p.trim().slice(0, 2000)).filter((p) => p.length > 0);
+  // Si el modelo puso una portada propia en `imagePrompt` y en la lista solo
+  // los pasos, la portada va primero en vez de perderse.
+  const cover = content.imagePrompt?.trim();
+  const ordered =
+    clean.length > 0 && cover && cover !== clean[0] ? [cover.slice(0, 2000), ...clean] : clean;
+  const capped = ordered.slice(0, CAROUSEL_MAX_BY_NETWORK[network]);
+  if (capped.length < 2) {
+    return capped[0] && !content.imagePrompt ? { ...content, imagePrompt: capped[0] } : content;
+  }
+  return {
+    ...content,
+    imagePrompt: capped[0],
+    slides: capped.map((imagePrompt) => ({ id: globalThis.crypto.randomUUID(), imagePrompt })),
+  };
+}
+
+/**
+ * Cuántas imágenes acepta cada red en una publicación. Vive aquí porque las
+ * tools lo necesitan y carousel.ts importa de este archivo (al revés sería un
+ * ciclo); `NETWORK_MAX_IMAGES` de carousel.ts es este mismo objeto.
+ */
+export const CAROUSEL_MAX_BY_NETWORK: Record<SocialNetwork, number> = {
+  instagram: 10,
+  facebook: 10,
+  x: 4,
+  threads: 10,
+  linkedin: 9,
+  tiktok: 0,
+  youtube: 0,
+};
+
 const visualFirstToolInputSchema = visualFirstContentSchema
   .omit({ archetype: true, assetIds: true, slides: true, slidesAspect: true })
-  .extend({ network: z.enum(NETWORKS_BY_ARCHETYPE.visual_first) });
+  .extend({
+    network: z.enum(NETWORKS_BY_ARCHETYPE.visual_first),
+    carouselImagePrompts: carouselImagePromptsSchema,
+  });
 type VisualFirstToolInput = z.infer<typeof visualFirstToolInputSchema>;
 
 const videoScriptToolInputSchema = videoScriptContentSchema
@@ -140,7 +202,10 @@ type VideoScriptToolInput = z.infer<typeof videoScriptToolInputSchema>;
 
 const textFirstToolInputSchema = textFirstContentSchema
   .omit({ archetype: true, assetIds: true, slides: true, slidesAspect: true })
-  .extend({ network: z.enum(NETWORKS_BY_ARCHETYPE.text_first) });
+  .extend({
+    network: z.enum(NETWORKS_BY_ARCHETYPE.text_first),
+    carouselImagePrompts: carouselImagePromptsSchema,
+  });
 type TextFirstToolInput = z.infer<typeof textFirstToolInputSchema>;
 
 export interface CardArchetypeToolDefinition<
@@ -187,13 +252,19 @@ export const CARD_ARCHETYPE_TOOLS = [
     archetype: "visual_first",
     toolName: "crear_borrador_visual",
     description:
-      "Crea un borrador de publicación visual (una sola imagen) para " +
+      "Crea un borrador de publicación visual (una imagen o un carrusel) para " +
       "Instagram o Facebook. Úsala solo cuando el usuario pida explícitamente " +
       "un post listo para esas redes — no para lluvia de ideas.",
     networks: NETWORKS_BY_ARCHETYPE.visual_first,
     inputSchema: visualFirstToolInputSchema,
-    buildContent: (input) =>
-      visualFirstContentSchema.parse({ ...input, archetype: "visual_first", assetIds: [] }),
+    buildContent: ({ carouselImagePrompts, ...input }) =>
+      visualFirstContentSchema.parse(
+        withCarousel(
+          { ...input, archetype: "visual_first" as const, assetIds: [] },
+          carouselImagePrompts,
+          input.network,
+        ),
+      ),
   }),
   defineCardArchetypeTool<VideoScriptToolInput, "crear_borrador_video">({
     archetype: "video_script",
@@ -216,8 +287,14 @@ export const CARD_ARCHETYPE_TOOLS = [
       "esas redes — no para lluvia de ideas.",
     networks: NETWORKS_BY_ARCHETYPE.text_first,
     inputSchema: textFirstToolInputSchema,
-    buildContent: (input) =>
-      textFirstContentSchema.parse({ ...input, archetype: "text_first", assetIds: [] }),
+    buildContent: ({ carouselImagePrompts, ...input }) =>
+      textFirstContentSchema.parse(
+        withCarousel(
+          { ...input, archetype: "text_first" as const, assetIds: [] },
+          carouselImagePrompts,
+          input.network,
+        ),
+      ),
   }),
 ] as const;
 
