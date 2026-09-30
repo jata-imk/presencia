@@ -281,6 +281,13 @@
       "when": 1790564851599,
       "tag": "0039_generacion_de_imagenes",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790716866933,
+      "tag": "0040_versiones_de_contenido",
+      "breakpoints": true
     }
   ]
 }

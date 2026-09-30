@@ -124,6 +124,25 @@ export class CardsRepository {
       .where(inArray(publicationCards.id, cardIds));
   }
 
+  /**
+   * F10.5: si alguna card del mensaje ya salió hacia la red (programada o
+   * publicada). Borrarla al regenerar dejaría un post que se publica sin
+   * card que lo represente ni forma de cancelarlo.
+   */
+  async hasSentCards(tx: Tx, messageId: string): Promise<boolean> {
+    const [row] = await tx
+      .select({ id: publicationCards.id })
+      .from(publicationCards)
+      .where(
+        and(
+          eq(publicationCards.messageId, messageId),
+          inArray(publicationCards.status, ["scheduled", "published"]),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
+  }
+
   // Se llama ANTES de borrar el mensaje (FK message_id es "set null", no
   // cascade): sin este paso las cards quedarían huérfanas en vez de
   // borradas al reintentar un turno (decisión de producto, F3 PR3).
@@ -161,6 +180,39 @@ export class CardsRepository {
   }
 
   // ── F6: ciclo de vida (programar/reprogramar/cancelar/reconciliar) ────
+
+  /**
+   * F10.5: lee la card y la bloquea hasta el final de la transacción. Quien
+   * fusiona un cambio sobre el contenido que leyó (editar a mano, restaurar
+   * una versión) lo necesita: sin el lock, una imagen elegida en otra pestaña
+   * entre la lectura y la escritura se pisaría con la lectura vieja.
+   * `no key update` y no `update`: no bloquea los inserts que referencian la
+   * card (assets, versiones), igual que isImageJobCurrent.
+   */
+  async lockById(tx: Tx, id: string): Promise<CardRow | undefined> {
+    const [row] = await tx
+      .select()
+      .from(publicationCards)
+      .where(eq(publicationCards.id, id))
+      .for("no key update");
+    return row;
+  }
+
+  /** F10.5: contenido y estado vivos de varias cards (el historial del chat). */
+  async findContentByIds(
+    tx: Tx,
+    ids: string[],
+  ): Promise<Pick<CardRow, "id" | "content" | "status">[]> {
+    if (ids.length === 0) return [];
+    return tx
+      .select({
+        id: publicationCards.id,
+        content: publicationCards.content,
+        status: publicationCards.status,
+      })
+      .from(publicationCards)
+      .where(inArray(publicationCards.id, ids));
+  }
 
   async findById(tx: Tx, id: string): Promise<CardRow | undefined> {
     const [row] = await tx.select().from(publicationCards).where(eq(publicationCards.id, id));

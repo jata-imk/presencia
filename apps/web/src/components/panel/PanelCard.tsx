@@ -3,11 +3,9 @@ import {
   ArrowLeft,
   Calendar,
   CalendarClock,
-  ChevronRight,
+  Check,
   ExternalLink,
   Eye,
-  Film,
-  Hash,
   ImageIcon,
   Link2,
   Lock,
@@ -16,32 +14,50 @@ import {
   RefreshCw,
   Repeat2,
   Smartphone,
-  Type,
   X,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 import { Link } from "react-router";
 import {
   NETWORK_TEXT_LIMITS,
   buildPostText,
   type CardStatus,
+  type CardVersionDto,
   type ChannelAccountDto,
   type PublicationCardDto,
 } from "@presencia/shared";
 import { missingImageNote } from "../../lib/cards/card-image.js";
 import { useCardController, type CardController } from "../../lib/cards/use-card-controller.js";
+import { ApiError } from "../../lib/api.js";
+import { fetchCardVersions, restoreCardVersion } from "../../lib/cards-api.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
-import { useCardsByIds } from "../../stores/cards-store.js";
+import { useCardsByIds, useCardsStore } from "../../stores/cards-store.js";
+import { useToastStore } from "../../stores/toast-store.js";
 import { usePublicationPanelStore, type PanelMode } from "../../stores/publication-panel-store.js";
 import { PublishedBanner, ScheduledBanner } from "../cards/Banner.js";
 import { EmptyImageState, JobNotice, SelectedImage } from "../cards/CardMedia.js";
-import { Hashtags } from "../cards/Hashtags.js";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
 import { NetworkPreview } from "../preview/NetworkPreview.js";
 import type { PreviewAccount } from "../preview/PreviewParts.js";
 import { QuotaExhaustedModal } from "../QuotaExhaustedModal.js";
+import { ContentEditor, type SaveState } from "./ContentEditor.js";
+import { Notice, Segmented, Section } from "./PanelParts.js";
+import {
+  CompareView,
+  VersionsButton,
+  VersionsMenu,
+  ViewingBanner,
+  versionAsContent,
+} from "./Versions.js";
 
 // El contenido del panel de publicación (F10.5, rd-panel.jsx → Panel): las
 // pestañas de las cards abiertas, el conmutador Vista previa / Editar, el
@@ -70,20 +86,91 @@ export function PanelCard({
   const controller = useCardController(activeId ?? undefined);
   const { card } = controller;
 
+  const applyCards = useCardsStore((s) => s.apply);
+  const toast = useToastStore((s) => s.show);
+
   const editable = card ? EDITABLE.includes(card.status) : false;
-  const effectiveMode: PanelMode = editable ? mode : "preview";
+
+  // Versiones del texto (F10.5 PR3). La lista se pide al abrir la card y al
+  // abrir el menú; entre medio, lo que devuelve cada guardado basta para
+  // saber en qué versión se va.
+  const [versions, setVersions] = useState<CardVersionDto[] | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [viewing, setViewing] = useState<number | null>(null);
+  const [comparing, setComparing] = useState<number | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
+  // Restaurar remonta el editor: lo que se escriba después es otra sesión,
+  // y el borrador arranca del texto restaurado.
+  const [editorKey, setEditorKey] = useState(0);
+  const flushEditor = useRef<(() => Promise<boolean>) | null>(null);
+  const cardId = card?.id;
+
+  const refreshVersions = useCallback(() => {
+    if (!cardId) return;
+    fetchCardVersions(cardId)
+      .then(setVersions)
+      .catch(() => {
+        // Sin historial el panel sigue sirviendo; el menú dirá "Cargando…".
+      });
+  }, [cardId]);
+  useEffect(() => refreshVersions(), [refreshVersions]);
+
+  const onSaved = useCallback((version: CardVersionDto) => {
+    setVersions((list) => {
+      if (!list) return [version];
+      const rest = list.filter((v) => v.n !== version.n);
+      return [...rest, version].sort((a, b) => a.n - b.n);
+    });
+  }, []);
+
+  const latest = versions?.at(-1)?.n ?? null;
+  const viewed = viewing !== null ? versions?.find((v) => v.n === viewing) : undefined;
+  const compared = comparing !== null ? versions?.find((v) => v.n === comparing) : undefined;
+  const lookingBack = Boolean(viewed) || Boolean(compared);
+  const effectiveMode: PanelMode = editable && !lookingBack ? mode : "preview";
+
+  async function restore(n: number) {
+    if (!card) return;
+    setMenuOpen(false);
+    // Lo que el editor tenga pendiente se guarda ANTES: si saliera después
+    // (al remontarse el editor) pisaría la versión restaurada.
+    if (flushEditor.current && !(await flushEditor.current())) {
+      toast({
+        title: "No se pudo restaurar esa versión",
+        description: "Tu último cambio no se guardó. Revísalo y vuelve a intentarlo.",
+      });
+      return;
+    }
+    try {
+      const result = await restoreCardVersion(card.id, n);
+      applyCards(result.card);
+      onSaved(result.version);
+      setViewing(null);
+      setComparing(null);
+      setEditorKey((k) => k + 1);
+      toast({
+        title: `Restauraste la Versión ${String(n)}`,
+        description: `Ahora es la Versión ${String(result.version.n)}. No se borró ninguna.`,
+      });
+    } catch (err) {
+      toast({
+        title: "No se pudo restaurar esa versión",
+        description: err instanceof ApiError ? err.message : "Inténtalo de nuevo.",
+      });
+    }
+  }
 
   // ⌘E / Ctrl+E alterna vista previa y edición (rd-main.jsx, tip del panel).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "e") return;
-      if (!editable) return;
+      if (!editable || lookingBack) return;
       e.preventDefault();
       setMode(effectiveMode === "edit" ? "preview" : "edit");
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editable, effectiveMode, setMode]);
+  }, [editable, lookingBack, effectiveMode, setMode]);
 
   const account = accountFor(card, channels);
 
@@ -111,11 +198,15 @@ export function PanelCard({
 
       <Tabs cards={cards} activeId={activeId} mobile={mobile} onClose={close} />
 
-      <div className="flex h-[46px] shrink-0 items-center gap-2.5 border-b border-line px-3">
+      <div className="relative flex h-[46px] shrink-0 items-center gap-2.5 border-b border-line px-3">
         <Segmented
           label="Modo del panel"
           value={effectiveMode}
-          onChange={setMode}
+          onChange={(m) => {
+            setViewing(null);
+            setComparing(null);
+            setMode(m);
+          }}
           options={[
             { value: "preview", label: "Vista previa", Icon: Eye },
             {
@@ -127,17 +218,72 @@ export function PanelCard({
             },
           ]}
         />
+        {!mobile && <SaveIndicator state={saveState} latest={latest} />}
+        <span className="flex-1" />
+        {card && (
+          <VersionsButton
+            latest={latest}
+            viewing={viewing}
+            open={menuOpen}
+            onToggle={() => {
+              if (!menuOpen) refreshVersions();
+              setMenuOpen(!menuOpen);
+            }}
+          />
+        )}
+        {menuOpen && card && (
+          <VersionsMenu
+            versions={versions}
+            viewing={viewing}
+            editable={editable}
+            mobile={mobile}
+            onView={(n) => {
+              setComparing(null);
+              setViewing(n === latest ? null : n);
+              setMenuOpen(false);
+            }}
+            onCompare={(n) => {
+              setViewing(null);
+              setComparing(n);
+              setMenuOpen(false);
+            }}
+            onRestore={(n) => void restore(n)}
+            onClose={() => setMenuOpen(false)}
+          />
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!card ? (
           <p className="p-6 text-sm text-fg-muted">Cargando borrador…</p>
+        ) : compared && latest !== null ? (
+          <CompareView
+            version={compared}
+            latest={latest}
+            current={card.content}
+            network={card.network}
+            editable={editable}
+            onRestore={() => void restore(compared.n)}
+            onClose={() => setComparing(null)}
+          />
         ) : (
           <>
             <StatusBanner card={card} />
+            {viewed && (
+              <ViewingBanner
+                version={viewed}
+                editable={editable}
+                onCompare={() => {
+                  setComparing(viewed.n);
+                  setViewing(null);
+                }}
+                onRestore={() => void restore(viewed.n)}
+                onBack={() => setViewing(null)}
+              />
+            )}
             {effectiveMode === "preview" ? (
               <PreviewBody
-                card={card}
+                card={viewed ? { ...card, content: versionAsContent(viewed, card.content) } : card}
                 controller={controller}
                 account={account}
                 // Mientras las cuentas cargan no se sabe si hay una: decir
@@ -146,7 +292,14 @@ export function PanelCard({
                 onEditImage={() => setMode("edit")}
               />
             ) : (
-              <EditBody card={card} controller={controller} />
+              <EditBody
+                card={card}
+                controller={controller}
+                editorKey={editorKey}
+                onSaved={onSaved}
+                onSaveState={setSaveState}
+                flushRef={flushEditor}
+              />
             )}
           </>
         )}
@@ -154,6 +307,33 @@ export function PanelCard({
 
       {card && <Footer card={card} controller={controller} onAdapt={onAdapt} />}
     </section>
+  );
+}
+
+/** "Guardando…" / "Guardado · v4" / el error del último guardado. */
+function SaveIndicator({ state, latest }: { state: SaveState; latest: number | null }) {
+  if (state.kind === "idle") return null;
+  if (state.kind === "error") {
+    return (
+      <span role="alert" className="truncate text-[11.5px] text-error" title={state.message}>
+        {state.message}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[11.5px] whitespace-nowrap text-fg-muted">
+      {state.kind === "saving" ? (
+        <>
+          <span className="inline-block size-2.5 animate-spin rounded-full border-[1.5px] border-line border-t-fg-muted" />
+          Guardando…
+        </>
+      ) : (
+        <>
+          <Check size={12} aria-hidden="true" />
+          Guardado{latest !== null ? ` · v${String(latest)}` : ""}
+        </>
+      )}
+    </span>
   );
 }
 
@@ -361,20 +541,28 @@ function PreviewBody({
   );
 }
 
-function EditBody({ card, controller }: { card: PublicationCardDto; controller: CardController }) {
+function EditBody({
+  card,
+  controller,
+  editorKey,
+  onSaved,
+  onSaveState,
+  flushRef,
+}: {
+  card: PublicationCardDto;
+  controller: CardController;
+  editorKey: number;
+  onSaved: (version: CardVersionDto) => void;
+  onSaveState: (state: SaveState) => void;
+  flushRef: MutableRefObject<(() => Promise<boolean>) | null>;
+}) {
   const { content, network } = card;
-  const text = buildPostText(content);
-  const limit = NETWORK_TEXT_LIMITS[network];
   const assetId = content.assetIds[0];
   const prompt = "imagePrompt" in content ? content.imagePrompt : undefined;
 
   return (
     <div>
-      {content.archetype === "video_script" ? (
-        <Section title="Guion" Icon={Film}>
-          <ReadOnlyText text={`${content.hook}\n\n${content.script}`} />
-        </Section>
-      ) : (
+      {content.archetype !== "video_script" && (
         <Section title="Imagen" Icon={ImageIcon}>
           {assetId ? (
             <SelectedImage
@@ -393,183 +581,13 @@ function EditBody({ card, controller }: { card: PublicationCardDto; controller: 
           )}
         </Section>
       )}
-      <Section
-        title={content.archetype === "video_script" ? "Descripción" : "Texto"}
-        Icon={Type}
-        meta={`${text.length.toLocaleString("es-MX")} / ${limit.toLocaleString("es-MX")}`}
-      >
-        <ReadOnlyText
-          text={
-            content.archetype === "visual_first"
-              ? content.caption
-              : content.archetype === "video_script"
-                ? content.caption
-                : content.body
-          }
-        />
-        <Counter used={text.length} limit={limit} network={NETWORK_LABELS[network]} />
-      </Section>
-      {content.hashtags.length > 0 && (
-        <Section title="Hashtags" Icon={Hash} meta={String(content.hashtags.length)}>
-          <div className="-mt-3">
-            <Hashtags tags={content.hashtags} />
-          </div>
-        </Section>
-      )}
-    </div>
-  );
-}
-
-function ReadOnlyText({ text }: { text: string }) {
-  return (
-    <p className="rounded-lg border border-line bg-card px-3.5 py-3 text-sm leading-relaxed whitespace-pre-wrap text-fg">
-      {text}
-    </p>
-  );
-}
-
-function Counter({ used, limit, network }: { used: number; limit: number; network: string }) {
-  const ratio = used / limit;
-  const color = ratio > 1 ? "bg-error" : ratio > 0.85 ? "bg-warning" : "bg-success";
-  const textColor = ratio > 1 ? "text-error" : ratio > 0.85 ? "text-warning" : "text-fg-muted";
-  return (
-    <div className="mt-2 flex items-center gap-2.5 text-[11.5px] text-fg-muted">
-      <span className="whitespace-nowrap">Límite de {network}</span>
-      <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-line">
-        <div
-          className={`h-full ${color}`}
-          style={{ width: `${String(Math.min(ratio, 1) * 100)}%` }}
-        />
-      </div>
-      <span className={`font-display font-semibold ${textColor}`}>
-        {used.toLocaleString("es-MX")} / {limit.toLocaleString("es-MX")}
-      </span>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  Icon,
-  meta,
-  children,
-}: {
-  title: string;
-  Icon: LucideIcon;
-  meta?: string;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(true);
-  return (
-    <div className="border-b border-line">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className="flex h-11 w-full items-center gap-2 px-4 text-left"
-      >
-        <ChevronRight
-          size={14}
-          aria-hidden="true"
-          className={`text-fg-muted transition-transform ${open ? "rotate-90" : ""}`}
-        />
-        <Icon size={15} aria-hidden="true" className="text-fg-secondary" />
-        <span className="font-display text-[13.5px] font-semibold text-fg">{title}</span>
-        {meta && <span className="text-xs text-fg-muted">{meta}</span>}
-      </button>
-      {open && <div className="px-4 pb-4">{children}</div>}
-    </div>
-  );
-}
-
-function Notice({
-  kind,
-  Icon,
-  children,
-  action,
-}: {
-  kind: "info" | "error";
-  Icon: LucideIcon;
-  children: ReactNode;
-  action?: { label: string; onClick: () => void };
-}) {
-  return (
-    <div
-      role={kind === "error" ? "alert" : "status"}
-      className={`flex items-start gap-2.5 rounded-lg px-3 py-2.5 text-[12.5px] leading-normal text-fg ${
-        kind === "error" ? "bg-error-bg" : "bg-info-bg"
-      }`}
-    >
-      <Icon
-        size={15}
-        aria-hidden="true"
-        className={`mt-px shrink-0 ${kind === "error" ? "text-error" : "text-info"}`}
+      <ContentEditor
+        key={editorKey}
+        card={card}
+        onSaved={onSaved}
+        onSaveState={onSaveState}
+        flushRef={flushRef}
       />
-      <div className="flex-1">
-        {children}
-        {action && (
-          <div className="mt-2">
-            <button
-              type="button"
-              onClick={action.onClick}
-              className="inline-flex h-7 items-center rounded-md bg-card px-2.5 font-display text-xs font-semibold text-fg shadow-xs hover:bg-surface"
-            >
-              {action.label}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface SegmentOption<T extends string> {
-  value: T;
-  label: string;
-  Icon: LucideIcon;
-  disabled?: boolean;
-  title?: string;
-}
-
-function Segmented<T extends string>({
-  label,
-  value,
-  onChange,
-  options,
-  small = false,
-}: {
-  label: string;
-  value: T;
-  onChange: (value: T) => void;
-  options: SegmentOption<T>[];
-  small?: boolean;
-}) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label={label}
-      className="inline-flex rounded-lg border border-line bg-surface p-0.5"
-    >
-      {options.map((o) => {
-        const selected = o.value === value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            disabled={o.disabled}
-            title={o.title}
-            onClick={() => onChange(o.value)}
-            className={`inline-flex items-center gap-1.5 rounded-md font-display font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-              small ? "h-6 px-2 text-[11.5px]" : "h-7 px-2.5 text-[12.5px]"
-            } ${selected ? "bg-card text-fg shadow-xs" : "text-fg-muted hover:text-fg-secondary"}`}
-          >
-            <o.Icon size={small ? 13 : 14} aria-hidden="true" />
-            {o.label}
-          </button>
-        );
-      })}
     </div>
   );
 }

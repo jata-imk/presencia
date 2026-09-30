@@ -1,5 +1,8 @@
 import type {
+  CardContentChangeDto,
   CardImageVersionDto,
+  CardVersionDto,
+  UpdateCardContentBody,
   EditCardImageBody,
   GenerateCardImageBody,
   CardStatus,
@@ -131,4 +134,24 @@ export function updateAssetAlt(
   alt: string,
 ): Promise<{ assetId: string; alt: string }> {
   return apiFetch(`/api/assets/${assetId}`, { method: "PATCH", body: { alt } });
+}
+
+/** F10.5: autoguardado del texto de la card. La API decide si es versión nueva. */
+export function editCardContent(
+  cardId: string,
+  body: UpdateCardContentBody,
+): Promise<CardContentChangeDto> {
+  return apiFetch<CardContentChangeDto>(`/api/cards/${cardId}/content`, { method: "PATCH", body });
+}
+
+/** El historial del texto de la card, de la más vieja a la más nueva. */
+export function fetchCardVersions(cardId: string): Promise<CardVersionDto[]> {
+  return apiFetch<CardVersionDto[]>(`/api/cards/${cardId}/versions`);
+}
+
+/** Restaurar una versión: vuelve como una nueva. */
+export function restoreCardVersion(cardId: string, n: number): Promise<CardContentChangeDto> {
+  return apiFetch<CardContentChangeDto>(`/api/cards/${cardId}/versions/${String(n)}/restore`, {
+    method: "POST",
+  });
 }

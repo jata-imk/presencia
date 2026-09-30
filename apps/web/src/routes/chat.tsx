@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { DefaultChatTransport, isStaticToolUIPart } from "ai";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ConvHeader } from "../components/chat/ConvHeader.js";
@@ -10,11 +10,14 @@ import { MessageUser } from "../components/chat/MessageUser.js";
 import { TypingDots } from "../components/chat/TypingDots.js";
 import { QuotaBanner } from "../components/QuotaBanner.js";
 import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
+import { ConfirmDeleteModal } from "../components/ui/ConfirmDeleteModal.js";
+import { fetchCardVersions } from "../lib/cards-api.js";
 import { parseQuotaExhaustedError } from "../lib/chat-error.js";
 import type { ChatUIMessage } from "../lib/chat-types.js";
 import { useQuota } from "../lib/use-quota.js";
 import { useCardsStore } from "../stores/cards-store.js";
 import { useChatsStore } from "../stores/chats-store.js";
+import { useToastStore } from "../stores/toast-store.js";
 
 export function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -151,6 +154,41 @@ function ChatView({
   }, [messages.length]);
   const quotaExhaustedError = parseQuotaExhaustedError(error);
 
+  // Regenerar borra las cards de la respuesta (ADR-006). Desde F10.5 una
+  // card puede traer trabajo del usuario encima (ediciones, versiones):
+  // antes de tirarlo, se pregunta. Y una que ya salió a la red no se toca
+  // (la API también lo impide): borrarla dejaría un post programado sin card.
+  const toast = useToastStore((s) => s.show);
+  const [regenerateEdited, setRegenerateEdited] = useState<number | null>(null);
+  async function requestRegenerate() {
+    const last = messages.at(-1);
+    const ids =
+      last?.role === "assistant"
+        ? last.parts.flatMap((p) =>
+            isStaticToolUIPart(p) && p.state === "output-available" ? [p.output.cardId] : [],
+          )
+        : [];
+    const byId = useCardsStore.getState().byId;
+    if (ids.some((id) => byId[id]?.status === "scheduled" || byId[id]?.status === "published")) {
+      toast({
+        title: "No se puede regenerar esta respuesta",
+        description:
+          "Tiene publicaciones programadas o publicadas. Cancela la programación antes de regenerarla.",
+      });
+      return;
+    }
+    const edited = await Promise.all(
+      ids.map((id) =>
+        fetchCardVersions(id)
+          .then((list) => list.length > 1)
+          .catch(() => false),
+      ),
+    );
+    const count = edited.filter(Boolean).length;
+    if (count > 0) setRegenerateEdited(count);
+    else void regenerate();
+  }
+
   function handleSubmit(e?: FormEvent) {
     e?.preventDefault();
     const text = input.trim();
@@ -198,7 +236,7 @@ function ChatView({
                   isLast={isLastMessage}
                   streamingNow={status === "streaming"}
                   canRegenerate={isLastMessage && !busy}
-                  onRegenerate={() => void regenerate()}
+                  onRegenerate={() => void requestRegenerate()}
                 />
               );
             })}
@@ -219,6 +257,26 @@ function ChatView({
           <div className="mx-auto flex max-w-[752px] flex-col gap-2">
             {quota && !bannerDismissed && (
               <QuotaBanner quota={quota} onDismiss={() => setBannerDismissed(true)} />
+            )}
+            {regenerateEdited !== null && (
+              <ConfirmDeleteModal
+                titleId="regenerar-titulo"
+                title="¿Regenerar la respuesta?"
+                description={
+                  regenerateEdited === 1
+                    ? "Uno de sus borradores tiene ediciones tuyas."
+                    : `${String(regenerateEdited)} de sus borradores tienen ediciones tuyas.`
+                }
+                warning="Regenerar borra los borradores de esta respuesta, con sus versiones, y crea otros nuevos."
+                confirmLabel="Regenerar"
+                confirmingLabel="Regenerando…"
+                errorFallback="No se pudo regenerar."
+                onClose={() => setRegenerateEdited(null)}
+                onConfirm={async () => {
+                  await regenerate();
+                }}
+                onConfirmed={() => setRegenerateEdited(null)}
+              />
             )}
             {quotaExhaustedError && !modalDismissed && (
               <QuotaExhaustedModal

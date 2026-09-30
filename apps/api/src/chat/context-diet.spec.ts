@@ -1,7 +1,7 @@
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
-import { compressToolOutputsForModel } from "./context-diet.js";
+import { cardIdsIn, compressToolOutputsForModel, withLiveCards } from "./context-diet.js";
 
 function textPart(text: string) {
   return { type: "text" as const, text };
@@ -184,5 +184,57 @@ describe("compressToolOutputsForModel", () => {
     expect(outputs[1]).toHaveProperty("content"); // card-2..4: últimas 3, íntegras
     expect(outputs[2]).toHaveProperty("content");
     expect(outputs[3]).toHaveProperty("content");
+  });
+});
+
+describe("withLiveCards (F10.5)", () => {
+  const history = [
+    userMessage("u1", "hazme uno"),
+    assistantMessage("a1", [
+      stepStartPart(),
+      cardToolPart("c1", "instagram", visualContent("al nacer")),
+    ]),
+  ];
+
+  it("encuentra las cards del historial", () => {
+    expect(cardIdsIn(history)).toEqual(["c1"]);
+  });
+
+  it("sustituye contenido y estado por los vivos sin mutar el historial", () => {
+    const live = new Map([
+      ["c1", { content: visualContent("editada a mano"), status: "scheduled" as const }],
+    ]);
+    const result = withLiveCards(history, live);
+    const output = (result[1]!.parts[1] as { output: { content: CardContent; status: string } })
+      .output;
+    expect(output.content).toMatchObject({ caption: "editada a mano" });
+    expect(output.status).toBe("scheduled");
+    const original = (history[1]!.parts[1] as { output: { content: CardContent } }).output;
+    expect(original.content).toMatchObject({ caption: "al nacer" });
+  });
+
+  it("una card que ya no existe se queda como estaba", () => {
+    expect(withLiveCards(history, new Map())).toBe(history);
+    const result = withLiveCards(
+      history,
+      new Map([["otra", { content: visualContent("x"), status: "draft" as const }]]),
+    );
+    const output = (result[1]!.parts[1] as { output: { content: CardContent } }).output;
+    expect(output.content).toMatchObject({ caption: "al nacer" });
+  });
+
+  it("el resumen de la dieta sale del contenido vivo", () => {
+    const many = [
+      assistantMessage("a0", [cardToolPart("c0", "instagram", visualContent("vieja al nacer"))]),
+      ...["c2", "c3", "c4"].map((id) =>
+        assistantMessage(`a-${id}`, [cardToolPart(id, "instagram", visualContent(id))]),
+      ),
+    ];
+    const live = new Map([
+      ["c0", { content: visualContent("vieja editada"), status: "draft" as const }],
+    ]);
+    const compressed = compressToolOutputsForModel(withLiveCards(many, live));
+    const output = (compressed[0]!.parts[0] as { output: { resumen: string } }).output;
+    expect(output.resumen).toContain("vieja editada");
   });
 });

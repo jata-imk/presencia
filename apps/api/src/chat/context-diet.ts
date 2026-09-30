@@ -13,8 +13,8 @@ const CARD_TOOL_TYPES = new Set(CARD_ARCHETYPE_TOOLS.map((def) => `tool-${def.to
 // tal cual y runAgentTurn recarga todo. Esta función se aplica SOLO entre
 // toUIMessage y convertToModelMessages (chat.service.ts) — nunca en el
 // camino que alimenta getMessages/la UI, que sigue necesitando el content
-// completo para pintar las cards (PublicationCard.tsx lee part.output.content
-// directo, no hay endpoint de cards que lo recupere después).
+// completo para pintar las cards de mensajes viejos cuyo estado vivo todavía
+// no llegó.
 
 type ToolOutputPart = UIMessage["parts"][number] & {
   type: `tool-${string}`;
@@ -77,6 +77,54 @@ export function compressToolOutputsForModel(history: UIMessage[], keepFull = 3):
         resumen: summarizeCardContent(toolOutputPart.output.content),
       };
       return { ...toolOutputPart, output: compressed };
+    });
+    return changed ? { ...message, parts } : message;
+  });
+}
+
+/** Las cards que el historial menciona en outputs de tool, en orden. */
+export function cardIdsIn(history: UIMessage[]): string[] {
+  const ids: string[] = [];
+  for (const message of history) {
+    for (const part of message.parts) {
+      const toolOutputPart = asCardToolOutputPart(part);
+      if (toolOutputPart) ids.push(toolOutputPart.output.cardId);
+    }
+  }
+  return ids;
+}
+
+/** Lo que la card es hoy, no lo que era al nacer. */
+export interface LiveCard {
+  content: CardToolOutput["content"];
+  status: CardToolOutput["status"];
+}
+
+/**
+ * F10.5: el output de la tool en `messages.parts` es la card al nacer,
+ * congelada. Desde que la card se edita a mano, se restaura o la IA la
+ * cambia, esa foto miente: si el usuario dice "hazme otra así", el modelo
+ * partiría de un texto que ya no existe. Esto sustituye contenido y estado
+ * por los vivos antes de mandarle el historial al modelo (y antes de
+ * comprimir, para que el resumen también sea el vivo). Una card que ya no
+ * existe (se borró) se deja como estaba. Puro e inmutable, como el resto.
+ */
+export function withLiveCards(
+  history: UIMessage[],
+  live: ReadonlyMap<string, LiveCard>,
+): UIMessage[] {
+  if (live.size === 0) return history;
+  return history.map((message) => {
+    let changed = false;
+    const parts = message.parts.map((part) => {
+      const toolOutputPart = asCardToolOutputPart(part);
+      const current = toolOutputPart ? live.get(toolOutputPart.output.cardId) : undefined;
+      if (!toolOutputPart || !current) return part;
+      changed = true;
+      return {
+        ...toolOutputPart,
+        output: { ...toolOutputPart.output, content: current.content, status: current.status },
+      };
     });
     return changed ? { ...message, parts } : message;
   });
