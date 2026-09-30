@@ -73,8 +73,8 @@ export interface CardImageJob {
   /** La proporción pedida: con ella la card dibuja el hueco mientras genera. */
   aspectRatio: ImageAspectRatio;
   /**
-   * F10.6: el estilo con que se generó. Desde el chip del composer (PR2),
-   * "Regenerar" y "Probar con otro generador" lo repiten; hoy es solo registro.
+   * F10.6: el estilo con que se generó. El chip del composer arranca en él,
+   * así "Regenerar" y "Probar con otro generador" lo repiten.
    * Ausente en trabajos anteriores a F10.6 y en las
    * ediciones (que conservan el de su imagen de partida).
    */
@@ -102,6 +102,8 @@ export interface ImagesConfigDto {
   /** Una edición con instrucción: una imagen. */
   editPercent: number;
   alternateAvailable: boolean;
+  /** F10.6: el estilo de la Voz de marca (Fotográfico si nunca eligió): con él arranca el chip. */
+  defaultStyle: ImageStyle;
 }
 
 /** Cuántas imágenes produce un click en "Generar" (decisión de producto de F10). */

@@ -462,8 +462,11 @@ marca (`image_style`). Diseño: "Configuracion v2" en Claude Design.
   Fotográfico natural. Se va en cuanto elige cualquiera, incluso el mismo.
 - **Detalle:** tres ejemplos más (comida, persona, producto), en modal en
   escritorio y en hoja inferior en móvil, con "Usar este estilo".
-- **El estilo es el default, no una jaula:** desde el chat se puede pedir
-  otro en cada imagen, y si la descripción pide un estilo, manda ella.
+- **El estilo es el default, no una jaula:** en cada imagen, el chip
+  "Estilo: X" del panel elige otro (arranca en el de la última imagen de
+  esa card, o en este si no hay), y si la descripción pide un estilo, manda
+  ella. Cambiar el chip no genera nada ni toca el default; el link "Cambiar
+  tu estilo por defecto" del chip trae a esta página.
 - **Identidad visual · Próximamente:** logo, colores de marca y plantillas.
   Se anuncia para que se entienda que el estilo no es lo mismo que la
   marca visual, pero nada de eso es V1.

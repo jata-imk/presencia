@@ -17,6 +17,15 @@ function load(): Promise<ImagesConfigDto | null> {
   return pending;
 }
 
+/**
+ * F10.6: el config trae el estilo por defecto, que SÍ cambia sin recargar
+ * (Configuración › Estilo visual). Quien lo cambia llama esto para que la
+ * siguiente pantalla que lo pida no se quede con el viejo.
+ */
+export function forgetImagesConfig(): void {
+  pending = null;
+}
+
 export function useImagesConfig(): ImagesConfigDto | null {
   const [config, setConfig] = useState<ImagesConfigDto | null>(null);
   useEffect(() => {

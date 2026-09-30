@@ -534,7 +534,12 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
   it("el config anuncia el precio en %, nunca en unidades", async () => {
     const config = await make(fake()).config(userId);
     // Plan creator: 30,000 unidades; 2 × 700 = 4.7%, 700 = 2.3%.
-    expect(config).toEqual({ generatePercent: 4.7, editPercent: 2.3, alternateAvailable: false });
+    expect(config).toEqual({
+      generatePercent: 4.7,
+      editPercent: 2.3,
+      alternateAvailable: false,
+      defaultStyle: "foto",
+    });
   });
 });
 

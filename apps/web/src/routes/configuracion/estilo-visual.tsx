@@ -15,6 +15,7 @@ import {
 } from "../../components/configuracion/primitivas.js";
 import { Modal } from "../../components/ui/Modal.js";
 import { ApiError, apiFetch } from "../../lib/api.js";
+import { forgetImagesConfig } from "../../lib/use-images-config.js";
 import { useMediaQuery } from "../../lib/use-media-query.js";
 import { showToast } from "../../stores/toast-store.js";
 
@@ -88,6 +89,7 @@ export function EstiloVisualPage() {
           body: { imageStyle: id },
         });
         confirmado.current = id;
+        forgetImagesConfig();
         if (turno === ultimo.current) {
           showToast({
             title: `Guardado. Generaremos tus imágenes en ${estilo.name}.`,
