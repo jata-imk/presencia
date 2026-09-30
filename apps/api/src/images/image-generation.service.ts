@@ -11,6 +11,7 @@ import {
   IMAGE_ASPECT_OPTIONS,
   IMAGE_JOB_STALE_MS,
   IMAGE_VARIANTS_PER_GENERATION,
+  FIRST_SLIDE_ID,
   imageStyleDef,
   placeImage,
   type CardContent,
@@ -193,9 +194,11 @@ export class ImageGenerationService {
       if (body.slideIds) throw new BadRequestException("Esta publicación no es un carrusel.");
       if (!body.prompt) throw new BadRequestException("Escribe qué imagen quieres.");
       const prompt = composeImagePrompt(body.prompt, voice ?? null, style);
+      // FIRST_SLIDE_ID y no null: si la card se vuelve carrusel mientras
+      // genera, la imagen sigue yendo a ESTE slide aunque ya no sea la portada.
       images = Array.from({ length: IMAGE_VARIANTS_PER_GENERATION }, () => ({
         prompt,
-        slideId: null,
+        slideId: FIRST_SLIDE_ID,
       }));
       // El prompt editado se guarda en la card: la próxima vez la card muestra
       // lo que de verdad se generó, no la sugerencia original del chat.
@@ -210,7 +213,7 @@ export class ImageGenerationService {
       aspectRatio: body.aspectRatio,
       style,
       images,
-      slideIds: slides ? [...new Set(images.map((i) => i.slideId!))] : undefined,
+      slideIds: [...new Set(images.map((i) => i.slideId!))],
       instruction: null,
       parentAssetId: null,
       editedPrompt,
@@ -264,8 +267,10 @@ export class ImageGenerationService {
       // del trabajo anterior: sin esto el chip de la card caía al default de
       // la voz y "Regenerar" después de ajustar cambiaba de estilo.
       style: (card.imageJob as CardImageJob | null)?.style,
-      images: [{ prompt: composeEditPrompt(body.instruction), slideId: slide?.id ?? null }],
-      slideIds: slide ? [slide.id] : undefined,
+      images: [
+        { prompt: composeEditPrompt(body.instruction), slideId: slide?.id ?? FIRST_SLIDE_ID },
+      ],
+      slideIds: [slide?.id ?? FIRST_SLIDE_ID],
       instruction: body.instruction,
       parentAssetId: parentId,
       editedPrompt: undefined,

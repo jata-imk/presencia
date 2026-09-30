@@ -415,9 +415,27 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     await dbService.runWithTenant(userA, (tx) =>
       tx.update(publicationCards).set({ imageJob: job }).where(eq(publicationCards.id, cardId)),
     );
-    await expect(media.deleteSlide(userA, cardId, id)).rejects.toThrow(/se está generando/);
-    // Los demás sí se pueden quitar mientras tanto.
-    await expect(media.deleteSlide(userA, cardId, FIRST_SLIDE_ID)).resolves.toBeDefined();
+    await expect(media.deleteSlide(userA, cardId, id)).rejects.toThrow(/generándose/);
+    // Tampoco otro: quitar la portada devolvería la card a imagen suelta y el
+    // slide que genera perdería su lugar.
+    await expect(media.deleteSlide(userA, cardId, FIRST_SLIDE_ID)).rejects.toThrow(/generándose/);
+    // Agregar sí: no cambia el id de ningún slide.
+    await expect(media.addSlide(userA, cardId, {})).resolves.toBeDefined();
+  });
+
+  it("subir o elegir a un slide que no existe es 404, no un 200 vacío", async () => {
+    const cardId = await createCard(VISUAL);
+    await expect(media.attachUpload(userA, cardId, PNG, undefined, randomUUID())).rejects.toThrow(
+      /ya no está/,
+    );
+    const up = await media.attachUpload(userA, cardId, PNG);
+    await expect(
+      media.selectImage(userA, cardId, up.content.assetIds[0]!, randomUUID()),
+    ).rejects.toThrow(/ya no está/);
+    // La imagen suelta sí tiene su slide implícito.
+    await expect(
+      media.selectImage(userA, cardId, up.content.assetIds[0]!, FIRST_SLIDE_ID),
+    ).resolves.toBeDefined();
   });
 
   it("los slides de otro usuario no existen para él, y una card programada no cambia", async () => {

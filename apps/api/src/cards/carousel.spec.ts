@@ -39,6 +39,11 @@ describe("carrusel", () => {
     ]);
   });
 
+  it("al volver a imagen suelta, un slide sin prompt no hereda el de la portada quitada", () => {
+    const content = withSlides(SINGLE, [{ id: randomUUID() }]);
+    expect(content).not.toHaveProperty("imagePrompt");
+  });
+
   it("con un solo slide deja de ser carrusel y conserva su prompt y su imagen", () => {
     const a = randomUUID();
     const content = withSlides(SINGLE, [{ id: randomUUID(), imagePrompt: "quedó", assetId: a }]);

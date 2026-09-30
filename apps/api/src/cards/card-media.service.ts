@@ -9,6 +9,7 @@ import {
 } from "@nestjs/common";
 import {
   cardContentSchema,
+  hasSlide,
   IMAGE_JOB_STALE_MS,
   NETWORK_LABELS,
   NETWORK_MAX_IMAGES,
@@ -65,6 +66,8 @@ export class CardMediaService {
     const card = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, cardId));
     if (!card) throw new NotFoundException("No encontramos esa publicación.");
     this.assertCanChangeImage(card);
+    // Antes de subir: un slide que ya no está dejaría el archivo sin lugar.
+    assertSlide(card.content as CardContent, slideId);
 
     let stored;
     try {
@@ -89,6 +92,8 @@ export class CardMediaService {
       // transacciones pasó la subida al storage, y otro cambio pudo llegar.
       const current = await this.repo.findById(tx, cardId);
       if (!current) throw new NotFoundException("No encontramos esa publicación.");
+      // Otra vez acá: el slide se pudo quitar mientras subía.
+      assertSlide(current.content as CardContent, slideId);
       const content = cardContentSchema.parse(
         placeImage(current.content as CardContent, stored.id, slideId),
       );
@@ -119,6 +124,7 @@ export class CardMediaService {
       }
       const current = await this.repo.findById(tx, cardId);
       if (!current) throw new NotFoundException("No encontramos esa publicación.");
+      assertSlide(current.content as CardContent, slideId);
       const content = cardContentSchema.parse(
         placeImage(current.content as CardContent, assetId, slideId),
       );
@@ -191,7 +197,10 @@ export class CardMediaService {
 
   /**
    * Quitar un slide. Su imagen, si tenía, sigue en las versiones de la card.
-   * No mientras se está generando: la imagen llegaría sin lugar y ya cobrada.
+   * No mientras corre un trabajo de imagen, ni siquiera sobre OTRO slide:
+   * quitar uno puede devolver la card a imagen suelta, y la imagen que llega
+   * (ya cobrada) se quedaría sin lugar. Agregar y reordenar sí se permiten:
+   * no cambian el id de ningún slide.
    */
   async deleteSlide(userId: string, cardId: string, slideId: string): Promise<PublicationCardDto> {
     return this.changeSlides(userId, cardId, (slides, card) => {
@@ -201,8 +210,10 @@ export class CardMediaService {
       if (!slides.some((s) => s.id === slideId)) {
         throw new NotFoundException("Ese slide ya no está en el carrusel.");
       }
-      if (generatingSlide(card, slideId)) {
-        throw new ConflictException("Ese slide se está generando. Espera a que termine.");
+      if (generating(card)) {
+        throw new ConflictException(
+          "Hay una imagen generándose en este carrusel. Espera a que termine para quitar slides.",
+        );
       }
       return slides.filter((s) => s.id !== slideId);
     });
@@ -260,12 +271,17 @@ export class CardMediaService {
   }
 }
 
-/** Si el trabajo de imagen que corre ahora está llenando ese slide. */
-function generatingSlide(card: CardRow, slideId: string): boolean {
+/** Si la card tiene un trabajo de imagen corriendo de verdad (no uno ya dado por muerto). */
+function generating(card: CardRow): boolean {
   const job = card.imageJob as CardImageJob | null;
   return (
-    job?.status === "generating" &&
-    Date.now() - Date.parse(job.startedAt) <= IMAGE_JOB_STALE_MS &&
-    (job.slideIds ?? []).includes(slideId)
+    job?.status === "generating" && Date.now() - Date.parse(job.startedAt) <= IMAGE_JOB_STALE_MS
   );
+}
+
+/** Un `slideId` que no es de la card: 404, no un 200 que no hace nada. */
+function assertSlide(content: CardContent, slideId: string | undefined): void {
+  if (slideId !== undefined && !hasSlide(content, slideId)) {
+    throw new NotFoundException("Ese slide ya no está en el carrusel.");
+  }
 }

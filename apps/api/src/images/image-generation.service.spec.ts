@@ -6,6 +6,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  FIRST_SLIDE_ID,
   IMAGE_STYLE_IDS,
   imageStyleDef,
   type CardContent,
@@ -580,6 +581,36 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     // Se cobra por imagen entregada: tres.
     expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(3);
     expect(final.imageJob).toMatchObject({ status: "done", slideIds: [S1, S2] });
+  });
+
+  it("carrusel: una imagen suelta que se vuelve carrusel mientras genera llega a SU slide", async () => {
+    const service = make(fake());
+    const cardId = await createCard();
+    const dto = await service.request(userId, cardId, {
+      provider: "primary",
+      prompt: VISUAL.imagePrompt!,
+      aspectRatio: "4:5",
+    });
+    expect(dto.imageJob).toMatchObject({ slideIds: [FIRST_SLIDE_ID] });
+    // Mientras genera: se agrega un slide vacío y se pone de portada.
+    const other = randomUUID();
+    await dbService.runWithTenant(userId, (tx) =>
+      tx
+        .update(publicationCards)
+        .set({
+          content: {
+            ...VISUAL,
+            slides: [{ id: other }, { id: FIRST_SLIDE_ID, imagePrompt: VISUAL.imagePrompt! }],
+          },
+        })
+        .where(eq(publicationCards.id, cardId)),
+    );
+    await service.run({ userId, cardId, batchId: dto.imageJob!.id });
+    const content = (await card(cardId)).content as CardContent & {
+      slides: { id: string; assetId?: string }[];
+    };
+    expect(content.slides[0]!.assetId).toBeUndefined();
+    expect(content.slides[1]!.assetId).toBeDefined();
   });
 
   it("carrusel: generar un slide que no es la portada pide una sola imagen", async () => {

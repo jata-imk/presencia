@@ -39,8 +39,11 @@ export function withSlides<C extends CardContent>(content: C, slides: CarouselSl
   if (slides.length <= 1) {
     // Un carrusel de uno es una imagen suelta: vuelve a la forma de siempre,
     // con el prompt y la imagen del slide que quedó.
+    // El prompt es el del slide que quedó, o ninguno: el de la portada que se
+    // quitó describiría una imagen que ya no está.
     const rest: Record<string, unknown> = { ...content };
     delete rest.slides;
+    delete rest.imagePrompt;
     const only = slides[0];
     return {
       ...rest,
@@ -49,6 +52,11 @@ export function withSlides<C extends CardContent>(content: C, slides: CarouselSl
     } as C;
   }
   return { ...content, slides, assetIds: assetIdsOfSlides(slides) };
+}
+
+/** Si `slideId` es un slide de la card (en una imagen suelta, solo FIRST_SLIDE_ID). */
+export function hasSlide(content: CardContent, slideId: string): boolean {
+  return slidesOf(content).some((s) => s.id === slideId);
 }
 
 /**
@@ -70,8 +78,9 @@ export function slidesOf(content: CardContent): CarouselSlide[] {
 
 /**
  * El id del slide implícito de una card que no es carrusel. Fijo y no
- * aleatorio: un trabajo que empezó sobre la imagen suelta tiene que poder
- * encontrar "su" slide aunque la card se vuelva carrusel mientras genera.
+ * aleatorio: un trabajo que empezó sobre la imagen suelta lo registra (en sus
+ * filas y en `job.slideIds`) y así encuentra "su" slide aunque la card se
+ * vuelva carrusel o se reordene mientras genera.
  */
 export const FIRST_SLIDE_ID = "00000000-0000-4000-8000-000000000001";
 
