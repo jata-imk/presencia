@@ -261,6 +261,10 @@ export const brandVoices = pgTable(
     // Hasta 2 { text, sourceCardId? } (doc §2 Bloque D). sourceCardId queda
     // sin usar hasta que exista Biblioteca; sin migración cuando llegue.
     referenceExamples: jsonb("reference_examples").notNull().default([]),
+    // F10.6: el estilo visual por defecto de sus imágenes (IMAGE_STYLE_IDS de
+    // shared). `text` y no enum de Postgres, como `vertical`: el catálogo se
+    // mueve, y un estilo retirado se lee como "no eligió". Null = Fotográfico.
+    imageStyle: text("image_style"),
     extras: jsonb("extras").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

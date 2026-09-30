@@ -295,6 +295,13 @@
       "when": 1790727434168,
       "tag": "0041_cambio_por_ia",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790745868699,
+      "tag": "0042_estilo_visual",
+      "breakpoints": true
     }
   ]
 }

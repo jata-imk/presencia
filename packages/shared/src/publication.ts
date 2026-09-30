@@ -36,16 +36,23 @@ export const visualFirstContentSchema = z.object({
   archetype: z.literal("visual_first"),
   caption: z.string(),
   hashtags: z.array(z.string()).default([]),
-  // Una sola imagen hasta que exista el carrusel (F10.5). Sin esta línea el
-  // modelo proponía "carrusel de 5 diapositivas" en un solo prompt, y el
+  // Una sola imagen hasta que exista el carrusel (F10.6 PR5). Sin esta línea
+  // el modelo proponía "carrusel de 5 diapositivas" en un solo prompt, y el
   // generador dibujaba una tira de paneles cortada que igual se cobraba.
+  //
+  // F10.6: el prompt describe QUÉ se ve, no CÓMO se dibuja. El estilo sale de
+  // la Voz de marca o del chip de la imagen (image-styles.ts); cuando el chat
+  // lo escribía ("paleta oscura, acentos neón") pisaba lo que el creator
+  // eligió.
   imagePrompt: z
     .string()
     .optional()
     .describe(
       "Describe UNA sola imagen (no carruseles, no varias diapositivas ni paneles): " +
-        "qué se ve, dónde y con qué luz. Si el tema da para varias partes, dibuja la " +
-        "portada y deja el resto en el caption.",
+        "el sujeto, la escena, dónde ocurre y la composición. NO describas el estilo, " +
+        "la técnica, la paleta de colores ni la iluminación: eso lo pone el estilo " +
+        "visual del creator. Si el tema da para varias partes, dibuja la portada y " +
+        "deja el resto en el caption.",
     ),
   assetIds: z.array(z.uuid()).default([]),
 });
@@ -80,8 +87,9 @@ export const textFirstContentSchema = z.object({
     .optional()
     .describe(
       "Opcional. Solo si una imagen acompañante suma de verdad al post: " +
-        "describe la imagen, sin texto dentro. Omítelo en la mayoría de los " +
-        "posts de texto.",
+        "describe el sujeto y la escena, sin texto dentro y sin estilo, técnica, " +
+        "paleta ni iluminación (eso lo pone el estilo visual del creator). " +
+        "Omítelo en la mayoría de los posts de texto.",
     ),
   assetIds: z.array(z.uuid()).default([]),
 });

@@ -11,12 +11,14 @@ import {
   IMAGE_ASPECT_OPTIONS,
   IMAGE_JOB_STALE_MS,
   IMAGE_VARIANTS_PER_GENERATION,
+  imageStyleDef,
   type CardContent,
   type CardImageJob,
   type EditCardImageBody,
   type GenerateCardImageBody,
   type ImageAspectRatio,
   type ImageProviderSlot,
+  type ImageStyle,
   type ImagesConfigDto,
   type PublicationCardDto,
 } from "@presencia/shared";
@@ -136,7 +138,10 @@ export class ImageGenerationService {
     const voice = await this.dbService.runWithTenant(userId, (tx) =>
       this.brandVoice.findDefault(tx),
     );
-    const prompt = composeImagePrompt(body.prompt, voice ?? null);
+    // F10.6: el de esta imagen (chip del composer) o, si no, el de su Voz de
+    // marca. Se guarda en el trabajo para que "Regenerar" repita el mismo.
+    const style = body.style ?? imageStyleDef(voice?.imageStyle as ImageStyle | null).id;
+    const prompt = composeImagePrompt(body.prompt, voice ?? null, style);
     // El prompt editado se guarda en la card: la próxima vez la card muestra
     // lo que de verdad se generó, no la sugerencia original del chat.
     const editedPrompt =
@@ -147,6 +152,7 @@ export class ImageGenerationService {
       slot: body.provider,
       provider,
       aspectRatio: body.aspectRatio,
+      style,
       count: IMAGE_VARIANTS_PER_GENERATION,
       prompt,
       instruction: null,
@@ -189,6 +195,7 @@ export class ImageGenerationService {
       slot: body.provider,
       provider,
       aspectRatio,
+      style: undefined,
       count: 1,
       prompt: composeEditPrompt(body.instruction),
       instruction: body.instruction,
@@ -230,6 +237,7 @@ export class ImageGenerationService {
       slot: ImageProviderSlot;
       provider: ImageProvider;
       aspectRatio: ImageAspectRatio;
+      style: ImageStyle | undefined;
       count: number;
       prompt: string;
       instruction: string | null;
@@ -248,6 +256,7 @@ export class ImageGenerationService {
       provider: spec.slot,
       kind: spec.kind,
       aspectRatio: spec.aspectRatio,
+      ...(spec.style ? { style: spec.style } : {}),
       assetIds: [],
       startedAt: new Date().toISOString(),
     };

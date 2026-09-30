@@ -85,3 +85,16 @@ Es opcional y sin default a propósito: exigir la key de un segundo proveedor pa
   - **"Cambiar prompt"** en una card que ya tiene imagen: abre el mismo composer de una card vacía y genera desde cero. Las anteriores se quedan en versiones.
   - **"Ajustar esta imagen"** lleva la miniatura de la elegida, para que se vea sobre cuál se aplica.
   - **Se quitó el atajo "Sin gente".**
+
+## Addendum (2026-09-29, F10.6 PR1) — estilos visuales
+
+El QA de F10 dejó ver que el estilo lo decidía el chat: el `.describe` de `imagePrompt` pedía "qué se ve, dónde y con qué luz", y el modelo rellenaba con paletas y técnicas que nadie pidió ("acentos neón"). Ahora el estilo es del creator.
+
+- **Catálogo único** en `packages/shared/src/image-styles.ts` (`IMAGE_STYLES`): 7 estilos (Fotográfico natural, Ilustración, Minimalista, Neobrutalismo, Bento grid, Glassmorfismo, Material) con nombre, descripción y "funciona bien para" (lo que ve el creator, del diseño de Claude Design) y el texto que se le pide al generador. Configuración, el chip del panel y la API leen del mismo arreglo.
+- **Dónde vive:** `brand_voices.image_style` (null = Fotográfico natural). Se guarda con el PATCH de la Voz de marca que ya existía. No entra al prompt del chat.
+- **El chat describe el qué.** Los `.describe` de `imagePrompt` piden sujeto, escena y composición, sin estilo, técnica, paleta ni luz. `composeImagePrompt(description, voice, style?)` agrega el estilo **condicionado**, como antes: "salvo que la descripción pida otro". Si el creator escribe "estilo acuarela", manda lo que escribió.
+- **El estilo abre el prompt** y la descripción va después, marcada como "qué se ve". Con el estilo al final, Gemini lo perdía contra la escena: "un café en el centro de Mérida" salía foto aunque se pidiera minimalista o 3D. Lo mostraron las imágenes de ejemplo, no un test.
+- **"Sin texto ni logotipos" se separó del estilo** (`NO_TEXT_NO_LOGOS`) y va con todos. Antes estaba pegado al texto de la foto, así que cambiar de estilo lo habría perdido.
+- **Estilo por imagen:** `POST /cards/:id/images` acepta `style` y el job lo guarda (`CardImageJob.style`), para que "Regenerar" repita el mismo estilo aunque la voz cambie en medio. Sin `style`, se usa el de la voz.
+- **3D se sacó de V1** (estaba en el diseño). Con Gemini 3.1 Flash Image, las escenas de comida o de lugar salían como foto en tres versiones del texto, y en una hasta escribió "MÉRIDA" en la taza. Con persona y producto sí funcionaba, pero la galería no puede prometer un estilo que sale a veces. Vuelve cuando un generador lo entregue. Un `"3d"` ya guardado se lee como null (Fotográfico).
+- **Ejemplos de la galería:** 28 imágenes fijas (7 estilos × escena base, comida, persona y producto) en `apps/web/public/assets/estilos/`, generadas **una vez** con el prompt compuesto real por `scripts/image-bakeoff/estilos.ts` (~$1.75 con Gemini 3.1 Flash Image). Si se cambia el texto de un estilo, se regeneran sus cuatro (`IMAGE_ESTILOS=neo pnpm --filter @presencia/api estilos:imagenes`): la galería tiene que mostrar lo que el creator va a obtener.

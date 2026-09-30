@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { normalizeExpression } from "./text.js";
+import { imageStyleSchema, type ImageStyle } from "./image-styles.js";
 import { verticalIdSchema, type VerticalId } from "./verticals.js";
 
 // Contratos de brand_voices (docs/reference/modelo-de-datos.md,
@@ -237,6 +238,9 @@ export const updateBrandVoiceBodySchema = z.object({
   keyTopics: tagList(20).optional(),
   preferredCtas: z.array(ctaTag).max(20).optional(),
   referenceExamples: z.array(brandVoiceReferenceExampleSchema).max(2).optional(),
+  // F10.6: el estilo visual por defecto de sus imágenes. `null` = el de
+  // siempre (Fotográfico natural).
+  imageStyle: imageStyleSchema.nullable().optional(),
   // Escape hatch sin schema propio (modelo-de-datos.md: "lo que el
   // onboarding aprenda después sin migrar"). V1: reemplazo total del
   // objeto al persistir, no merge — el único escritor hoy es el paso
@@ -289,6 +293,8 @@ export interface BrandVoiceDto {
   keyTopics: string[];
   preferredCtas: string[];
   referenceExamples: BrandVoiceReferenceExample[];
+  /** F10.6: el estilo visual elegido, o `null` si nunca eligió (= Fotográfico natural). */
+  imageStyle: ImageStyle | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -308,9 +314,20 @@ export interface BrandVoiceDto {
 // voz, es una preferencia de estrategia. Lo que hace es mover la meta semanal
 // sugerida y entrar al payload de la narración; que además tiña cómo escribe
 // el chat es una decisión aparte que nadie tomó todavía.
+//
+// `imageStyle` tampoco: es cómo se DIBUJA, y el chat justo deja de decidirlo
+// (F10.6). Lo lee la API de imágenes, no el prompt del chat.
 export type BrandVoiceForPrompt = Omit<
   BrandVoiceDto,
-  "id" | "name" | "isDefault" | "createdAt" | "updatedAt" | "vertical" | "modo" | "modoDerivado"
+  | "id"
+  | "name"
+  | "isDefault"
+  | "createdAt"
+  | "updatedAt"
+  | "vertical"
+  | "modo"
+  | "modoDerivado"
+  | "imageStyle"
 >;
 
 /**
