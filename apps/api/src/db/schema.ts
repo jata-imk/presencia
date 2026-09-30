@@ -105,6 +105,9 @@ export const creditReason = pgEnum("credit_reason", [
   // F9.7: el ejemplo de voz de Configuración. Por tokens, como la narración:
   // cuesta lo que ocupa el post generado.
   "voice_preview",
+  // F10.5: pedirle a la IA un cambio sobre una card ("más corto"). Por
+  // tokens, como el ejemplo de voz: cuesta lo que ocupa la reescritura.
+  "card_rewrite",
   "refund",
   "adjustment",
 ]);

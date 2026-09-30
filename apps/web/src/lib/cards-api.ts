@@ -149,6 +149,32 @@ export function fetchCardVersions(cardId: string): Promise<CardVersionDto[]> {
   return apiFetch<CardVersionDto[]>(`/api/cards/${cardId}/versions`);
 }
 
+/**
+ * F10.5 PR4: pedirle un cambio a la IA sobre la card. Tarda lo que una
+ * respuesta del chat; `signal` es el botón "Detener" (sin respuesta no hay
+ * versión ni cobro).
+ */
+export function rewriteCard(
+  cardId: string,
+  instruction: string,
+  signal?: AbortSignal,
+): Promise<CardContentChangeDto> {
+  return apiFetch<CardContentChangeDto>(`/api/cards/${cardId}/rewrite`, {
+    method: "POST",
+    body: { instruction },
+    signal,
+  });
+}
+
+/**
+ * "Detener", explícito. Cancelar el fetch no alcanza: detrás de un proxy la
+ * conexión del servidor puede seguir abierta y la reescritura terminaría
+ * (y se cobraría) igual.
+ */
+export function cancelRewrite(cardId: string): Promise<void> {
+  return apiFetch<void>(`/api/cards/${cardId}/rewrite`, { method: "DELETE" });
+}
+
 /** Restaurar una versión: vuelve como una nueva. */
 export function restoreCardVersion(cardId: string, n: number): Promise<CardContentChangeDto> {
   return apiFetch<CardContentChangeDto>(`/api/cards/${cardId}/versions/${String(n)}/restore`, {

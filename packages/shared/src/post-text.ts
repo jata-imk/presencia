@@ -42,3 +42,17 @@ export const NETWORK_TEXT_LIMITS: Record<SocialNetwork, number> = {
   x: 280,
   threads: 500,
 };
+
+/**
+ * El nombre de cada red en español. Vivía en la web (lib/network-labels.ts);
+ * en F10.5 lo necesita también la API, para el prompt de reescritura.
+ */
+export const NETWORK_LABELS: Record<SocialNetwork, string> = {
+  instagram: "Instagram",
+  facebook: "Facebook",
+  tiktok: "TikTok",
+  linkedin: "LinkedIn",
+  youtube: "YouTube",
+  threads: "Threads",
+  x: "X",
+};

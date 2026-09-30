@@ -1,4 +1,4 @@
-import { X, XCircle } from "lucide-react";
+import { Check, X, XCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { toastIn } from "../../lib/motion.js";
 import { useToastStore } from "../../stores/toast-store.js";
@@ -41,7 +41,11 @@ export function ToastViewport() {
                   backgroundColor: "color-mix(in srgb, var(--color-blush-pop) 20%, transparent)",
                 }}
               >
-                <XCircle size={16} className="text-blush-pop" strokeWidth={2} />
+                {t.tone === "success" ? (
+                  <Check size={16} className="text-blush-pop" strokeWidth={2.5} />
+                ) : (
+                  <XCircle size={16} className="text-blush-pop" strokeWidth={2} />
+                )}
               </div>
               <div>
                 <p className="text-[13px] font-semibold text-fg-inverse">{t.title}</p>

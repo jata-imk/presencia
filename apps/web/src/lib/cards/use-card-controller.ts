@@ -46,6 +46,8 @@ export interface CardController {
   /** Cuota agotada al pedir algo que cobra: quien lo usa monta el modal. */
   cuota: QuotaStatusDto | null;
   dismissCuota: () => void;
+  /** Para lo que cobra fuera de este hook (el cambio por IA del panel). */
+  showCuota: (cuota: QuotaStatusDto) => void;
 }
 
 /**
@@ -264,5 +266,6 @@ export function useCardController(
     cancel: () => void handleCancel(),
     cuota,
     dismissCuota: () => setCuota(null),
+    showCuota: setCuota,
   };
 }

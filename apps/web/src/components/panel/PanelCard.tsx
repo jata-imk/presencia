@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Repeat2,
   Smartphone,
+  Sparkles,
   X,
   XCircle,
   type LucideIcon,
@@ -30,6 +31,7 @@ import { Link } from "react-router";
 import {
   NETWORK_TEXT_LIMITS,
   buildPostText,
+  trimToLimitInstruction,
   type CardStatus,
   type CardVersionDto,
   type ChannelAccountDto,
@@ -38,7 +40,13 @@ import {
 import { missingImageNote } from "../../lib/cards/card-image.js";
 import { useCardController, type CardController } from "../../lib/cards/use-card-controller.js";
 import { ApiError } from "../../lib/api.js";
-import { fetchCardVersions, restoreCardVersion } from "../../lib/cards-api.js";
+import {
+  cancelRewrite,
+  fetchCardVersions,
+  restoreCardVersion,
+  rewriteCard,
+} from "../../lib/cards-api.js";
+import { cuotaAgotadaDe } from "../../lib/cuota-agotada.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
 import { useCardsByIds, useCardsStore } from "../../stores/cards-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
@@ -49,6 +57,7 @@ import { NETWORK_META } from "../cards/NetworkLogos.js";
 import { NetworkPreview } from "../preview/NetworkPreview.js";
 import type { PreviewAccount } from "../preview/PreviewParts.js";
 import { QuotaExhaustedModal } from "../QuotaExhaustedModal.js";
+import { AskBar } from "./AskBar.js";
 import { ContentEditor, type SaveState } from "./ContentEditor.js";
 import { Notice, Segmented, Section } from "./PanelParts.js";
 import {
@@ -127,7 +136,82 @@ export function PanelCard({
   const viewed = viewing !== null ? versions?.find((v) => v.n === viewing) : undefined;
   const compared = comparing !== null ? versions?.find((v) => v.n === comparing) : undefined;
   const lookingBack = Boolean(viewed) || Boolean(compared);
-  const effectiveMode: PanelMode = editable && !lookingBack ? mode : "preview";
+
+  // Pedir un cambio a la IA (F10.5 PR4). Mientras reescribe, Editar se
+  // apaga: lo que se escribiera a mano en ese rato lo pisaría el resultado.
+  const [rewriting, setRewriting] = useState(false);
+  // El candado de verdad: el estado se actualiza hasta el siguiente render, y
+  // entre el click y ahí pasan dos awaits (guardar lo pendiente, esperar un
+  // "Detener" en vuelo). Sin el ref, un segundo atajo se colaba en ese hueco.
+  const rewritingRef = useRef(false);
+  const rewriteAbort = useRef<AbortController | null>(null);
+  // El DELETE de "Detener" en vuelo: el siguiente pedido lo espera, o podría
+  // llegar al servidor antes y chocar con el candado de la detenida.
+  const cancelling = useRef<Promise<void> | null>(null);
+  const effectiveMode: PanelMode = editable && !lookingBack && !rewriting ? mode : "preview";
+
+  async function askAI(instruction: string) {
+    if (!card || rewritingRef.current) return;
+    rewritingRef.current = true;
+    setRewriting(true);
+    setViewing(null);
+    setComparing(null);
+    const abort = new AbortController();
+    rewriteAbort.current = abort;
+    try {
+      // Lo que el editor tenga pendiente se guarda antes: la IA parte del
+      // texto guardado, no del que el usuario acaba de escribir.
+      if (flushEditor.current && !(await flushEditor.current())) {
+        toast({
+          title: "No se pudo pedir el cambio",
+          description: "Tu último cambio no se guardó. Revísalo y vuelve a intentarlo.",
+        });
+        return;
+      }
+      await cancelling.current;
+      const result = await rewriteCard(card.id, instruction, abort.signal);
+      applyCards(result.card);
+      onSaved(result.version);
+      setEditorKey((k) => k + 1);
+      if (result.changed) {
+        // La anterior sale de la respuesta y no de la lista del panel: la
+        // lista pudo no haber cargado, o quedarse atrás del guardado de
+        // arriba. Los números son consecutivos por card.
+        const before = result.version.n - 1;
+        refreshVersions();
+        // El resultado se ve como diff contra lo que había: así se nota qué
+        // cambió sin tener que leerlo todo otra vez.
+        setComparing(before);
+        toast({
+          title: `Ajustada por IA · Versión ${String(result.version.n)}`,
+          tone: "success",
+          onUndo: () => void restore(before),
+        });
+      } else {
+        toast({
+          title: "La IA dejó el borrador igual",
+          description: "Prueba pedirlo de otra forma.",
+        });
+      }
+    } catch (err) {
+      const agotada = cuotaAgotadaDe(err);
+      if (agotada) controller.showCuota(agotada);
+      else if (abort.signal.aborted) {
+        toast({ title: "Se detuvo la reescritura", description: "No se cobró nada." });
+      } else {
+        toast({
+          title: "No se pudo pedir el cambio",
+          description: err instanceof ApiError ? err.message : "Inténtalo de nuevo.",
+        });
+      }
+    } finally {
+      rewriteAbort.current = null;
+      rewritingRef.current = false;
+      setRewriting(false);
+    }
+  }
+  // Cambiar de pestaña o cerrar el panel NO la detiene: el resultado llega
+  // igual a cards-store y queda como versión. Solo "Detener" la cancela.
 
   async function restore(n: number) {
     if (!card) return;
@@ -151,6 +235,7 @@ export function PanelCard({
       toast({
         title: `Restauraste la Versión ${String(n)}`,
         description: `Ahora es la Versión ${String(result.version.n)}. No se borró ninguna.`,
+        tone: "success",
       });
     } catch (err) {
       toast({
@@ -213,7 +298,7 @@ export function PanelCard({
               value: "edit",
               label: "Editar",
               Icon: editable ? Pencil : Lock,
-              disabled: !editable,
+              disabled: !editable || rewriting,
               title: editable ? "Editar (Ctrl+E)" : "Solo se editan borradores",
             },
           ]}
@@ -269,6 +354,7 @@ export function PanelCard({
         ) : (
           <>
             <StatusBanner card={card} />
+            {editable && !lookingBack && <FirstTimeTip />}
             {viewed && (
               <ViewingBanner
                 version={viewed}
@@ -290,6 +376,12 @@ export function PanelCard({
                 // "Conecta tu cuenta" ahí sería afirmar algo falso.
                 missingAccount={channels !== null && account === null}
                 onEditImage={() => setMode("edit")}
+                rewriting={rewriting}
+                onTrim={
+                  editable && !viewed
+                    ? () => void askAI(trimToLimitInstruction(NETWORK_TEXT_LIMITS[card.network]))
+                    : undefined
+                }
               />
             ) : (
               <EditBody
@@ -305,8 +397,69 @@ export function PanelCard({
         )}
       </div>
 
+      {card && editable && (
+        <AskBar
+          busy={rewriting}
+          // Mirando una versión vieja no: el cambio se aplicaría a la actual,
+          // no a la que se ve. Comparando sí, porque la actual está a la vista.
+          disabled={Boolean(viewed)}
+          mobile={mobile}
+          onSubmit={(instruction) => void askAI(instruction)}
+          onStop={() => {
+            rewriteAbort.current?.abort();
+            cancelling.current = cancelRewrite(card.id)
+              .catch(() => {
+                // Si no llega, el candado del servidor se suelta al terminar.
+              })
+              .finally(() => {
+                cancelling.current = null;
+              });
+          }}
+        />
+      )}
       {card && <Footer card={card} controller={controller} onAdapt={onAdapt} />}
     </section>
+  );
+}
+
+const TIP_KEY = "presencia.panel.tip";
+
+/**
+ * La primera vez que se abre el panel (nota de decisiones del diseño): un
+ * solo tip descartable que presenta los dos flujos del panel. Se recuerda en
+ * este navegador; si se pierde, lo peor es volver a verlo.
+ */
+function FirstTimeTip() {
+  const [seen, setSeen] = useState(() => {
+    try {
+      return localStorage.getItem(TIP_KEY) === "1";
+    } catch {
+      return true;
+    }
+  });
+  if (seen) return null;
+  return (
+    <div className="flex items-start gap-2.5 border-b border-line bg-tint-plum px-4 py-2.5 text-[13px] leading-normal text-fg">
+      <Sparkles size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
+      <p className="flex-1">
+        <b>Edita aquí o pídele un cambio a la IA:</b> todo queda en versiones. Ctrl+E alterna vista
+        previa y edición.
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          setSeen(true);
+          try {
+            localStorage.setItem(TIP_KEY, "1");
+          } catch {
+            // Sin almacenamiento, el tip solo vuelve a aparecer.
+          }
+        }}
+        className="shrink-0 font-display text-xs font-semibold text-accent"
+      >
+        Entendido
+      </button>
+    </div>
   );
 }
 
@@ -454,12 +607,18 @@ function PreviewBody({
   account,
   missingAccount,
   onEditImage,
+  rewriting,
+  onTrim,
 }: {
   card: PublicationCardDto;
   controller: CardController;
   account: PreviewAccount | null;
   missingAccount: boolean;
   onEditImage: () => void;
+  /** La IA está reescribiendo: la vista previa late mientras tanto. */
+  rewriting: boolean;
+  /** "Recortar con IA" en el aviso de texto excedido; solo si se puede editar. */
+  onTrim?: () => void;
 }) {
   const [device, setDevice] = useState<"mobile" | "desktop">("desktop");
   const { content, network } = card;
@@ -513,7 +672,13 @@ function PreviewBody({
           <JobNotice job={job} />
         )}
         {over > 0 && (
-          <Notice kind="error" Icon={AlertCircle}>
+          <Notice
+            kind="error"
+            Icon={AlertCircle}
+            action={
+              onTrim && !rewriting ? { label: "Recortar con IA", onClick: onTrim } : undefined
+            }
+          >
             Te pasas por {over.toLocaleString("es-MX")} caracteres del límite de{" "}
             {NETWORK_LABELS[network]} ({limit.toLocaleString("es-MX")}).
             {network === "x" && " Lo que sobra está resaltado."}
@@ -528,7 +693,10 @@ function PreviewBody({
           </Notice>
         )}
       </div>
-      <div className={`mx-auto w-full ${widthClass}`}>
+      <div
+        className={`mx-auto w-full ${widthClass} ${rewriting ? "animate-pulse" : ""}`}
+        aria-busy={rewriting}
+      >
         <NetworkPreview
           network={network}
           content={content}
