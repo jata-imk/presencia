@@ -1033,6 +1033,15 @@ Considerábamos:
   En V1, las acciones bulk solo existen para grupos multi-red
   (que son una unidad conceptual). No hay "seleccionar varios
   posts del calendario y aplicar acción a todos". V2.
+
+  > **F10.5 (cambio de alcance, decidido por el founder):** en
+  > el **chat** sí se pueden seleccionar cards de turnos
+  > distintos para verlas juntas o **programarlas juntas**. Al
+  > programarlas, forman un grupo: comparten `group_id` y hora,
+  > así que aquí se ven y se arrastran como cualquier grupo
+  > multi-red. Si las programé al mismo tiempo, son un grupo.
+  > En el calendario sigue sin haber selección múltiple.
+
 - **Calendario compartido / colaborativo.** Una cuenta es
   una persona. Los CMs freelance usan carpetas (Projects)
   para separar clientes. Multi-usuario llega en V2.

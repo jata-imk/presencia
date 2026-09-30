@@ -949,6 +949,15 @@ click en "⛶ Pantalla completa" en una card.
 >      **Restaurar crea una versión nueva; no se borra ninguna.**
 >      La imagen no viaja con las versiones: tiene su propio
 >      historial.
+> - **Selección multired** (PR5, cambio de alcance decidido
+>   por el founder): en escritorio cada card compacta muestra
+>   un checkbox en hover, y cada grupo tiene "Seleccionar". Se
+>   pueden marcar cards de **mensajes distintos**; una barra
+>   flotante ofrece "Ver juntas" (pestañas en el panel) y
+>   "Programar juntas" (el drawer de siempre, en modo grupo).
+>   Al programarlas forman un grupo también en el calendario.
+>   Si hay dos de la misma red, la barra avisa que saldrían por
+>   la misma cuenta. Esc deshace la selección.
 > - **Regenerar** una respuesta cuyos borradores tienen
 >   ediciones pide confirmación. Si alguno ya está programado o
 >   publicado, no se deja regenerar.

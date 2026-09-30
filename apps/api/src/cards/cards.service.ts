@@ -18,6 +18,7 @@ import {
   type ScheduleGroupResultItem,
   type SocialNetwork,
 } from "@presencia/shared";
+import { randomUUID } from "node:crypto";
 import { AssetsService } from "../assets/assets.service.js";
 import { ChannelsRepository } from "../channels/channels.repository.js";
 import { DbService } from "../db/db.service.js";
@@ -470,7 +471,50 @@ export class CardsService {
     // sumaba la latencia de cada uno (transacción + red al proveedor) en
     // vez de pagar el máximo. scheduleItem nunca rechaza — cada item
     // resuelve su propio resultado, Promise.all conserva el orden.
-    return Promise.all(body.items.map((item) => this.scheduleGroupItem(userId, item)));
+    const results = await Promise.all(
+      body.items.map((item) => this.scheduleGroupItem(userId, item)),
+    );
+    return this.unifyGroup(userId, body, results);
+  }
+
+  /**
+   * F10.5: "programar juntas" cards que nacieron en turnos distintos (la
+   * selección multired del chat). El calendario agrupa por `group_id` + la
+   * misma hora (ADR-018), así que sin esto se verían sueltas aunque el
+   * usuario las programó a la vez (decisión del founder: si las programé
+   * juntas, son un grupo).
+   *
+   * DESPUÉS de programar y solo con las que sí quedaron programadas: una que
+   * falló (cuenta desconectada, estado que no se programa) conserva su grupo
+   * de turno. Las `keepDraft` tampoco se tocan, y hermanas que ya comparten
+   * grupo, menos. Si esto falla, lo programado ya quedó programado: se
+   * registra y la respuesta sale igual, con cada card como quedó.
+   */
+  private async unifyGroup(
+    userId: string,
+    body: ScheduleGroupBody,
+    results: ScheduleGroupResultItem[],
+  ): Promise<ScheduleGroupResultItem[]> {
+    const scheduled = results.filter(
+      (r, i) => r.ok && !body.items[i]?.keepDraft && r.card?.status === "scheduled",
+    );
+    if (scheduled.length < 2) return results;
+    const groups = new Set(scheduled.map((r) => r.card?.groupId ?? null));
+    // Un solo grupo y no nulo: ya son hermanas (el mismo turno).
+    if (groups.size === 1 && !groups.has(null)) return results;
+    const groupId = randomUUID();
+    const ids = new Set(scheduled.map((r) => r.cardId));
+    try {
+      await this.dbService.runWithTenant(userId, (tx) =>
+        this.repo.setGroupId(tx, [...ids], groupId),
+      );
+    } catch (error) {
+      console.error("[cards] No se pudo agrupar las cards programadas juntas:", error);
+      return results;
+    }
+    return results.map((r) =>
+      ids.has(r.cardId) && r.card ? { ...r, card: { ...r.card, groupId } } : r,
+    );
   }
 
   private async scheduleGroupItem(

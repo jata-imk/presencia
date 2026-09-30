@@ -325,10 +325,11 @@ export class ChatService {
     // Un groupId por turno, no por card — coincide con lo ya documentado
     // en presencia-chat.md (el toggle multi-red del drawer se dispara
     // cuando "la publicación se generó para múltiples redes en el mismo
-    // turno"), no con una selección posterior de cards sueltas (eso es
-    // no-objetivo explícito de V1, ver presencia-calendario.md). Se asigna
-    // siempre, incluso si el turno termina creando una sola card — inocuo,
-    // esa card simplemente no tiene hermanas con el mismo groupId.
+    // turno"). Desde F10.5 también se pueden programar juntas cards de
+    // turnos distintos (selección multired); en ese caso scheduleGroup les
+    // da un groupId común al programarlas (CardsService.unifyGroup). Se
+    // asigna siempre, incluso si el turno termina creando una sola card —
+    // inocuo, esa card simplemente no tiene hermanas con el mismo groupId.
     const groupId = randomUUID();
     const tools = buildPublicationCardTools({
       userId,

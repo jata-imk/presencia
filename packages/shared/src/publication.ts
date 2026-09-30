@@ -216,17 +216,18 @@ export interface PublicationCardDto {
   status: CardStatus;
   content: CardContent;
   /**
-   * Parentesco por turno de generación — todas las cards creadas en el
-   * mismo turno de chat comparten un groupId (asignado en
-   * publication-card.tools.ts), nunca al seleccionar cards después: es
-   * "propiedad emergente", no tabla propia (docs/reference/modelo-de-datos.md
-   * §grupo). El frontend lo usa para ofrecer "programar juntas" con el
-   * toggle de horario compartido (ScheduleDrawer, modo batch).
-   * Null en cards huérfanas o de un solo turno sin hermanas.
-   * Dos cards del MISMO groupId apuntando a la MISMA red son válidas para
-   * el schema (scheduleGroupBodySchema está keyed por cardId, no por red)
-   * pero hoy se ven indistinguibles en el drawer batch — sin concepto de
-   * "versiones" todavía, limitación conocida, no resuelta.
+   * Parentesco — todas las cards creadas en el mismo turno de chat
+   * comparten un groupId (asignado en publication-card.tools.ts). Desde
+   * F10.5, cards de turnos distintos que se programan juntas (selección
+   * multired) reciben uno común al programarse (CardsService.unifyGroup),
+   * para que el calendario las muestre como grupo. Es "propiedad
+   * emergente", no tabla propia (docs/reference/modelo-de-datos.md §grupo).
+   * El frontend lo usa para ofrecer "programar juntas" con el toggle de
+   * horario compartido (ScheduleDrawer, modo batch).
+   * Null en cards huérfanas.
+   * Dos cards del MISMO groupId apuntando a la MISMA red son válidas; la
+   * selección multired avisa antes de programarlas ("se publicarían en la
+   * misma cuenta").
    */
   groupId: string | null;
   /** ISO 8601 UTC, o null si nunca se programó. */

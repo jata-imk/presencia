@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
 import { chats, folders, publicationCards, users } from "../db/schema.js";
@@ -852,6 +852,129 @@ describe("CardsService", () => {
       expect(resultAmbiguous?.error).toMatch(/panel de PostFast/i);
       expect(resultOk?.ok).toBe(true);
       expect(resultOk?.card?.status).toBe("scheduled");
+    },
+  );
+
+  it(
+    "scheduleGroup (F10.5): cards de turnos distintos programadas juntas comparten grupo; la que queda en borrador no",
+    { timeout: 20_000 },
+    async () => {
+      const insert = (groupId: string) =>
+        dbService.runWithTenant(userA, (tx) =>
+          cardsRepo.insertCard(tx, {
+            userId: userA,
+            chatId: chatA,
+            network: "linkedin",
+            content: TEXT_CONTENT,
+            groupId,
+          }),
+        );
+      const turnoA = randomUUID();
+      const turnoB = randomUUID();
+      const a = await insert(turnoA);
+      const b = await insert(turnoB);
+      const draft = await insert(turnoB);
+      const account = await connectAccount(userA, "linkedin");
+      const when = future(15);
+
+      const results = await service.scheduleGroup(userA, {
+        items: [
+          { cardId: a.id, socialAccountId: account.id, scheduledAt: when },
+          { cardId: b.id, socialAccountId: account.id, scheduledAt: when },
+          { cardId: draft.id, keepDraft: true },
+        ],
+      });
+
+      expect(results.every((r) => r.ok)).toBe(true);
+      const rows = await dbService.runWithTenant(userA, (tx) =>
+        Promise.all([a, b, draft].map((c) => cardsRepo.findById(tx, c.id))),
+      );
+      const [ra, rb, rd] = rows;
+      expect(ra?.groupId).toBeTruthy();
+      expect(ra?.groupId).toBe(rb?.groupId);
+      expect(ra?.groupId).not.toBe(turnoA);
+      expect(rd?.groupId).toBe(turnoB);
+    },
+  );
+
+  it(
+    "scheduleGroup (F10.5): una card que no se pudo programar conserva el grupo de su turno",
+    { timeout: 20_000 },
+    async () => {
+      const insert = (groupId: string) =>
+        dbService.runWithTenant(userA, (tx) =>
+          cardsRepo.insertCard(tx, {
+            userId: userA,
+            chatId: chatA,
+            network: "linkedin",
+            content: TEXT_CONTENT,
+            groupId,
+          }),
+        );
+      const turnoA = randomUUID();
+      const turnoB = randomUUID();
+      const turnoC = randomUUID();
+      const a = await insert(turnoA);
+      const b = await insert(turnoB);
+      const publicada = await insert(turnoC);
+      await dbService.runWithTenant(userA, (tx) =>
+        tx
+          .update(publicationCards)
+          .set({ status: "published" })
+          .where(eq(publicationCards.id, publicada.id)),
+      );
+      const account = await connectAccount(userA, "linkedin");
+      const when = future(15);
+
+      const results = await service.scheduleGroup(userA, {
+        items: [
+          { cardId: a.id, socialAccountId: account.id, scheduledAt: when },
+          { cardId: b.id, socialAccountId: account.id, scheduledAt: when },
+          { cardId: publicada.id, socialAccountId: account.id, scheduledAt: when },
+        ],
+      });
+
+      expect(results.map((r) => r.ok)).toEqual([true, true, false]);
+      const rows = await dbService.runWithTenant(userA, (tx) =>
+        Promise.all([a, b, publicada].map((c) => cardsRepo.findById(tx, c.id))),
+      );
+      expect(rows[0]?.groupId).toBe(rows[1]?.groupId);
+      expect(rows[0]?.groupId).not.toBe(turnoA);
+      // Lo que devuelve la API ya trae el grupo nuevo.
+      expect(results[0]?.card?.groupId).toBe(rows[0]?.groupId);
+      expect(rows[2]?.groupId).toBe(turnoC);
+    },
+  );
+
+  it(
+    "scheduleGroup (F10.5): hermanas del mismo turno conservan su grupo",
+    { timeout: 20_000 },
+    async () => {
+      const turno = randomUUID();
+      const insert = () =>
+        dbService.runWithTenant(userA, (tx) =>
+          cardsRepo.insertCard(tx, {
+            userId: userA,
+            chatId: chatA,
+            network: "linkedin",
+            content: TEXT_CONTENT,
+            groupId: turno,
+          }),
+        );
+      const a = await insert();
+      const b = await insert();
+      const account = await connectAccount(userA, "linkedin");
+      const when = future(15);
+      await service.scheduleGroup(userA, {
+        items: [
+          { cardId: a.id, socialAccountId: account.id, scheduledAt: when },
+          { cardId: b.id, socialAccountId: account.id, scheduledAt: when },
+        ],
+      });
+      const rows = await dbService.runWithTenant(userA, (tx) =>
+        Promise.all([a, b].map((c) => cardsRepo.findById(tx, c.id))),
+      );
+      expect(rows.map((r) => r?.groupId)).toEqual([turno, turno]);
     },
   );
 

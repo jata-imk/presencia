@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CardToolPart, ChatUIMessage } from "../../lib/chat-types.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
 import { useMediaQuery } from "../../lib/use-media-query.js";
+import { useCardSelectionStore, useSelectedIds } from "../../stores/card-selection-store.js";
 import { useCardsByIds } from "../../stores/cards-store.js";
 import { usePublicationPanelStore } from "../../stores/publication-panel-store.js";
 import { CompactCard } from "../cards/CompactCard.js";
@@ -133,6 +134,10 @@ function CardBlock({
   const openPanel = usePublicationPanelStore((s) => s.open);
   const activeId = usePublicationPanelStore((s) => s.activeId);
   const panelChatId = usePublicationPanelStore((s) => s.chatId);
+  const selected = useSelectedIds(chatId);
+  const toggleSelected = useCardSelectionStore((s) => s.toggle);
+  const selectMany = useCardSelectionStore((s) => s.selectMany);
+  const selecting = selected.length > 0;
 
   // Un tool call que nunca terminó (el usuario detuvo el turno, el stream se
   // cortó) no va a terminar ya: su "Generando…" sería una promesa falsa. Se
@@ -184,6 +189,15 @@ function CardBlock({
           onOpen={() => {
             if (cardId) openPanel(chatId, ids, cardId);
           }}
+          selection={
+            cardId && !streaming
+              ? {
+                  selected: selected.includes(cardId),
+                  active: selecting,
+                  onToggle: () => toggleSelected(chatId, cardId),
+                }
+              : undefined
+          }
         />
       </div>
     );
@@ -205,7 +219,16 @@ function CardBlock({
       <section aria-label={title}>
         <div className="flex items-center gap-2 border-b border-line px-3 py-2.5 font-display text-[12.5px] font-semibold text-fg">
           <Layers size={14} strokeWidth={1.75} className="text-fg-muted" aria-hidden="true" />
-          {title}
+          <span className="flex-1">{title}</span>
+          {!streaming && ids.length > 0 && (
+            <button
+              type="button"
+              onClick={() => selectMany(chatId, selectableIds(ids, liveCards))}
+              className="rounded-md px-2 py-1 text-xs font-semibold text-fg-secondary hover:bg-surface"
+            >
+              Seleccionar
+            </button>
+          )}
         </div>
         {rows}
       </section>
@@ -216,6 +239,14 @@ function CardBlock({
   ) : (
     <div className="overflow-hidden rounded-xl border border-line bg-card">{body}</div>
   );
+}
+
+/** Lo que se puede seleccionar: lo publicado o cancelado ya no se programa. */
+function selectableIds(ids: string[], cards: { id: string; status: string }[]): string[] {
+  return ids.filter((id) => {
+    const status = cards.find((c) => c.id === id)?.status ?? "draft";
+    return status !== "published" && status !== "canceled";
+  });
 }
 
 function ActionButton({
