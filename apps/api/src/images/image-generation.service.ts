@@ -139,7 +139,8 @@ export class ImageGenerationService {
       this.brandVoice.findDefault(tx),
     );
     // F10.6: el de esta imagen (chip del composer) o, si no, el de su Voz de
-    // marca. Se guarda en el trabajo para que "Regenerar" repita el mismo.
+    // marca. Se guarda en el trabajo; desde el chip del composer (F10.6 PR2)
+    // "Regenerar" lo manda de vuelta. Hoy la web no lo manda: usa el de la voz.
     const style = body.style ?? imageStyleDef(voice?.imageStyle as ImageStyle | null).id;
     const prompt = composeImagePrompt(body.prompt, voice ?? null, style);
     // El prompt editado se guarda en la card: la próxima vez la card muestra

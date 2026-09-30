@@ -14,8 +14,10 @@ import { imageStyleDef, type ImageStyle } from "@presencia/shared";
 // El estilo va PRIMERO. Al final, Gemini lo perdía contra la escena: "un café
 // en el centro de Mérida" salía foto aunque se pidiera 3D o minimalista (las
 // imágenes de ejemplo de Configuración lo mostraron en 2 de 8 estilos). Con
-// el estilo arriba y la descripción marcada como "qué se ve", la escena deja
-// de decidir cómo se dibuja.
+// el estilo arriba, la escena deja de decidir cómo se dibuja. La etiqueta de
+// la descripción es neutra ("Qué se ve") a propósito: decir "no es el estilo"
+// contradiría el "salvo que pida otro" y un "estilo acuarela" escrito ahí se
+// perdería.
 
 /**
  * Encuadre completo, siempre. Algunos generadores entregan otra proporción que
@@ -54,10 +56,7 @@ export function composeImagePrompt(
   style?: ImageStyle,
 ): string {
   const def = imageStyleDef(style ?? (voice?.imageStyle as ImageStyle | null | undefined));
-  const parts = [
-    `${STYLE_LEAD} ${def.prompt}`,
-    `Qué se ve (la escena, no el estilo): ${description.trim()}`,
-  ];
+  const parts = [`${STYLE_LEAD} ${def.prompt}`, `Qué se ve: ${description.trim()}`];
   const niche = voice?.niche.filter((n) => n.trim().length > 0) ?? [];
   if (niche.length > 0) {
     parts.push(`Es para una publicación de un creador de contenido de ${niche.join(", ")}.`);

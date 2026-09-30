@@ -73,8 +73,9 @@ export interface CardImageJob {
   /** La proporción pedida: con ella la card dibuja el hueco mientras genera. */
   aspectRatio: ImageAspectRatio;
   /**
-   * F10.6: el estilo con que se generó. "Regenerar" y "Probar con otro
-   * generador" lo repiten. Ausente en trabajos anteriores a F10.6 y en las
+   * F10.6: el estilo con que se generó. Desde el chip del composer (PR2),
+   * "Regenerar" y "Probar con otro generador" lo repiten; hoy es solo registro.
+   * Ausente en trabajos anteriores a F10.6 y en las
    * ediciones (que conservan el de su imagen de partida).
    */
   style?: ImageStyle;

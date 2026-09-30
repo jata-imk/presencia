@@ -47,14 +47,22 @@ export function EstiloVisualPage() {
   const [guardado, setGuardado] = useState<ImageStyle | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [detalle, setDetalle] = useState<ImageStyle | null>(null);
-  // El PATCH más reciente: si se eligen dos seguidos y el primero falla
-  // después, su rollback no debe pisar al segundo.
+  // Los PATCH salen en fila, uno detrás de otro: si dos viajaran a la vez,
+  // el servidor podría aplicarlos al revés y quedarse con el que NO se ve.
+  // `ultimo` distingue el más reciente (el único que avisa), y `confirmado`
+  // es lo último que el servidor aceptó: a eso se regresa si algo falla, no
+  // al valor anterior en pantalla, que pudo no haberse guardado nunca.
+  const cola = useRef<Promise<void>>(Promise.resolve());
   const ultimo = useRef(0);
+  const confirmado = useRef<ImageStyle | null>(null);
 
   useEffect(() => {
     const abort = new AbortController();
     apiFetch<BrandVoiceDto>("/api/brand-voice", { signal: abort.signal })
-      .then((voz) => setGuardado(voz.imageStyle))
+      .then((voz) => {
+        confirmado.current = voz.imageStyle;
+        setGuardado(voz.imageStyle);
+      })
       .catch((e: unknown) => {
         if (abort.signal.aborted) return;
         setLoadError(e instanceof ApiError ? e.message : "No se pudo cargar tu estilo.");
@@ -68,32 +76,35 @@ export function EstiloVisualPage() {
   // null = nunca eligió: se genera en Fotográfico natural, y la página lo dice.
   const actual = imageStyleDef(guardado).id;
 
-  async function elegir(estilo: ImageStyleDef) {
+  function elegir(estilo: ImageStyleDef) {
     const id = estilo.id;
     if (id === actual && guardado !== null) return;
-    const anterior = guardado;
     const turno = ++ultimo.current;
     setGuardado(id);
-    try {
-      await apiFetch<BrandVoiceDto>("/api/brand-voice", {
-        method: "PATCH",
-        body: { imageStyle: id },
-      });
-      if (turno === ultimo.current) {
+    cola.current = cola.current.then(async () => {
+      try {
+        await apiFetch<BrandVoiceDto>("/api/brand-voice", {
+          method: "PATCH",
+          body: { imageStyle: id },
+        });
+        confirmado.current = id;
+        if (turno === ultimo.current) {
+          showToast({
+            title: `Guardado. Generaremos tus imágenes en ${estilo.name}.`,
+            tone: "success",
+            durationMs: 2600,
+          });
+        }
+      } catch (e) {
+        if (turno !== ultimo.current) return;
+        setGuardado(confirmado.current);
         showToast({
-          title: `Guardado. Generaremos tus imágenes en ${estilo.name}.`,
-          tone: "success",
-          durationMs: 2600,
+          title: "No se guardó tu estilo",
+          description:
+            e instanceof ApiError ? e.message : "Revisa tu conexión e inténtalo de nuevo.",
         });
       }
-    } catch (e) {
-      if (turno !== ultimo.current) return;
-      setGuardado(anterior);
-      showToast({
-        title: "No se guardó tu estilo",
-        description: e instanceof ApiError ? e.message : "Revisa tu conexión e inténtalo de nuevo.",
-      });
-    }
+    });
   }
 
   const abierto = detalle ? imageStyleDef(detalle) : null;
@@ -122,7 +133,7 @@ export function EstiloVisualPage() {
             key={estilo.id}
             estilo={estilo}
             elegido={estilo.id === actual}
-            onElegir={() => void elegir(estilo)}
+            onElegir={() => elegir(estilo)}
             onAbrir={() => setDetalle(estilo.id)}
           />
         ))}
@@ -135,7 +146,7 @@ export function EstiloVisualPage() {
           estilo={abierto}
           elegido={abierto.id === actual}
           onUsar={() => {
-            void elegir(abierto);
+            elegir(abierto);
             setDetalle(null);
           }}
           onClose={() => setDetalle(null)}

@@ -13,8 +13,16 @@
 //
 // Cuesta dinero de verdad: 28 imágenes ≈ $1.75 con Gemini 3.1 Flash Image. Las
 // imágenes SÍ se versionan (son parte de la app), comprimidas a webp de ~600 px.
+//
+// De cada imagen queda además:
+// - su entrada en `manifest.json` (junto a los webp, versionado): el prompt
+//   EXACTO que se mandó, el modelo y la fecha. Sin él, saber qué produjo un
+//   ejemplo dependería de reconstruir el prompt con el código de ese commit, y
+//   comparar generadores sería adivinar.
+// - el original en tamaño completo en scripts/image-bakeoff/out/estilos/
+//   (gitignored, ~1-2 MB cada uno): solo en la máquina que lo corrió.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { IMAGE_STYLES } from "@presencia/shared";
@@ -35,6 +43,30 @@ const ESCENAS = {
 
 // pnpm --filter corre el script con apps/api como cwd.
 const OUT_DIR = path.resolve("../web/public/assets/estilos");
+const ORIGINALES_DIR = path.resolve("scripts/image-bakeoff/out/estilos");
+const MANIFEST = path.join(OUT_DIR, "manifest.json");
+
+interface EntradaDeManifest {
+  estilo: string;
+  escena: string;
+  modelo: string;
+  generadaEl: string;
+  prompt: string;
+}
+
+async function leerManifest(): Promise<Record<string, EntradaDeManifest>> {
+  try {
+    return JSON.parse(await readFile(MANIFEST, "utf8")) as Record<string, EntradaDeManifest>;
+  } catch {
+    return {};
+  }
+}
+
+const EXTENSION: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
 
 async function main() {
   const modelId =
@@ -45,6 +77,9 @@ async function main() {
   const estilos = IMAGE_STYLES.filter((s) => !only || only.includes(s.id));
   const provider = new AiSdkImageProvider(createImageModelResolver(process.env)(modelId), modelId);
   await mkdir(OUT_DIR, { recursive: true });
+  await mkdir(ORIGINALES_DIR, { recursive: true });
+  // Se fusiona con lo que ya había: correr un solo estilo no borra los demás.
+  const manifest = await leerManifest();
 
   const fallas: string[] = [];
   for (const estilo of estilos) {
@@ -63,6 +98,18 @@ async function main() {
           .webp({ quality: 72 })
           .toBuffer();
         await writeFile(path.join(OUT_DIR, `${nombre}.webp`), webp);
+        const ext = EXTENSION[result.mediaType] ?? "bin";
+        await writeFile(path.join(ORIGINALES_DIR, `${nombre}.${ext}`), result.data);
+        manifest[nombre] = {
+          estilo: estilo.id,
+          escena,
+          modelo: modelId,
+          generadaEl: new Date().toISOString(),
+          prompt,
+        };
+        // Después de cada imagen y no al final: si la corrida se cae a medias
+        // (el 402 de saldo agotado pasó), lo generado queda registrado.
+        await writeFile(MANIFEST, JSON.stringify(manifest, null, 2) + "\n");
         const segundos = ((Date.now() - arranque) / 1000).toFixed(1);
         console.log(`${nombre}: ok ${segundos} s, ${Math.round(webp.byteLength / 1024)} KB`);
       } catch (error) {
