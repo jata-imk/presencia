@@ -19,8 +19,10 @@ import {
   type CardImageVersionDto,
   type ImageAspectRatio,
   type ImageProviderSlot,
+  type ImageStyle,
 } from "@presencia/shared";
 import { useToastStore } from "../../stores/toast-store.js";
+import { StyleChip } from "./StyleChip.js";
 
 // La imagen de una card y lo que se puede hacer con ella (F10). Presentación
 // pura: quién sube, quién genera y qué pasa después lo decide quien pasa
@@ -31,6 +33,8 @@ export interface GenerateInput {
   prompt: string;
   aspectRatio: ImageAspectRatio;
   provider: ImageProviderSlot;
+  /** F10.6: siempre explícito, el del chip; así el trabajo guarda el que se vio. */
+  style: ImageStyle;
 }
 
 export interface CardImageGeneration {
@@ -44,6 +48,8 @@ export interface CardImageGeneration {
   /** Lo que cuesta un click, en % del mes. Nunca unidades (addendum ADR-012). */
   percent: number;
   alternateAvailable: boolean;
+  /** F10.6: el estilo de la Voz de marca; el chip arranca en él si la card no tiene trabajo. */
+  defaultStyle: ImageStyle;
   /** Las proporciones de esta red; la primera es la default. */
   aspectOptions: readonly ImageAspectRatio[];
   /** "Más cálida", "sin gente": edita la imagen elegida (una imagen). */
@@ -70,6 +76,15 @@ const ASPECT_CLASS: Record<ImageAspectRatio, string> = {
 
 function isBusy(generation: CardImageGeneration | undefined): boolean {
   return Boolean(generation && (generation.requesting || generation.job?.status === "generating"));
+}
+
+/**
+ * Con qué estilo arranca el chip: el del último trabajo de la card (así
+ * "Regenerar" repite el de la imagen aunque el default cambie) o el de la voz.
+ * Una edición no guarda estilo y cae al de la voz.
+ */
+function initialStyle(generation: CardImageGeneration): ImageStyle {
+  return generation.job?.style ?? generation.defaultStyle;
 }
 
 function priceLabel(percent: number): string {
@@ -477,9 +492,13 @@ export function ImageActionStrip({
   media,
   prompt,
   aspectRatio,
+  style,
+  onStyleChange,
   onChangePrompt,
 }: {
   media: CardMediaActions;
+  style: ImageStyle | undefined;
+  onStyleChange: (style: ImageStyle) => void;
   /** El prompt con que se regenera: el de la card. Sin él, no se ofrece regenerar. */
   prompt: string | undefined;
   aspectRatio: ImageAspectRatio | undefined;
@@ -494,12 +513,22 @@ export function ImageActionStrip({
       <span className="mr-1 text-[11px] font-semibold tracking-wide text-fg-muted uppercase">
         Imagen
       </span>
+      {canRegenerate && style && (
+        <StyleChip value={style} onChange={onStyleChange} disabled={busy} />
+      )}
       {canRegenerate && (
         <ActionButton
           Icon={RefreshCw}
           label="Regenerar"
           disabled={busy}
-          onClick={() => void generation.generate({ prompt, aspectRatio, provider: "primary" })}
+          onClick={() =>
+            void generation.generate({
+              prompt,
+              aspectRatio,
+              provider: "primary",
+              style: style ?? generation.defaultStyle,
+            })
+          }
         />
       )}
       {canRegenerate && generation.alternateAvailable && (
@@ -507,7 +536,14 @@ export function ImageActionStrip({
           Icon={Shuffle}
           label="Probar con otro generador"
           disabled={busy}
-          onClick={() => void generation.generate({ prompt, aspectRatio, provider: "alternate" })}
+          onClick={() =>
+            void generation.generate({
+              prompt,
+              aspectRatio,
+              provider: "alternate",
+              style: style ?? generation.defaultStyle,
+            })
+          }
         />
       )}
       {generation && onChangePrompt && (
@@ -537,12 +573,16 @@ function ImageComposer({
   media,
   generation,
   initialPrompt,
+  style,
+  onStyleChange,
   onCancel,
   onGenerate,
 }: {
   media: CardMediaActions;
   generation: CardImageGeneration;
   initialPrompt: string;
+  style: ImageStyle;
+  onStyleChange: (style: ImageStyle) => void;
   /** Solo al cambiar el prompt de una card que ya tiene imagen: volver sin generar. */
   onCancel?: () => void;
   onGenerate?: () => void;
@@ -572,33 +612,36 @@ function ImageComposer({
           onChange={(event) => setPrompt(event.target.value)}
           rows={3}
           maxLength={2000}
-          placeholder="Describe la imagen que quieres: qué se ve, dónde, con qué luz."
+          placeholder="Describe la imagen que quieres: qué se ve y dónde. El estilo se elige abajo."
           className="w-full resize-y rounded-md border border-line bg-card px-2.5 py-2 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
         />
       </div>
-      {generation.aspectOptions.length > 1 && (
-        <div role="radiogroup" aria-label="Proporción" className="flex items-center gap-1.5">
-          <span className="mr-1 text-[11px] font-semibold tracking-wide text-fg-muted uppercase">
-            Formato
-          </span>
-          {generation.aspectOptions.map((option) => (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={option === aspectRatio}
-              onClick={() => setAspectRatio(option)}
-              className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
-                option === aspectRatio
-                  ? "border-primary bg-primary text-primary-fg"
-                  : "border-line bg-card text-fg-secondary"
-              }`}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <StyleChip value={style} onChange={onStyleChange} disabled={busy} />
+        {generation.aspectOptions.length > 1 && (
+          <div role="radiogroup" aria-label="Proporción" className="flex items-center gap-1.5">
+            <span className="mr-1 text-[11px] font-semibold tracking-wide text-fg-muted uppercase">
+              Formato
+            </span>
+            {generation.aspectOptions.map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="radio"
+                aria-checked={option === aspectRatio}
+                onClick={() => setAspectRatio(option)}
+                className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+                  option === aspectRatio
+                    ? "border-primary bg-primary text-primary-fg"
+                    : "border-line bg-card text-fg-secondary"
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <ActionButton
           Icon={generation.requesting ? Loader2 : Sparkles}
@@ -610,7 +653,7 @@ function ImageComposer({
             // Se cierra solo si la API aceptó: con un 402 o un error de red, el
             // prompt que el usuario reescribió se queda en el campo.
             void generation
-              .generate({ prompt: prompt.trim(), aspectRatio, provider: "primary" })
+              .generate({ prompt: prompt.trim(), aspectRatio, provider: "primary", style })
               .then((ok) => {
                 if (ok) onGenerate?.();
               });
@@ -623,7 +666,7 @@ function ImageComposer({
             disabled={busy || !ready}
             onClick={() => {
               void generation
-                .generate({ prompt: prompt.trim(), aspectRatio, provider: "alternate" })
+                .generate({ prompt: prompt.trim(), aspectRatio, provider: "alternate", style })
                 .then((ok) => {
                   if (ok) onGenerate?.();
                 });
@@ -662,6 +705,7 @@ export function EmptyImageState({
   media?: CardMediaActions;
 }) {
   const generation = media?.generation;
+  const [style, setStyle] = useState<ImageStyle | null>(null);
   if (generation?.job?.status === "generating") {
     return <GeneratingImage aspectRatio={generation.job.aspectRatio} />;
   }
@@ -673,7 +717,13 @@ export function EmptyImageState({
       {generation && <JobNotice job={generation.job} />}
       {media && generation ? (
         <div className="mt-1 w-full">
-          <ImageComposer media={media} generation={generation} initialPrompt={prompt ?? ""} />
+          <ImageComposer
+            media={media}
+            generation={generation}
+            initialPrompt={prompt ?? ""}
+            style={style ?? initialStyle(generation)}
+            onStyleChange={setStyle}
+          />
         </div>
       ) : (
         <>
@@ -719,6 +769,10 @@ export function SelectedImage({
   // "Cambiar prompt": el mismo composer de una card vacía, debajo de la
   // imagen actual, que sigue ahí hasta que lleguen las nuevas.
   const [composing, setComposing] = useState(false);
+  // El estilo que eligió en el chip; null = el de arranque (initialStyle), que
+  // se sigue leyendo en vivo para que llegue el del trabajo cuando termina.
+  const [style, setStyle] = useState<ImageStyle | null>(null);
+  const shownStyle = style ?? (generation ? initialStyle(generation) : undefined);
   const shown = picked ?? assetId;
   // La versión elegida dentro del historial, que llega aparte y después
   // (useCardController lo pide cuando cambia la card). Mientras no llega no se
@@ -757,6 +811,8 @@ export function SelectedImage({
             media={media}
             generation={generation}
             initialPrompt={prompt ?? ""}
+            style={shownStyle ?? generation.defaultStyle}
+            onStyleChange={setStyle}
             onCancel={() => setComposing(false)}
             onGenerate={() => setComposing(false)}
           />
@@ -768,6 +824,8 @@ export function SelectedImage({
               media={media}
               prompt={prompt}
               aspectRatio={job?.aspectRatio ?? generation?.aspectOptions[0]}
+              style={shownStyle}
+              onStyleChange={setStyle}
               onChangePrompt={() => setComposing(true)}
             />
           )}

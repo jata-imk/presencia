@@ -201,6 +201,7 @@ export function useCardController(
                 job: imageJob,
                 percent: imagesConfig.generatePercent,
                 alternateAvailable: imagesConfig.alternateAvailable,
+                defaultStyle: imagesConfig.defaultStyle,
                 aspectOptions: IMAGE_ASPECT_OPTIONS[card.network],
                 edit: (instruction, provider) => void handleEdit(card.id, instruction, provider),
                 editPercent: imagesConfig.editPercent,
