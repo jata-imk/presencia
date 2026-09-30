@@ -930,13 +930,13 @@ click en "⛶ Pantalla completa" en una card.
 >      versión por tecla.
 >   3. Pedirle un cambio a la IA sobre la card crea una
 >      versión (PR4).
->   El selector "Versión N" lista todas, con su origen
->   ("Original · del chat", "Editada por ti", "Restaurada de la
->   Versión 1"). Se puede ver una en la vista previa,
->   compararla palabra por palabra con la actual o restaurarla.
->   **Restaurar crea una versión nueva; no se borra ninguna.**
->   La imagen no viaja con las versiones: tiene su propio
->   historial.
+>      El selector "Versión N" lista todas, con su origen
+>      ("Original · del chat", "Editada por ti", "Restaurada de la
+>      Versión 1"). Se puede ver una en la vista previa,
+>      compararla palabra por palabra con la actual o restaurarla.
+>      **Restaurar crea una versión nueva; no se borra ninguna.**
+>      La imagen no viaja con las versiones: tiene su propio
+>      historial.
 > - **Regenerar** una respuesta cuyos borradores tienen
 >   ediciones pide confirmación. Si alguno ya está programado o
 >   publicado, no se deja regenerar.
