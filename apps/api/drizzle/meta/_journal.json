@@ -288,6 +288,13 @@
       "when": 1790716866933,
       "tag": "0040_versiones_de_contenido",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790727434168,
+      "tag": "0041_cambio_por_ia",
+      "breakpoints": true
     }
   ]
 }

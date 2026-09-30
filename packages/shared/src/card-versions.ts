@@ -72,3 +72,31 @@ export interface CardContentChangeDto {
   card: PublicationCardDto;
   version: CardVersionDto;
 }
+
+// ── F10.5 PR4: pedirle un cambio a la IA sobre la card ─────────────────
+
+/** "Hazlo más corto": la instrucción que se le da a la IA sobre esta card. */
+export const rewriteCardBodySchema = z.object({
+  instruction: z.string().trim().min(2).max(500),
+});
+export type RewriteCardBody = z.infer<typeof rewriteCardBodySchema>;
+
+/**
+ * Los atajos del campo "Pide un cambio a este borrador" (rd-panel.jsx →
+ * AskBar). La etiqueta es lo que se ve; la instrucción, lo que se le pide.
+ */
+export const CARD_REWRITE_SUGGESTIONS = [
+  { label: "Más corto", instruction: "Hazlo más corto, sin perder la idea principal." },
+  { label: "Más formal", instruction: "Hazlo más formal, sin perder la cercanía." },
+  { label: "Otro CTA", instruction: "Cambia el llamado a la acción del final por otro." },
+  { label: "Más emojis", instruction: "Agrega algunos emojis donde sumen, sin exagerar." },
+  { label: "Sin emojis", instruction: "Quita todos los emojis." },
+] as const;
+
+/**
+ * "Recortar con IA" del aviso de texto excedido: la instrucción con el
+ * límite de la red dentro, para que el modelo sepa a cuánto llegar.
+ */
+export function trimToLimitInstruction(limit: number): string {
+  return `Recórtalo para que el texto completo, con hashtags, quepa en ${String(limit)} caracteres, sin perder la idea principal.`;
+}

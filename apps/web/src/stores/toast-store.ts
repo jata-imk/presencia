@@ -14,6 +14,11 @@ export interface ToastOptions {
   /** Si viene, se pinta un botón "Deshacer" que lo llama y cierra el toast. */
   onUndo?: () => void;
   durationMs?: number;
+  /**
+   * F10.5: un aviso de que algo SALIÓ bien ("Ajustada por IA") lleva
+   * palomita. Sin esto, el ícono de siempre (el del toast de cancelar).
+   */
+  tone?: "success";
 }
 
 export interface ToastItem extends ToastOptions {

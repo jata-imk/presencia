@@ -919,8 +919,19 @@ click en "⛶ Pantalla completa" en una card.
 > - **Editar** lleva la imagen (todo lo de F10: generar,
 >   ajustar, versiones de imagen, subir), el texto con el
 >   contador de la red y los hashtags. Todo se guarda solo
->   ("Guardando… / Guardado · v4"). "Pedir un cambio a la IA"
->   llega en el PR4.
+>   ("Guardando… / Guardado · v4").
+> - **"Pide un cambio a este borrador"** (PR4): un campo fijo al
+>   pie del panel, con atajos (Más corto, Más formal, Otro CTA,
+>   Más emojis, Sin emojis). La IA reescribe ESTA card con la
+>   Voz de marca y **la conversación donde nació** (resumida) y
+>   deja el resultado como versión nueva. El panel muestra el
+>   diff contra la anterior, y el toast ofrece "Deshacer" (que
+>   restaura; no borra nada). Mientras reescribe, Editar se
+>   apaga y se puede seguir en el chat; "Detener" no cobra. Se
+>   cobra por tokens, sin % en el botón, como un turno de chat.
+>   El aviso de texto excedido ofrece "Recortar con IA". La
+>   primera vez que se abre el panel, un tip presenta los dos
+>   caminos (editar a mano o pedírselo a la IA).
 > - **Versiones del texto** (PR3). Los tres flujos de cambio:
 >   1. Pedir otra en el chat sigue creando una **card nueva**
 >      (abajo, "Jose itera con la IA").
@@ -929,7 +940,8 @@ click en "⛶ Pantalla completa" en una card.
 >      sesión, y 10 minutos sin guardar la cierran. No es una
 >      versión por tecla.
 >   3. Pedirle un cambio a la IA sobre la card crea una
->      versión (PR4).
+>      versión ("Ajustada por IA: Más corto").
+>
 >      El selector "Versión N" lista todas, con su origen
 >      ("Original · del chat", "Editada por ti", "Restaurada de la
 >      Versión 1"). Se puede ver una en la vista previa,
