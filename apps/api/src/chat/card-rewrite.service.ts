@@ -16,6 +16,7 @@ import {
   NETWORK_LABELS,
   NETWORK_TEXT_LIMITS,
   cardContentSchema,
+  mediaOf,
   summarizeCardContent,
   type CardContent,
   type CardContentChangeDto,
@@ -223,7 +224,7 @@ export class CardRewriteService {
         ...result.object,
         hashtags: result.object.hashtags.map((t) => t.replace(/^#+/, "").trim()).filter(Boolean),
         archetype: latest.archetype,
-        assetIds: latest.assetIds,
+        ...mediaOf(latest),
       });
       const change = await this.content.write(tx, userId, locked, next, {
         source: "ai",

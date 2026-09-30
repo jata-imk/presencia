@@ -8,7 +8,12 @@ import type { Request } from "express";
 import { eq, inArray } from "drizzle-orm";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { CardContent } from "@presencia/shared";
+import {
+  FIRST_SLIDE_ID,
+  type CardContent,
+  type CardImageJob,
+  type SocialNetwork,
+} from "@presencia/shared";
 import { assets, chats, publicationCards, users } from "../db/schema.js";
 import { solidPng } from "../images/fake-image.provider.js";
 import { LocalAssetStorage } from "../assets/asset-storage.js";
@@ -46,6 +51,7 @@ const VIDEO: CardContent = {
 async function createCard(
   content: CardContent,
   status: "draft" | "scheduled" = "draft",
+  network?: SocialNetwork,
 ): Promise<string> {
   return dbService.runWithTenant(userA, async (tx) => {
     const [row] = await tx
@@ -53,7 +59,7 @@ async function createCard(
       .values({
         userId: userA,
         chatId: chatA,
-        network: content.archetype === "text_first" ? "linkedin" : "instagram",
+        network: network ?? (content.archetype === "text_first" ? "linkedin" : "instagram"),
         archetype: content.archetype,
         content,
         status,
@@ -280,6 +286,163 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     await expect(media.selectImage(userA, cardA, other.content.assetIds[0]!)).rejects.toThrow(
       /no es de esta publicación/,
     );
+  });
+
+  // ── F10.6: slides del carrusel ──
+
+  /** Los slides de la card tal como quedaron en la DB. */
+  async function slidesOfCard(cardId: string) {
+    const content = await dbService.runWithTenant(userA, async (tx) => {
+      const [row] = await tx.select().from(publicationCards).where(eq(publicationCards.id, cardId));
+      return row!.content as CardContent;
+    });
+    return {
+      assetIds: content.assetIds,
+      slides: content.archetype === "video_script" ? undefined : content.slides,
+      imagePrompt: "imagePrompt" in content ? content.imagePrompt : undefined,
+    };
+  }
+
+  it("agregar un slide vuelve carrusel la imagen suelta, con lo que tenía de portada", async () => {
+    const cardId = await createCard({ ...VISUAL, imagePrompt: "Tacos en la mesa" });
+    const cover = (await media.attachUpload(userA, cardId, PNG)).content.assetIds[0]!;
+
+    const dto = await media.addSlide(userA, cardId, { imagePrompt: "El trompo" });
+    const slides = dto.content.archetype === "visual_first" ? dto.content.slides : undefined;
+    expect(slides).toHaveLength(2);
+    expect(slides![0]).toEqual({
+      id: FIRST_SLIDE_ID,
+      imagePrompt: "Tacos en la mesa",
+      assetId: cover,
+    });
+    expect(slides![1]).toMatchObject({ imagePrompt: "El trompo" });
+    expect(slides![1]!.assetId).toBeUndefined();
+    // Un slide sin imagen no cuenta: assetIds sigue siendo solo la portada.
+    expect(dto.content.assetIds).toEqual([cover]);
+  });
+
+  it("subir y elegir a un slide lo pone en ESE slide y rederiva assetIds en orden", async () => {
+    const cardId = await createCard(VISUAL);
+    await media.addSlide(userA, cardId, {});
+    const second = (await media.addSlide(userA, cardId, {})).content;
+    const slides = second.archetype === "visual_first" ? second.slides! : [];
+    const [, s2, s3] = slides;
+
+    const up3 = await media.attachUpload(userA, cardId, PNG, undefined, s3!.id);
+    const a3 = up3.content.assetIds[0]!;
+    const up2 = await media.attachUpload(
+      userA,
+      cardId,
+      solidPng(10, 10, [9, 9, 9]),
+      undefined,
+      s2!.id,
+    );
+    const a2 = up2.content.assetIds.find((id) => id !== a3)!;
+    expect(up2.content.assetIds).toEqual([a2, a3]);
+
+    // Elegir la imagen del slide 3 para el slide 2: cada slide tiene la suya.
+    const moved = await media.selectImage(userA, cardId, a3, s2!.id);
+    expect(moved.content.assetIds).toEqual([a3, a3]);
+    const after = await slidesOfCard(cardId);
+    expect(after.slides![0]!.assetId).toBeUndefined();
+  });
+
+  it("reordenar cambia la portada y el orden de assetIds; un orden incompleto es 409", async () => {
+    const cardId = await createCard(VISUAL);
+    await media.addSlide(userA, cardId, {});
+    const dto = await media.addSlide(userA, cardId, {});
+    const slides = dto.content.archetype === "visual_first" ? dto.content.slides! : [];
+    const [s1, s2, s3] = slides.map((s) => s.id) as [string, string, string];
+    const a1 = (await media.attachUpload(userA, cardId, PNG, undefined, s1)).content.assetIds[0]!;
+    const a3 = (await media.attachUpload(userA, cardId, PNG, undefined, s3)).content.assetIds.at(
+      -1,
+    )!;
+
+    const reordered = await media.reorderSlides(userA, cardId, [s3, s1, s2]);
+    expect(reordered.content.assetIds).toEqual([a3, a1]);
+
+    await expect(media.reorderSlides(userA, cardId, [s1, s2])).rejects.toThrow(/cambió/);
+    await expect(media.reorderSlides(userA, cardId, [s1, s1, s2])).rejects.toThrow(/cambió/);
+  });
+
+  it("respeta el tope de imágenes de la red", async () => {
+    const cardId = await createCard(TEXT, "draft", "x");
+    for (let i = 0; i < 3; i++) await media.addSlide(userA, cardId, {});
+    await expect(media.addSlide(userA, cardId, {})).rejects.toThrow(/hasta 4 imágenes/);
+  });
+
+  it("cambia el prompt de un slide", async () => {
+    const cardId = await createCard(VISUAL);
+    const dto = await media.addSlide(userA, cardId, {});
+    const id = dto.content.archetype === "visual_first" ? dto.content.slides![1]!.id : "";
+    await media.updateSlide(userA, cardId, id, "Nuevo prompt");
+    expect((await slidesOfCard(cardId)).slides![1]!.imagePrompt).toBe("Nuevo prompt");
+    await expect(media.updateSlide(userA, cardId, randomUUID(), "x")).rejects.toThrow(/ya no está/);
+  });
+
+  it("quitar hasta dejar uno regresa a imagen suelta, con el prompt y la imagen del que quedó", async () => {
+    const cardId = await createCard({ ...VISUAL, imagePrompt: "Portada" });
+    const dto = await media.addSlide(userA, cardId, { imagePrompt: "Segundo" });
+    const second = dto.content.archetype === "visual_first" ? dto.content.slides![1]! : null;
+    const a2 = (await media.attachUpload(userA, cardId, PNG, undefined, second!.id)).content
+      .assetIds[0]!;
+
+    await media.deleteSlide(userA, cardId, FIRST_SLIDE_ID);
+    const after = await slidesOfCard(cardId);
+    expect(after.slides).toBeUndefined();
+    expect(after.imagePrompt).toBe("Segundo");
+    expect(after.assetIds).toEqual([a2]);
+    // Una imagen suelta no es carrusel: no hay slide que quitar.
+    await expect(media.deleteSlide(userA, cardId, FIRST_SLIDE_ID)).rejects.toThrow(
+      /no es un carrusel/,
+    );
+  });
+
+  it("no deja quitar un slide que se está generando", async () => {
+    const cardId = await createCard(VISUAL);
+    const dto = await media.addSlide(userA, cardId, {});
+    const id = dto.content.archetype === "visual_first" ? dto.content.slides![1]!.id : "";
+    const job: CardImageJob = {
+      id: randomUUID(),
+      status: "generating",
+      provider: "primary",
+      kind: "generate",
+      aspectRatio: "4:5",
+      slideIds: [id],
+      assetIds: [],
+      startedAt: new Date().toISOString(),
+    };
+    await dbService.runWithTenant(userA, (tx) =>
+      tx.update(publicationCards).set({ imageJob: job }).where(eq(publicationCards.id, cardId)),
+    );
+    await expect(media.deleteSlide(userA, cardId, id)).rejects.toThrow(/generándose/);
+    // Tampoco otro: quitar la portada devolvería la card a imagen suelta y el
+    // slide que genera perdería su lugar.
+    await expect(media.deleteSlide(userA, cardId, FIRST_SLIDE_ID)).rejects.toThrow(/generándose/);
+    // Agregar sí: no cambia el id de ningún slide.
+    await expect(media.addSlide(userA, cardId, {})).resolves.toBeDefined();
+  });
+
+  it("subir o elegir a un slide que no existe es 404, no un 200 vacío", async () => {
+    const cardId = await createCard(VISUAL);
+    await expect(media.attachUpload(userA, cardId, PNG, undefined, randomUUID())).rejects.toThrow(
+      /ya no está/,
+    );
+    const up = await media.attachUpload(userA, cardId, PNG);
+    await expect(
+      media.selectImage(userA, cardId, up.content.assetIds[0]!, randomUUID()),
+    ).rejects.toThrow(/ya no está/);
+    // La imagen suelta sí tiene su slide implícito.
+    await expect(
+      media.selectImage(userA, cardId, up.content.assetIds[0]!, FIRST_SLIDE_ID),
+    ).resolves.toBeDefined();
+  });
+
+  it("los slides de otro usuario no existen para él, y una card programada no cambia", async () => {
+    const cardId = await createCard(VISUAL);
+    await expect(media.addSlide(userB, cardId, {})).rejects.toThrow(/No encontramos/);
+    const scheduled = await createCard(VISUAL, "scheduled");
+    await expect(media.addSlide(userA, scheduled, {})).rejects.toThrow(/programada/);
   });
 });
 

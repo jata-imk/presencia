@@ -32,6 +32,21 @@ export type SocialNetwork = z.infer<typeof socialNetworkSchema>;
 // Contenido por arquetipo. Versión mínima de F0; los campos finos se
 // afinan en F3 cuando las tools de crear borrador cobran vida.
 
+/**
+ * F10.6: un slide del carrusel (ver carousel.ts). `imagePrompt` es el de SU
+ * imagen; `assetId`, la imagen si ya tiene. El id es estable: los trabajos de
+ * imagen y el reordenar lo usan para saber de qué slide hablan.
+ */
+export const carouselSlideSchema = z.object({
+  id: z.uuid(),
+  imagePrompt: z.string().max(2000).optional(),
+  assetId: z.uuid().optional(),
+});
+export type CarouselSlide = z.infer<typeof carouselSlideSchema>;
+
+/** Hasta 10: el tope más alto de las redes (NETWORK_MAX_IMAGES). */
+const slidesSchema = z.array(carouselSlideSchema).min(2).max(10).optional();
+
 export const visualFirstContentSchema = z.object({
   archetype: z.literal("visual_first"),
   caption: z.string(),
@@ -55,6 +70,7 @@ export const visualFirstContentSchema = z.object({
         "deja el resto en el caption.",
     ),
   assetIds: z.array(z.uuid()).default([]),
+  slides: slidesSchema,
 });
 
 export const videoScriptContentSchema = z.object({
@@ -92,6 +108,7 @@ export const textFirstContentSchema = z.object({
         "Omítelo en la mayoría de los posts de texto.",
     ),
   assetIds: z.array(z.uuid()).default([]),
+  slides: slidesSchema,
 });
 
 export const cardContentSchema = z.discriminatedUnion("archetype", [
@@ -101,8 +118,10 @@ export const cardContentSchema = z.discriminatedUnion("archetype", [
 ]);
 export type CardContent = z.infer<typeof cardContentSchema>;
 
+// `slides` fuera de las tools hasta que el chat proponga carruseles (F10.6
+// PR5): con el campo a la vista el modelo lo llenaría antes de tiempo.
 const visualFirstToolInputSchema = visualFirstContentSchema
-  .omit({ archetype: true, assetIds: true })
+  .omit({ archetype: true, assetIds: true, slides: true })
   .extend({ network: z.enum(NETWORKS_BY_ARCHETYPE.visual_first) });
 type VisualFirstToolInput = z.infer<typeof visualFirstToolInputSchema>;
 
@@ -112,7 +131,7 @@ const videoScriptToolInputSchema = videoScriptContentSchema
 type VideoScriptToolInput = z.infer<typeof videoScriptToolInputSchema>;
 
 const textFirstToolInputSchema = textFirstContentSchema
-  .omit({ archetype: true, assetIds: true })
+  .omit({ archetype: true, assetIds: true, slides: true })
   .extend({ network: z.enum(NETWORKS_BY_ARCHETYPE.text_first) });
 type TextFirstToolInput = z.infer<typeof textFirstToolInputSchema>;
 

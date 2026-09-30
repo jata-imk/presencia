@@ -46,12 +46,13 @@ export const cardVersionParamSchema = z.object({
 export type CardVersionSource = "chat" | "manual" | "ai" | "restore";
 
 /**
- * Una versión del texto: la card sin `assetIds`. Distributivo a propósito:
+ * Una versión del texto: la card sin `assetIds` ni `slides` (F10.6: los
+ * slides son imágenes y su orden, no texto; restaurar no los toca). Distributivo a propósito:
  * `Omit` sobre la unión perdería los campos propios de cada arquetipo.
  */
 export type CardVersionContent = CardContent extends infer C
   ? C extends CardContent
-    ? Omit<C, "assetIds">
+    ? Omit<C, "assetIds" | "slides">
     : never
   : never;
 

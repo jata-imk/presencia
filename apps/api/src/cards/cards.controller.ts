@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Param,
@@ -12,16 +13,20 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 import {
+  addSlideBodySchema,
   ASSET_UPLOAD_MAX_BYTES,
   cardIdParamSchema,
   cardVersionParamSchema,
   chatIdParamSchema,
   conflictsQuerySchema,
   listCardsQuerySchema,
+  reorderSlidesBodySchema,
   scheduleCardBodySchema,
   scheduleGroupBodySchema,
   selectCardImageBodySchema,
+  slideParamSchema,
   updateCardContentBodySchema,
+  updateSlideBodySchema,
   type CardContentChangeDto,
   type CardImageVersionDto,
   type CardVersionDto,
@@ -134,12 +139,15 @@ export class CardsController {
   async uploadImage(
     @CurrentUser() user: SessionUser,
     @Param("id") id: string,
+    @Query("slideId") slideId: string | undefined,
     @Req() req: Request,
   ): Promise<PublicationCardDto> {
     const cardId = this.parseCardId(id);
+    // F10.6: `?slideId=` sube a ese slide del carrusel.
+    const slide = slideId === undefined ? undefined : this.parseSlideId(id, slideId);
     const data = await readRawBody(req, ASSET_UPLOAD_MAX_BYTES);
     if (data.byteLength === 0) throw new BadRequestException("No llegó ningún archivo.");
-    return this.media.attachUpload(user.id, cardId, data, fileNameFrom(req));
+    return this.media.attachUpload(user.id, cardId, data, fileNameFrom(req), slide);
   }
 
   /** El historial de imágenes de la card (F10): generadas, editadas y subidas. */
@@ -161,7 +169,56 @@ export class CardsController {
     const cardId = this.parseCardId(id);
     const parsed = selectCardImageBodySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("El id de la imagen no es válido.");
-    return this.media.selectImage(user.id, cardId, parsed.data.assetId);
+    return this.media.selectImage(user.id, cardId, parsed.data.assetId, parsed.data.slideId);
+  }
+
+  // ── F10.6: slides del carrusel ─────────────────────────────────────
+
+  @Post("cards/:id/slides")
+  addSlide(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<PublicationCardDto> {
+    const cardId = this.parseCardId(id);
+    const parsed = addSlideBodySchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException("El slide no es válido.");
+    return this.media.addSlide(user.id, cardId, parsed.data);
+  }
+
+  /** El orden nuevo del carrusel. Antes que `:slideId` para que "order" no se lea como id. */
+  @Patch("cards/:id/slides/order")
+  reorderSlides(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<PublicationCardDto> {
+    const cardId = this.parseCardId(id);
+    const parsed = reorderSlidesBodySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("El orden no es válido.");
+    return this.media.reorderSlides(user.id, cardId, parsed.data.slideIds);
+  }
+
+  @Patch("cards/:id/slides/:slideId")
+  updateSlide(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Param("slideId") slideId: string,
+    @Body() body: unknown,
+  ): Promise<PublicationCardDto> {
+    const slide = this.parseSlideId(id, slideId);
+    const parsed = updateSlideBodySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("El prompt del slide no es válido.");
+    return this.media.updateSlide(user.id, id, slide, parsed.data.imagePrompt);
+  }
+
+  @Delete("cards/:id/slides/:slideId")
+  deleteSlide(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Param("slideId") slideId: string,
+  ): Promise<PublicationCardDto> {
+    return this.media.deleteSlide(user.id, id, this.parseSlideId(id, slideId));
   }
 
   /**
@@ -206,6 +263,13 @@ export class CardsController {
     const parsed = cardIdParamSchema.safeParse({ id });
     if (!parsed.success) throw new BadRequestException("El id de la publicación no es válido.");
     return parsed.data.id;
+  }
+
+  /** Valida el id de la card y el del slide juntos; devuelve el del slide. */
+  private parseSlideId(id: string, slideId: string): string {
+    const parsed = slideParamSchema.safeParse({ id, slideId });
+    if (!parsed.success) throw new BadRequestException("El id del slide no es válido.");
+    return parsed.data.slideId;
   }
 }
 

@@ -380,7 +380,12 @@ export class CardsRepository {
     tx: Tx,
     id: string,
     job: CardImageJob,
-    selectAssetId?: string,
+    /**
+     * Qué hacer con el contenido si la card sigue editable: poner las imágenes
+     * que salieron en su lugar (F10.6: cada una en su slide). Se aplica sobre
+     * la fila bloqueada, no sobre una copia leída antes.
+     */
+    place?: (content: CardContent) => CardContent,
   ): Promise<CardRow | undefined> {
     const [current] = await tx
       .select()
@@ -393,9 +398,7 @@ export class CardsRepository {
       .update(publicationCards)
       .set({
         imageJob: job,
-        ...(selectAssetId && editable
-          ? { content: { ...(current.content as CardContent), assetIds: [selectAssetId] } }
-          : {}),
+        ...(place && editable ? { content: place(current.content as CardContent) } : {}),
         updatedAt: WRITTEN_AT,
       })
       .where(eq(publicationCards.id, id))
