@@ -46,7 +46,12 @@ function diaDe(fecha: Date): string {
 
 async function main() {
   const dias = diasArg();
-  const desde = new Date(Date.now() - dias * 86_400_000);
+  // Desde la medianoche de Mérida de hace `dias - 1` días: la tabla agrupa por
+  // día calendario, y una ventana de "N×24 h desde ahora" dejaría el primer
+  // día a medias sin decirlo. Mérida está fija en UTC-6 (sin horario de
+  // verano desde 2022).
+  const hoy = diaDe(new Date());
+  const desde = new Date(Date.parse(`${hoy}T00:00:00-06:00`) - (dias - 1) * 86_400_000);
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("Falta DATABASE_URL en el .env");
 
