@@ -60,8 +60,19 @@ interface PanelState {
   /** Fracción del área del chat. */
   width: number;
   dismissedChats: Set<string>;
+  /**
+   * El chat al que se va a llegar con el panel ya abierto (el "Abrir en el
+   * chat" del Calendario). Mientras esté puesto, desmontar el panel de ese
+   * chat no lo reinicia: en dev, StrictMode desmonta y vuelve a montar al
+   * llegar, y ese reset borraba lo que se preparó. El panel lo consume
+   * después de montarse.
+   */
+  handoffChatId: string | null;
 
   open: (chatId: string, cardIds: string[], activeId?: string) => void;
+  /** Abre el panel de un chat al que se está por navegar (ver handoffChatId). */
+  openForHandoff: (chatId: string, cardIds: string[], activeId?: string) => void;
+  clearHandoff: () => void;
   /**
    * Suma pestañas sin cambiar la activa. La autoapertura la usa mientras los
    * borradores de un turno siguen naciendo.
@@ -84,6 +95,13 @@ export const usePublicationPanelStore = create<PanelState>()(
       ...closed,
       width: readWidth(),
       dismissedChats: readDismissed(),
+      handoffChatId: null,
+
+      openForHandoff: (chatId, cardIds, activeId) => {
+        get().open(chatId, cardIds, activeId);
+        set({ handoffChatId: chatId }, false, "panel/openForHandoff");
+      },
+      clearHandoff: () => set({ handoffChatId: null }, false, "panel/clearHandoff"),
 
       open: (chatId, cardIds, activeId) => {
         if (cardIds.length === 0) return;

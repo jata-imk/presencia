@@ -583,7 +583,7 @@ export function CalendarioPage() {
         if (!card.chatId) return;
         // F10.5: se llega al chat con esa card ya abierta en el panel, que es
         // donde se edita; sin esto había que buscarla en la conversación.
-        usePublicationPanelStore.getState().open(card.chatId, [card.id], card.id);
+        usePublicationPanelStore.getState().openForHandoff(card.chatId, [card.id], card.id);
         void navigate(`/chats/${card.chatId}`);
       },
       onReschedule: (target) => {
