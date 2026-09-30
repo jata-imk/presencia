@@ -375,6 +375,32 @@ describe("UploadPostProvider", () => {
       });
     });
 
+    it("F10.6: un carrusel manda todas las fotos en photos[], en orden", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(202, { success: true, job_id: "job_carrusel" }));
+      const provider = makeProvider();
+      const media = await provider.prepareMedia([
+        { data: new Uint8Array([1]), mimeType: "image/png", filename: "portada.png" },
+        { data: new Uint8Array([2, 2]), mimeType: "image/webp", filename: "dos.webp" },
+        { data: new Uint8Array([3, 3, 3]), mimeType: "image/jpeg", filename: "tres.jpg" },
+      ]);
+
+      await provider.schedule({
+        network: "instagram",
+        content: TEXT_CONTENT,
+        scheduledAt: new Date("2026-09-10T18:00:00.000Z"),
+        accountProviderRef: `${PROFILE}:instagram`,
+        media,
+      });
+
+      const form = (fetchMock.mock.calls[0] as [string, RequestInit])[1].body as FormData;
+      const photos = form.getAll("photos[]") as File[];
+      expect(photos.map((p) => [p.name, p.size])).toEqual([
+        ["portada.png", 1],
+        ["dos.webp", 2],
+        ["tres.jpg", 3],
+      ]);
+    });
+
     it("con imagen va por /upload_photos con los bytes en photos[]", async () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(202, { success: true, job_id: "job_foto" }));
       const provider = makeProvider();

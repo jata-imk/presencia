@@ -10,6 +10,8 @@ import {
 } from "@nestjs/common";
 import {
   IMAGE_JOB_STALE_MS,
+  NETWORK_LABELS,
+  NETWORK_MAX_IMAGES,
   type CardContent,
   type CardImageJob,
   type PublicationCardDto,
@@ -204,11 +206,12 @@ export class CardsService {
           throw new BadRequestException("Esa cuenta no corresponde a la red de esta publicación.");
         }
         assertHasMedia(existing);
-        // Lo que se preparó tiene que ser la imagen que la card tiene AHORA:
-        // entre preparar y llegar acá, otra pestaña pudo elegir otra.
-        if (imageAssetOf(existing) !== prepared.assetId) {
+        // Lo que se preparó tienen que ser las imágenes que la card tiene
+        // AHORA, en el mismo orden: entre preparar y llegar acá, otra pestaña
+        // pudo elegir otra, o reordenar el carrusel.
+        if (!sameList(imageAssetsOf(existing), prepared.assetIds)) {
           throw new ConflictException(
-            "La imagen de la publicación cambió mientras la programabas. Vuelve a intentar.",
+            "Las imágenes de la publicación cambiaron mientras la programabas. Vuelve a intentar.",
           );
         }
 
@@ -325,31 +328,46 @@ export class CardsService {
   private async prepareMedia(
     userId: string,
     cardId: string,
-  ): Promise<{ assetId: string | null; media: PreparedMedia | null }> {
+  ): Promise<{ assetIds: string[]; media: PreparedMedia | null }> {
     const row = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, cardId));
-    const assetId = row ? imageAssetOf(row) : null;
-    if (!assetId) return { assetId: null, media: null };
+    // Antes de subir nada: un carrusel a medias no se programa, y sus
+    // imágenes no tienen por qué viajar al proveedor. Solo si la card se
+    // puede programar: si no, el error que corresponde es el de su estado
+    // (409, dentro de la transacción), no "faltan imágenes".
+    if (row && SCHEDULABLE_STATUSES.has(row.status)) assertCarouselComplete(row);
+    const assetIds = row ? imageAssetsOf(row) : [];
+    if (assetIds.length === 0) return { assetIds, media: null };
 
-    const asset = await this.dbService.runWithTenant(userId, (tx) => this.assets.find(tx, assetId));
-    if (!asset) throw new BadRequestException(MISSING_IMAGE_MESSAGE);
-    let data: Uint8Array;
+    // F10.6: todas las del carrusel, en orden (la primera es la portada).
+    const items = await Promise.all(
+      assetIds.map(async (assetId) => {
+        const asset = await this.dbService.runWithTenant(userId, (tx) =>
+          this.assets.find(tx, assetId),
+        );
+        if (!asset) throw new BadRequestException(MISSING_IMAGE_MESSAGE);
+        let data: Uint8Array;
+        try {
+          data = await this.assets.readBytes(asset);
+        } catch (error) {
+          // La fila existe pero el archivo no (se borró del bucket, una
+          // subida que no llegó): para el usuario es lo mismo que si no
+          // existiera. Un storage caído es otra cosa, y se dice como tal.
+          if (isMissingObject(error)) throw new BadRequestException(MISSING_IMAGE_MESSAGE);
+          console.error(`[cards] no se pudo leer la imagen ${asset.id} de ${cardId}:`, error);
+          throw new ServiceUnavailableException(
+            "No pudimos leer la imagen de tu Biblioteca. Inténtalo en un momento.",
+          );
+        }
+        return {
+          data,
+          mimeType: asset.mimeType,
+          filename: asset.storageKey.split("/").pop() ?? asset.id,
+        };
+      }),
+    );
     try {
-      data = await this.assets.readBytes(asset);
-    } catch (error) {
-      // La fila existe pero el archivo no (se borró del bucket, una subida
-      // que no llegó): para el usuario es lo mismo que si no existiera. Un
-      // storage caído es otra cosa, y se dice como tal.
-      if (isMissingObject(error)) throw new BadRequestException(MISSING_IMAGE_MESSAGE);
-      console.error(`[cards] no se pudo leer la imagen ${asset.id} de ${cardId}:`, error);
-      throw new ServiceUnavailableException(
-        "No pudimos leer la imagen de tu Biblioteca. Inténtalo en un momento.",
-      );
-    }
-    try {
-      const media = await this.provider.prepareMedia([
-        { data, mimeType: asset.mimeType, filename: asset.storageKey.split("/").pop() ?? asset.id },
-      ]);
-      return { assetId, media };
+      const media = await this.provider.prepareMedia(items);
+      return { assetIds, media };
     } catch (error) {
       console.error(`[cards] prepareMedia() falló para ${cardId}:`, error);
       throw toProviderHttpException(error);
@@ -824,15 +842,54 @@ function isMissingObject(error: unknown): boolean {
   return name === "NoSuchKey" || code === "ENOENT";
 }
 
-/** La imagen elegida de una card que lleva imagen, o null. */
-function imageAssetOf(card: CardRow): string | null {
+/**
+ * Las imágenes que se publican, en orden: la elegida, o las del carrusel
+ * (F10.6, `assetIds` ya viene derivado de los slides). Vacío si no lleva.
+ */
+function imageAssetsOf(card: CardRow): string[] {
   const content = card.content as CardContent;
-  if (content.archetype !== "visual_first" && content.archetype !== "text_first") return null;
-  return content.assetIds[0] ?? null;
+  if (content.archetype !== "visual_first" && content.archetype !== "text_first") return [];
+  return content.assetIds;
+}
+
+function sameList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+/** "3", "3 y 5", "2, 4 y 6". */
+function enumerate(numbers: number[]): string {
+  const list = numbers.map(String);
+  return list.length <= 1 ? (list[0] ?? "") : `${list.slice(0, -1).join(", ")} y ${list.at(-1)!}`;
+}
+
+/**
+ * F10.6: un carrusel se publica completo o no se publica. Un slide sin
+ * imagen publicaría un carrusel distinto del que el creator armó (con uno
+ * menos, y el orden corrido), así que se dice cuáles faltan. Tampoco pasa
+ * de lo que acepta la red (la API ya no deja agregar de más; esto cubre una
+ * card que cambió de red o un tope que bajó).
+ */
+function assertCarouselComplete(card: CardRow): void {
+  const content = card.content as CardContent;
+  if (content.archetype === "video_script" || !content.slides) return;
+  const missing = content.slides.flatMap((s, i) => (s.assetId ? [] : [i + 1]));
+  if (missing.length > 0) {
+    throw new BadRequestException(
+      `Faltan imágenes en ${missing.length === 1 ? "el slide" : "los slides"} ${enumerate(missing)}. ` +
+        "Genéralas o súbelas antes de programar, o quita esos slides.",
+    );
+  }
+  const max = NETWORK_MAX_IMAGES[card.network];
+  if (content.assetIds.length > max) {
+    throw new BadRequestException(
+      `${NETWORK_LABELS[card.network]} acepta hasta ${String(max)} imágenes por publicación. Quita ${String(content.assetIds.length - max)} del carrusel.`,
+    );
+  }
 }
 
 /** instagram/tiktok/youtube no aceptan un post sin media (límite real de la plataforma, no nuestro). */
 function assertHasMedia(card: CardRow): void {
+  assertCarouselComplete(card);
   if (!NETWORKS_REQUIRING_MEDIA.has(card.network)) return;
   const content = card.content as CardContent;
   const hasAsset = "assetIds" in content && content.assetIds.length > 0;
