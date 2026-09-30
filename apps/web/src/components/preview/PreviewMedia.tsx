@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useState } from "react";
 import {
   assetContentUrl,
@@ -71,27 +71,42 @@ export function PreviewMedia({
   aspect?: ImageAspectRatio;
   className?: string;
 }) {
-  // Una sola (o ninguna todavía, generando): la de siempre.
+  // Una sola (o ninguna todavía): la de siempre, con su hueco de
+  // "generando" encima mientras se regenera.
   if (items.length <= 1) {
     return (
       <PreviewImage
         assetId={items[0]?.assetId}
-        job={items.length === 0 ? job : null}
+        job={job}
         alt={items[0]?.alt ?? "Imagen de la publicación"}
         className={className}
       />
     );
   }
-  switch (layout) {
-    case "carousel":
-      return <Carousel items={items} aspect={aspect} className={className} />;
-    case "mosaic":
-      return <Mosaic items={items.slice(0, 4)} className={className} />;
-    case "strip":
-      return <Strip items={items} className={className} />;
-    default:
-      return <Grid items={items} className={className} />;
-  }
+  const layoutEl =
+    layout === "carousel" ? (
+      <Carousel items={items} aspect={aspect} className={className} />
+    ) : layout === "mosaic" ? (
+      <Mosaic items={items.slice(0, 4)} className={className} />
+    ) : layout === "strip" ? (
+      <Strip items={items} className={className} />
+    ) : (
+      <Grid items={items} className={className} />
+    );
+  // Varias: las que ya hay se siguen viendo, y un aviso dice que vienen más.
+  if (job?.status !== "generating") return layoutEl;
+  return (
+    <div>
+      <p
+        role="status"
+        className="flex items-center gap-2 bg-ai-bg px-3 py-2 text-xs font-medium text-fg-secondary"
+      >
+        <Loader2 size={13} className="text-accent motion-safe:animate-spin" aria-hidden />
+        Generando imágenes del carrusel…
+      </p>
+      {layoutEl}
+    </div>
+  );
 }
 
 function Img({ item, className = "" }: { item: PreviewMediaItem; className?: string }) {

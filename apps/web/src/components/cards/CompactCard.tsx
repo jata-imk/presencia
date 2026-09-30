@@ -116,7 +116,11 @@ export function CompactCard({
         <Thumb
           kind={content.archetype}
           assetId={content.assetIds[0]}
-          slides={content.archetype !== "video_script" ? (content.slides?.length ?? 0) : 0}
+          // Imágenes, no slides: un slide sin imagen todavía no se publica, y
+          // la vista previa tampoco lo cuenta.
+          images={
+            content.archetype !== "video_script" && content.slides ? content.assetIds.length : 0
+          }
           generating={imageJob?.status === "generating"}
           size={mobile ? 40 : 44}
         />
@@ -177,14 +181,14 @@ function networkOfInput(input: unknown): SocialNetwork | null {
 function Thumb({
   kind,
   assetId,
-  slides,
+  images,
   generating,
   size,
 }: {
   kind: "visual_first" | "text_first" | "video_script";
   assetId: string | undefined;
-  /** F10.6: cuántos slides tiene si es carrusel (0 si no): la portada dice "1/5". */
-  slides: number;
+  /** F10.6: cuántas imágenes tiene si es carrusel (0 si no): la primera dice "1/5". */
+  images: number;
   generating: boolean;
   size: number;
 }) {
@@ -210,12 +214,12 @@ function Thumb({
           onError={() => setFailed(assetId)}
           className="size-full object-cover"
         />
-        {slides > 1 && (
+        {images > 1 && (
           <span
-            aria-label={`Carrusel de ${String(slides)} imágenes`}
+            aria-label={`Carrusel de ${String(images)} imágenes`}
             className="absolute right-0.5 bottom-0.5 rounded-sm bg-fg/70 px-1 text-[9px] leading-tight font-bold text-fg-inverse"
           >
-            1/{slides}
+            1/{images}
           </span>
         )}
       </span>
