@@ -22,11 +22,11 @@ import {
   type SocialNetwork,
 } from "@presencia/shared";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
+import { mediaAspect, mediaItems, PreviewMedia } from "./PreviewMedia.js";
 import {
   MissingImage,
   PostText,
   PreviewAvatar,
-  PreviewImage,
   Truncated,
   accountName,
   type PreviewAccount,
@@ -65,12 +65,6 @@ export function NetworkPreview(props: NetworkPreviewProps) {
   }
 }
 
-function imageAlt(content: CardContent): string {
-  return "imagePrompt" in content && content.imagePrompt
-    ? content.imagePrompt
-    : "Imagen de la publicación";
-}
-
 const TAG = "text-info";
 const MORE = "text-fg-muted hover:underline";
 
@@ -107,14 +101,19 @@ function Header({
 
 function InstagramPreview({ content, account, imageJob }: NetworkPreviewProps) {
   const text = buildPostText(content);
-  const assetId = content.assetIds[0];
+  const items = mediaItems(content);
   return (
     <Frame>
       <div className="px-3 py-2.5">
         <Header account={account} size={30} ring />
       </div>
-      {assetId || imageJob?.status === "generating" ? (
-        <PreviewImage assetId={assetId} job={imageJob} alt={imageAlt(content)} />
+      {items.length > 0 || imageJob?.status === "generating" ? (
+        <PreviewMedia
+          items={items}
+          job={imageJob}
+          layout="carousel"
+          aspect={mediaAspect(content)}
+        />
       ) : (
         <MissingImage />
       )}
@@ -163,7 +162,7 @@ function FacebookPreview({ content, account, imageJob }: NetworkPreviewProps) {
           render={(t) => <PostText text={t} tagClassName={TAG} />}
         />
       </p>
-      <PreviewImage assetId={content.assetIds[0]} job={imageJob} alt={imageAlt(content)} />
+      <PreviewMedia items={mediaItems(content)} job={imageJob} layout="grid" />
       <ActionRow
         items={[
           [ThumbsUp, "Me gusta"],
@@ -203,7 +202,7 @@ function LinkedInPreview({ content, account, imageJob, device = "mobile" }: Netw
             render={(t) => <PostText text={t} tagClassName={TAG} />}
           />
         </p>
-        <PreviewImage assetId={content.assetIds[0]} job={imageJob} alt={imageAlt(content)} />
+        <PreviewMedia items={mediaItems(content)} job={imageJob} layout="grid" />
         <ActionRow
           items={[
             [ThumbsUp, "Recomendar"],
@@ -237,11 +236,17 @@ function XPreview({ content, account, imageJob }: NetworkPreviewProps) {
               <mark className="rounded-sm bg-error-bg text-error">{text.slice(limit)}</mark>
             )}
           </p>
-          {(content.assetIds[0] || imageJob?.status === "generating") && (
-            <div className="mt-2.5 overflow-hidden rounded-2xl border border-line">
-              <PreviewImage assetId={content.assetIds[0]} job={imageJob} alt={imageAlt(content)} />
-            </div>
-          )}
+          {(content.assetIds[0] || imageJob?.status === "generating") &&
+            (content.assetIds.length > 1 ? (
+              // Varias: el mosaico trae su propio marco.
+              <div className="mt-2.5">
+                <PreviewMedia items={mediaItems(content)} job={imageJob} layout="mosaic" />
+              </div>
+            ) : (
+              <div className="mt-2.5 overflow-hidden rounded-2xl border border-line">
+                <PreviewMedia items={mediaItems(content)} job={imageJob} layout="mosaic" />
+              </div>
+            ))}
           <div className="mt-2.5 flex items-center justify-between text-fg-muted">
             <span className="contents" aria-hidden="true">
               <MessageCircle size={17} />
@@ -303,11 +308,17 @@ function ThreadsPreview({ content, account, imageJob }: NetworkPreviewProps) {
           <p className="mt-0.5 text-[14.5px] leading-[1.45] whitespace-pre-line">
             <PostText text={text} tagClassName={TAG} />
           </p>
-          {hasImage && (
-            <div className="mt-2.5 w-[62%] overflow-hidden rounded-xl">
-              <PreviewImage assetId={content.assetIds[0]} job={imageJob} alt={imageAlt(content)} />
-            </div>
-          )}
+          {hasImage &&
+            (content.assetIds.length > 1 ? (
+              // Varias: la tira ocupa el ancho y se desliza.
+              <div className="mt-2.5">
+                <PreviewMedia items={mediaItems(content)} job={imageJob} layout="strip" />
+              </div>
+            ) : (
+              <div className="mt-2.5 w-[62%] overflow-hidden rounded-xl">
+                <PreviewMedia items={mediaItems(content)} job={imageJob} layout="strip" />
+              </div>
+            ))}
           <div className="mt-2.5 flex gap-4.5" aria-hidden="true">
             <Heart size={19} />
             <MessageCircle size={19} />

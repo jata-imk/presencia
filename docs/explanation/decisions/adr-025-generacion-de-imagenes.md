@@ -117,3 +117,7 @@ El QA de F10 dejó ver que el estilo lo decidía el chat: el `.describe` de `ima
 - **El panel reutiliza las piezas de imagen de siempre.** El slide elegido muestra el composer, las versiones, "Ajustar" y el texto alternativo, con acciones apuntadas a ese slide (`CarouselActions.mediaFor`). El precio que anuncia es el del slide: 4.7% la portada, 2.3% los demás. Mientras otro slide genera, los demás esperan (la card tiene un trabajo a la vez).
 - **Reordenar:** arrastrar con mouse, o las flechas del slide elegido (teclado y touch, donde el drag de HTML5 no existe).
 - **"Generar las que faltan":** los slides con prompt y sin imagen, en un solo trabajo, con el precio sumado a la vista antes del click.
+
+## Addendum (2026-09-30, F10.6 PR4b) — vistas previas con varias imágenes
+
+La vista previa acomoda las imágenes como cada red (`PreviewMedia`): Instagram de una en una, con flechas, puntos y "1/5", en un hueco fijo con la proporción del carrusel y las demás precargadas; Facebook y LinkedIn con una grande y el resto en fila ("+N" en la última visible); X en mosaico de hasta 4 en un marco 16:9; Threads en una tira que se desliza. Fiel en disposición, no en píxeles. La card compacta del chat marca "1/5" en la miniatura de un carrusel.
