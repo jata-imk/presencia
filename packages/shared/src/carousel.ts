@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { IMAGE_ASPECT_OPTIONS, imageAspectRatioSchema, type ImageAspectRatio } from "./images.js";
-import type { CardContent, CarouselSlide, SocialNetwork } from "./publication.js";
+import {
+  CAROUSEL_MAX_BY_NETWORK,
+  type CardContent,
+  type CarouselSlide,
+  type SocialNetwork,
+} from "./publication.js";
 
 // El carrusel (F10.6): varias imágenes en una publicación, en orden, la
 // primera es la portada.
@@ -17,17 +22,10 @@ import type { CardContent, CarouselSlide, SocialNetwork } from "./publication.js
  * Cuántas imágenes acepta cada red en una publicación. De partida, lo que
  * dicen las redes; el PR de publicar (F10.6 PR6) los confirma contra los
  * openapi de PostFast y Upload-Post y los baja si un proveedor no llega.
- * 0 = la red no lleva imagen (video).
+ * 0 = la red no lleva imagen (video). Los valores viven en publication.ts
+ * (CAROUSEL_MAX_BY_NETWORK), donde las tools del chat también los usan.
  */
-export const NETWORK_MAX_IMAGES: Record<SocialNetwork, number> = {
-  instagram: 10,
-  facebook: 10,
-  x: 4,
-  threads: 10,
-  linkedin: 9,
-  tiktok: 0,
-  youtube: 0,
-};
+export const NETWORK_MAX_IMAGES: Record<SocialNetwork, number> = CAROUSEL_MAX_BY_NETWORK;
 
 /** Las imágenes de los slides, en orden y sin los que no tienen. */
 export function assetIdsOfSlides(slides: readonly CarouselSlide[]): string[] {

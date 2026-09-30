@@ -65,7 +65,7 @@ describe("carrusel", () => {
     expect(placeImage(SINGLE, a, randomUUID())).toEqual(SINGLE);
   });
 
-  it("las tools del chat todavía no ven `slides` (el chat propone carruseles en F10.6 PR5)", () => {
+  it("las tools reciben prompts, no `slides`: los ids y las imágenes son de la app", () => {
     for (const tool of CARD_ARCHETYPE_TOOLS) {
       const parsed = tool.inputSchema.safeParse({
         network:
@@ -84,5 +84,43 @@ describe("carrusel", () => {
       expect(parsed.success).toBe(true);
       expect(parsed.data).not.toHaveProperty("slides");
     }
+  });
+
+  const visualTool = CARD_ARCHETYPE_TOOLS.find((t) => t.archetype === "visual_first")!;
+  const textTool = CARD_ARCHETYPE_TOOLS.find((t) => t.archetype === "text_first")!;
+  const build = (tool: typeof visualTool, input: Record<string, unknown>) =>
+    tool.buildContent(tool.inputSchema.parse(input));
+
+  it("el chat propone un carrusel: un slide por prompt, el primero de portada", () => {
+    const content = build(visualTool, {
+      network: "instagram",
+      caption: "c",
+      hashtags: [],
+      carouselImagePrompts: ["portada", "paso 1", "paso 2"],
+    });
+    expect(content).toMatchObject({
+      imagePrompt: "portada",
+      assetIds: [],
+      slides: [{ imagePrompt: "portada" }, { imagePrompt: "paso 1" }, { imagePrompt: "paso 2" }],
+    });
+    expect(content).not.toHaveProperty("carouselImagePrompts");
+  });
+
+  it("respeta el tope de la red y un solo prompt no es carrusel", () => {
+    const x = build(textTool, {
+      network: "x",
+      body: "b",
+      hashtags: [],
+      carouselImagePrompts: ["1", "2", "3", "4", "5", "6"],
+    });
+    expect(x.archetype !== "video_script" && x.slides).toHaveLength(4);
+    const one = build(visualTool, {
+      network: "facebook",
+      caption: "c",
+      hashtags: [],
+      carouselImagePrompts: ["solo una"],
+    });
+    expect(one).not.toHaveProperty("slides");
+    expect(one).toMatchObject({ imagePrompt: "solo una" });
   });
 });
