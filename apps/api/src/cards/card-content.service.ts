@@ -129,6 +129,7 @@ export class CardContentService {
       return {
         card: toDto(card),
         version: latest ? toVersionDto(latest) : originalVersion(card),
+        changed: false,
       };
     }
     // La original se guarda la primera vez que la card cambia: antes de eso
@@ -162,7 +163,7 @@ export class CardContentService {
           restoredFrom: options.restoredFrom ?? null,
           editSessionId: options.editSessionId ?? null,
         });
-    return { card: toDto(updated), version: toVersionDto(version) };
+    return { card: toDto(updated), version: toVersionDto(version), changed: true };
   }
 
   /** La card, bloqueada, si todavía se puede editar. */

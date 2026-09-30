@@ -67,10 +67,17 @@ export interface CardVersionDto {
   updatedAt: string;
 }
 
-/** Lo que devuelven editar y restaurar: la card al día y en qué versión quedó. */
+/** Lo que devuelven editar, restaurar y el cambio por IA: la card al día y en qué versión quedó. */
 export interface CardContentChangeDto {
   card: PublicationCardDto;
   version: CardVersionDto;
+  /**
+   * Si esta escritura cambió el texto. `false` cuando lo que llegó es igual a
+   * lo que ya había (la IA lo dejó igual, un autoguardado sin cambios): en ese
+   * caso `version` es la que ya existía. Si es `true`, la anterior es
+   * `version.n - 1`: los números son consecutivos por card.
+   */
+  changed: boolean;
 }
 
 // ── F10.5 PR4: pedirle un cambio a la IA sobre la card ─────────────────

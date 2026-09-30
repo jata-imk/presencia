@@ -205,6 +205,7 @@ describe("CardRewriteService", () => {
       ).rewrite(userId, cardId, "Hazlo más corto");
 
       expect(result.version).toMatchObject({ n: 2, source: "ai", instruction: "Hazlo más corto" });
+      expect(result.changed).toBe(true);
       expect(result.card.content).toMatchObject({
         caption: "Café rico en casa.",
         hashtags: ["cafe", "prensa"],

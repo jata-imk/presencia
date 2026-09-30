@@ -214,6 +214,9 @@ export class CardRewriteService {
       // La card bloqueada y releída: entre la lectura de arriba y ahora pasó
       // la llamada al modelo, y el usuario pudo editarla o programarla.
       const locked = await this.content.lockEditable(tx, cardId);
+      // "Detener" pudo llegar mientras se esperaba el lock: dentro de la
+      // transacción, lanzar deshace todo (ni versión ni cobro).
+      if (signal?.aborted) throw new ServiceUnavailableException("Se detuvo la reescritura.");
       const latest = locked.content as CardContent;
       const next = cardContentSchema.parse({
         ...latest,
@@ -234,6 +237,9 @@ export class CardRewriteService {
         taskKind: TASK_KIND,
         reason: "card_rewrite",
       });
+      // Y justo antes del COMMIT: lo último que se puede revisar sin que el
+      // navegador ya haya dicho "no se cobró".
+      if (signal?.aborted) throw new ServiceUnavailableException("Se detuvo la reescritura.");
       return change;
     });
   }

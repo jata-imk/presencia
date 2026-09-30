@@ -140,6 +140,10 @@ export function PanelCard({
   // Pedir un cambio a la IA (F10.5 PR4). Mientras reescribe, Editar se
   // apaga: lo que se escribiera a mano en ese rato lo pisaría el resultado.
   const [rewriting, setRewriting] = useState(false);
+  // El candado de verdad: el estado se actualiza hasta el siguiente render, y
+  // entre el click y ahí pasan dos awaits (guardar lo pendiente, esperar un
+  // "Detener" en vuelo). Sin el ref, un segundo atajo se colaba en ese hueco.
+  const rewritingRef = useRef(false);
   const rewriteAbort = useRef<AbortController | null>(null);
   // El DELETE de "Detener" en vuelo: el siguiente pedido lo espera, o podría
   // llegar al servidor antes y chocar con el candado de la detenida.
@@ -147,29 +151,34 @@ export function PanelCard({
   const effectiveMode: PanelMode = editable && !lookingBack && !rewriting ? mode : "preview";
 
   async function askAI(instruction: string) {
-    if (!card || rewriting) return;
-    // Lo que el editor tenga pendiente se guarda antes: la IA parte del texto
-    // guardado, no del que el usuario acaba de escribir.
-    if (flushEditor.current && !(await flushEditor.current())) {
-      toast({
-        title: "No se pudo pedir el cambio",
-        description: "Tu último cambio no se guardó. Revísalo y vuelve a intentarlo.",
-      });
-      return;
-    }
-    await cancelling.current;
-    const before = latest;
-    const abort = new AbortController();
-    rewriteAbort.current = abort;
+    if (!card || rewritingRef.current) return;
+    rewritingRef.current = true;
     setRewriting(true);
     setViewing(null);
     setComparing(null);
+    const abort = new AbortController();
+    rewriteAbort.current = abort;
     try {
+      // Lo que el editor tenga pendiente se guarda antes: la IA parte del
+      // texto guardado, no del que el usuario acaba de escribir.
+      if (flushEditor.current && !(await flushEditor.current())) {
+        toast({
+          title: "No se pudo pedir el cambio",
+          description: "Tu último cambio no se guardó. Revísalo y vuelve a intentarlo.",
+        });
+        return;
+      }
+      await cancelling.current;
       const result = await rewriteCard(card.id, instruction, abort.signal);
       applyCards(result.card);
       onSaved(result.version);
       setEditorKey((k) => k + 1);
-      if (before !== null && result.version.n !== before) {
+      if (result.changed) {
+        // La anterior sale de la respuesta y no de la lista del panel: la
+        // lista pudo no haber cargado, o quedarse atrás del guardado de
+        // arriba. Los números son consecutivos por card.
+        const before = result.version.n - 1;
+        refreshVersions();
         // El resultado se ve como diff contra lo que había: así se nota qué
         // cambió sin tener que leerlo todo otra vez.
         setComparing(before);
@@ -197,6 +206,7 @@ export function PanelCard({
       }
     } finally {
       rewriteAbort.current = null;
+      rewritingRef.current = false;
       setRewriting(false);
     }
   }
