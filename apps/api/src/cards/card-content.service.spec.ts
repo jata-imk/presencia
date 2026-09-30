@@ -169,6 +169,26 @@ describe("CardContentService", { timeout: 30_000 }, () => {
     expect((await service.list(userA, cardId)).map((v) => v.n)).toEqual([1, 2, 3]);
   });
 
+  it("F10.6: editar y restaurar el texto no toca los slides del carrusel", async () => {
+    const a1 = randomUUID();
+    const slides = [
+      { id: randomUUID(), imagePrompt: "portada", assetId: a1 },
+      { id: randomUUID(), imagePrompt: "segundo" },
+    ];
+    const cardId = await createCard({ ...VISUAL, slides, assetIds: [a1] });
+    await service.edit(userA, cardId, { caption: "Editada" }, randomUUID());
+    const restored = await service.restore(userA, cardId, 1);
+    expect(restored.card.content).toMatchObject({
+      caption: "Original del chat",
+      slides,
+      assetIds: [a1],
+    });
+    // La versión guarda el texto, no los slides.
+    const [v1] = await service.list(userA, cardId);
+    expect(v1!.content).not.toHaveProperty("slides");
+    expect(v1!.content).not.toHaveProperty("assetIds");
+  });
+
   it("descarta campos que no son del arquetipo", async () => {
     const cardId = await createCard();
     const result = await service.edit(

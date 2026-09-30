@@ -538,6 +538,144 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     expect(usage.length).toBeGreaterThanOrEqual(1);
   });
 
+  // ── F10.6: carrusel ──
+
+  const S1 = randomUUID();
+  const S2 = randomUUID();
+  const S3 = randomUUID();
+  const CAROUSEL: CardContent = {
+    ...VISUAL,
+    slides: [
+      { id: S1, imagePrompt: "La portada: el local por fuera" },
+      { id: S2, imagePrompt: "Un café de olla servido" },
+      { id: S3 },
+    ],
+  };
+
+  it("carrusel: un lote llena varios slides; la portada con dos variantes y el resto con una", async () => {
+    const service = make(fake());
+    const cardId = await createCard(CAROUSEL);
+    const dto = await service.request(userId, cardId, {
+      provider: "primary",
+      aspectRatio: "4:5",
+      slideIds: [S1, S2],
+    });
+    expect(dto.imageJob).toMatchObject({ status: "generating", slideIds: [S1, S2] });
+    const rows = await batchRows(dto.imageJob!.id);
+    expect(rows.map((r) => r.slideId).sort()).toEqual([S1, S1, S2].sort());
+    // Cada slide con SU prompt, y el estilo aparte.
+    const second = rows.find((r) => r.slideId === S2)!;
+    expect(second.prompt).toContain("Qué se ve: Un café de olla servido");
+    expect(second.prompt).not.toContain("el local por fuera");
+
+    await service.run({ userId, cardId, batchId: dto.imageJob!.id });
+    const final = await card(cardId);
+    const content = final.content as CardContent & { slides: { id: string; assetId?: string }[] };
+    const [c1, c2, c3] = content.slides;
+    expect(c1!.assetId).toBeDefined();
+    expect(c2!.assetId).toBeDefined();
+    // El slide que no se pidió no se toca.
+    expect(c3!.assetId).toBeUndefined();
+    expect(content.assetIds).toEqual([c1!.assetId, c2!.assetId]);
+    // Se cobra por imagen entregada: tres.
+    expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(3);
+    expect(final.imageJob).toMatchObject({ status: "done", slideIds: [S1, S2] });
+  });
+
+  it("carrusel: generar un slide que no es la portada pide una sola imagen", async () => {
+    const service = make(fake());
+    const cardId = await createCard(CAROUSEL);
+    const dto = await service.request(userId, cardId, {
+      provider: "primary",
+      aspectRatio: "4:5",
+      slideIds: [S2],
+    });
+    expect(await batchRows(dto.imageJob!.id)).toHaveLength(1);
+  });
+
+  it("carrusel: exige slides, y cada uno con su prompt", async () => {
+    const service = make(fake());
+    const cardId = await createCard(CAROUSEL);
+    await expect(
+      service.request(userId, cardId, { provider: "primary", aspectRatio: "4:5", prompt: "x x x" }),
+    ).rejects.toThrow(/Elige qué slides/);
+    await expect(
+      service.request(userId, cardId, { provider: "primary", aspectRatio: "4:5", slideIds: [S3] }),
+    ).rejects.toThrow(/slide 3 todavía no dice/);
+    await expect(
+      service.request(userId, cardId, {
+        provider: "primary",
+        aspectRatio: "4:5",
+        slideIds: [randomUUID()],
+      }),
+    ).rejects.toThrow(/ya no está/);
+
+    const single = await createCard();
+    await expect(
+      service.request(userId, single, { provider: "primary", aspectRatio: "4:5", slideIds: [S1] }),
+    ).rejects.toThrow(/no es un carrusel/);
+  });
+
+  it("carrusel: si el slide se quitó mientras generaba, la imagen queda en versiones y no se coloca", async () => {
+    const service = make(fake());
+    const cardId = await createCard(CAROUSEL);
+    const dto = await service.request(userId, cardId, {
+      provider: "primary",
+      aspectRatio: "4:5",
+      slideIds: [S2],
+    });
+    // Otro cambio quitó el slide 2 (la API no lo deja mientras genera; esto
+    // simula una carrera con una escritura directa).
+    await dbService.runWithTenant(userId, (tx) =>
+      tx
+        .update(publicationCards)
+        .set({
+          content: {
+            ...CAROUSEL,
+            slides: [
+              CAROUSEL.archetype === "visual_first" ? CAROUSEL.slides![0]! : null!,
+              { id: S3 },
+            ],
+          },
+        })
+        .where(eq(publicationCards.id, cardId)),
+    );
+    await service.run({ userId, cardId, batchId: dto.imageJob!.id });
+    const final = await card(cardId);
+    expect((final.content as CardContent).assetIds).toEqual([]);
+    expect(final.imageJob).toMatchObject({ status: "done" });
+  });
+
+  it("carrusel: ajustar un slide usa SU imagen como referencia y vuelve a ese slide", async () => {
+    const primary = new FakeImageProvider();
+    const service = make({ primary, alternate: null });
+    const cardId = await createCard(CAROUSEL);
+    const first = await service.request(userId, cardId, {
+      provider: "primary",
+      aspectRatio: "4:5",
+      slideIds: [S2],
+    });
+    await service.run({ userId, cardId, batchId: first.imageJob!.id });
+    const before = (await card(cardId)).content as CardContent & {
+      slides: { id: string; assetId?: string }[];
+    };
+    const parent = before.slides[1]!.assetId!;
+
+    const dto = await service.requestEdit(userId, cardId, {
+      instruction: "Más cálida",
+      provider: "primary",
+      slideId: S2,
+    });
+    const [row] = await batchRows(dto.imageJob!.id);
+    expect(row).toMatchObject({ parentAssetId: parent, slideId: S2 });
+    await service.run({ userId, cardId, batchId: dto.imageJob!.id });
+    const after = (await card(cardId)).content as CardContent & {
+      slides: { id: string; assetId?: string }[];
+    };
+    expect(after.slides[1]!.assetId).not.toBe(parent);
+    expect(after.slides[0]!.assetId).toBeUndefined();
+  });
+
   it("el config anuncia el precio en %, nunca en unidades", async () => {
     const config = await make(fake()).config(userId);
     // Plan creator: 30,000 unidades; 2 × 700 = 4.7%, 700 = 2.3%.

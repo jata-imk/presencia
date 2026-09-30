@@ -442,6 +442,10 @@ export const imageGenerations = pgTable(
       onDelete: "set null",
     }),
     aspectRatio: text("aspect_ratio").notNull(),
+    // F10.6: el slide del carrusel al que va esta imagen (content.slides[].id).
+    // Sin FK: los slides viven en el JSONB de la card. Null = la imagen suelta.
+    // Un lote puede traer varios slides a la vez ("generar los que faltan").
+    slideId: uuid("slide_id"),
     status: imageGenerationStatus("status").notNull().default("pending"),
     assetId: uuid("asset_id").references((): AnyPgColumn => assets.id, { onDelete: "set null" }),
     errorMessage: text("error_message"),

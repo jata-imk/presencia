@@ -12,7 +12,9 @@ import {
   IMAGE_JOB_STALE_MS,
   IMAGE_VARIANTS_PER_GENERATION,
   imageStyleDef,
+  placeImage,
   type CardContent,
+  type CarouselSlide,
   type CardImageJob,
   type EditCardImageBody,
   type GenerateCardImageBody,
@@ -88,6 +90,23 @@ export interface ImageGenerationJob {
 
 type ImageOutcome = { status: "succeeded"; assetId: string } | { status: "failed" | "blocked" };
 
+/** Una imagen que sale del lote y a dónde va: un slide, o la imagen suelta (null). */
+export interface ImagePlacement {
+  assetId: string;
+  slideId: string | null;
+}
+
+/** Una fila que se va a pedir: su prompt compuesto y su slide. */
+interface RequestedImage {
+  prompt: string;
+  slideId: string | null;
+}
+
+/** Los slides si la card es carrusel; null si es imagen suelta. */
+function slidesIn(content: CardContent): CarouselSlide[] | null {
+  return content.archetype !== "video_script" && content.slides ? content.slides : null;
+}
+
 /** Las cards que llevan imagen. El guion de video espera un video, no una foto. */
 function acceptsImage(content: CardContent): boolean {
   return content.archetype === "visual_first" || content.archetype === "text_first";
@@ -147,11 +166,42 @@ export class ImageGenerationService {
     // marca. Se guarda en el trabajo: el chip arranca en él, así "Regenerar"
     // repite el estilo de la imagen aunque el default haya cambiado.
     const style = body.style ?? imageStyleDef(voice?.imageStyle as ImageStyle | null).id;
-    const prompt = composeImagePrompt(body.prompt, voice ?? null, style);
-    // El prompt editado se guarda en la card: la próxima vez la card muestra
-    // lo que de verdad se generó, no la sugerencia original del chat.
-    const editedPrompt =
-      "imagePrompt" in content && content.imagePrompt === body.prompt ? undefined : body.prompt;
+    const slides = slidesIn(content);
+
+    let images: RequestedImage[];
+    let editedPrompt: string | undefined;
+    if (slides) {
+      // F10.6: un carrusel genera por slide, cada uno con SU prompt (se edita
+      // con PATCH del slide antes de generar). La portada lleva dos variantes
+      // para elegir; el resto, una (decisión del founder: 2.3% por slide).
+      if (!body.slideIds) throw new BadRequestException("Elige qué slides generar.");
+      const ids = [...new Set(body.slideIds)];
+      images = ids.flatMap((id) => {
+        const index = slides.findIndex((s) => s.id === id);
+        if (index === -1) throw new NotFoundException("Ese slide ya no está en el carrusel.");
+        const described = slides[index]!.imagePrompt?.trim() ?? "";
+        if (described.length < 3) {
+          throw new BadRequestException(
+            `El slide ${String(index + 1)} todavía no dice qué imagen lleva.`,
+          );
+        }
+        const prompt = composeImagePrompt(described, voice ?? null, style);
+        const count = index === 0 ? IMAGE_VARIANTS_PER_GENERATION : 1;
+        return Array.from({ length: count }, () => ({ prompt, slideId: id }));
+      });
+    } else {
+      if (body.slideIds) throw new BadRequestException("Esta publicación no es un carrusel.");
+      if (!body.prompt) throw new BadRequestException("Escribe qué imagen quieres.");
+      const prompt = composeImagePrompt(body.prompt, voice ?? null, style);
+      images = Array.from({ length: IMAGE_VARIANTS_PER_GENERATION }, () => ({
+        prompt,
+        slideId: null,
+      }));
+      // El prompt editado se guarda en la card: la próxima vez la card muestra
+      // lo que de verdad se generó, no la sugerencia original del chat.
+      editedPrompt =
+        "imagePrompt" in content && content.imagePrompt === body.prompt ? undefined : body.prompt;
+    }
 
     return this.startJob(userId, cardId, {
       kind: "generate",
@@ -159,8 +209,8 @@ export class ImageGenerationService {
       provider,
       aspectRatio: body.aspectRatio,
       style,
-      count: IMAGE_VARIANTS_PER_GENERATION,
-      prompt,
+      images,
+      slideIds: slides ? [...new Set(images.map((i) => i.slideId!))] : undefined,
       instruction: null,
       parentAssetId: null,
       editedPrompt,
@@ -180,7 +230,16 @@ export class ImageGenerationService {
   ): Promise<PublicationCardDto> {
     const provider = this.requireProvider(body.provider);
     const card = await this.loadEditableCard(userId, cardId);
-    const parentId = (card.content as CardContent).assetIds[0];
+    const content = card.content as CardContent;
+    const slides = slidesIn(content);
+    if (!slides && body.slideId) {
+      throw new BadRequestException("Esta publicación no es un carrusel.");
+    }
+    // En un carrusel se ajusta la imagen de un slide (la portada si no dice
+    // cuál), y la edición vuelve a ESE slide.
+    const slide = slides ? slides.find((s) => s.id === (body.slideId ?? slides[0]!.id)) : null;
+    if (slides && !slide) throw new NotFoundException("Ese slide ya no está en el carrusel.");
+    const parentId = slide ? slide.assetId : content.assetIds[0];
     if (!parentId) {
       throw new BadRequestException("Primero genera o sube una imagen para poder ajustarla.");
     }
@@ -205,8 +264,8 @@ export class ImageGenerationService {
       // del trabajo anterior: sin esto el chip de la card caía al default de
       // la voz y "Regenerar" después de ajustar cambiaba de estilo.
       style: (card.imageJob as CardImageJob | null)?.style,
-      count: 1,
-      prompt: composeEditPrompt(body.instruction),
+      images: [{ prompt: composeEditPrompt(body.instruction), slideId: slide?.id ?? null }],
+      slideIds: slide ? [slide.id] : undefined,
       instruction: body.instruction,
       parentAssetId: parentId,
       editedPrompt: undefined,
@@ -247,8 +306,9 @@ export class ImageGenerationService {
       provider: ImageProvider;
       aspectRatio: ImageAspectRatio;
       style: ImageStyle | undefined;
-      count: number;
-      prompt: string;
+      /** Una fila por imagen pedida; se cobra por cada una. */
+      images: RequestedImage[];
+      slideIds: string[] | undefined;
       instruction: string | null;
       parentAssetId: string | null;
       editedPrompt: string | undefined;
@@ -256,7 +316,7 @@ export class ImageGenerationService {
   ): Promise<PublicationCardDto> {
     // El gate ANTES de encolar: `spend` corre cuando el proveedor ya cobró.
     // Esto contesta 402 sin gastar nada.
-    await this.credits.assertQuotaOr402(userId, quoteFlatAction(REASON) * spec.count);
+    await this.credits.assertQuotaOr402(userId, quoteFlatAction(REASON) * spec.images.length);
 
     const batchId = randomUUID();
     const job: CardImageJob = {
@@ -266,6 +326,7 @@ export class ImageGenerationService {
       kind: spec.kind,
       aspectRatio: spec.aspectRatio,
       ...(spec.style ? { style: spec.style } : {}),
+      ...(spec.slideIds ? { slideIds: spec.slideIds } : {}),
       assetIds: [],
       startedAt: new Date().toISOString(),
     };
@@ -275,7 +336,7 @@ export class ImageGenerationService {
       if (!row) return null;
       await this.generations.insertMany(
         tx,
-        Array.from({ length: spec.count }, () => ({
+        spec.images.map((image) => ({
           userId,
           cardId,
           batchId,
@@ -283,7 +344,8 @@ export class ImageGenerationService {
           providerSlot: spec.slot,
           provider: spec.provider.provider,
           model: spec.provider.modelName,
-          prompt: spec.prompt,
+          prompt: image.prompt,
+          slideId: image.slideId,
           instruction: spec.instruction,
           parentAssetId: spec.parentAssetId,
           aspectRatio: spec.aspectRatio,
@@ -352,6 +414,17 @@ export class ImageGenerationService {
     );
 
     const assetIds = outcomes.flatMap((o) => (o.status === "succeeded" ? [o.assetId] : []));
+    // La primera imagen que salió para cada destino (cada slide, o la imagen
+    // suelta) queda elegida; las demás variantes, en las versiones.
+    const placements: ImagePlacement[] = [];
+    const placed = new Set<string>();
+    pending.forEach((row, i) => {
+      const outcome = outcomes[i]!;
+      const key = row.slideId ?? "";
+      if (outcome.status !== "succeeded" || placed.has(key)) return;
+      placed.add(key);
+      placements.push({ assetId: outcome.assetId, slideId: row.slideId });
+    });
     const status: CardImageJob["status"] =
       assetIds.length > 0
         ? "done"
@@ -371,10 +444,11 @@ export class ImageGenerationService {
         // F10.6: sin esto el estilo se perdía al terminar cualquier trabajo, y
         // el chip de la card caía al default de la voz.
         ...(previous?.style ? { style: previous.style } : {}),
+        ...(previous?.slideIds ? { slideIds: previous.slideIds } : {}),
         assetIds,
         startedAt: previous?.startedAt ?? new Date().toISOString(),
       },
-      assetIds[0],
+      placements,
     );
   }
 
@@ -540,11 +614,13 @@ export class ImageGenerationService {
     userId: string,
     cardId: string,
     job: CardImageJob,
-    selectAssetId?: string,
+    placements: ImagePlacement[] = [],
   ): Promise<void> {
     try {
       await this.dbService.runWithTenant(userId, (tx) =>
-        this.cards.finishImageJob(tx, cardId, job, selectAssetId),
+        this.cards.finishImageJob(tx, cardId, job, (content) =>
+          placements.reduce((c, p) => placeImage(c, p.assetId, p.slideId), content),
+        ),
       );
     } catch (error) {
       console.error(`[images] no se pudo cerrar el trabajo ${job.id} de ${cardId}:`, error);
@@ -557,7 +633,12 @@ function altFor(
   card: CardRow,
   parentAlt: string | undefined,
 ): { alt?: string } {
-  const description = (card.content as CardContent & { imagePrompt?: string }).imagePrompt;
+  const content = card.content as CardContent;
+  // F10.6: la imagen de un slide se describe con el prompt de ESE slide.
+  const slide = row.slideId ? slidesIn(content)?.find((s) => s.id === row.slideId) : undefined;
+  const description = slide
+    ? slide.imagePrompt
+    : (content as CardContent & { imagePrompt?: string }).imagePrompt;
   const alt = row.kind === "edit" ? (parentAlt ?? description) : description;
   return alt ? { alt: alt.slice(0, 500) } : {};
 }

@@ -43,8 +43,15 @@ export type ImageProviderSlot = z.infer<typeof imageProviderSlotSchema>;
  */
 export const generateCardImageBodySchema = z.object({
   provider: imageProviderSlotSchema.default("primary"),
-  prompt: z.string().trim().min(3).max(2000),
+  /** Obligatorio en una imagen suelta; en un carrusel cada slide trae el suyo. */
+  prompt: z.string().trim().min(3).max(2000).optional(),
   aspectRatio: imageAspectRatioSchema,
+  /**
+   * F10.6: en un carrusel, qué slides generar (uno, o "los que faltan" en un
+   * solo trabajo). Cada uno con su propio prompt; la portada lleva dos
+   * variantes y el resto una. Obligatorio en carruseles, prohibido fuera.
+   */
+  slideIds: z.array(z.uuid()).min(1).max(10).optional(),
   /**
    * F10.6: el estilo de ESTA imagen (el chip del composer). Sin él, el de la
    * Voz de marca.
@@ -53,8 +60,14 @@ export const generateCardImageBodySchema = z.object({
 });
 export type GenerateCardImageBody = z.infer<typeof generateCardImageBodySchema>;
 
-/** Elegir otra de las imágenes de la card (una variante, una versión anterior). */
-export const selectCardImageBodySchema = z.object({ assetId: z.uuid() });
+/**
+ * Elegir otra de las imágenes de la card (una variante, una versión
+ * anterior). F10.6: en un carrusel va al slide `slideId` (o a la portada).
+ */
+export const selectCardImageBodySchema = z.object({
+  assetId: z.uuid(),
+  slideId: z.uuid().optional(),
+});
 export type SelectCardImageBody = z.infer<typeof selectCardImageBodySchema>;
 
 /**
@@ -80,6 +93,8 @@ export interface CardImageJob {
    * trabajos anteriores a F10.6.
    */
   style?: ImageStyle;
+  /** F10.6: los slides que este trabajo está llenando (ausente = la imagen suelta). */
+  slideIds?: string[];
   assetIds: string[];
   startedAt: string;
 }
@@ -100,7 +115,7 @@ export const IMAGE_JOB_STALE_MS = 5 * 60 * 1000;
 export interface ImagesConfigDto {
   /** Un click en "Generar": dos variantes. */
   generatePercent: number;
-  /** Una edición con instrucción: una imagen. */
+  /** Una edición con instrucción: una imagen. También un slide que no es la portada. */
   editPercent: number;
   alternateAvailable: boolean;
   /** F10.6: el estilo de la Voz de marca (Fotográfico si nunca eligió): con él arranca el chip. */
@@ -120,6 +135,8 @@ export const IMAGE_VARIANTS_PER_GENERATION = 2;
 export const editCardImageBodySchema = z.object({
   instruction: z.string().trim().min(3).max(500),
   provider: imageProviderSlotSchema.default("primary"),
+  /** F10.6: en un carrusel, el slide cuya imagen se ajusta (sin él, la portada). */
+  slideId: z.uuid().optional(),
 });
 export type EditCardImageBody = z.infer<typeof editCardImageBodySchema>;
 

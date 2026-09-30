@@ -2,6 +2,7 @@ import { ConflictException, Inject, Injectable, NotFoundException } from "@nestj
 import {
   CARD_EDIT_SESSION_IDLE_MS,
   cardContentSchema,
+  mediaOf,
   type CardContent,
   type CardContentChangeDto,
   type CardTextFields,
@@ -26,10 +27,11 @@ import { toDto } from "./cards.service.js";
 export const TEXT_NOT_EDITABLE_MESSAGE =
   "Esta publicación ya está programada o publicada. Cancela la programación para editarla.";
 
-/** La card sin `assetIds`: lo que guarda y restaura una versión. */
+/** La card sin `assetIds` ni `slides`: lo que guarda y restaura una versión. */
 export function textOf(content: CardContent): CardVersionContent {
-  const text: Partial<CardContent> = { ...content };
+  const text: Record<string, unknown> = { ...content };
   delete text.assetIds;
+  delete text.slides;
   return text as CardVersionContent;
 }
 
@@ -69,7 +71,7 @@ export class CardContentService {
         ...current,
         ...fields,
         archetype: current.archetype,
-        assetIds: current.assetIds,
+        ...mediaOf(current),
       });
       return this.write(tx, userId, card, next, { source: "manual", editSessionId });
     });
@@ -84,7 +86,7 @@ export class CardContentService {
       // Una card sin historial todavía solo tiene su versión 1: su contenido.
       if (!version && n !== 1) throw new NotFoundException("Esa versión no existe.");
       const text = version ? (version.content as CardVersionContent) : textOf(current);
-      const next = cardContentSchema.parse({ ...text, assetIds: current.assetIds });
+      const next = cardContentSchema.parse({ ...text, ...mediaOf(current) });
       return this.write(tx, userId, card, next, { source: "restore", restoredFrom: n });
     });
   }

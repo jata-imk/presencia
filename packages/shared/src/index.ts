@@ -1,6 +1,7 @@
 export * from "./assets.js";
 export * from "./brand-voice.js";
 export * from "./card-versions.js";
+export * from "./carousel.js";
 export * from "./channels.js";
 export * from "./chat.js";
 export * from "./credits.js";
