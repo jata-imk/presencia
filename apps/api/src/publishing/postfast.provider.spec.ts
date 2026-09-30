@@ -98,6 +98,44 @@ describe("PostFastProvider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("F10.6: un carrusel sube todas en paralelo y conserva el orden en sortOrder", async () => {
+    // Cada imagen pide su URL (con su Content-Type) y la sube. La primera
+    // respuesta en llegar NO es la de la primera imagen: el orden sale de la
+    // posición en `media`, no de cuál termina antes.
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises -- es el mock de fetch: devuelve una promesa
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith("/file/get-signed-upload-urls")) {
+        const { contentType } = JSON.parse(init!.body as string) as { contentType: string };
+        const name = contentType.split("/")[1]!;
+        const delay = name === "png" ? 30 : 0;
+        return new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve(
+                jsonResponse(200, [
+                  { key: `image/${name}`, signedUrl: `https://s3.example.com/${name}` },
+                ]),
+              ),
+            delay,
+          ),
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 200 }));
+    });
+    const provider: PublishingProvider = new PostFastProvider("test-key");
+
+    const media = await provider.prepareMedia([
+      { data: new Uint8Array([1]), mimeType: "image/png", filename: "portada.png" },
+      { data: new Uint8Array([2]), mimeType: "image/webp", filename: "dos.webp" },
+      { data: new Uint8Array([3]), mimeType: "image/jpeg", filename: "tres.jpg" },
+    ]);
+    expect(media.ref).toEqual([
+      { key: "image/png", type: "IMAGE", sortOrder: 0 },
+      { key: "image/webp", type: "IMAGE", sortOrder: 1 },
+      { key: "image/jpeg", type: "IMAGE", sortOrder: 2 },
+    ]);
+  });
+
   // Shape real confirmado contra postfa.st/docs/posts/create (2026-08-19):
   // la respuesta 201 es { postIds: string[] }, no el envelope { data: [...] }
   // que se había inferido (y que causó el incidente 2026-08-18 — ver

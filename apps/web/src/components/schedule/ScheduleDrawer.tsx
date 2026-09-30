@@ -15,6 +15,7 @@ import { parseAbsolute } from "@internationalized/date";
 import { combineDateAndTime, dateKey, formatTime, startOfDay } from "./date-utils.js";
 import { ConflictDialog } from "../calendar/ConflictDialog.js";
 import { ApiError } from "../../lib/api.js";
+import { enumerateSlides, missingSlides } from "../../lib/cards/card-image.js";
 import { fetchScheduleConflicts, scheduleGroup } from "../../lib/cards-api.js";
 import { backdropFade, drawerPush, sheetUp } from "../../lib/motion.js";
 import { useChannels } from "../../lib/use-channels.js";
@@ -108,6 +109,8 @@ function ScheduleDrawerInner({
   // Mobile: bottom sheet con backdrop, sí es modal (focus-trap + Escape).
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const isBatch = cards.length > 1;
+  // F10.6: con un carrusel a medias en el lote, programar fallaría en la API.
+  const incomplete = cards.some((card) => missingSlides(card.content).length > 0);
   const [sameTime, setSameTime] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -436,6 +439,16 @@ function ScheduleDrawerInner({
                     Sin imagen: se publicará solo el texto.
                   </p>
                 )}
+                {/* F10.6: un carrusel a medias no se programa. Se dice aquí
+                    qué falta, en vez de descubrirlo con el error del click. */}
+                {missingSlides(card.content).length > 0 && (
+                  <p role="alert" className="mt-1.5 text-[11px] text-error">
+                    Faltan imágenes en{" "}
+                    {missingSlides(card.content).length === 1 ? "el slide" : "los slides"}{" "}
+                    {enumerateSlides(missingSlides(card.content))}. Genéralas o súbelas antes de
+                    programar.
+                  </p>
+                )}
               </div>
             );
           })}
@@ -572,7 +585,11 @@ function ScheduleDrawerInner({
         <Button variant="secondary" onClick={onClose} disabled={submitting} className="flex-1">
           Cancelar
         </Button>
-        <Button onClick={() => void handleSubmit()} disabled={submitting} className="flex-1">
+        <Button
+          onClick={() => void handleSubmit()}
+          disabled={submitting || incomplete}
+          className="flex-1"
+        >
           {submitting ? "Programando…" : anyReschedule ? "Reprogramar" : "Programar"}
         </Button>
       </div>

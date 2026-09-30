@@ -431,6 +431,86 @@ describe("CardsService", () => {
     },
   );
 
+  it("F10.6: un carrusel viaja con todas sus imágenes, en orden", { timeout: 15_000 }, async () => {
+    // Cada asset con su tipo y su tamaño: así se ve en qué orden llegaron.
+    const [a, b, c] = [randomUUID(), randomUUID(), randomUUID()];
+    const byId: Record<string, { mimeType: string; bytes: number }> = {
+      [a]: { mimeType: "image/png", bytes: 1 },
+      [b]: { mimeType: "image/webp", bytes: 2 },
+      [c]: { mimeType: "image/jpeg", bytes: 3 },
+    };
+    const carouselAssets = {
+      find: (_tx: unknown, id: string) =>
+        Promise.resolve({
+          id,
+          mimeType: byId[id]!.mimeType,
+          storageKey: `u/${id}`,
+          metadata: {},
+        }),
+      readBytes: (asset: { id: string }) => Promise.resolve(new Uint8Array(byId[asset.id]!.bytes)),
+    } as unknown as AssetsServiceType;
+    const carouselService = new CardsServiceCtor(
+      dbService,
+      cardsRepo,
+      channelsRepo,
+      provider,
+      carouselAssets,
+    );
+    const account = await connectAccount(userA, "instagram");
+    const card = await createCard(
+      {
+        ...VISUAL_CONTENT_NO_MEDIA,
+        slides: [
+          { id: randomUUID(), assetId: b },
+          { id: randomUUID(), assetId: c },
+          { id: randomUUID(), assetId: a },
+        ],
+        assetIds: [b, c, a],
+      },
+      "instagram",
+    );
+    await carouselService.schedule(userA, card.id, {
+      socialAccountId: account.id,
+      scheduledAt: future(10),
+    });
+    expect(provider.scheduled.at(-1)?.media).toEqual({
+      ref: [
+        { mimeType: "image/webp", bytes: 2 },
+        { mimeType: "image/jpeg", bytes: 3 },
+        { mimeType: "image/png", bytes: 1 },
+      ],
+    });
+  });
+
+  it(
+    "F10.6: un carrusel con slides sin imagen no se programa y dice cuáles faltan",
+    { timeout: 15_000 },
+    async () => {
+      const account = await connectAccount(userA, "instagram");
+      const withImage = randomUUID();
+      const card = await createCard(
+        {
+          ...VISUAL_CONTENT_NO_MEDIA,
+          slides: [
+            { id: randomUUID(), assetId: withImage },
+            { id: randomUUID(), imagePrompt: "sin imagen" },
+            { id: randomUUID(), assetId: withImage },
+            { id: randomUUID() },
+          ],
+          assetIds: [withImage, withImage],
+        },
+        "instagram",
+      );
+      const before = provider.scheduled.length;
+      await expect(
+        service.schedule(userA, card.id, { socialAccountId: account.id, scheduledAt: future(10) }),
+      ).rejects.toThrow(/Faltan imágenes en los slides 2 y 4/);
+      expect(provider.scheduled.length).toBe(before);
+      const after = await dbService.runWithTenant(userA, (tx) => cardsRepo.findById(tx, card.id));
+      expect(after?.status).toBe("draft");
+    },
+  );
+
   it("un post de texto sin imagen va sin media", { timeout: 15_000 }, async () => {
     const account = await connectAccount(userA, "linkedin");
     const card = await createCard(TEXT_CONTENT, "linkedin");
