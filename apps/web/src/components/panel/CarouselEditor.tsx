@@ -155,14 +155,14 @@ export function CarouselEditor({
               small
               label="Recorte del carrusel"
               value={carousel.aspect}
-              onChange={(aspect) => {
-                if (aspect !== carousel.aspect) carousel.setAspect(aspect);
-              }}
+              // También la ya elegida: vuelve a recortar lo que no esté en ella
+              // (una imagen subida o traída de antes de elegir la proporción).
+              onChange={(aspect) => carousel.setAspect(aspect)}
               options={carousel.aspectOptions.map((a) => ({
                 value: a,
                 label: a,
                 Icon: ASPECT_ICON[a],
-                disabled: busy || carousel.generatingIds.length > 0,
+                disabled: busy || carousel.requesting || carousel.generatingIds.length > 0,
               }))}
             />
           </span>

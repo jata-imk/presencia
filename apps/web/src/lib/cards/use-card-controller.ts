@@ -60,6 +60,8 @@ export interface CarouselActions {
   generatingIds: string[];
   /** Un cambio de estructura (agregar, quitar, ordenar, recortar) en camino. */
   changing: boolean;
+  /** Un pedido de generar en camino (todavía sin trabajo en la card). */
+  requesting: boolean;
   mediaFor: (slide: CarouselSlide, index: number) => CardMediaActions | undefined;
   add: () => Promise<boolean>;
   remove: (slideId: string) => void;
@@ -363,6 +365,7 @@ export function useCardController(
           aspectOptions: IMAGE_ASPECT_OPTIONS[card.network],
           generatingIds,
           changing: changingSlides,
+          requesting: requestingImage,
           mediaFor: slideMedia,
           add: () => changeSlides("No se pudo agregar el slide", () => addCardSlide(card.id)),
           remove: (slideId) =>

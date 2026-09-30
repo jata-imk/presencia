@@ -427,29 +427,68 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     const cardId = await createCard(VISUAL);
     const dto = await media.addSlide(userA, cardId, {});
     const second = dto.content.archetype === "visual_first" ? dto.content.slides![1]! : null;
-    // Portada 40×50 (ya es 4:5) y segundo 60×60 (cuadrada).
+    const meta = async (id: string) =>
+      dbService.runWithTenant(userA, async (tx) => {
+        const [row] = await tx.select().from(assets).where(eq(assets.id, id));
+        return row!.metadata as { width: number; height: number; croppedFrom?: string };
+      });
+    // Portada 40×50 (ya es 4:5, se coloca tal cual) y segundo 60×60, que al
+    // subirse a un carrusel 4:5 se coloca recortado.
     const cover = (await media.attachUpload(userA, cardId, PNG)).content.assetIds[0]!;
-    const square = (
+    const placed = (
       await media.attachUpload(userA, cardId, solidPng(60, 60, [5, 5, 5]), undefined, second!.id)
     ).content.assetIds[1]!;
+    expect(await meta(placed)).toMatchObject({ width: 48, height: 60 });
 
-    const cropped = await media.setSlidesAspect(userA, cardId, "4:5");
-    expect(cropped.content).toMatchObject({ slidesAspect: "4:5" });
+    // A 1:1: la portada se recorta (copia 40×40) y el segundo vuelve a su original cuadrada.
+    const cropped = await media.setSlidesAspect(userA, cardId, "1:1");
+    expect(cropped.content).toMatchObject({ slidesAspect: "1:1" });
     const [first, other] = cropped.content.assetIds;
-    expect(first).toBe(cover);
-    expect(other).not.toBe(square);
-    const copy = await dbService.runWithTenant(userA, async (tx) => {
-      const [row] = await tx.select().from(assets).where(eq(assets.id, other!));
-      return row!;
-    });
-    expect(copy.metadata).toMatchObject({ width: 48, height: 60 });
-    // La original sigue en las versiones.
-    const versions = await media.versions(userA, cardId);
-    expect(versions.map((v) => v.assetId)).toContain(square);
+    expect(first).not.toBe(cover);
+    expect(await meta(first!)).toMatchObject({ width: 40, height: 40, croppedFrom: cover });
+    expect(await meta(other!)).toMatchObject({ width: 60, height: 60 });
+    // Las de antes siguen en las versiones.
+    const versions = (await media.versions(userA, cardId)).map((v) => v.assetId);
+    expect(versions).toEqual(expect.arrayContaining([cover, placed]));
 
     await expect(media.setSlidesAspect(userA, cardId, "16:9")).rejects.toThrow(/no se usa/);
     const single = await createCard(VISUAL);
     await expect(media.setSlidesAspect(userA, single, "1:1")).rejects.toThrow(/no es un carrusel/);
+  });
+
+  it("recortar parte siempre de la original: 4:5 → 1:1 → 4:5 no corta dos veces", async () => {
+    const cardId = await createCard(VISUAL);
+    await media.addSlide(userA, cardId, {});
+    // Una imagen suelta del carrusel, subida a la portada: 60×60 se coloca
+    // recortada a 4:5 (la proporción del carrusel) y la original se guarda.
+    const up = await media.attachUpload(userA, cardId, solidPng(60, 60, [7, 7, 7]));
+    const placed = up.content.assetIds[0]!;
+    const meta = async (id: string) =>
+      dbService.runWithTenant(userA, async (tx) => {
+        const [row] = await tx.select().from(assets).where(eq(assets.id, id));
+        return row!.metadata as { width: number; height: number; croppedFrom?: string };
+      });
+    const first = await meta(placed);
+    expect(first).toMatchObject({ width: 48, height: 60 });
+    const original = first.croppedFrom!;
+    expect(await meta(original)).toMatchObject({ width: 60, height: 60 });
+
+    // A 1:1 regresa la original (ya es cuadrada), sin copia nueva.
+    const square = await media.setSlidesAspect(userA, cardId, "1:1");
+    expect(square.content.assetIds[0]).toBe(original);
+    // Y de vuelta a 4:5 se recorta de la original: 48×60, no 48×48.
+    const back = await media.setSlidesAspect(userA, cardId, "4:5");
+    expect(await meta(back.content.assetIds[0]!)).toMatchObject({ width: 48, height: 60 });
+    // Elegir otra vez la misma no hace copias.
+    const again = await media.setSlidesAspect(userA, cardId, "4:5");
+    expect(again.content.assetIds[0]).toBe(back.content.assetIds[0]);
+  });
+
+  it("al volverse carrusel, la proporción sale de la imagen que ya tenía", async () => {
+    const cardId = await createCard(VISUAL);
+    await media.attachUpload(userA, cardId, solidPng(60, 60, [8, 8, 8]));
+    const dto = await media.addSlide(userA, cardId, {});
+    expect(dto.content).toMatchObject({ slidesAspect: "1:1" });
   });
 
   it("subir o elegir a un slide que no existe es 404, no un 200 vacío", async () => {
