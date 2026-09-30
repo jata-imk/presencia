@@ -29,6 +29,7 @@ import { IMAGE_STYLES } from "@presencia/shared";
 import { createImageModelResolver } from "../../src/ai/provider-registry.js";
 import { AiSdkImageProvider } from "../../src/images/ai-sdk-image.provider.js";
 import { composeImagePrompt } from "../../src/images/image-prompt.js";
+import { registrarGasto, splitModelId } from "../gasto-local.js";
 
 /** Las escenas, descritas como las escribiría el chat en F10.6: el QUÉ, sin estilo. */
 const ESCENAS = {
@@ -89,6 +90,16 @@ async function main() {
       const arranque = Date.now();
       try {
         const result = await provider.generate({ prompt, aspectRatio: "4:5" });
+        if (result.usage) {
+          await registrarGasto({
+            script: "estilos",
+            ...splitModelId(modelId),
+            task: "image_generate",
+            inputTokens: result.usage.inputTokens ?? 0,
+            outputTokens: result.usage.outputTokens ?? 0,
+            imagesCount: result.kind === "blocked" ? 0 : 1,
+          });
+        }
         if (result.kind === "blocked") {
           fallas.push(`${nombre}: bloqueada`);
           continue;

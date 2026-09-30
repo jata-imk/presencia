@@ -25,6 +25,7 @@ import { createModelResolver, DEFAULT_MODEL_ID } from "../../src/ai/provider-reg
 import { buildSystemPrompt } from "../../src/chat/system-prompt.js";
 import { culturalPrompts } from "./prompts.js";
 import { CULTURAL_SUITE_VOICES, type VoiceFixture } from "./voices.js";
+import { registrarGasto, splitModelId } from "../gasto-local.js";
 
 const DEFAULT_MODELS = [
   "google:gemini-3.6-flash",
@@ -78,6 +79,15 @@ async function runPrompt(modelId: string, promptText: string, system: string): P
       prompt: promptText,
       tools: culturalSuiteTools,
       stopWhen: stepCountIs(3),
+    });
+    // totalUsage y no usage: un turno con tool call son varios pasos, y se
+    // pagan todos.
+    await registrarGasto({
+      script: "suite-cultural",
+      ...splitModelId(modelId),
+      task: "chat",
+      inputTokens: result.totalUsage.inputTokens ?? 0,
+      outputTokens: result.totalUsage.outputTokens ?? 0,
     });
     // Los intentos con input inválido no ejecutan la tool pero sí cuentan:
     // miden la disciplina de tool calling del proveedor (ADR-004). Se guarda

@@ -39,3 +39,4 @@ apps/api/scripts/image-bakeoff/out/
 
 # Assets de Biblioteca en disco (ASSETS_STORAGE=local, solo dev).
 apps/api/.data/
+apps/api/scripts/.gasto-local.jsonl

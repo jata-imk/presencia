@@ -121,3 +121,8 @@ El QA de F10 dejó ver que el estilo lo decidía el chat: el `.describe` de `ima
 ## Addendum (2026-09-30, F10.6 PR4b) — vistas previas con varias imágenes
 
 La vista previa acomoda las imágenes como cada red (`PreviewMedia`): Instagram de una en una, con flechas, puntos y "1/5", en un hueco fijo con la proporción del carrusel y las demás precargadas; Facebook y LinkedIn con una grande y el resto en fila ("+N" en la última visible); X en mosaico de hasta 4 en un marco 16:9; Threads en una tira que se desliza. Fiel en disposición, no en píxeles. La card compacta del chat marca "1/5" en la miniatura de un carrusel.
+
+## Addendum (2026-09-30) — lo que de verdad cuesta una imagen, y el panorama
+
+- **Una imagen 4:5 de Gemini 3.1 Flash Image cuesta ~$0.095, no $0.067.** Google cobra por tokens de salida ($60/M), y la 4:5 (928×1152) sale en ~1,580 tokens contra los 1,120 del 1K cuadrado de su tabla. Lo midió `pnpm --filter @presencia/api gasto` sobre `ai_usage_events` (ver `docs/how-to/ver-el-gasto-en-modelos.md`). Los precios viven en `apps/api/src/ai/model-prices.ts`.
+- **Panorama de modelos al 2026-09-30:** `docs/reference/modelos-de-imagen-2026-09.md`. Nano Banana 2 ya no está en la frontera calidad/precio. Grok Imagine Image 2.0, MAI-Image-2.6 y Muse Image entran al próximo bake-off (backlog "Modelo principal + fallbacks").
