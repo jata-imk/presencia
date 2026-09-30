@@ -511,6 +511,31 @@ describe("CardsService", () => {
     },
   );
 
+  it(
+    "F10.6: una card publicada con carrusel a medias da el 409 de su estado, no 'faltan imágenes'",
+    { timeout: 15_000 },
+    async () => {
+      const account = await connectAccount(userA, "instagram");
+      const card = await createCard(
+        {
+          ...VISUAL_CONTENT_NO_MEDIA,
+          slides: [{ id: randomUUID(), assetId: randomUUID() }, { id: randomUUID() }],
+          assetIds: [],
+        },
+        "instagram",
+      );
+      await dbService.runWithTenant(userA, (tx) =>
+        tx
+          .update(publicationCards)
+          .set({ status: "published" })
+          .where(eq(publicationCards.id, card.id)),
+      );
+      await expect(
+        service.schedule(userA, card.id, { socialAccountId: account.id, scheduledAt: future(10) }),
+      ).rejects.toThrow(/No se puede programar una publicación en estado "published"/);
+    },
+  );
+
   it("un post de texto sin imagen va sin media", { timeout: 15_000 }, async () => {
     const account = await connectAccount(userA, "linkedin");
     const card = await createCard(TEXT_CONTENT, "linkedin");

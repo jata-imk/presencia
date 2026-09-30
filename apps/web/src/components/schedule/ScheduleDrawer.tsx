@@ -434,11 +434,13 @@ function ScheduleDrawerInner({
                 {/* Facebook sin imagen no falla: publica solo el texto. Se
                     dice aquí, antes de programar, y no se descubre después
                     en la red (ticket de F10). */}
-                {card.network === "facebook" && card.content.assetIds.length === 0 && (
-                  <p className="mt-1.5 text-[11px] text-warning">
-                    Sin imagen: se publicará solo el texto.
-                  </p>
-                )}
+                {card.network === "facebook" &&
+                  card.content.assetIds.length === 0 &&
+                  missingSlides(card.content).length === 0 && (
+                    <p className="mt-1.5 text-[11px] text-warning">
+                      Sin imagen: se publicará solo el texto.
+                    </p>
+                  )}
                 {/* F10.6: un carrusel a medias no se programa. Se dice aquí
                     qué falta, en vez de descubrirlo con el error del click. */}
                 {missingSlides(card.content).length > 0 && (

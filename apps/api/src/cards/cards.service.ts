@@ -331,8 +331,10 @@ export class CardsService {
   ): Promise<{ assetIds: string[]; media: PreparedMedia | null }> {
     const row = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, cardId));
     // Antes de subir nada: un carrusel a medias no se programa, y sus
-    // imágenes no tienen por qué viajar al proveedor.
-    if (row) assertCarouselComplete(row);
+    // imágenes no tienen por qué viajar al proveedor. Solo si la card se
+    // puede programar: si no, el error que corresponde es el de su estado
+    // (409, dentro de la transacción), no "faltan imágenes".
+    if (row && SCHEDULABLE_STATUSES.has(row.status)) assertCarouselComplete(row);
     const assetIds = row ? imageAssetsOf(row) : [];
     if (assetIds.length === 0) return { assetIds, media: null };
 
