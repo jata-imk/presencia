@@ -19,6 +19,7 @@ import path from "node:path";
 import { createImageModelResolver } from "../../src/ai/provider-registry.js";
 import { AiSdkImageProvider } from "../../src/images/ai-sdk-image.provider.js";
 import type { ImageAspectRatio, ImageRequest } from "../../src/images/image-provider.js";
+import { registrarGasto, splitModelId } from "../gasto-local.js";
 
 const DEFAULT_MODELS = [
   "google:gemini-3.1-flash-image",
@@ -149,6 +150,17 @@ async function main() {
       try {
         const result = await provider.generate(request);
         const segundos = ((Date.now() - arranque) / 1000).toFixed(1);
+        // Un bloqueo también se paga (Gemini cobra la entrada): se anota igual.
+        if (result.usage) {
+          await registrarGasto({
+            script: "bakeoff",
+            ...splitModelId(modelId),
+            task: request.reference ? "image_edit" : "image_generate",
+            inputTokens: result.usage.inputTokens ?? 0,
+            outputTokens: result.usage.outputTokens ?? 0,
+            imagesCount: result.kind === "blocked" ? 0 : 1,
+          });
+        }
         if (result.kind === "blocked") {
           rows.push(`| ${modelId} | ${p.id} | ${segundos} s | — | — | **bloqueada** |`);
           console.log(`[${modelId}] ${p.id}: bloqueada (${segundos} s)`);

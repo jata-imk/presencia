@@ -19,6 +19,7 @@ import { normalizeExpression } from "@presencia/shared";
 import { createModelResolver, DEFAULT_MODEL_ID } from "../../src/ai/provider-registry.js";
 import { buildSystemPrompt } from "../../src/chat/system-prompt.js";
 import { PROHIBITED_WORD_VOICE } from "./voices.js";
+import { registrarGasto, splitModelId } from "../gasto-local.js";
 
 // Tema deliberadamente propenso al hype de marketing ("increíble", "único",
 // "revolucionario") que la voz de PROHIBITED_WORD_VOICE prohíbe.
@@ -67,6 +68,13 @@ async function main(): Promise<void> {
     console.log(`  · corrida ${i}/${runs}...`);
     try {
       const result = await generateText({ model, system, prompt: PROMPT });
+      await registrarGasto({
+        script: "suite-voz-prohibida",
+        ...splitModelId(modelId),
+        task: "chat",
+        inputTokens: result.totalUsage.inputTokens ?? 0,
+        outputTokens: result.totalUsage.outputTokens ?? 0,
+      });
       const normalizedText = normalizeExpression(result.text);
       const violatesRule = bannedTerms.some((term) => normalizedText.includes(term));
       outcomes.push({ index: i, text: result.text, violatesRule });
