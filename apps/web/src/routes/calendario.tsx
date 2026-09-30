@@ -58,6 +58,7 @@ import { useMetasSemanales } from "../lib/use-ritmo.js";
 import { useCardsStore, useDraftCards, useRangeCards } from "../stores/cards-store.js";
 import { useFoldersStore } from "../stores/folders-store.js";
 import { useChatsStore } from "../stores/chats-store.js";
+import { usePublicationPanelStore } from "../stores/publication-panel-store.js";
 import { useScheduleDrawerStore } from "../stores/schedule-drawer-store.js";
 import { useToastStore } from "../stores/toast-store.js";
 
@@ -579,7 +580,11 @@ export function CalendarioPage() {
         setModalCardIds(siblings.map((c) => c.id));
       },
       onEditInChat: (card) => {
-        if (card.chatId) void navigate(`/chats/${card.chatId}`);
+        if (!card.chatId) return;
+        // F10.5: se llega al chat con esa card ya abierta en el panel, que es
+        // donde se edita; sin esto había que buscarla en la conversación.
+        usePublicationPanelStore.getState().open(card.chatId, [card.id], card.id);
+        void navigate(`/chats/${card.chatId}`);
       },
       onReschedule: (target) => {
         // El preset es el horario que la card YA tiene: reprogramar es

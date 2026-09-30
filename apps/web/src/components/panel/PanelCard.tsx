@@ -491,7 +491,7 @@ function SaveIndicator({ state, latest }: { state: SaveState; latest: number | n
 }
 
 /** La cuenta con la que se publicaría: la elegida al programar, o la conectada de esa red. */
-function accountFor(
+export function accountFor(
   card: PublicationCardDto | undefined,
   channels: ChannelAccountDto[] | null,
 ): PreviewAccount | null {
@@ -580,9 +580,22 @@ function Tabs({
   );
 }
 
-function StatusBanner({ card }: { card: PublicationCardDto }) {
+export function StatusBanner({
+  card,
+  showCalendarLink = true,
+}: {
+  card: PublicationCardDto;
+  /** El modal del propio Calendario lo apaga: ya estás ahí. */
+  showCalendarLink?: boolean;
+}) {
   if (card.status === "scheduled" && card.scheduledAt) {
-    return <ScheduledBanner scheduledAt={card.scheduledAt} cardId={card.id} />;
+    return (
+      <ScheduledBanner
+        scheduledAt={card.scheduledAt}
+        cardId={card.id}
+        showCalendarLink={showCalendarLink}
+      />
+    );
   }
   if (card.status === "published" && card.publishedAt) {
     return <PublishedBanner publishedAt={card.publishedAt} />;

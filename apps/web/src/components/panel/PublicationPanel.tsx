@@ -63,8 +63,15 @@ export function PublicationPanel({
   // de pestaña monta uno nuevo en vez de heredar el de la anterior.
   const card = <PanelCard key={activeId} channels={channels} onAdapt={adapt} mobile={!isTablet} />;
 
-  // Las pestañas son de este chat: al salir de él el panel se va con él.
-  useEffect(() => () => reset(), [reset]);
+  // Las pestañas son de un chat: si se monta en otro, se descartan. Al
+  // montarse y no al desmontarse: quien lleva a un chat con una card ya
+  // abierta (el "Abrir en el chat" del Calendario) prepara el panel ANTES de
+  // navegar, y un reset al desmontar (StrictMode desmonta y vuelve a montar
+  // en dev) lo borraba. Las pestañas de otro chat tampoco se ven mientras
+  // tanto: `open` exige que el chat coincida.
+  useEffect(() => {
+    if (usePublicationPanelStore.getState().chatId !== chatId) reset();
+  }, [chatId, reset]);
 
   useEffect(() => {
     if (!visible || !isDesktop) return;

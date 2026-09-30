@@ -11,7 +11,7 @@ import { useTimezone } from "../../lib/calendar/use-timezone.js";
 import { useCardController } from "../../lib/cards/use-card-controller.js";
 import type { CardToolPart } from "../../lib/chat-types.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
-import { Badge } from "./Badge.js";
+import { Badge, badgeKindFor } from "./Badge.js";
 import { NETWORK_META } from "./NetworkLogos.js";
 
 // La card del chat en F10.5 (Chat Rediseño.html → CompactCard): una fila con
@@ -123,7 +123,7 @@ export function CompactCard({
           <span className="mb-0.5 flex flex-wrap items-center gap-1.5">
             <Logo size={14} />
             <span className="font-display text-[13px] font-semibold text-fg">{label}</span>
-            <Badge kind={status} small />
+            <Badge kind={badgeKindFor(content.archetype, status)} small />
             {when && <span className="text-[11px] text-fg-muted">{when}</span>}
           </span>
           <span

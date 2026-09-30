@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { BarChart2, Clock, ExternalLink, Eye, MessageSquare, XCircle } from "lucide-react";
 import type { PublicationCardDto } from "@presencia/shared";
-import { PublicationCardView } from "../cards/PublicationCardView.js";
+import { useChannels } from "../../lib/use-channels.js";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
+import { accountFor, StatusBanner } from "../panel/PanelCard.js";
+import { NetworkPreview } from "../preview/NetworkPreview.js";
 import { Modal } from "../ui/Modal.js";
 import { Tooltip } from "../ui/Tooltip.js";
 import type { DayCardActions } from "./DayPanelCard.js";
@@ -11,8 +13,10 @@ import type { DayCardActions } from "./DayPanelCard.js";
 // publicación: se abre, se lee, se cierra. Por eso es modal centrado y no
 // otro panel — el panel del día es exploratorio y persistente, esto no.
 //
-// Reutiliza PublicationCardView, el mismo componente que pinta la card en
-// Chat. Una "vista resumen" propia sería el mismo componente dos veces.
+// F10.5: reutiliza la vista previa fiel del panel de publicación del chat
+// (NetworkPreview + el banner de estado), solo lectura. Una "vista resumen"
+// propia sería el mismo componente dos veces, y el creator vería el post de
+// dos formas distintas según dónde lo abra.
 
 const FOOTER_BUTTON =
   "inline-flex items-center gap-2 rounded-lg px-4 py-2 font-display text-[13px] font-semibold transition-colors";
@@ -28,6 +32,7 @@ export function CardModal({
   onClose: () => void;
 }) {
   const [activeId, setActiveId] = useState(cards[0]?.id);
+  const { channels } = useChannels();
   const active = cards.find((card) => card.id === activeId) ?? cards[0];
   if (!active) return null;
 
@@ -98,17 +103,17 @@ export function CardModal({
             inalcanzable. Como bloque, la card mide lo que mide y esta capa
             desplaza. La previsualización ya queda anclada arriba por el
             flujo normal del documento. */}
-        <div className="min-h-0 flex-1 overflow-y-auto bg-app p-4">
-          <PublicationCardView
-            content={active.content}
-            network={active.network}
-            status={active.status}
-            scheduledAt={active.scheduledAt}
-            publishedAt={active.publishedAt}
-            errorMessage={active.errorMessage}
-            showCalendarLink={false}
-            glow={false}
-          />
+        <div className="min-h-0 flex-1 overflow-y-auto bg-surface">
+          <StatusBanner card={active} showCalendarLink={false} />
+          <div className="p-4">
+            <NetworkPreview
+              network={active.network}
+              content={active.content}
+              account={accountFor(active, channels)}
+              imageJob={null}
+              device="mobile"
+            />
+          </div>
         </div>
 
         {/* Las acciones cambian con el estado de la red ACTIVA, no del
@@ -135,7 +140,7 @@ export function CardModal({
               className={`${FOOTER_BUTTON} border-[1.5px] border-line bg-card text-fg-secondary hover:border-line-focus hover:bg-secondary hover:text-brand disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-line disabled:hover:bg-card disabled:hover:text-fg-secondary`}
             >
               <MessageSquare size={15} strokeWidth={1.9} />
-              Editar en Chat
+              Abrir en el chat
             </button>
           </Tooltip>
           {active.status === "published" && (

@@ -156,7 +156,8 @@
   }
 }
 
-/* Shimmer de imagen "generando" (VisualCardBody, mismo mockup). */
+/* Shimmer: el degradado que se desliza de los esqueletos de carga (.skeleton,
+   abajo). Nació para la imagen "generando" de la card vieja del chat. */
 @keyframes shimmer {
   from {
     background-position: 200% 0;
@@ -313,7 +314,7 @@ body[data-dragging] {
   }
 }
 
-/* Skeleton de carga. Reusa @keyframes shimmer (el de VisualCardBody): un
+/* Skeleton de carga. Usa @keyframes shimmer (arriba): un
    degradado más ancho que la barra que se desliza. Quieto si el sistema pide
    menos movimiento — una barra gris también dice "cargando". */
 .skeleton {
