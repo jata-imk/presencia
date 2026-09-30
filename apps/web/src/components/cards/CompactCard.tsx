@@ -28,12 +28,18 @@ export function CompactCard({
   open,
   onOpen,
   mobile,
+  selection,
 }: {
   part: CardToolPart;
   /** Es la pestaña activa del panel. */
   open: boolean;
   onOpen: () => void;
   mobile: boolean;
+  /**
+   * F10.5 PR5, selección multired: el checkbox aparece en hover (escritorio)
+   * o siempre que ya haya algo seleccionado en el chat.
+   */
+  selection?: { selected: boolean; active: boolean; onToggle: () => void };
 }) {
   const cardId = part.state === "output-available" ? part.output.cardId : undefined;
   const { card, openSchedule, imageJob } = useCardController(cardId, { withMedia: false });
@@ -76,12 +82,28 @@ export function CompactCard({
       ? formatScheduleDateTime(card.scheduledAt, timeZone)
       : null;
 
+  // Lo publicado ya no se programa junto con nada.
+  const selectable = selection && status !== "published" && status !== "canceled";
+
   return (
     <div
       className={`group/card flex items-center gap-2.5 px-3 py-2.5 transition-colors ${
-        open ? "bg-tint-plum" : "hover:bg-surface"
+        open ? "bg-tint-plum" : selection?.selected ? "bg-surface" : "hover:bg-surface"
       }`}
     >
+      {selectable && (
+        <input
+          type="checkbox"
+          checked={selection.selected}
+          onChange={selection.onToggle}
+          aria-label={`Seleccionar borrador de ${label}`}
+          className={`size-4 shrink-0 cursor-pointer accent-primary transition-opacity ${
+            selection.active || selection.selected || mobile
+              ? "opacity-100"
+              : "opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100"
+          } ${mobile && !selection.active ? "hidden" : ""}`}
+        />
+      )}
       <button
         type="button"
         onClick={onOpen}

@@ -198,6 +198,31 @@ export class CardsRepository {
     return row;
   }
 
+  /** F10.5: el grupo de cada card (null si no tiene), para "programar juntas". */
+  async groupIdsOf(tx: Tx, ids: string[]): Promise<(string | null)[]> {
+    if (ids.length === 0) return [];
+    const rows = await tx
+      .select({ groupId: publicationCards.groupId })
+      .from(publicationCards)
+      .where(inArray(publicationCards.id, ids));
+    return rows.map((r) => r.groupId);
+  }
+
+  /**
+   * F10.5: les da un grupo común a cards de turnos distintos que se
+   * programan juntas (ver CardsService.unifyGroup). Avisa al stream: el
+   * calendario agrupa con este campo.
+   */
+  async setGroupId(tx: Tx, ids: string[], groupId: string): Promise<void> {
+    if (ids.length === 0) return;
+    const rows = await tx
+      .update(publicationCards)
+      .set({ groupId, updatedAt: WRITTEN_AT })
+      .where(inArray(publicationCards.id, ids))
+      .returning({ id: publicationCards.id, userId: publicationCards.userId });
+    await notifyChanged(tx, rows);
+  }
+
   /** F10.5: contenido y estado vivos de varias cards (el historial del chat). */
   async findContentByIds(
     tx: Tx,

@@ -5,6 +5,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ConvHeader } from "../components/chat/ConvHeader.js";
 import { Composer } from "../components/chat/Composer.js";
 import { PublicationPanel } from "../components/panel/PublicationPanel.js";
+import { SelectionBar } from "../components/chat/SelectionBar.js";
 import { AssistantMessage } from "../components/chat/AssistantMessage.js";
 import { MessageUser } from "../components/chat/MessageUser.js";
 import { TypingDots } from "../components/chat/TypingDots.js";
@@ -205,7 +206,8 @@ function ChatView({
     // El panel de publicación (F10.5) es hermano del chat: en escritorio lo
     // empuja, abajo de 1024 se superpone dentro de esta misma caja (relative).
     <div className="relative flex h-full">
-      <div className="flex h-full min-w-0 flex-1 flex-col">
+      <div className="relative flex h-full min-w-0 flex-1 flex-col">
+        <SelectionBar chatId={chatId} />
         <ConvHeader
           chatId={chatId}
           title={chatTitle}

@@ -201,3 +201,15 @@ entidad. `calendar-store.ts` se borró.
 
 Todos los stores llevan el middleware `devtools` de zustand con acciones nombradas, activo solo en dev,
 para inspeccionarlos con Redux DevTools.
+
+## Addendum (2026-09-29, F10.5 PR5) — programar juntas unifica el `group_id`
+
+El chat gana la selección multired: marcar cards de turnos distintos y programarlas juntas (decisión del founder: "si las programé al mismo tiempo, son un grupo").
+
+- **Cómo se agrupan.** Como el grupo sigue siendo derivado (`group_id` + mismo `scheduled_at`), `scheduleGroup` les asigna un `group_id` nuevo y común a las cards que programa cuando vienen de más de un grupo (`CardsService.unifyGroup`). Lo hace en su propia transacción, antes de programarlas, y con `notifyChanged`.
+- **Qué no cambia.**
+  - Las que se quedan en borrador (`keepDraft`) conservan el suyo.
+  - Hermanas del mismo turno no se tocan.
+  - El calendario no cambia: las ve y las arrastra como a cualquier grupo.
+- **Horas distintas.** Con "Personalizar por red", comparten `group_id` pero no hora, así que no se juntan, igual que dentro de un turno.
+- **Si una falla.** Si una card del lote falla al programarse, queda en borrador con el grupo nuevo. Es inocuo: sin hora, no forma grupo en el calendario.

@@ -18,6 +18,7 @@ import {
   type ScheduleGroupResultItem,
   type SocialNetwork,
 } from "@presencia/shared";
+import { randomUUID } from "node:crypto";
 import { AssetsService } from "../assets/assets.service.js";
 import { ChannelsRepository } from "../channels/channels.repository.js";
 import { DbService } from "../db/db.service.js";
@@ -470,7 +471,28 @@ export class CardsService {
     // sumaba la latencia de cada uno (transacción + red al proveedor) en
     // vez de pagar el máximo. scheduleItem nunca rechaza — cada item
     // resuelve su propio resultado, Promise.all conserva el orden.
+    await this.unifyGroup(userId, body);
     return Promise.all(body.items.map((item) => this.scheduleGroupItem(userId, item)));
+  }
+
+  /**
+   * F10.5: "programar juntas" cards que nacieron en turnos distintos (la
+   * selección multired del chat). El calendario agrupa por `group_id` + la
+   * misma hora (ADR-018), así que sin esto se verían sueltas aunque el
+   * usuario las programó a la vez (decisión del founder: si las programé
+   * juntas, son un grupo). Solo las que se programan: las que se quedan en
+   * borrador conservan el suyo. Si ya comparten grupo (un turno de siempre),
+   * no se toca nada.
+   */
+  private async unifyGroup(userId: string, body: ScheduleGroupBody): Promise<void> {
+    const ids = body.items.filter((item) => !item.keepDraft).map((item) => item.cardId);
+    if (ids.length < 2) return;
+    await this.dbService.runWithTenant(userId, async (tx) => {
+      const groups = new Set(await this.repo.groupIdsOf(tx, ids));
+      // Un solo grupo y no nulo: ya son hermanas (el mismo turno).
+      if (groups.size === 1 && !groups.has(null)) return;
+      await this.repo.setGroupId(tx, ids, randomUUID());
+    });
   }
 
   private async scheduleGroupItem(
