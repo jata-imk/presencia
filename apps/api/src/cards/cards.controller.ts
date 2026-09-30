@@ -24,6 +24,7 @@ import {
   scheduleCardBodySchema,
   scheduleGroupBodySchema,
   selectCardImageBodySchema,
+  setSlidesAspectBodySchema,
   slideParamSchema,
   updateCardContentBodySchema,
   updateSlideBodySchema,
@@ -197,6 +198,19 @@ export class CardsController {
     const parsed = reorderSlidesBodySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("El orden no es válido.");
     return this.media.reorderSlides(user.id, cardId, parsed.data.slideIds);
+  }
+
+  /** "Recorte" del carrusel. También antes que `:slideId`. */
+  @Patch("cards/:id/slides/aspect")
+  setSlidesAspect(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<PublicationCardDto> {
+    const cardId = this.parseCardId(id);
+    const parsed = setSlidesAspectBodySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("La proporción no es válida.");
+    return this.media.setSlidesAspect(user.id, cardId, parsed.data.aspectRatio);
   }
 
   @Patch("cards/:id/slides/:slideId")

@@ -11,6 +11,7 @@ import {
   IMAGE_ASPECT_OPTIONS,
   IMAGE_JOB_STALE_MS,
   IMAGE_VARIANTS_PER_GENERATION,
+  carouselAspect,
   FIRST_SLIDE_ID,
   imageStyleDef,
   placeImage,
@@ -159,6 +160,11 @@ export class ImageGenerationService {
       throw new BadRequestException("Esa proporción no se usa en esta red.");
     }
     const content = card.content as CardContent;
+    // F10.6: un carrusel tiene UNA proporción para todos sus slides (la que
+    // eligió en "Recorte"); la del body solo aplica a la imagen suelta.
+    const aspectRatio = slidesIn(content)
+      ? carouselAspect(content, card.network)
+      : body.aspectRatio;
 
     const voice = await this.dbService.runWithTenant(userId, (tx) =>
       this.brandVoice.findDefault(tx),
@@ -210,7 +216,7 @@ export class ImageGenerationService {
       kind: "generate",
       slot: body.provider,
       provider,
-      aspectRatio: body.aspectRatio,
+      aspectRatio,
       style,
       images,
       slideIds: [...new Set(images.map((i) => i.slideId!))],
@@ -256,7 +262,9 @@ export class ImageGenerationService {
     // La proporción de la imagen que se edita, llevada a la más cercana que
     // usa la red: una foto subida en 3:2 se edita como 16:9 o 1:1, lo que
     // quede más cerca, y no se deforma a 4:5.
-    const aspectRatio = nearestAspect(width, height, IMAGE_ASPECT_OPTIONS[card.network]);
+    const aspectRatio = slides
+      ? carouselAspect(content, card.network)
+      : nearestAspect(width, height, IMAGE_ASPECT_OPTIONS[card.network]);
 
     return this.startJob(userId, cardId, {
       kind: "edit",
@@ -471,7 +479,13 @@ export class ImageGenerationService {
       await this.settle(userId, row.id, { status: "failed", errorMessage: "sin generador" });
       return { status: "failed" };
     }
-    const aspectRatio = row.aspectRatio as ImageAspectRatio;
+    // F10.6: un slide sale en la proporción que el carrusel tenga AHORA, no la
+    // de cuando se pidió: el recorte pudo cambiar entre el pedido y el worker.
+    const content = card.content as CardContent;
+    const aspectRatio =
+      row.slideId && slidesIn(content)
+        ? carouselAspect(content, card.network)
+        : (row.aspectRatio as ImageAspectRatio);
     const modelo = { provider: provider.provider, modelName: provider.modelName };
     const task = row.kind === "edit" ? "image_edit" : "image_generate";
 

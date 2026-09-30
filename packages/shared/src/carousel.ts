@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { IMAGE_ASPECT_OPTIONS, imageAspectRatioSchema, type ImageAspectRatio } from "./images.js";
 import type { CardContent, CarouselSlide, SocialNetwork } from "./publication.js";
 
 // El carrusel (F10.6): varias imágenes en una publicación, en orden, la
@@ -43,6 +44,7 @@ export function withSlides<C extends CardContent>(content: C, slides: CarouselSl
     // quitó describiría una imagen que ya no está.
     const rest: Record<string, unknown> = { ...content };
     delete rest.slides;
+    delete rest.slidesAspect;
     delete rest.imagePrompt;
     const only = slides[0];
     return {
@@ -115,11 +117,23 @@ export function placeImage<C extends CardContent>(
  */
 export function mediaOf(content: CardContent): Pick<CardContent, "assetIds"> & {
   slides?: CarouselSlide[];
+  slidesAspect?: ImageAspectRatio;
 } {
   if (content.archetype !== "video_script" && content.slides) {
-    return { assetIds: content.assetIds, slides: content.slides };
+    return {
+      assetIds: content.assetIds,
+      slides: content.slides,
+      ...(content.slidesAspect ? { slidesAspect: content.slidesAspect } : {}),
+    };
   }
   return { assetIds: content.assetIds };
+}
+
+/** La proporción del carrusel: la elegida, o la primera que usa la red. */
+export function carouselAspect(content: CardContent, network: SocialNetwork): ImageAspectRatio {
+  const options = IMAGE_ASPECT_OPTIONS[network];
+  const chosen = content.archetype !== "video_script" ? content.slidesAspect : undefined;
+  return chosen && options.includes(chosen) ? chosen : options[0]!;
 }
 
 /** Agregar un slide: con el prompt que se quiera, o vacío para llenarlo después. */
@@ -139,5 +153,9 @@ export const reorderSlidesBodySchema = z.object({
   slideIds: z.array(z.uuid()).min(2).max(10),
 });
 export type ReorderSlidesBody = z.infer<typeof reorderSlidesBodySchema>;
+
+/** "Recorte: 4:5 / 1:1": la proporción de todo el carrusel. */
+export const setSlidesAspectBodySchema = z.object({ aspectRatio: imageAspectRatioSchema });
+export type SetSlidesAspectBody = z.infer<typeof setSlidesAspectBodySchema>;
 
 export const slideParamSchema = z.object({ id: z.uuid(), slideId: z.uuid() });

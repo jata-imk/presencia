@@ -58,6 +58,12 @@ export interface CardImageGeneration {
   editPercent: number;
   /** Todas las imágenes que tuvo la card, de la más vieja a la más nueva. */
   versions: CardImageVersionDto[];
+  /** F10.6: cuántas imágenes saca un click (la portada, 2; otro slide, 1). */
+  variants?: number;
+  /** F10.6: otro slide del carrusel se está generando; la card tiene un trabajo a la vez. */
+  busyElsewhere?: boolean;
+  /** F10.6: guardar el prompt al salir del campo (el de un slide vive en la card). */
+  commitPrompt?: (prompt: string) => void;
   updateAlt: (assetId: string, alt: string) => Promise<void>;
 }
 
@@ -75,7 +81,10 @@ const ASPECT_CLASS: Record<ImageAspectRatio, string> = {
 };
 
 function isBusy(generation: CardImageGeneration | undefined): boolean {
-  return Boolean(generation && (generation.requesting || generation.job?.status === "generating"));
+  return Boolean(
+    generation &&
+    (generation.requesting || generation.busyElsewhere || generation.job?.status === "generating"),
+  );
 }
 
 /**
@@ -610,6 +619,9 @@ function ImageComposer({
           id={promptId}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
+          onBlur={() => {
+            if (prompt.trim() !== initialPrompt.trim()) generation.commitPrompt?.(prompt.trim());
+          }}
           rows={3}
           maxLength={2000}
           placeholder="Describe la imagen que quieres: qué se ve y dónde. El estilo se elige abajo."
@@ -686,9 +698,15 @@ function ImageComposer({
         )}
       </div>
       <p className="text-[11px] text-fg-muted">
-        {onCancel
-          ? "Genera dos opciones nuevas desde cero con este prompt. Las imágenes que ya tienes se quedan en tus versiones."
-          : "Genera dos opciones para que elijas. Si prefieres hacerla afuera, copia el prompt y sube el resultado: eso no tiene costo."}
+        {generation.busyElsewhere
+          ? "Se está generando otro slide. Cuando termine, puedes generar este."
+          : (generation.variants ?? 2) === 1
+            ? onCancel
+              ? "Genera una imagen nueva desde cero con este prompt. La que ya tienes se queda en tus versiones."
+              : "Genera una imagen para este slide. Si prefieres hacerla afuera, copia el prompt y sube el resultado: eso no tiene costo."
+            : onCancel
+              ? "Genera dos opciones nuevas desde cero con este prompt. Las imágenes que ya tienes se quedan en tus versiones."
+              : "Genera dos opciones para que elijas. Si prefieres hacerla afuera, copia el prompt y sube el resultado: eso no tiene costo."}
       </p>
     </div>
   );

@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  carouselAspect,
+  FIRST_SLIDE_ID,
   IMAGE_ASPECT_OPTIONS,
   IMAGE_JOB_STALE_MS,
+  NETWORK_MAX_IMAGES,
   type CardImageJob,
   type CardImageVersionDto,
+  type CarouselSlide,
+  type GenerateCardImageBody,
+  type ImageAspectRatio,
   type ImageProviderSlot,
   type PublicationCardDto,
   type QuotaStatusDto,
@@ -11,13 +17,18 @@ import {
 import type { CardMediaActions, GenerateInput } from "../../components/cards/CardMedia.js";
 import { ApiError } from "../api.js";
 import {
+  addCardSlide,
   cancelCardSchedule,
+  deleteCardSlide,
   editCardImage,
   fetchCardImageVersions,
   generateCardImage,
+  reorderCardSlides,
   rescheduleCard,
   selectCardImage,
+  setCardSlidesAspect,
   updateAssetAlt,
+  updateCardSlide,
   uploadCardImage,
 } from "../cards-api.js";
 import { cuotaAgotadaDe } from "../cuota-agotada.js";
@@ -34,12 +45,45 @@ import { useToastStore } from "../../stores/toast-store.js";
  * chat es compacta y las acciones se hacen en el panel de publicación, así
  * que la lógica pasa a un hook que cualquier superficie puede usar.
  */
+/**
+ * F10.6: el carrusel de la card. Las acciones de imagen de un slide son las
+ * mismas piezas de siempre (composer, versiones, ajustar), apuntadas a ESE
+ * slide con `mediaFor`.
+ */
+export interface CarouselActions {
+  slides: CarouselSlide[];
+  /** Cuántas imágenes acepta la red. */
+  max: number;
+  aspect: ImageAspectRatio;
+  aspectOptions: readonly ImageAspectRatio[];
+  /** Los slides que está llenando el trabajo que corre ahora. */
+  generatingIds: string[];
+  /** Un cambio de estructura (agregar, quitar, ordenar, recortar) en camino. */
+  changing: boolean;
+  /** Un pedido de generar en camino (todavía sin trabajo en la card). */
+  requesting: boolean;
+  mediaFor: (slide: CarouselSlide, index: number) => CardMediaActions | undefined;
+  add: () => Promise<boolean>;
+  remove: (slideId: string) => void;
+  reorder: (slideIds: string[]) => void;
+  setAspect: (aspect: ImageAspectRatio) => void;
+  /** Genera en un solo trabajo los slides que tienen prompt y no imagen. */
+  generateMissing: () => void;
+  /** Lo que costaría `generateMissing`, en % del mes; null si no hay nada que generar. */
+  missingPercent: number | null;
+  missingCount: number;
+}
+
 export interface CardController {
   card: PublicationCardDto | undefined;
   /** El trabajo de imagen como hay que mostrarlo ahora (ver effectiveImageJob). */
   imageJob: CardImageJob | null;
   /** Solo cuando la card se puede editar y no es de video. */
   media: CardMediaActions | undefined;
+  /** F10.6: solo en una card editable que ya es carrusel. */
+  carousel: CarouselActions | undefined;
+  /** F10.6: convierte la imagen suelta en carrusel (agrega el segundo slide). */
+  startCarousel: (() => Promise<boolean>) | undefined;
   busy: boolean;
   openSchedule: () => void;
   cancel: () => void;
@@ -68,6 +112,7 @@ export function useCardController(
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [requestingImage, setRequestingImage] = useState(false);
+  const [changingSlides, setChangingSlides] = useState(false);
   const [cuota, setCuota] = useState<QuotaStatusDto | null>(null);
 
   // Un trabajo "generando" que no termina (el worker murió a la mitad) no
@@ -88,7 +133,8 @@ export function useCardController(
   // cards editables, que son las únicas que muestran la tira.
   const [versions, setVersions] = useState<CardImageVersionDto[]>([]);
   const editable = card?.status === "draft" || card?.status === "failed";
-  const selectedImage = card?.content.assetIds[0] ?? null;
+  // Todas las elegidas, no solo la primera: en un carrusel cada slide cambia la suya.
+  const selectedImage = card?.content.assetIds.join(",") || null;
   const versionsKey =
     withMedia && card && editable && (selectedImage || rawJob)
       ? `${card.id}|${rawJob?.id ?? ""}|${rawJob?.status ?? ""}|${selectedImage ?? ""}`
@@ -123,7 +169,7 @@ export function useCardController(
   // La respuesta trae la card ya "generando"; el resultado llega después por
   // el stream de cards, cuando el worker termina. Un 402 no es un error de
   // red: abre la pantalla de cuota agotada, igual que en el chat.
-  async function handleGenerate(id: string, input: GenerateInput): Promise<boolean> {
+  async function handleGenerate(id: string, input: GenerateCardImageBody): Promise<boolean> {
     setRequestingImage(true);
     try {
       applyCards(await generateCardImage(id, input));
@@ -138,10 +184,20 @@ export function useCardController(
     }
   }
 
-  async function handleEdit(id: string, instruction: string, provider: ImageProviderSlot) {
+  async function handleEdit(
+    id: string,
+    instruction: string,
+    provider: ImageProviderSlot,
+    slideId?: string,
+  ) {
     setRequestingImage(true);
     try {
-      applyCards(await editCardImage(id, { instruction, provider }));
+      applyCards(
+        await editCardImage(
+          id,
+          slideId ? { instruction, provider, slideId } : { instruction, provider },
+        ),
+      );
     } catch (err) {
       const agotada = cuotaAgotadaDe(err);
       if (agotada) setCuota(agotada);
@@ -161,15 +217,15 @@ export function useCardController(
     }
   }
 
-  async function handleSelect(id: string, assetId: string) {
+  async function handleSelect(id: string, assetId: string, slideId?: string) {
     try {
-      applyCards(await selectCardImage(id, assetId));
+      applyCards(await selectCardImage(id, assetId, slideId));
     } catch (err) {
       failToast("No se pudo elegir esa imagen", err);
     }
   }
 
-  async function handleUpload(id: string, file: File) {
+  async function handleUpload(id: string, file: File, slideId?: string) {
     const problem = imageFileProblem(file);
     if (problem) {
       toast({ title: "No se pudo subir la imagen", description: problem });
@@ -177,11 +233,28 @@ export function useCardController(
     }
     setUploading(true);
     try {
-      applyCards(await uploadCardImage(id, file));
+      applyCards(await uploadCardImage(id, file, slideId));
     } catch (err) {
       failToast("No se pudo subir la imagen", err);
     } finally {
       setUploading(false);
+    }
+  }
+
+  /** Un cambio de estructura del carrusel: uno a la vez, y la card nueva al store. */
+  async function changeSlides(
+    title: string,
+    run: () => Promise<PublicationCardDto>,
+  ): Promise<boolean> {
+    setChangingSlides(true);
+    try {
+      applyCards(await run());
+      return true;
+    } catch (err) {
+      failToast(title, err);
+      return false;
+    } finally {
+      setChangingSlides(false);
     }
   }
 
@@ -195,7 +268,7 @@ export function useCardController(
           uploading,
           generation: imagesConfig
             ? {
-                generate: (input) => handleGenerate(card.id, input),
+                generate: (input: GenerateInput) => handleGenerate(card.id, input),
                 select: (assetId) => handleSelect(card.id, assetId),
                 requesting: requestingImage,
                 job: imageJob,
@@ -210,6 +283,118 @@ export function useCardController(
               }
             : undefined,
         }
+      : undefined;
+
+  // ── F10.6: carrusel ──
+  const content = card?.content;
+  const slides =
+    content && content.archetype !== "video_script" && content.slides ? content.slides : null;
+  const canImage = Boolean(card && editable && content && content.archetype !== "video_script");
+  const max = card ? NETWORK_MAX_IMAGES[card.network] : 0;
+  const lastStyle = imageJob?.style ?? imagesConfig?.defaultStyle;
+  const running = imageJob?.status === "generating" ? imageJob : null;
+  const generatingIds = running ? (running.slideIds ?? [FIRST_SLIDE_ID]) : [];
+
+  function slideMedia(slide: CarouselSlide, index: number): CardMediaActions | undefined {
+    if (!card || !media || !content) return undefined;
+    const aspect = carouselAspect(content, card.network);
+    const here = generatingIds.includes(slide.id) || imageJob?.slideIds?.includes(slide.id);
+    const base = media.generation;
+    return {
+      upload: (file) => void handleUpload(card.id, file, slide.id),
+      uploading,
+      generation:
+        base && imagesConfig
+          ? {
+              ...base,
+              // El trabajo de la card solo es "de este slide" si lo está llenando.
+              job: here ? imageJob : null,
+              busyElsewhere: Boolean(running) && !generatingIds.includes(slide.id),
+              percent: index === 0 ? imagesConfig.generatePercent : imagesConfig.editPercent,
+              variants: index === 0 ? 2 : 1,
+              aspectOptions: [aspect],
+              generate: async (input) => {
+                // El prompt de un slide vive en la card: se guarda antes de generar.
+                if (input.prompt.trim() !== (slide.imagePrompt ?? "").trim()) {
+                  const saved = await changeSlides("No se pudo guardar el prompt", () =>
+                    updateCardSlide(card.id, slide.id, input.prompt.trim()),
+                  );
+                  if (!saved) return false;
+                }
+                return handleGenerate(card.id, {
+                  provider: input.provider,
+                  aspectRatio: aspect,
+                  style: input.style,
+                  slideIds: [slide.id],
+                });
+              },
+              select: (assetId) => handleSelect(card.id, assetId, slide.id),
+              edit: (instruction, provider) =>
+                void handleEdit(card.id, instruction, provider, slide.id),
+              commitPrompt: (prompt) =>
+                void changeSlides("No se pudo guardar el prompt", () =>
+                  updateCardSlide(card.id, slide.id, prompt),
+                ),
+            }
+          : undefined,
+    };
+  }
+
+  const missing = slides
+    ? slides
+        .map((slide, index) => ({ slide, index }))
+        .filter(({ slide }) => !slide.assetId && (slide.imagePrompt?.trim().length ?? 0) >= 3)
+    : [];
+  const missingPercent =
+    imagesConfig && missing.length > 0
+      ? Math.round(
+          missing.reduce(
+            (sum, { index }) =>
+              sum + (index === 0 ? imagesConfig.generatePercent : imagesConfig.editPercent),
+            0,
+          ) * 10,
+        ) / 10
+      : null;
+
+  const carousel: CarouselActions | undefined =
+    card && canImage && slides && content
+      ? {
+          slides,
+          max,
+          aspect: carouselAspect(content, card.network),
+          aspectOptions: IMAGE_ASPECT_OPTIONS[card.network],
+          generatingIds,
+          changing: changingSlides,
+          requesting: requestingImage,
+          mediaFor: slideMedia,
+          add: () => changeSlides("No se pudo agregar el slide", () => addCardSlide(card.id)),
+          remove: (slideId) =>
+            void changeSlides("No se pudo quitar el slide", () =>
+              deleteCardSlide(card.id, slideId),
+            ),
+          reorder: (slideIds) =>
+            void changeSlides("No se pudo reordenar", () => reorderCardSlides(card.id, slideIds)),
+          setAspect: (aspect) =>
+            void changeSlides("No se pudo recortar el carrusel", () =>
+              setCardSlidesAspect(card.id, aspect),
+            ),
+          generateMissing: () => {
+            if (missing.length === 0) return;
+            void handleGenerate(card.id, {
+              provider: "primary",
+              aspectRatio: carouselAspect(content, card.network),
+              ...(lastStyle ? { style: lastStyle } : {}),
+              slideIds: missing.map(({ slide }) => slide.id),
+            });
+          },
+          missingPercent,
+          missingCount: missing.length,
+        }
+      : undefined;
+
+  const startCarousel =
+    card && canImage && !slides && max > 1
+      ? () => changeSlides("No se pudo agregar el slide", () => addCardSlide(card.id))
       : undefined;
 
   function openSchedule() {
@@ -262,6 +447,8 @@ export function useCardController(
     card,
     imageJob,
     media,
+    carousel,
+    startCarousel,
     busy,
     openSchedule,
     cancel: () => void handleCancel(),

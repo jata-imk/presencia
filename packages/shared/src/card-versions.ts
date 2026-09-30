@@ -52,7 +52,7 @@ export type CardVersionSource = "chat" | "manual" | "ai" | "restore";
  */
 export type CardVersionContent = CardContent extends infer C
   ? C extends CardContent
-    ? Omit<C, "assetIds" | "slides">
+    ? Omit<C, "assetIds" | "slides" | "slidesAspect">
     : never
   : never;
 

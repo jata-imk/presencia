@@ -22,6 +22,12 @@ export interface AssetMetadata {
    * escriba.
    */
   alt?: string;
+  /**
+   * F10.6: esta imagen es un recorte de `croppedFrom` (el recorte del
+   * carrusel). Recortar otra vez parte de la original, no del recorte: pasar
+   * 4:5 → 1:1 → 4:5 regresa a la original en vez de cortar dos veces.
+   */
+  croppedFrom?: string;
 }
 
 /** Un asset con lo que se sabe de cómo nació (si lo dibujó un generador). */

@@ -36,6 +36,12 @@ export async function fitToAspect(data: Uint8Array, aspect: ImageAspectRatio): P
   return new Uint8Array(cropped);
 }
 
+/** Si unas medidas ya están en la proporción (con la misma tolerancia que el recorte). */
+export function matchesAspect(width: number, height: number, aspect: ImageAspectRatio): boolean {
+  const target = ratioOf(aspect);
+  return Math.abs(width / height - target) / target <= TOLERANCE;
+}
+
 /**
  * La proporción de la lista más cercana a la de una imagen: con qué
  * proporción se pide la edición de una foto que el usuario subió en 3:2.

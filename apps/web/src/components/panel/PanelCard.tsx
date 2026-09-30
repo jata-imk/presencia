@@ -5,6 +5,7 @@ import {
   CalendarClock,
   Check,
   ExternalLink,
+  GalleryHorizontal,
   Eye,
   ImageIcon,
   Link2,
@@ -29,6 +30,7 @@ import {
 } from "react";
 import { Link } from "react-router";
 import {
+  NETWORK_MAX_IMAGES,
   NETWORK_TEXT_LIMITS,
   buildPostText,
   trimToLimitInstruction,
@@ -36,6 +38,7 @@ import {
   type CardVersionDto,
   type ChannelAccountDto,
   type PublicationCardDto,
+  type SocialNetwork,
 } from "@presencia/shared";
 import { missingImageNote } from "../../lib/cards/card-image.js";
 import { useCardController, type CardController } from "../../lib/cards/use-card-controller.js";
@@ -59,6 +62,7 @@ import type { PreviewAccount } from "../preview/PreviewParts.js";
 import { QuotaExhaustedModal } from "../QuotaExhaustedModal.js";
 import { AskBar } from "./AskBar.js";
 import { ContentEditor, type SaveState } from "./ContentEditor.js";
+import { CarouselEditor } from "./CarouselEditor.js";
 import { Notice, Segmented, Section } from "./PanelParts.js";
 import {
   CompareView,
@@ -770,7 +774,16 @@ function EditBody({
 
   return (
     <div>
-      {content.archetype !== "video_script" && (
+      {content.archetype !== "video_script" && controller.carousel && (
+        <Section
+          title="Carrusel"
+          Icon={GalleryHorizontal}
+          meta={`${String(controller.carousel.slides.length)} slides`}
+        >
+          <CarouselEditor carousel={controller.carousel} missingNote={missingImageNote(network)} />
+        </Section>
+      )}
+      {content.archetype !== "video_script" && !controller.carousel && (
         <Section title="Imagen" Icon={ImageIcon}>
           {assetId ? (
             <SelectedImage
@@ -786,6 +799,9 @@ function EditBody({
               prompt={prompt}
               media={controller.media}
             />
+          )}
+          {controller.startCarousel && (
+            <StartCarouselButton network={network} onStart={controller.startCarousel} />
           )}
         </Section>
       )}
@@ -906,6 +922,34 @@ function FooterButton({
     >
       <Icon size={15} aria-hidden="true" />
       {children}
+    </button>
+  );
+}
+
+/**
+ * F10.6: vuelve carrusel la imagen suelta. Lo que ya tiene queda de portada y
+ * se agrega el segundo slide, vacío, para escribirle su prompt.
+ */
+function StartCarouselButton({
+  network,
+  onStart,
+}: {
+  network: SocialNetwork;
+  onStart: () => Promise<boolean>;
+}) {
+  const [working, setWorking] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={working}
+      onClick={() => {
+        setWorking(true);
+        void onStart().finally(() => setWorking(false));
+      }}
+      className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-accent hover:underline disabled:opacity-50"
+    >
+      <GalleryHorizontal size={14} aria-hidden />
+      Hacer carrusel · hasta {NETWORK_MAX_IMAGES[network]} imágenes
     </button>
   );
 }
