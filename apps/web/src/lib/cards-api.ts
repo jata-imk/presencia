@@ -11,6 +11,7 @@ import type {
   ScheduleGroupBody,
   ScheduleGroupResultItem,
   SocialNetwork,
+  ImageAspectRatio,
 } from "@presencia/shared";
 import { ApiError, apiFetch } from "./api.js";
 
@@ -83,8 +84,14 @@ export function fetchDraftCards(signal?: AbortSignal): Promise<PublicationCardDt
  * un header, codificado porque un header no admite acentos. Devuelve la card
  * ya con la imagen elegida.
  */
-export async function uploadCardImage(cardId: string, file: File): Promise<PublicationCardDto> {
-  const res = await fetch(`/api/cards/${cardId}/assets`, {
+export async function uploadCardImage(
+  cardId: string,
+  file: File,
+  /** F10.6: el slide del carrusel al que va. */
+  slideId?: string,
+): Promise<PublicationCardDto> {
+  const query = slideId ? `?slideId=${encodeURIComponent(slideId)}` : "";
+  const res = await fetch(`/api/cards/${cardId}/assets${query}`, {
     method: "POST",
     headers: { "Content-Type": file.type, "X-File-Name": encodeURIComponent(file.name) },
     body: file,
@@ -109,10 +116,57 @@ export function generateCardImage(
 }
 
 /** Elegir otra de las imágenes de la card (una variante, una versión anterior). */
-export function selectCardImage(cardId: string, assetId: string): Promise<PublicationCardDto> {
+export function selectCardImage(
+  cardId: string,
+  assetId: string,
+  slideId?: string,
+): Promise<PublicationCardDto> {
   return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/image`, {
     method: "PATCH",
-    body: { assetId },
+    body: slideId ? { assetId, slideId } : { assetId },
+  });
+}
+
+// ── F10.6: slides del carrusel ─────────────────────────────────────────
+
+export function addCardSlide(cardId: string, imagePrompt?: string): Promise<PublicationCardDto> {
+  return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/slides`, {
+    method: "POST",
+    body: imagePrompt ? { imagePrompt } : {},
+  });
+}
+
+export function updateCardSlide(
+  cardId: string,
+  slideId: string,
+  imagePrompt: string,
+): Promise<PublicationCardDto> {
+  return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/slides/${slideId}`, {
+    method: "PATCH",
+    body: { imagePrompt },
+  });
+}
+
+export function deleteCardSlide(cardId: string, slideId: string): Promise<PublicationCardDto> {
+  return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/slides/${slideId}`, {
+    method: "DELETE",
+  });
+}
+
+export function reorderCardSlides(cardId: string, slideIds: string[]): Promise<PublicationCardDto> {
+  return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/slides/order`, {
+    method: "PATCH",
+    body: { slideIds },
+  });
+}
+
+export function setCardSlidesAspect(
+  cardId: string,
+  aspectRatio: ImageAspectRatio,
+): Promise<PublicationCardDto> {
+  return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/slides/aspect`, {
+    method: "PATCH",
+    body: { aspectRatio },
   });
 }
 

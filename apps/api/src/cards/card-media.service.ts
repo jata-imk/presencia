@@ -10,6 +10,7 @@ import {
 import {
   cardContentSchema,
   hasSlide,
+  IMAGE_ASPECT_OPTIONS,
   IMAGE_JOB_STALE_MS,
   NETWORK_LABELS,
   NETWORK_MAX_IMAGES,
@@ -20,11 +21,13 @@ import {
   type CardContent,
   type CardImageJob,
   type CardImageVersionDto,
+  type ImageAspectRatio,
   type CarouselSlide,
   type PublicationCardDto,
 } from "@presencia/shared";
 import type { Tx } from "../db/db.service.js";
 import type { AssetMetadata } from "../assets/assets.repository.js";
+import { fitToAspect } from "../images/image-fit.js";
 import { AssetsService } from "../assets/assets.service.js";
 import { InvalidImageError } from "../assets/image-inspect.js";
 import { DbService } from "../db/db.service.js";
@@ -237,6 +240,86 @@ export class CardMediaService {
         throw new ConflictException("El carrusel cambió. Vuelve a ordenarlo.");
       }
       return slideIds.map((id) => byId.get(id)!);
+    });
+  }
+
+  /**
+   * "Recorte: 4:5 / 1:1": la proporción de todo el carrusel. Las imágenes
+   * que ya tiene y no están en esa proporción se recortan al centro, como
+   * COPIAS: la original queda en las versiones, por si se vuelve atrás. Lo
+   * que se genere después ya sale en la proporción elegida.
+   */
+  async setSlidesAspect(
+    userId: string,
+    cardId: string,
+    aspectRatio: ImageAspectRatio,
+  ): Promise<PublicationCardDto> {
+    const card = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, cardId));
+    if (!card) throw new NotFoundException("No encontramos esa publicación.");
+    this.assertCanChangeImage(card);
+    const content = card.content as CardContent;
+    if (content.archetype === "video_script" || !content.slides) {
+      throw new BadRequestException("Esta publicación no es un carrusel.");
+    }
+    if (!IMAGE_ASPECT_OPTIONS[card.network].includes(aspectRatio)) {
+      throw new BadRequestException("Esa proporción no se usa en esta red.");
+    }
+    if (generating(card)) {
+      throw new ConflictException(
+        "Hay una imagen generándose. Espera a que termine para recortar.",
+      );
+    }
+
+    // Recortar y subir afuera de la transacción: son bytes y storage, y la
+    // card no se bloquea mientras tanto.
+    const crops = new Map<string, Awaited<ReturnType<AssetsService["storeImage"]>>>();
+    for (const assetId of new Set(content.slides.flatMap((s) => (s.assetId ? [s.assetId] : [])))) {
+      const original = await this.dbService.runWithTenant(userId, (tx) =>
+        this.assets.find(tx, assetId),
+      );
+      if (!original) continue;
+      const bytes = await this.assets.readBytes(original);
+      const cropped = await fitToAspect(bytes, aspectRatio);
+      // Ya estaba en la proporción (dentro de la tolerancia): no se copia.
+      if (cropped === bytes) continue;
+      const meta = original.metadata as AssetMetadata;
+      crops.set(
+        assetId,
+        await this.assets.storeImage({
+          userId,
+          cardId,
+          chatId: card.chatId,
+          data: cropped,
+          source: original.source,
+          metadata: {
+            ...(meta.alt ? { alt: meta.alt } : {}),
+            ...(meta.originalName ? { originalName: meta.originalName } : {}),
+          },
+        }),
+      );
+    }
+
+    return this.dbService.runWithTenant(userId, async (tx: Tx) => {
+      const current = await this.repo.lockById(tx, cardId);
+      if (!current) throw new NotFoundException("No encontramos esa publicación.");
+      for (const stored of crops.values()) await this.assets.record(tx, stored);
+      const now = current.content as CardContent;
+      if (now.archetype === "video_script" || !now.slides) {
+        throw new ConflictException("El carrusel cambió. Vuelve a intentarlo.");
+      }
+      // Sobre los slides de AHORA: un slide que cambió de imagen mientras se
+      // recortaba se queda con la suya (su recorte no aplica).
+      const slides = now.slides.map((s) => {
+        const crop = s.assetId ? crops.get(s.assetId) : undefined;
+        return crop ? { ...s, assetId: crop.id } : s;
+      });
+      const next = cardContentSchema.parse({
+        ...withSlides(now, slides),
+        slidesAspect: aspectRatio,
+      });
+      const updated = await this.repo.updateContentIfEditable(tx, cardId, next);
+      if (!updated) throw new ConflictException(NOT_EDITABLE_MESSAGE);
+      return toDto(updated);
     });
   }
 

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CardImageJob } from "./images.js";
+import { imageAspectRatioSchema, type CardImageJob } from "./images.js";
 
 // Contratos núcleo de publication_cards (docs/reference/modelo-de-datos.md).
 // El backend valida el JSONB `content` con el schema del arquetipo; el
@@ -47,6 +47,12 @@ export type CarouselSlide = z.infer<typeof carouselSlideSchema>;
 /** Hasta 10: el tope más alto de las redes (NETWORK_MAX_IMAGES). */
 const slidesSchema = z.array(carouselSlideSchema).min(2).max(10).optional();
 
+/**
+ * La proporción de TODO el carrusel: Instagram recorta cada slide a la del
+ * primero, así que se elige una para todos. Sin ella, la primera de la red.
+ */
+const slidesAspectSchema = imageAspectRatioSchema.optional();
+
 export const visualFirstContentSchema = z.object({
   archetype: z.literal("visual_first"),
   caption: z.string(),
@@ -71,6 +77,7 @@ export const visualFirstContentSchema = z.object({
     ),
   assetIds: z.array(z.uuid()).default([]),
   slides: slidesSchema,
+  slidesAspect: slidesAspectSchema,
 });
 
 export const videoScriptContentSchema = z.object({
@@ -109,6 +116,7 @@ export const textFirstContentSchema = z.object({
     ),
   assetIds: z.array(z.uuid()).default([]),
   slides: slidesSchema,
+  slidesAspect: slidesAspectSchema,
 });
 
 export const cardContentSchema = z.discriminatedUnion("archetype", [
@@ -121,7 +129,7 @@ export type CardContent = z.infer<typeof cardContentSchema>;
 // `slides` fuera de las tools hasta que el chat proponga carruseles (F10.6
 // PR5): con el campo a la vista el modelo lo llenaría antes de tiempo.
 const visualFirstToolInputSchema = visualFirstContentSchema
-  .omit({ archetype: true, assetIds: true, slides: true })
+  .omit({ archetype: true, assetIds: true, slides: true, slidesAspect: true })
   .extend({ network: z.enum(NETWORKS_BY_ARCHETYPE.visual_first) });
 type VisualFirstToolInput = z.infer<typeof visualFirstToolInputSchema>;
 
@@ -131,7 +139,7 @@ const videoScriptToolInputSchema = videoScriptContentSchema
 type VideoScriptToolInput = z.infer<typeof videoScriptToolInputSchema>;
 
 const textFirstToolInputSchema = textFirstContentSchema
-  .omit({ archetype: true, assetIds: true, slides: true })
+  .omit({ archetype: true, assetIds: true, slides: true, slidesAspect: true })
   .extend({ network: z.enum(NETWORKS_BY_ARCHETYPE.text_first) });
 type TextFirstToolInput = z.infer<typeof textFirstToolInputSchema>;
 

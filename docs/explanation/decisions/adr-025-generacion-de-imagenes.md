@@ -107,4 +107,12 @@ El QA de F10 dejó ver que el estilo lo decidía el chat: el `.describe` de `ima
 - **El prompt es del slide.** En un carrusel, "Generar" exige `slideIds` y cada imagen usa el `imagePrompt` de su slide (se edita con `PATCH /cards/:id/slides/:slideId`). El estilo es uno por trabajo.
 - **Endpoints:** `POST /cards/:id/slides` (con tope por red, `NETWORK_MAX_IMAGES`), `PATCH /cards/:id/slides/:slideId`, `DELETE /cards/:id/slides/:slideId` y `PATCH /cards/:id/slides/order` (una permutación completa; si el carrusel cambió en otra pestaña, 409). Subir (`?slideId=`), elegir (`slideId`) y ajustar (`slideId`) apuntan a un slide; sin él, a la portada.
 - **Las versiones de texto no incluyen `slides`**, igual que no incluyen `assetIds`: restaurar el texto no cambia imágenes que costaron cuota.
-- **Pendiente:** el recorte 4:5/1:1 de todo el carrusel se hace con la pantalla (PR4); los topes por red se confirman contra los openapi de PostFast y Upload-Post al publicar (PR6); las tools del chat no ven `slides` hasta PR5.
+- **Pendiente:** los topes por red se confirman contra los openapi de PostFast y Upload-Post al publicar (PR6); las tools del chat no ven `slides` hasta PR5.
+
+## Addendum (2026-09-30, F10.6 PR4a) — el carrusel en el panel y el recorte
+
+- **Una proporción por carrusel** (`content.slidesAspect`, "Recorte: 4:5 / 1:1"): Instagram recorta todo el carrusel a la del primer slide, así que se elige una para todos. En un carrusel, generar usa esa y no la del body.
+- **Recortar hace copias:** `PATCH /cards/:id/slides/aspect` recorta al centro (`fitToAspect`) las imágenes que no están en la proporción y pone la copia en su slide. La original queda en las versiones, por si se vuelve atrás. Lo que ya estaba en la proporción no se copia. No mientras corre un trabajo de imagen. El recorte libre arrastrando queda en backlog.
+- **El panel reutiliza las piezas de imagen de siempre.** El slide elegido muestra el composer, las versiones, "Ajustar" y el texto alternativo, con acciones apuntadas a ese slide (`CarouselActions.mediaFor`). El precio que anuncia es el del slide: 4.7% la portada, 2.3% los demás. Mientras otro slide genera, los demás esperan (la card tiene un trabajo a la vez).
+- **Reordenar:** arrastrar con mouse, o las flechas del slide elegido (teclado y touch, donde el drag de HTML5 no existe).
+- **"Generar las que faltan":** los slides con prompt y sin imagen, en un solo trabajo, con el precio sumado a la vista antes del click.

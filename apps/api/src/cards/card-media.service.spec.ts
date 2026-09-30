@@ -423,6 +423,35 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     await expect(media.addSlide(userA, cardId, {})).resolves.toBeDefined();
   });
 
+  it("el recorte del carrusel copia al centro lo que no está en la proporción y deja lo que sí", async () => {
+    const cardId = await createCard(VISUAL);
+    const dto = await media.addSlide(userA, cardId, {});
+    const second = dto.content.archetype === "visual_first" ? dto.content.slides![1]! : null;
+    // Portada 40×50 (ya es 4:5) y segundo 60×60 (cuadrada).
+    const cover = (await media.attachUpload(userA, cardId, PNG)).content.assetIds[0]!;
+    const square = (
+      await media.attachUpload(userA, cardId, solidPng(60, 60, [5, 5, 5]), undefined, second!.id)
+    ).content.assetIds[1]!;
+
+    const cropped = await media.setSlidesAspect(userA, cardId, "4:5");
+    expect(cropped.content).toMatchObject({ slidesAspect: "4:5" });
+    const [first, other] = cropped.content.assetIds;
+    expect(first).toBe(cover);
+    expect(other).not.toBe(square);
+    const copy = await dbService.runWithTenant(userA, async (tx) => {
+      const [row] = await tx.select().from(assets).where(eq(assets.id, other!));
+      return row!;
+    });
+    expect(copy.metadata).toMatchObject({ width: 48, height: 60 });
+    // La original sigue en las versiones.
+    const versions = await media.versions(userA, cardId);
+    expect(versions.map((v) => v.assetId)).toContain(square);
+
+    await expect(media.setSlidesAspect(userA, cardId, "16:9")).rejects.toThrow(/no se usa/);
+    const single = await createCard(VISUAL);
+    await expect(media.setSlidesAspect(userA, single, "1:1")).rejects.toThrow(/no es un carrusel/);
+  });
+
   it("subir o elegir a un slide que no existe es 404, no un 200 vacío", async () => {
     const cardId = await createCard(VISUAL);
     await expect(media.attachUpload(userA, cardId, PNG, undefined, randomUUID())).rejects.toThrow(

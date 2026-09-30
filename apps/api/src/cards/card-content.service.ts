@@ -32,6 +32,7 @@ export function textOf(content: CardContent): CardVersionContent {
   const text: Record<string, unknown> = { ...content };
   delete text.assetIds;
   delete text.slides;
+  delete text.slidesAspect;
   return text as CardVersionContent;
 }
 

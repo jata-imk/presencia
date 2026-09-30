@@ -11,6 +11,7 @@ import {
   IMAGE_ASPECT_OPTIONS,
   IMAGE_JOB_STALE_MS,
   IMAGE_VARIANTS_PER_GENERATION,
+  carouselAspect,
   FIRST_SLIDE_ID,
   imageStyleDef,
   placeImage,
@@ -159,6 +160,11 @@ export class ImageGenerationService {
       throw new BadRequestException("Esa proporción no se usa en esta red.");
     }
     const content = card.content as CardContent;
+    // F10.6: un carrusel tiene UNA proporción para todos sus slides (la que
+    // eligió en "Recorte"); la del body solo aplica a la imagen suelta.
+    const aspectRatio = slidesIn(content)
+      ? carouselAspect(content, card.network)
+      : body.aspectRatio;
 
     const voice = await this.dbService.runWithTenant(userId, (tx) =>
       this.brandVoice.findDefault(tx),
@@ -210,7 +216,7 @@ export class ImageGenerationService {
       kind: "generate",
       slot: body.provider,
       provider,
-      aspectRatio: body.aspectRatio,
+      aspectRatio,
       style,
       images,
       slideIds: [...new Set(images.map((i) => i.slideId!))],
