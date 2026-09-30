@@ -15,6 +15,7 @@ export function Modal({
   maxWidth = "max-w-sm",
   align = "center",
   initialFocus,
+  panelClassName = "p-6",
   children,
 }: {
   onClose: () => void;
@@ -30,6 +31,11 @@ export function Modal({
    * contenedor y el input no recibe lo que el usuario teclea.
    */
   initialFocus?: RefObject<HTMLElement | null>;
+  /**
+   * Relleno y layout del panel. Un diálogo con header, cuerpo con scroll y
+   * pie propios (el detalle de Estilo visual) pasa el suyo sin relleno.
+   */
+  panelClassName?: string;
   children: ReactNode;
 }) {
   const { refs, context } = useDialog({ onClose });
@@ -49,7 +55,7 @@ export function Modal({
             aria-modal="true"
             aria-labelledby={labelledBy}
             tabIndex={-1}
-            className={`w-full ${maxWidth} rounded-2xl border border-line bg-card p-6 shadow-lg outline-none`}
+            className={`w-full ${maxWidth} rounded-2xl border border-line bg-card ${panelClassName} shadow-lg outline-none`}
           >
             {children}
           </div>

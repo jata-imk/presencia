@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { imageStyleSchema, type ImageStyle } from "./image-styles.js";
 import type { SocialNetwork } from "./publication.js";
 
 // F10: generar la imagen de una card (ADR-025). Lo que comparten la API y el
@@ -44,6 +45,11 @@ export const generateCardImageBodySchema = z.object({
   provider: imageProviderSlotSchema.default("primary"),
   prompt: z.string().trim().min(3).max(2000),
   aspectRatio: imageAspectRatioSchema,
+  /**
+   * F10.6: el estilo de ESTA imagen (el chip del composer). Sin él, el de la
+   * Voz de marca.
+   */
+  style: imageStyleSchema.optional(),
 });
 export type GenerateCardImageBody = z.infer<typeof generateCardImageBodySchema>;
 
@@ -66,6 +72,13 @@ export interface CardImageJob {
   kind: "generate" | "edit";
   /** La proporción pedida: con ella la card dibuja el hueco mientras genera. */
   aspectRatio: ImageAspectRatio;
+  /**
+   * F10.6: el estilo con que se generó. Desde el chip del composer (PR2),
+   * "Regenerar" y "Probar con otro generador" lo repiten; hoy es solo registro.
+   * Ausente en trabajos anteriores a F10.6 y en las
+   * ediciones (que conservan el de su imagen de partida).
+   */
+  style?: ImageStyle;
   assetIds: string[];
   startedAt: string;
 }

@@ -5,7 +5,12 @@ import path from "node:path";
 import { and, eq, inArray } from "drizzle-orm";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { CardContent, CardImageJob } from "@presencia/shared";
+import {
+  IMAGE_STYLE_IDS,
+  imageStyleDef,
+  type CardContent,
+  type CardImageJob,
+} from "@presencia/shared";
 import { LocalAssetStorage } from "../assets/asset-storage.js";
 import {
   aiUsageEvents,
@@ -20,7 +25,12 @@ import type { DbService as DbServiceType } from "../db/db.service.js";
 import type { BossService } from "../jobs/boss.service.js";
 import { FAKE_BLOCK_MARKER, FakeImageProvider } from "./fake-image.provider.js";
 import { fitToAspect, nearestAspect } from "./image-fit.js";
-import { composeEditPrompt, composeImagePrompt, DEFAULT_IMAGE_STYLE } from "./image-prompt.js";
+import {
+  composeEditPrompt,
+  composeImagePrompt,
+  NO_TEXT_NO_LOGOS,
+  STYLE_LEAD,
+} from "./image-prompt.js";
 import type { ImageProviders, ImageRequest, ImageResult } from "./image-provider.js";
 import type {
   ImageGenerationJob,
@@ -171,7 +181,11 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.status === "pending" && r.aspectRatio === "4:5")).toBe(true);
     expect(rows[0]!.prompt).toContain("Taza de café de olla, más cerca");
-    expect(rows[0]!.prompt).toContain(DEFAULT_IMAGE_STYLE);
+    // Sin estilo elegido ni en la voz: el Fotográfico natural, y el trabajo lo
+    // recuerda para "Regenerar".
+    expect(rows[0]!.prompt).toContain(imageStyleDef("foto").prompt);
+    expect(rows[0]!.prompt).toContain(NO_TEXT_NO_LOGOS);
+    expect(dto.imageJob).toMatchObject({ style: "foto" });
     expect(enqueue).toHaveBeenCalledTimes(1);
     expect(enqueue.mock.calls[0]![1]).toEqual({ userId, cardId, batchId: dto.imageJob!.id });
   });
@@ -529,7 +543,32 @@ describe("composeImagePrompt", () => {
     const prompt = composeImagePrompt("Taza de café", { niche: ["cafetería"], vertical: null });
     expect(prompt).toContain("Taza de café");
     expect(prompt).toContain("creador de contenido de cafetería");
-    expect(prompt).toContain(`Si la descripción no pide otro estilo: ${DEFAULT_IMAGE_STYLE}`);
+    // El estilo abre el prompt: al final lo perdía contra la escena.
+    expect(prompt.startsWith(`${STYLE_LEAD} ${imageStyleDef("foto").prompt}`)).toBe(true);
+    expect(prompt.indexOf("Taza de café")).toBeGreaterThan(prompt.indexOf(STYLE_LEAD));
+  });
+
+  it("F10.6: usa el estilo de la voz, y el de la imagen gana sobre el de la voz", () => {
+    const voz = { niche: [], vertical: null, imageStyle: "neo" };
+    expect(composeImagePrompt("Taza", voz)).toContain(imageStyleDef("neo").prompt);
+    const conOverride = composeImagePrompt("Taza", voz, "mini");
+    expect(conOverride).toContain(imageStyleDef("mini").prompt);
+    expect(conOverride).not.toContain(imageStyleDef("neo").prompt);
+  });
+
+  it("F10.6: 'sin texto ni logotipos' va con todos los estilos", () => {
+    for (const style of IMAGE_STYLE_IDS) {
+      expect(composeImagePrompt("Taza", null, style)).toContain(NO_TEXT_NO_LOGOS);
+    }
+  });
+
+  it("F10.6: un estilo guardado que ya no existe cae al de siempre", () => {
+    const prompt = composeImagePrompt("Taza", {
+      niche: [],
+      vertical: null,
+      imageStyle: "retirado",
+    });
+    expect(prompt).toContain(imageStyleDef("foto").prompt);
   });
 
   it("sin voz de marca no inventa un nicho", () => {

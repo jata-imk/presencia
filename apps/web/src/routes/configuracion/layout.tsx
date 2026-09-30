@@ -3,6 +3,7 @@ import {
   ChevronRight,
   CreditCard,
   FileText,
+  Images,
   Mic,
   Palette,
   Plug,
@@ -54,6 +55,9 @@ const GROUPS: NavGroup[] = [
       // F9.6: la personalización de la búsqueda de tendencias de Ritmo. El
       // mock es anterior a esta página, así que el ícono no sale de ahí.
       { label: "Tendencias", to: "/configuracion/tendencias", icon: TrendingUp },
+      // F10.6: con qué estilo se generan las imágenes. Junto a Voz de marca
+      // porque vive en ella (brand_voices.image_style).
+      { label: "Estilo visual", to: "/configuracion/estilo-visual", icon: Images },
       { label: "Plantillas", to: "/configuracion/plantillas", icon: FileText },
       { label: "Canales conectados", to: "/configuracion/canales", icon: Plug },
     ],

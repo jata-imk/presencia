@@ -2,6 +2,8 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   asVerticalId,
   formalityToRegister,
+  imageStyleSchema,
+  type ImageStyle,
   goalsDeExtras,
   modoDeGoals,
   normalizeExpression,
@@ -131,6 +133,9 @@ export class BrandVoiceService {
       // se usa con la vertical.
       modo: row.modo,
       modoDerivado: modoDeGoals(goalsDeExtras(row.extras)),
+      // Validado contra el catálogo, como la vertical: uno retirado viaja
+      // como "no eligió" y la pantalla muestra el de siempre.
+      imageStyle: asImageStyle(row.imageStyle),
       ...this.toPromptShape(row),
     };
   }
@@ -151,4 +156,9 @@ export class BrandVoiceService {
       referenceExamples: row.referenceExamples as BrandVoiceReferenceExample[],
     };
   }
+}
+
+function asImageStyle(value: string | null): ImageStyle | null {
+  const parsed = imageStyleSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }

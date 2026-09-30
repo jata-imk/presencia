@@ -45,6 +45,7 @@ function makeRow(overrides: Partial<BrandVoiceRow> = {}): BrandVoiceRow {
     keyTopics: [],
     preferredCtas: [],
     referenceExamples: [],
+    imageStyle: null,
     extras: {},
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -215,6 +216,37 @@ describe("BrandVoiceService — prohibido gana (doc §6)", () => {
       expect.anything(),
       expect.objectContaining({ allowedExpressions: ["chido"] }),
     );
+  });
+});
+
+describe("BrandVoiceService — estilo visual (F10.6)", () => {
+  it("guarda el estilo elegido y lo devuelve en el DTO", async () => {
+    const repo = makeRepo({
+      findDefault: vi.fn().mockResolvedValue(makeRow()),
+      updateDefault: vi
+        .fn()
+        .mockImplementation((_tx: Tx, patch: object) => Promise.resolve(makeRow(patch))),
+    });
+    const service = new BrandVoiceService(makeDbService(), repo);
+    const dto = await service.updateDefault("user-1", { imageStyle: "neo" });
+    expect(repo.updateDefault).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ imageStyle: "neo" }),
+    );
+    expect(dto.imageStyle).toBe("neo");
+  });
+
+  it("un estilo guardado que ya no está en el catálogo viaja como null", async () => {
+    const repo = makeRepo({
+      findDefault: vi.fn().mockResolvedValue(makeRow({ imageStyle: "viejo" })),
+    });
+    const service = new BrandVoiceService(makeDbService(), repo);
+    expect((await service.getDefault("user-1")).imageStyle).toBeNull();
+  });
+
+  it("el PATCH rechaza un estilo que no existe", () => {
+    expect(updateBrandVoiceBodySchema.safeParse({ imageStyle: "acuarela" }).success).toBe(false);
+    expect(updateBrandVoiceBodySchema.safeParse({ imageStyle: null }).success).toBe(true);
   });
 });
 

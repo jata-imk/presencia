@@ -1,0 +1,198 @@
+{
+  "bento-base": {
+    "estilo": "bento",
+    "escena": "base",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:42:29.347Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Composición tipo bento grid: la escena dividida en bloques rectangulares de distintos tamaños con esquinas redondeadas, cada bloque con un elemento distinto, colores pastel y separaciones limpias.\n\nQué se ve (la escena, no el estilo): Una taza de café de olla y un pan dulce sobre una mesa, en una cafetería del centro de Mérida.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "bento-comida": {
+    "estilo": "bento",
+    "escena": "comida",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:42:39.178Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Composición tipo bento grid: la escena dividida en bloques rectangulares de distintos tamaños con esquinas redondeadas, cada bloque con un elemento distinto, colores pastel y separaciones limpias.\n\nQué se ve (la escena, no el estilo): Tres tacos de cochinita pibil con cebolla morada y habanero en un plato, sobre una mesa.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "bento-persona": {
+    "estilo": "bento",
+    "escena": "persona",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:42:48.822Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Composición tipo bento grid: la escena dividida en bloques rectangulares de distintos tamaños con esquinas redondeadas, cada bloque con un elemento distinto, colores pastel y separaciones limpias.\n\nQué se ve (la escena, no el estilo): Una emprendedora joven trabajando en su laptop en un escritorio con plantas, sonriendo.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "bento-producto": {
+    "estilo": "bento",
+    "escena": "producto",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:42:57.686Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Composición tipo bento grid: la escena dividida en bloques rectangulares de distintos tamaños con esquinas redondeadas, cada bloque con un elemento distinto, colores pastel y separaciones limpias.\n\nQué se ve (la escena, no el estilo): Una botella de agua reutilizable junto a unos audífonos inalámbricos sobre una superficie.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "foto-base": {
+    "estilo": "foto",
+    "escena": "base",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:40:36.996Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Fotografía natural y realista, con luz cálida y texturas reales, ambientada en México. Que parezca tomada con cámara, no generada.\n\nQué se ve (la escena, no el estilo): Una taza de café de olla y un pan dulce sobre una mesa, en una cafetería del centro de Mérida.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "foto-comida": {
+    "estilo": "foto",
+    "escena": "comida",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:40:47.401Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Fotografía natural y realista, con luz cálida y texturas reales, ambientada en México. Que parezca tomada con cámara, no generada.\n\nQué se ve (la escena, no el estilo): Tres tacos de cochinita pibil con cebolla morada y habanero en un plato, sobre una mesa.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "foto-persona": {
+    "estilo": "foto",
+    "escena": "persona",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:40:57.140Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Fotografía natural y realista, con luz cálida y texturas reales, ambientada en México. Que parezca tomada con cámara, no generada.\n\nQué se ve (la escena, no el estilo): Una emprendedora joven trabajando en su laptop en un escritorio con plantas, sonriendo.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "foto-producto": {
+    "estilo": "foto",
+    "escena": "producto",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:41:06.931Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Fotografía natural y realista, con luz cálida y texturas reales, ambientada en México. Que parezca tomada con cámara, no generada.\n\nQué se ve (la escena, no el estilo): Una botella de agua reutilizable junto a unos audífonos inalámbricos sobre una superficie.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "glass-base": {
+    "estilo": "glass",
+    "escena": "base",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:43:08.199Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Estilo glassmorfismo: paneles translúcidos de vidrio esmerilado con desenfoque, bordes con brillo sutil, sobre un fondo de degradados de color vivos.\n\nQué se ve (la escena, no el estilo): Una taza de café de olla y un pan dulce sobre una mesa, en una cafetería del centro de Mérida.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "glass-comida": {
+    "estilo": "glass",
+    "escena": "comida",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:43:18.185Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Estilo glassmorfismo: paneles translúcidos de vidrio esmerilado con desenfoque, bordes con brillo sutil, sobre un fondo de degradados de color vivos.\n\nQué se ve (la escena, no el estilo): Tres tacos de cochinita pibil con cebolla morada y habanero en un plato, sobre una mesa.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "glass-persona": {
+    "estilo": "glass",
+    "escena": "persona",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:43:27.482Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Estilo glassmorfismo: paneles translúcidos de vidrio esmerilado con desenfoque, bordes con brillo sutil, sobre un fondo de degradados de color vivos.\n\nQué se ve (la escena, no el estilo): Una emprendedora joven trabajando en su laptop en un escritorio con plantas, sonriendo.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "glass-producto": {
+    "estilo": "glass",
+    "escena": "producto",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:43:37.369Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Estilo glassmorfismo: paneles translúcidos de vidrio esmerilado con desenfoque, bordes con brillo sutil, sobre un fondo de degradados de color vivos.\n\nQué se ve (la escena, no el estilo): Una botella de agua reutilizable junto a unos audífonos inalámbricos sobre una superficie.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "ilus-base": {
+    "estilo": "ilus",
+    "escena": "base",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:41:17.212Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Ilustración digital de trazo dibujado a mano, colores planos y cálidos, formas simples con mucha personalidad. Nada fotográfico.\n\nQué se ve (la escena, no el estilo): Una taza de café de olla y un pan dulce sobre una mesa, en una cafetería del centro de Mérida.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "ilus-comida": {
+    "estilo": "ilus",
+    "escena": "comida",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:41:26.651Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Ilustración digital de trazo dibujado a mano, colores planos y cálidos, formas simples con mucha personalidad. Nada fotográfico.\n\nQué se ve (la escena, no el estilo): Tres tacos de cochinita pibil con cebolla morada y habanero en un plato, sobre una mesa.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "ilus-persona": {
+    "estilo": "ilus",
+    "escena": "persona",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:41:36.059Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Ilustración digital de trazo dibujado a mano, colores planos y cálidos, formas simples con mucha personalidad. Nada fotográfico.\n\nQué se ve (la escena, no el estilo): Una emprendedora joven trabajando en su laptop en un escritorio con plantas, sonriendo.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "ilus-producto": {
+    "estilo": "ilus",
+    "escena": "producto",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:41:46.431Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Ilustración digital de trazo dibujado a mano, colores planos y cálidos, formas simples con mucha personalidad. Nada fotográfico.\n\nQué se ve (la escena, no el estilo): Una botella de agua reutilizable junto a unos audífonos inalámbricos sobre una superficie.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "material-base": {
+    "estilo": "material",
+    "escena": "base",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:43:47.739Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Ilustración vectorial plana estilo Material Design: superficies limpias en capas, sombras suaves de elevación, esquinas redondeadas y colores sólidos con jerarquía clara. Nada fotográfico.\n\nQué se ve (la escena, no el estilo): Una taza de café de olla y un pan dulce sobre una mesa, en una cafetería del centro de Mérida.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "material-comida": {
+    "estilo": "material",
+    "escena": "comida",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:43:57.487Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Ilustración vectorial plana estilo Material Design: superficies limpias en capas, sombras suaves de elevación, esquinas redondeadas y colores sólidos con jerarquía clara. Nada fotográfico.\n\nQué se ve (la escena, no el estilo): Tres tacos de cochinita pibil con cebolla morada y habanero en un plato, sobre una mesa.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "material-persona": {
+    "estilo": "material",
+    "escena": "persona",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:44:07.213Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Ilustración vectorial plana estilo Material Design: superficies limpias en capas, sombras suaves de elevación, esquinas redondeadas y colores sólidos con jerarquía clara. Nada fotográfico.\n\nQué se ve (la escena, no el estilo): Una emprendedora joven trabajando en su laptop en un escritorio con plantas, sonriendo.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "material-producto": {
+    "estilo": "material",
+    "escena": "producto",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:44:17.167Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Ilustración vectorial plana estilo Material Design: superficies limpias en capas, sombras suaves de elevación, esquinas redondeadas y colores sólidos con jerarquía clara. Nada fotográfico.\n\nQué se ve (la escena, no el estilo): Una botella de agua reutilizable junto a unos audífonos inalámbricos sobre una superficie.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "mini-base": {
+    "estilo": "mini",
+    "escena": "base",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T05:48:55.211Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Composición minimalista: un solo elemento protagonista al centro, fondo liso de un color suave, mucho espacio vacío y una paleta de dos o tres tonos. Si la escena menciona un lugar, sugiérelo con uno o dos detalles, sin llenar el cuadro.\n\nQué se ve (la escena, no el estilo): Una taza de café de olla y un pan dulce sobre una mesa, en una cafetería del centro de Mérida.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "mini-comida": {
+    "estilo": "mini",
+    "escena": "comida",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T05:49:05.737Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Composición minimalista: un solo elemento protagonista al centro, fondo liso de un color suave, mucho espacio vacío y una paleta de dos o tres tonos. Si la escena menciona un lugar, sugiérelo con uno o dos detalles, sin llenar el cuadro.\n\nQué se ve (la escena, no el estilo): Tres tacos de cochinita pibil con cebolla morada y habanero en un plato, sobre una mesa.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "mini-persona": {
+    "estilo": "mini",
+    "escena": "persona",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T05:49:17.041Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Composición minimalista: un solo elemento protagonista al centro, fondo liso de un color suave, mucho espacio vacío y una paleta de dos o tres tonos. Si la escena menciona un lugar, sugiérelo con uno o dos detalles, sin llenar el cuadro.\n\nQué se ve (la escena, no el estilo): Una emprendedora joven trabajando en su laptop en un escritorio con plantas, sonriendo.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "mini-producto": {
+    "estilo": "mini",
+    "escena": "producto",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T05:49:26.163Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Composición minimalista: un solo elemento protagonista al centro, fondo liso de un color suave, mucho espacio vacío y una paleta de dos o tres tonos. Si la escena menciona un lugar, sugiérelo con uno o dos detalles, sin llenar el cuadro.\n\nQué se ve (la escena, no el estilo): Una botella de agua reutilizable junto a unos audífonos inalámbricos sobre una superficie.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "neo-base": {
+    "estilo": "neo",
+    "escena": "base",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:41:54.999Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Estilo neobrutalista: formas con contorno negro grueso, colores planos saturados (amarillo, rosa, azul), sombras duras desplazadas sin difuminar y fondo liso.\n\nQué se ve (la escena, no el estilo): Una taza de café de olla y un pan dulce sobre una mesa, en una cafetería del centro de Mérida.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "neo-comida": {
+    "estilo": "neo",
+    "escena": "comida",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:42:03.645Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Estilo neobrutalista: formas con contorno negro grueso, colores planos saturados (amarillo, rosa, azul), sombras duras desplazadas sin difuminar y fondo liso.\n\nQué se ve (la escena, no el estilo): Tres tacos de cochinita pibil con cebolla morada y habanero en un plato, sobre una mesa.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "neo-persona": {
+    "estilo": "neo",
+    "escena": "persona",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:42:12.413Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Estilo neobrutalista: formas con contorno negro grueso, colores planos saturados (amarillo, rosa, azul), sombras duras desplazadas sin difuminar y fondo liso.\n\nQué se ve (la escena, no el estilo): Una emprendedora joven trabajando en su laptop en un escritorio con plantas, sonriendo.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  },
+  "neo-producto": {
+    "estilo": "neo",
+    "escena": "producto",
+    "modelo": "google:gemini-3.1-flash-image",
+    "generadaEl": "2026-09-30T16:42:20.719Z",
+    "prompt": "Estilo de la imagen (salvo que la descripción de abajo pida otro): Estilo neobrutalista: formas con contorno negro grueso, colores planos saturados (amarillo, rosa, azul), sombras duras desplazadas sin difuminar y fondo liso.\n\nQué se ve (la escena, no el estilo): Una botella de agua reutilizable junto a unos audífonos inalámbricos sobre una superficie.\n\nEncuadre completo: nada importante tocando o saliendo por los bordes; deja margen alrededor del sujeto y de cualquier texto, con lo importante al centro.\n\nSin texto, letras, marcas de agua ni logotipos dentro de la imagen."
+  }
+}

@@ -442,3 +442,32 @@ Cómo se comporta, y por qué:
 
 Lo que técnicamente lo sostiene: `apps/web/src/lib/autoguardado.ts`
 (probado con timers falsos) y el hook `use-autoguardado.ts`.
+
+---
+
+## 12. La sub-página hermana: Estilo visual (F10.6)
+
+Con qué estilo se generan las imágenes cuando el creator no pide otro.
+Vive bajo CONTENIDO, después de Tendencias, y se guarda en la misma Voz de
+marca (`image_style`). Diseño: "Configuracion v2" en Claude Design.
+
+- **Galería de 7 estilos**, cada uno con la misma escena de ejemplo para
+  que se comparen estilos y no escenas. Cuatro columnas en escritorio, dos
+  en tablet y en móvil. Tocar el círculo lo elige; el resto de la tarjeta
+  abre el detalle.
+- **Se guarda al elegir**, sin botón, con un toast que dice en qué se van
+  a generar las imágenes. Es un solo valor: no hace falta la marca
+  "✓ Guardado" por campo de la sección 11.
+- **Primer uso:** si nunca eligió (NULL), un aviso dice que empezamos con
+  Fotográfico natural. Se va en cuanto elige cualquiera, incluso el mismo.
+- **Detalle:** tres ejemplos más (comida, persona, producto), en modal en
+  escritorio y en hoja inferior en móvil, con "Usar este estilo".
+- **El estilo es el default, no una jaula:** desde el chat se puede pedir
+  otro en cada imagen, y si la descripción pide un estilo, manda ella.
+- **Identidad visual · Próximamente:** logo, colores de marca y plantillas.
+  Se anuncia para que se entienda que el estilo no es lo mismo que la
+  marca visual, pero nada de eso es V1.
+
+Lo que NO está (V1): estilos propios o subir una referencia, mezclar dos
+estilos, un estilo por carpeta o por red, y **3D**: venía en el diseño, pero
+el generador no lo entrega con comida ni con lugares (ADR-025).
