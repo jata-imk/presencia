@@ -74,7 +74,8 @@ export const visualFirstContentSchema = z.object({
         "sujeto, la escena, dónde ocurre y la composición. Si el post es un " +
         "carrusel, repite aquí el primer prompt de carouselImagePrompts (la " +
         "portada). NO describas el estilo, la técnica, la " +
-        "paleta de colores ni la iluminación: eso lo pone el estilo visual del creator.",
+        "paleta de colores ni la iluminación: eso lo pone el estilo visual del creator. " +
+        "Escríbelo en español: el creator lo lee y lo edita.",
     ),
   assetIds: z.array(z.uuid()).default([]),
   slides: slidesSchema,
@@ -113,7 +114,7 @@ export const textFirstContentSchema = z.object({
       "Opcional. Solo si una imagen acompañante suma de verdad al post: " +
         "describe el sujeto y la escena, sin texto dentro y sin estilo, técnica, " +
         "paleta ni iluminación (eso lo pone el estilo visual del creator). " +
-        "Omítelo en la mayoría de los posts de texto.",
+        "En español. Omítelo en la mayoría de los posts de texto.",
     ),
   assetIds: z.array(z.uuid()).default([]),
   slides: slidesSchema,
@@ -140,7 +141,7 @@ const carouselImagePromptsSchema = z
       "tips, antes y después, varios productos): un prompt por slide, en orden; " +
       "el primero es la portada. Cada prompt describe UNA imagen (sujeto, escena " +
       "y composición), sin texto dentro y sin estilo, técnica, paleta ni " +
-      "iluminación. Entre 2 y 10 (en X, máximo 4). Omítelo si basta una imagen.",
+      "iluminación. En español. Entre 2 y 10 (en X, máximo 4). Omítelo si basta una imagen.",
   );
 
 /**
