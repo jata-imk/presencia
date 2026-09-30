@@ -1,5 +1,5 @@
 import { Film, Hash, NotebookPen, Type } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import {
   CARD_EDIT_SESSION_IDLE_MS,
   NETWORK_TEXT_LIMITS,
@@ -38,14 +38,25 @@ export function ContentEditor({
   card,
   onSaved,
   onSaveState,
+  flushRef,
 }: {
   card: PublicationCardDto;
   onSaved: (version: CardVersionDto) => void;
   onSaveState: (state: SaveState) => void;
+  /**
+   * Quien va a reemplazar el texto (restaurar una versión) primero manda lo
+   * pendiente y espera: si no, el autoguardado que sale al desmontar el
+   * editor caería DESPUÉS del restore y lo pisaría. `false` si no se guardó.
+   */
+  flushRef: MutableRefObject<(() => Promise<boolean>) | null>;
 }) {
   const applyCards = useCardsStore((s) => s.apply);
   const [draft, setDraft] = useState<Draft>(card.content);
   const session = useRef({ id: crypto.randomUUID(), last: Date.now() });
+  // Hay algo escrito que el servidor todavía no confirmó. Propio y no del
+  // motor: al desmontar, el cleanup de useAutoguardado corre primero y ya
+  // vació la cola, así que preguntarle al motor diría "nada pendiente".
+  const unsaved = useRef(false);
 
   const autoguardado = useAutoguardado<CardTextFields>({
     enviar: async (fields) => {
@@ -59,11 +70,43 @@ export function ContentEditor({
       });
       applyCards(result.card);
       onSaved(result.version);
+      if (!autoguardado.tienePendiente(FIELD)) unsaved.current = false;
     },
     combinar: (a, b) => ({ ...a, ...b }),
   });
 
   const estado = autoguardado.estado(FIELD);
+
+  useEffect(() => {
+    flushRef.current = () => autoguardado.vaciar();
+    return () => {
+      flushRef.current = null;
+    };
+  });
+
+  // Al desmontar (pasar a Vista previa, ver una versión) lo pendiente se
+  // manda igual (useAutoguardado), pero su resultado ya no llegaría a nadie:
+  // el indicador del panel se quedaba en "Guardando…" y un error se perdía.
+  // Se reporta aquí, al panel, que sigue montado.
+  useEffect(
+    () => () => {
+      if (!unsaved.current) return;
+      onSaveState({ kind: "saving" });
+      void autoguardado.vaciar().then((ok) =>
+        onSaveState(
+          ok
+            ? { kind: "saved" }
+            : {
+                kind: "error",
+                message: "No se guardó tu último cambio. Vuelve a Editar para reintentarlo.",
+              },
+        ),
+      );
+    },
+    // Solo al desmontar: el motor vive lo que vive el editor.
+    [],
+  );
+
   useEffect(() => {
     onSaveState(
       !estado
@@ -84,6 +127,7 @@ export function ContentEditor({
   }, [remoteKey]);
 
   function change(fields: CardTextFields) {
+    unsaved.current = true;
     setDraft((d) => ({ ...d, ...fields }));
     autoguardado.programar(FIELD, fields);
   }

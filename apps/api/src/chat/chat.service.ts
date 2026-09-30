@@ -202,11 +202,6 @@ export class ChatService {
     await this.creditsService.assertQuotaOr402(userId, getRateCard().minimumTurnUnits);
   }
 
-  // Nunca debe tumbar el turno: una voz de marca que no cargó cae al
-  // prompt base, igual que una cuenta sin voz configurada. Se dispara en
-  // paralelo con la carga del historial (no depende de ella) en vez de
-  // encadenarse después, para no pagar dos round-trips secuenciales a la
-  // DB en el hot path de cada turno.
   /**
    * El contenido y estado de hoy de las cards del historial. Si falla, el
    * turno sigue con la foto del historial: peor contexto, no un chat caído.
@@ -230,6 +225,11 @@ export class ChatService {
     }
   }
 
+  // Nunca debe tumbar el turno: una voz de marca que no cargó cae al
+  // prompt base, igual que una cuenta sin voz configurada. Se dispara en
+  // paralelo con la carga del historial (no depende de ella) en vez de
+  // encadenarse después, para no pagar dos round-trips secuenciales a la
+  // DB en el hot path de cada turno.
   private loadVoiceForPrompt(userId: string): Promise<BrandVoiceForPrompt | null> {
     return this.brandVoiceService.getDefaultForPrompt(userId).catch((error: unknown) => {
       console.error(

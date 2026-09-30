@@ -18,7 +18,14 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 import { Link } from "react-router";
 import {
   NETWORK_TEXT_LIMITS,
@@ -95,6 +102,7 @@ export function PanelCard({
   // Restaurar remonta el editor: lo que se escriba después es otra sesión,
   // y el borrador arranca del texto restaurado.
   const [editorKey, setEditorKey] = useState(0);
+  const flushEditor = useRef<(() => Promise<boolean>) | null>(null);
   const cardId = card?.id;
 
   const refreshVersions = useCallback(() => {
@@ -124,6 +132,15 @@ export function PanelCard({
   async function restore(n: number) {
     if (!card) return;
     setMenuOpen(false);
+    // Lo que el editor tenga pendiente se guarda ANTES: si saliera después
+    // (al remontarse el editor) pisaría la versión restaurada.
+    if (flushEditor.current && !(await flushEditor.current())) {
+      toast({
+        title: "No se pudo restaurar esa versión",
+        description: "Tu último cambio no se guardó. Revísalo y vuelve a intentarlo.",
+      });
+      return;
+    }
     try {
       const result = await restoreCardVersion(card.id, n);
       applyCards(result.card);
@@ -281,6 +298,7 @@ export function PanelCard({
                 editorKey={editorKey}
                 onSaved={onSaved}
                 onSaveState={setSaveState}
+                flushRef={flushEditor}
               />
             )}
           </>
@@ -529,12 +547,14 @@ function EditBody({
   editorKey,
   onSaved,
   onSaveState,
+  flushRef,
 }: {
   card: PublicationCardDto;
   controller: CardController;
   editorKey: number;
   onSaved: (version: CardVersionDto) => void;
   onSaveState: (state: SaveState) => void;
+  flushRef: MutableRefObject<(() => Promise<boolean>) | null>;
 }) {
   const { content, network } = card;
   const assetId = content.assetIds[0];
@@ -561,7 +581,13 @@ function EditBody({
           )}
         </Section>
       )}
-      <ContentEditor key={editorKey} card={card} onSaved={onSaved} onSaveState={onSaveState} />
+      <ContentEditor
+        key={editorKey}
+        card={card}
+        onSaved={onSaved}
+        onSaveState={onSaveState}
+        flushRef={flushRef}
+      />
     </div>
   );
 }

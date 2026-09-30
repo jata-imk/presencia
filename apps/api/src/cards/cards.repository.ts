@@ -124,9 +124,6 @@ export class CardsRepository {
       .where(inArray(publicationCards.id, cardIds));
   }
 
-  // Se llama ANTES de borrar el mensaje (FK message_id es "set null", no
-  // cascade): sin este paso las cards quedarían huérfanas en vez de
-  // borradas al reintentar un turno (decisión de producto, F3 PR3).
   /**
    * F10.5: si alguna card del mensaje ya salió hacia la red (programada o
    * publicada). Borrarla al regenerar dejaría un post que se publica sin
@@ -146,6 +143,9 @@ export class CardsRepository {
     return row !== undefined;
   }
 
+  // Se llama ANTES de borrar el mensaje (FK message_id es "set null", no
+  // cascade): sin este paso las cards quedarían huérfanas en vez de
+  // borradas al reintentar un turno (decisión de producto, F3 PR3).
   async deleteCardsByMessageId(tx: Tx, messageId: string): Promise<void> {
     const deleted = await tx
       .delete(publicationCards)
