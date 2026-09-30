@@ -14,9 +14,31 @@ import { useScheduleDrawerStore } from "../../stores/schedule-drawer-store.js";
 // addendum F10.5): en el calendario se ven juntas aunque nacieran en turnos
 // distintos.
 export function SelectionBar({ chatId }: { chatId: string }) {
-  const ids = useSelectedIds(chatId);
-  const cards = useCardsByIds(ids);
+  const selectedIds = useSelectedIds(chatId);
+  const found = useCardsByIds(selectedIds);
   const clear = useCardSelectionStore((s) => s.clear);
+  const retain = useCardSelectionStore((s) => s.retain);
+
+  // Lo que sigue siendo seleccionable: una card marcada puede publicarse
+  // (el worker), cancelarse (otra pestaña) o borrarse mientras la selección
+  // está abierta. Su checkbox desaparece, así que no se podría desmarcar: se
+  // saca de la selección, y ni la cuenta ni el drawer la incluyen.
+  // Solo se sacan las que SE ENCONTRARON y ya no sirven: una que todavía no
+  // llega a cards-store (se marcó mientras el chat cargaba) no se toca; no se
+  // cuenta ni se programa hasta que llegue.
+  const cards = found.filter((c) => c.status !== "published" && c.status !== "canceled");
+  const ids = cards.map((c) => c.id);
+  const unusable = found.filter((c) => !ids.includes(c.id)).map((c) => c.id);
+  const unusableKey = unusable.join(",");
+  useEffect(() => {
+    if (!unusableKey) return;
+    const drop = unusableKey.split(",");
+    retain(
+      chatId,
+      selectedIds.filter((id) => !drop.includes(id)),
+    );
+    // selectedIds va dentro de unusableKey en lo que importa.
+  }, [unusableKey, chatId, retain]);
   const openPanel = usePublicationPanelStore((s) => s.open);
   const openDrawer = useScheduleDrawerStore((s) => s.open);
 

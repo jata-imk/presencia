@@ -13,6 +13,8 @@ interface SelectionState {
   /** Marca varias de un jalón (el "Seleccionar" de un grupo). */
   selectMany: (chatId: string, cardIds: string[]) => void;
   clear: () => void;
+  /** Deja solo estas (las que siguen siendo seleccionables). */
+  retain: (chatId: string, cardIds: string[]) => void;
 }
 
 export const useCardSelectionStore = create<SelectionState>()(
@@ -42,6 +44,11 @@ export const useCardSelectionStore = create<SelectionState>()(
         );
       },
       clear: () => set({ chatId: null, ids: [] }, false, "selection/clear"),
+      retain: (chatId, cardIds) => {
+        const current = get();
+        if (current.chatId !== chatId) return;
+        set({ ids: current.ids.filter((id) => cardIds.includes(id)) }, false, "selection/retain");
+      },
     }),
     { name: "card-selection", enabled: import.meta.env.DEV },
   ),

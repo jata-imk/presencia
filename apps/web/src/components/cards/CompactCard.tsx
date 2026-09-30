@@ -97,11 +97,14 @@ export function CompactCard({
           checked={selection.selected}
           onChange={selection.onToggle}
           aria-label={`Seleccionar borrador de ${label}`}
+          // En móvil no hay hover: el checkbox se ve siempre, o una card
+          // suelta (sin el "Seleccionar" de un grupo) no tendría cómo entrar
+          // a la selección.
           className={`size-4 shrink-0 cursor-pointer accent-primary transition-opacity ${
             selection.active || selection.selected || mobile
               ? "opacity-100"
               : "opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100"
-          } ${mobile && !selection.active ? "hidden" : ""}`}
+          }`}
         />
       )}
       <button

@@ -471,8 +471,10 @@ export class CardsService {
     // sumaba la latencia de cada uno (transacción + red al proveedor) en
     // vez de pagar el máximo. scheduleItem nunca rechaza — cada item
     // resuelve su propio resultado, Promise.all conserva el orden.
-    await this.unifyGroup(userId, body);
-    return Promise.all(body.items.map((item) => this.scheduleGroupItem(userId, item)));
+    const results = await Promise.all(
+      body.items.map((item) => this.scheduleGroupItem(userId, item)),
+    );
+    return this.unifyGroup(userId, body, results);
   }
 
   /**
@@ -480,19 +482,39 @@ export class CardsService {
    * selección multired del chat). El calendario agrupa por `group_id` + la
    * misma hora (ADR-018), así que sin esto se verían sueltas aunque el
    * usuario las programó a la vez (decisión del founder: si las programé
-   * juntas, son un grupo). Solo las que se programan: las que se quedan en
-   * borrador conservan el suyo. Si ya comparten grupo (un turno de siempre),
-   * no se toca nada.
+   * juntas, son un grupo).
+   *
+   * DESPUÉS de programar y solo con las que sí quedaron programadas: una que
+   * falló (cuenta desconectada, estado que no se programa) conserva su grupo
+   * de turno. Las `keepDraft` tampoco se tocan, y hermanas que ya comparten
+   * grupo, menos. Si esto falla, lo programado ya quedó programado: se
+   * registra y la respuesta sale igual, con cada card como quedó.
    */
-  private async unifyGroup(userId: string, body: ScheduleGroupBody): Promise<void> {
-    const ids = body.items.filter((item) => !item.keepDraft).map((item) => item.cardId);
-    if (ids.length < 2) return;
-    await this.dbService.runWithTenant(userId, async (tx) => {
-      const groups = new Set(await this.repo.groupIdsOf(tx, ids));
-      // Un solo grupo y no nulo: ya son hermanas (el mismo turno).
-      if (groups.size === 1 && !groups.has(null)) return;
-      await this.repo.setGroupId(tx, ids, randomUUID());
-    });
+  private async unifyGroup(
+    userId: string,
+    body: ScheduleGroupBody,
+    results: ScheduleGroupResultItem[],
+  ): Promise<ScheduleGroupResultItem[]> {
+    const scheduled = results.filter(
+      (r, i) => r.ok && !body.items[i]?.keepDraft && r.card?.status === "scheduled",
+    );
+    if (scheduled.length < 2) return results;
+    const groups = new Set(scheduled.map((r) => r.card?.groupId ?? null));
+    // Un solo grupo y no nulo: ya son hermanas (el mismo turno).
+    if (groups.size === 1 && !groups.has(null)) return results;
+    const groupId = randomUUID();
+    const ids = new Set(scheduled.map((r) => r.cardId));
+    try {
+      await this.dbService.runWithTenant(userId, (tx) =>
+        this.repo.setGroupId(tx, [...ids], groupId),
+      );
+    } catch (error) {
+      console.error("[cards] No se pudo agrupar las cards programadas juntas:", error);
+      return results;
+    }
+    return results.map((r) =>
+      ids.has(r.cardId) && r.card ? { ...r, card: { ...r.card, groupId } } : r,
+    );
   }
 
   private async scheduleGroupItem(
