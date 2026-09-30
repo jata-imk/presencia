@@ -488,6 +488,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
       provider: "primary",
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5",
+      style: "neo",
     });
     await service.run({ userId, cardId, batchId: generated.imageJob!.id });
     const parentId = ((await card(cardId)).content as CardContent).assetIds[0]!;
@@ -496,7 +497,13 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
       instruction: "Quita a las personas",
       provider: "primary",
     });
-    expect(dto.imageJob).toMatchObject({ kind: "edit", aspectRatio: "4:5", status: "generating" });
+    // F10.6: hereda el estilo del trabajo anterior (el chip arranca en él).
+    expect(dto.imageJob).toMatchObject({
+      kind: "edit",
+      aspectRatio: "4:5",
+      status: "generating",
+      style: "neo",
+    });
     const rows = await batchRows(dto.imageJob!.id);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -512,7 +519,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     expect(last.reference?.mediaType).toBe("image/png");
     const final = await card(cardId);
     const job = final.imageJob as CardImageJob;
-    expect(job).toMatchObject({ status: "done", kind: "edit" });
+    expect(job).toMatchObject({ status: "done", kind: "edit", style: "neo" });
     expect((final.content as CardContent).assetIds).toEqual(job.assetIds);
     expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(1);
 

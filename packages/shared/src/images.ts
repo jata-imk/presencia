@@ -75,8 +75,9 @@ export interface CardImageJob {
   /**
    * F10.6: el estilo con que se generó. El chip del composer arranca en él,
    * así "Regenerar" y "Probar con otro generador" lo repiten.
-   * Ausente en trabajos anteriores a F10.6 y en las
-   * ediciones (que conservan el de su imagen de partida).
+   * Una edición no lo aplica (conserva el de su imagen) pero lo hereda del
+   * trabajo anterior, para que el chip no caiga al default. Ausente en
+   * trabajos anteriores a F10.6.
    */
   style?: ImageStyle;
   assetIds: string[];

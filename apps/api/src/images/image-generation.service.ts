@@ -201,7 +201,10 @@ export class ImageGenerationService {
       slot: body.provider,
       provider,
       aspectRatio,
-      style: undefined,
+      // La edición no aplica estilo (conserva el de su imagen), pero hereda el
+      // del trabajo anterior: sin esto el chip de la card caía al default de
+      // la voz y "Regenerar" después de ajustar cambiaba de estilo.
+      style: (card.imageJob as CardImageJob | null)?.style,
       count: 1,
       prompt: composeEditPrompt(body.instruction),
       instruction: body.instruction,
@@ -365,6 +368,9 @@ export class ImageGenerationService {
         provider: previous?.provider ?? "primary",
         kind: previous?.kind ?? "generate",
         aspectRatio: previous?.aspectRatio ?? (pending[0]!.aspectRatio as ImageAspectRatio),
+        // F10.6: sin esto el estilo se perdía al terminar cualquier trabajo, y
+        // el chip de la card caía al default de la voz.
+        ...(previous?.style ? { style: previous.style } : {}),
         assetIds,
         startedAt: previous?.startedAt ?? new Date().toISOString(),
       },
