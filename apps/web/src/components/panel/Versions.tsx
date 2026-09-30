@@ -103,11 +103,13 @@ export function VersionsMenu({
     }
     // En el siguiente tick: el mismo click que lo abrió no debe cerrarlo.
     const t = setTimeout(() => document.addEventListener("pointerdown", onDown), 0);
-    window.addEventListener("keydown", onKey);
+    // En captura: corre antes que el Esc del panel (escuchado en burbuja) y lo
+    // marca como atendido, así Esc cierra el menú y no el panel entero.
+    window.addEventListener("keydown", onKey, true);
     return () => {
       clearTimeout(t);
       document.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
     };
   }, [onClose]);
 

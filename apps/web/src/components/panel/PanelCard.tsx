@@ -158,6 +158,8 @@ export function PanelCard({
     setComparing(null);
     const abort = new AbortController();
     rewriteAbort.current = abort;
+    // Con margen: el reloj del servidor y el del navegador no coinciden.
+    const startedAt = Date.now() - 60_000;
     try {
       // Lo que el editor tenga pendiente se guarda antes: la IA parte del
       // texto guardado, no del que el usuario acaba de escribir.
@@ -197,7 +199,32 @@ export function PanelCard({
       const agotada = cuotaAgotadaDe(err);
       if (agotada) controller.showCuota(agotada);
       else if (abort.signal.aborted) {
-        toast({ title: "Se detuvo la reescritura", description: "No se cobró nada." });
+        // "Detener" pudo llegar tarde: si el servidor ya había guardado (el
+        // COMMIT pasó antes que el DELETE), la versión existe y se cobró.
+        // Antes de decir "no se cobró" se pregunta al historial.
+        await cancelling.current;
+        const saved = await fetchCardVersions(card.id)
+          .then((list) => {
+            setVersions(list);
+            const last = list.at(-1);
+            return last?.source === "ai" &&
+              last.instruction === instruction &&
+              Date.parse(last.createdAt) >= startedAt
+              ? last
+              : null;
+          })
+          .catch(() => null);
+        if (saved) {
+          setEditorKey((k) => k + 1);
+          toast({
+            title: `Ya se había guardado · Versión ${String(saved.n)}`,
+            description: "La reescritura terminó antes de detenerla.",
+            tone: "success",
+            onUndo: () => void restore(saved.n - 1),
+          });
+        } else {
+          toast({ title: "Se detuvo la reescritura", description: "No se cobró nada." });
+        }
       } else {
         toast({
           title: "No se pudo pedir el cambio",

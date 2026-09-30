@@ -274,8 +274,12 @@ function ChatView({
                 confirmingLabel="Regenerando…"
                 errorFallback="No se pudo regenerar."
                 onClose={() => setRegenerateEdited(null)}
-                onConfirm={async () => {
-                  await regenerate();
+                // Sin await: regenerate() resuelve cuando termina TODA la
+                // respuesta, y el modal se quedaba encima mientras llegaba.
+                // Un error del turno lo muestra el chat, como cualquier otro.
+                onConfirm={() => {
+                  void regenerate();
+                  return Promise.resolve();
                 }}
                 onConfirmed={() => setRegenerateEdited(null)}
               />
