@@ -156,12 +156,14 @@ function withCarousel<C extends { imagePrompt?: string; assetIds: string[] }>(
   // Cada slide acepta hasta 2000 caracteres: un prompt más largo se recorta
   // en vez de tumbar la card entera (el caption incluido).
   const clean = (prompts ?? []).map((p) => p.trim().slice(0, 2000)).filter((p) => p.length > 0);
-  // Si el modelo puso una portada propia en `imagePrompt` y en la lista solo
-  // los pasos, la portada va primero en vez de perderse.
-  const cover = content.imagePrompt?.trim();
-  const ordered =
-    clean.length > 0 && cover && cover !== clean[0] ? [cover.slice(0, 2000), ...clean] : clean;
-  const capped = ordered.slice(0, CAROUSEL_MAX_BY_NETWORK[network]);
+  // El primero de la lista ES la portada, siempre; `imagePrompt` no se
+  // antepone. Se probó anteponerlo cuando difería (review de PR5) y salía
+  // peor: los modelos reescriben la portada con otras palabras, y eso metía
+  // una portada casi duplicada, corría todos los slides y, en el tope de la
+  // red, tiraba el último (review de la fase). En el peor caso de esta regla
+  // (el modelo separó la portada y listó solo los pasos) el paso 1 queda de
+  // portada: sin slides de más ni cuota de más.
+  const capped = clean.slice(0, CAROUSEL_MAX_BY_NETWORK[network]);
   if (capped.length < 2) {
     return capped[0] && !content.imagePrompt ? { ...content, imagePrompt: capped[0] } : content;
   }

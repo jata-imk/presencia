@@ -620,7 +620,14 @@ function ImageComposer({
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
           onBlur={() => {
-            if (prompt.trim() !== initialPrompt.trim()) generation.commitPrompt?.(prompt.trim());
+            // Solo en un slide vacío, donde el prompt es lo único que hay y
+            // "Generar las que faltan" lo lee de la card. Al cambiar el prompt
+            // de una imagen que ya existe (`onCancel`) no: "Cancelar" pierde
+            // el foco ANTES del clic y guardaría justo lo que se descartó. Ahí
+            // el prompt se guarda al generar.
+            if (!onCancel && prompt.trim() !== initialPrompt.trim()) {
+              generation.commitPrompt?.(prompt.trim());
+            }
           }}
           rows={3}
           maxLength={2000}
