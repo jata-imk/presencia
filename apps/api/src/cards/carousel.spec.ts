@@ -106,18 +106,40 @@ describe("carrusel", () => {
     expect(content).not.toHaveProperty("carouselImagePrompts");
   });
 
-  it("una portada propia en imagePrompt no se pierde, y un prompt largo no tumba la card", () => {
+  it("el primero de la lista es la portada: un imagePrompt reescrito no duplica ni corre slides", () => {
+    // El modelo repitió la portada con otras palabras en imagePrompt: no
+    // entra como slide extra. Y en X (tope 4) no se pierde el último.
+    const x = build(textTool, {
+      network: "x",
+      body: "b",
+      hashtags: [],
+      imagePrompt: "La portada, dicha de otra forma.",
+      carouselImagePrompts: ["portada", "paso 1", "paso 2", "paso 3"],
+    });
+    const slides = x.archetype !== "video_script" ? x.slides! : [];
+    expect(slides.map((s) => s.imagePrompt)).toEqual(["portada", "paso 1", "paso 2", "paso 3"]);
+    expect(x).toMatchObject({ imagePrompt: "portada" });
+    // Un solo prompt distinto de imagePrompt sigue siendo imagen suelta.
+    const one = build(visualTool, {
+      network: "instagram",
+      caption: "c",
+      hashtags: [],
+      imagePrompt: "la de siempre",
+      carouselImagePrompts: ["otra"],
+    });
+    expect(one).not.toHaveProperty("slides");
+    expect(one).toMatchObject({ imagePrompt: "la de siempre" });
+  });
+
+  it("un prompt largo se recorta a 2000 en vez de tumbar la card", () => {
     const content = build(visualTool, {
       network: "instagram",
       caption: "c",
       hashtags: [],
-      imagePrompt: "portada",
-      carouselImagePrompts: ["paso 1", "x".repeat(2500)],
+      carouselImagePrompts: ["portada", "x".repeat(2500)],
     });
     const slides = content.archetype === "visual_first" ? content.slides! : [];
-    expect(slides.map((s) => s.imagePrompt?.slice(0, 6))).toEqual(["portad", "paso 1", "xxxxxx"]);
-    expect(slides[2]!.imagePrompt).toHaveLength(2000);
-    expect(content).toMatchObject({ imagePrompt: "portada" });
+    expect(slides[1]!.imagePrompt).toHaveLength(2000);
   });
 
   it("respeta el tope de la red y un solo prompt no es carrusel", () => {
