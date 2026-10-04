@@ -51,3 +51,19 @@ export function effectiveImageJob(job: CardImageJob | null, now: number): CardIm
   if (job?.status !== "generating") return job;
   return now - Date.parse(job.startedAt) > IMAGE_JOB_STALE_MS ? { ...job, status: "failed" } : job;
 }
+
+/**
+ * F10.6: los slides (1-based) de un carrusel que todavía no tienen imagen.
+ * Un carrusel a medias no se programa (la API lo rechaza); el drawer lo dice
+ * antes del click.
+ */
+export function missingSlides(content: CardContent): number[] {
+  if (content.archetype === "video_script" || !content.slides) return [];
+  return content.slides.flatMap((slide, i) => (slide.assetId ? [] : [i + 1]));
+}
+
+/** "3", "3 y 5", "2, 4 y 6". */
+export function enumerateSlides(numbers: number[]): string {
+  const list = numbers.map(String);
+  return list.length <= 1 ? (list[0] ?? "") : `${list.slice(0, -1).join(", ")} y ${list.at(-1)!}`;
+}

@@ -175,26 +175,32 @@ export class PostFastProvider implements PublishingProvider {
    * F10: sube cada imagen al bucket de PostFast (verificado contra
    * postfa.st/docs/files/upload): pedir una URL firmada con su tipo, y un
    * `PUT` crudo a esa URL con el MISMO Content-Type. Lo que queda es la
-   * `key`, que `schedule` manda en `mediaItems`. Una URL por imagen, en
-   * orden: hoy la card lleva una sola.
+   * `key`, que `schedule` manda en `mediaItems`. Una URL por imagen.
+   *
+   * F10.6: un carrusel son hasta 10, así que se suben en paralelo; el orden
+   * no depende de cuál termine primero: `sortOrder` es la posición en
+   * `media` (la portada, 0). Se pide una URL por imagen y no `count: N`
+   * porque cada una lleva su propio Content-Type (una PNG y una WebP no
+   * comparten URL firmada).
    */
   async prepareMedia(media: readonly PublishMedia[]): Promise<PreparedMedia> {
-    const items: PostfastMediaItem[] = [];
-    for (const [index, item] of media.entries()) {
-      const [signed] = await this.http.request<{ key?: string; signedUrl?: string }[]>(
-        "POST",
-        "/file/get-signed-upload-urls",
-        { contentType: item.mimeType, count: 1 },
-      );
-      if (!signed?.key || !signed.signedUrl) {
-        throw new PublishingUnavailableError("PostFast no devolvió dónde subir la imagen.", {
-          reason: "no_signed_url_in_response",
-          body: signed ?? null,
-        });
-      }
-      await putToSignedUrl("PostFast", signed.signedUrl, item.data, item.mimeType);
-      items.push({ key: signed.key, type: "IMAGE", sortOrder: index });
-    }
+    const items = await Promise.all(
+      media.map(async (item, index): Promise<PostfastMediaItem> => {
+        const [signed] = await this.http.request<{ key?: string; signedUrl?: string }[]>(
+          "POST",
+          "/file/get-signed-upload-urls",
+          { contentType: item.mimeType, count: 1 },
+        );
+        if (!signed?.key || !signed.signedUrl) {
+          throw new PublishingUnavailableError("PostFast no devolvió dónde subir la imagen.", {
+            reason: "no_signed_url_in_response",
+            body: signed ?? null,
+          });
+        }
+        await putToSignedUrl("PostFast", signed.signedUrl, item.data, item.mimeType);
+        return { key: signed.key, type: "IMAGE", sortOrder: index };
+      }),
+    );
     return { ref: items };
   }
 
