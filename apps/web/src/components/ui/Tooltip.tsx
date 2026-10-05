@@ -44,6 +44,25 @@ function layoutOf(className: string | undefined): string {
   return [...className.matchAll(LAYOUT_CLASSES)].map(([, cls]) => cls).join(" ");
 }
 
+/**
+ * Un hijo `absolute` (los botones encima de una imagen, el "Aplicar" dentro
+ * del campo) no puede quedarse así dentro del span: el span, inline, sumaba
+ * una línea al contenedor y empujaba al botón fuera de su esquina, y el
+ * globito apuntaba al span vacío. Para esos la posición SÍ se mueve: el span
+ * pasa a ser el absoluto y el hijo queda en flujo dentro de él (F10.6.1).
+ */
+const POSITION_CLASSES =
+  /(?:^|\s)(absolute|-?(?:inset(?:-[xy])?|top|right|bottom|left)-\S+)(?=\s|$)/g;
+
+function splitPosition(className: string | undefined): { anchor: string; child: string } {
+  if (!className || !/(?:^|\s)absolute(?=\s|$)/.test(className)) {
+    return { anchor: "", child: className ?? "" };
+  }
+  const anchor = [...className.matchAll(POSITION_CLASSES)].map(([, cls]) => cls).join(" ");
+  const child = className.replace(POSITION_CLASSES, " ").replace(/\s+/g, " ").trim();
+  return { anchor, child };
+}
+
 export function Tooltip({
   label,
   children,
@@ -68,6 +87,7 @@ export function Tooltip({
   // Un <button disabled> no emite eventos de puntero, y justo los tooltips
   // que más falta hacen cuelgan de botones apagados ("Próximamente", "Ver
   // en la red"). Para esos, el ancla es un <span> que sí los recibe.
+  const position = splitPosition(children.props.className);
   const trigger = children.props.disabled ? (
     // Sin tabIndex a propósito: un control deshabilitado ya está fuera del
     // orden de tabulación, y darle uno al ancla creaba paradas de teclado
@@ -75,18 +95,24 @@ export function Tooltip({
     // apagado se alcanza apuntando, que es como se descubre.
     <span
       ref={refs.setReference}
-      className={`inline-flex ${layoutOf(children.props.className)}`}
+      className={`inline-flex ${layoutOf(children.props.className)} ${position.anchor}`}
       {...getReferenceProps()}
     >
-      {children}
+      {position.anchor
+        ? cloneElement(children, { className: position.child } as Partial<TriggerProps>)
+        : children}
     </span>
   ) : (
     cloneElement(children, {
-      ref: mergedRef,
       // Los props del hijo van adentro para que floating-ui FUSIONE sus
       // handlers con los del tooltip. Sin esto, un onPointerEnter propio
       // del hijo quedaba pisado en silencio.
       ...getReferenceProps(children.props),
+      // El ref DESPUÉS: getReferenceProps copia todos los props del hijo, y
+      // en React 19 el ref es uno de ellos — puesto antes, el ref propio
+      // del hijo pisaba al fusionado y el globito quedaba sin ancla (salía
+      // en la esquina de la pantalla y no se cerraba).
+      ref: mergedRef,
     } as Partial<TriggerProps>)
   );
 
