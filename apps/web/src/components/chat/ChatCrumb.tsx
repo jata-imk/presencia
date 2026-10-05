@@ -62,7 +62,13 @@ export function ChatCrumb({ chatId }: { chatId: string }) {
   // "Conversación" y su menú (renombrar, archivar…) en vez de quedarse
   // cargando para siempre.
   if (chats === null && !chatsError) {
-    return <span className="skeleton h-4 w-40 rounded-md" aria-label="Cargando el chat" />;
+    // flex-1 como el <nav>: la Topbar no pinta su separador en un chat, y
+    // sin esto los botones de la derecha brincaban al llegar la lista.
+    return (
+      <div className="flex-1">
+        <span className="skeleton block h-4 w-40 rounded-md" aria-label="Cargando el chat" />
+      </div>
+    );
   }
 
   return (

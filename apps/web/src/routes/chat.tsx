@@ -78,6 +78,10 @@ function ChatView({
   // Un "Ir al final" suave en camino: sus propios eventos de scroll (todavía
   // lejos del final) no deben apagar `stick` a medio viaje.
   const seeking = useRef(false);
+  // Dónde estaba el scroll en el evento anterior: subir, aunque sea poco,
+  // apaga el seguimiento (con el dedo en móvil un arrastre corto nunca salía
+  // de la zona de 80 px y cada token te regresaba al final).
+  const lastTop = useRef(0);
   const [atBottom, setAtBottom] = useState(true);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
@@ -165,7 +169,10 @@ function ChatView({
     const content = contentRef.current;
     if (!box || !content) return;
     const follow = () => {
-      if (stick.current) box.scrollTop = box.scrollHeight;
+      if (!stick.current) return;
+      box.scrollTop = box.scrollHeight;
+      // El salto es nuestro: la referencia de "subir" parte de aquí.
+      lastTop.current = box.scrollTop;
     };
     follow();
     // También la caja: si se encoge (crece el composer, aparece un aviso
@@ -178,21 +185,41 @@ function ChatView({
       onScroll();
     };
     box.addEventListener("scrollend", settle);
+    // Si la persona toma el scroll a medio viaje, el viaje ya no manda. Sin
+    // esto, en navegadores sin `scrollend` (Safari < 26) `seeking` podía
+    // quedarse prendido y arrastrarte al final para siempre.
+    const takeOver = () => {
+      seeking.current = false;
+    };
+    box.addEventListener("wheel", takeOver, { passive: true });
+    box.addEventListener("touchstart", takeOver, { passive: true });
     return () => {
       observer.disconnect();
       box.removeEventListener("scrollend", settle);
+      box.removeEventListener("wheel", takeOver);
+      box.removeEventListener("touchstart", takeOver);
     };
   }, []);
   function onScroll() {
     const box = scrollRef.current;
     if (!box) return;
     const near = box.scrollHeight - box.scrollTop - box.clientHeight <= 80;
+    // Subir de verdad, no que el navegador baje scrollTop porque el contenido
+    // se encogió (eso deja el scroll pegado al tope inferior).
+    const atMax = box.scrollHeight - box.scrollTop - box.clientHeight <= 1;
+    const up = box.scrollTop < lastTop.current - 1 && !atMax;
+    const down = box.scrollTop > lastTop.current + 1;
+    lastTop.current = box.scrollTop;
     if (seeking.current) {
       if (near) seeking.current = false;
       return;
     }
-    stick.current = near;
-    setAtBottom(near);
+    // Se vuelve a pegar al BAJAR dentro de la zona (o al tocar fondo), no
+    // con cualquier evento cerca del final: el navegador a veces repite el
+    // evento en la misma posición y eso volvía a pegarlo tras subir.
+    if (up) stick.current = false;
+    else if (atMax || (down && near)) stick.current = true;
+    setAtBottom(stick.current);
   }
   function scrollToEnd(smooth: boolean) {
     stick.current = true;
