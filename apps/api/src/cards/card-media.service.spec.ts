@@ -456,6 +456,31 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     await expect(media.setSlidesAspect(userA, single, "1:1")).rejects.toThrow(/no es un carrusel/);
   });
 
+  it("cada imagen queda anotada con su slide: subir, recortar y reordenar no mezclan historiales", async () => {
+    const cardId = await createCard(VISUAL);
+    // Imagen suelta: su slide es FIRST_SLIDE_ID, el que conserva al volverse carrusel.
+    const cover = (await media.attachUpload(userA, cardId, PNG)).content.assetIds[0]!;
+    const dto = await media.addSlide(userA, cardId, {});
+    const s2 = dto.content.archetype === "visual_first" ? dto.content.slides![1]!.id : "";
+    // 60×60 a un carrusel 4:5: se guardan la original y su recorte, las dos del slide 2.
+    const placed = (
+      await media.attachUpload(userA, cardId, solidPng(60, 60, [5, 5, 5]), undefined, s2)
+    ).content.assetIds[1]!;
+    // Recortar a 1:1 copia la portada: la copia es versión de la portada.
+    const coverCrop = (await media.setSlidesAspect(userA, cardId, "1:1")).content.assetIds[0]!;
+    // Reordenar no cambia de quién es cada versión.
+    await media.reorderSlides(userA, cardId, [s2, FIRST_SLIDE_ID]);
+
+    const bySlide = new Map<string | null, string[]>();
+    for (const v of await media.versions(userA, cardId)) {
+      bySlide.set(v.slideId, [...(bySlide.get(v.slideId) ?? []), v.assetId]);
+    }
+    expect(bySlide.get(FIRST_SLIDE_ID)).toEqual([cover, coverCrop]);
+    expect(bySlide.get(s2)).toHaveLength(2);
+    expect(bySlide.get(s2)).toContain(placed);
+    expect(bySlide.has(null)).toBe(false);
+  });
+
   it("recortar parte siempre de la original: 4:5 → 1:1 → 4:5 no corta dos veces", async () => {
     const cardId = await createCard(VISUAL);
     await media.addSlide(userA, cardId, {});

@@ -578,6 +578,11 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     // El slide que no se pidió no se toca.
     expect(c3!.assetId).toBeUndefined();
     expect(content.assetIds).toEqual([c1!.assetId, c2!.assetId]);
+    // F10.6.1: cada imagen nace anotada con el slide de su fila (sus versiones).
+    const born = await dbService.runWithTenant(userId, (tx) =>
+      tx.select({ slideId: assets.slideId }).from(assets).where(eq(assets.cardId, cardId)),
+    );
+    expect(born.map((a) => a.slideId).sort()).toEqual([S1, S1, S2].sort());
     // Se cobra por imagen entregada: tres.
     expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(3);
     expect(final.imageJob).toMatchObject({ status: "done", slideIds: [S1, S2] });

@@ -563,6 +563,7 @@ export class ImageGenerationService {
         // card al generar; al editar, el de la imagen de partida, que la
         // edición no cambia de tema.
         metadata: altFor(row, card, parentAlt),
+        slideId: row.slideId,
       });
       // Asset, liquidación y cobro juntos: o la imagen existe y está cobrada,
       // o ninguna de las dos. Sobregiro permitido: el proveedor ya cobró, y

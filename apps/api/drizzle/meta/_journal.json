@@ -309,6 +309,13 @@
       "when": 1790789301330,
       "tag": "0043_slide_de_imagen",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791168332406,
+      "tag": "0044_slide_de_asset",
+      "breakpoints": true
     }
   ]
 }

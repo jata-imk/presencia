@@ -169,6 +169,11 @@ export interface CardImageVersionDto {
   parentAssetId: string | null;
   /** Texto alternativo; null si nadie lo escribió (las subidas nacen sin él). */
   alt: string | null;
+  /**
+   * F10.6.1: el slide del carrusel donde nació. Null = de antes de anotarlo:
+   * cuenta como de la portada. La tira de un slide muestra solo las suyas.
+   */
+  slideId: string | null;
   createdAt: string;
 }
 

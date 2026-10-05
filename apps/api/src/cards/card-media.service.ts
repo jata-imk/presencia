@@ -9,6 +9,7 @@ import {
 } from "@nestjs/common";
 import {
   cardContentSchema,
+  FIRST_SLIDE_ID,
   carouselAspect,
   hasSlide,
   IMAGE_ASPECT_OPTIONS,
@@ -72,6 +73,8 @@ export class CardMediaService {
     this.assertCanChangeImage(card);
     // Antes de subir: un slide que ya no está dejaría el archivo sin lugar.
     assertSlide(card.content as CardContent, slideId);
+    // Sin slideId va a la portada (placeImage): ahí queda también su versión.
+    const targetSlide = slideId ?? slidesOf(card.content as CardContent)[0]?.id ?? FIRST_SLIDE_ID;
 
     let original;
     let stored;
@@ -83,6 +86,7 @@ export class CardMediaService {
         data,
         source: "uploaded",
         metadata: originalName ? { originalName } : {},
+        slideId: targetSlide,
       });
       stored = original;
       // F10.6: en un carrusel, la imagen va en la proporción del carrusel
@@ -103,6 +107,7 @@ export class CardMediaService {
               ...(originalName ? { originalName } : {}),
               croppedFrom: original.id,
             },
+            slideId: targetSlide,
           });
         }
       }
@@ -182,6 +187,7 @@ export class CardMediaService {
         instruction,
         parentAssetId,
         alt: (asset.metadata as AssetMetadata).alt ?? null,
+        slideId: asset.slideId,
         createdAt: asset.createdAt.toISOString(),
       }));
     });
@@ -332,6 +338,8 @@ export class CardMediaService {
     // imagen (`croppedFrom`): volver a una proporción anterior regresa a la
     // original en vez de recortar un recorte.
     const replacement = new Map<string, string>();
+    // El recorte es versión del MISMO slide que la imagen que reemplaza.
+    const slideOf = new Map(content.slides.flatMap((s) => (s.assetId ? [[s.assetId, s.id]] : [])));
     const newAssets: Awaited<ReturnType<AssetsService["storeImage"]>>[] = [];
     for (const assetId of new Set(content.slides.flatMap((s) => (s.assetId ? [s.assetId] : [])))) {
       const shown = await this.dbService.runWithTenant(userId, (tx) =>
@@ -366,6 +374,7 @@ export class CardMediaService {
           ...(meta.originalName ? { originalName: meta.originalName } : {}),
           croppedFrom: root.id,
         },
+        slideId: shown.slideId ?? slideOf.get(assetId) ?? null,
       });
       newAssets.push(stored);
       replacement.set(assetId, stored.id);

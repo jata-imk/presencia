@@ -502,6 +502,10 @@ export const assets = pgTable("assets", {
     .references(() => users.id, { onDelete: "cascade" }),
   chatId: uuid("chat_id").references(() => chats.id, { onDelete: "set null" }),
   cardId: uuid("card_id").references(() => publicationCards.id, { onDelete: "set null" }),
+  // F10.6.1: el slide del carrusel donde nació (o al que se subió). Las
+  // versiones se filtran por slide; sin FK porque los slides viven en el
+  // jsonb de la card. Null = de antes de anotarlo: cuenta como de la portada.
+  slideId: uuid("slide_id"),
   storageKey: text("storage_key").notNull(),
   mimeType: text("mime_type").notNull(),
   sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),

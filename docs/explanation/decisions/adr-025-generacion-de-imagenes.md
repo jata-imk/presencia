@@ -126,3 +126,13 @@ La vista previa acomoda las imágenes como cada red (`PreviewMedia`): Instagram 
 
 - **Una imagen 4:5 de Gemini 3.1 Flash Image cuesta ~$0.095, no $0.067.** Google cobra por tokens de salida ($60/M), y la 4:5 (928×1152) sale en ~1,580 tokens contra los 1,120 del 1K cuadrado de su tabla. Lo midió `pnpm --filter @presencia/api gasto` sobre `ai_usage_events` (ver `docs/how-to/ver-el-gasto-en-modelos.md`). Los precios viven en `apps/api/src/ai/model-prices.ts`.
 - **Panorama de modelos al 2026-09-30:** `docs/reference/modelos-de-imagen-2026-09.md`. Nano Banana 2 ya no está en la frontera calidad/precio. Grok Imagine Image 2.0, MAI-Image-2.6 y Muse Image entran al próximo bake-off (backlog "Modelo principal + fallbacks").
+
+## Addendum (2026-10-04, F10.6.1 PR3) — versiones por slide
+
+En el recorrido de F10.6, cada slide mostraba "Versiones · 18": la tira traía todas las imágenes de la card, de todos los slides, y no se sabía cuáles eran de cuál. Ahora cada imagen guarda su slide (`assets.slide_id`, migración 0044) y la tira de un slide muestra solo las suyas.
+
+- **Por id del slide, no por posición.** El id no cambia al reordenar ni al volverse carrusel (la imagen suelta ya era `FIRST_SLIDE_ID`), así que mover un slide a portada se lleva su historial. Se descartó filtrar por posición: reordenar habría cambiado de quién es cada versión.
+- **Dónde se anota.** Lo generado y lo editado copian el `slide_id` de su fila de `image_generations`, que ya lo tenía desde F10.6 PR3. Lo subido lleva el slide al que se subió; sin slide, la portada. Un recorte lleva el slide de la imagen que reemplaza, y su original, el mismo.
+- **Lo de antes.** El backfill llena lo que se puede deducir: desde las generaciones, desde dónde está puesta hoy cada imagen, y entre recorte y original. Lo que queda en null cuenta como **de la portada**. En una imagen suelta eso es todo su historial, como antes; en un carrusel viejo, la portada se queda con lo que no se supo ubicar. Nada desaparece de la vista.
+- **Siempre la imagen actual.** Aunque no sea "del slide" (alguien la eligió de otro lado), la tira la incluye para poder marcarla como la elegida.
+- La regla vive en `versionsOfSlide` (web, con su test) y la API solo agrega `slideId` a `CardImageVersionDto`: el historial completo de la card sigue disponible para Biblioteca (F12).

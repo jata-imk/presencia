@@ -38,6 +38,7 @@ import { effectiveImageJob, imageFileProblem } from "./card-image.js";
 import { useCard, useCardsStore, useChatCards } from "../../stores/cards-store.js";
 import { useScheduleDrawerStore } from "../../stores/schedule-drawer-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
+import { versionsOfSlide } from "./slide-versions.js";
 
 /**
  * Todo lo que se puede HACER con una card viva: imagen (generar, editar,
@@ -322,6 +323,9 @@ export function useCardController(
               ...base,
               // El trabajo de la card solo es "de este slide" si lo está llenando.
               job: here ? imageJob : null,
+              // F10.6.1: el historial de ESTE slide, no el de toda la card.
+              versions: versionsOfSlide(base.versions, slide, index),
+              versionsLabel: "Versiones de este slide",
               busyElsewhere: Boolean(running) && !generatingIds.includes(slide.id),
               percent: index === 0 ? imagesConfig.generatePercent : imagesConfig.editPercent,
               variants: index === 0 ? 2 : 1,
