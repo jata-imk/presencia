@@ -19,7 +19,7 @@ import { useQuota } from "../lib/use-quota.js";
 import { useCardsStore } from "../stores/cards-store.js";
 import { useChatsStore } from "../stores/chats-store.js";
 import { useToastStore } from "../stores/toast-store.js";
-import { ChatSkeleton } from "../components/chat/ChatSkeleton.js";
+import { ChatLoading } from "../components/chat/ChatLoading.js";
 import { Tooltip } from "../components/ui/Tooltip.js";
 
 export function ChatPage() {
@@ -49,7 +49,7 @@ export function ChatPage() {
     );
   }
   if (!id || initialMessages === null) {
-    return <ChatSkeleton />;
+    return <ChatLoading />;
   }
   return <ChatView key={id} chatId={id} initialMessages={initialMessages} />;
 }

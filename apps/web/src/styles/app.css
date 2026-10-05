@@ -406,7 +406,7 @@ body[data-dragging] {
 }
 @media (prefers-reduced-motion: no-preference) {
   .skeleton {
-    animation: shimmer 1.4s ease-in-out infinite;
+    animation: shimmer 2.6s ease-in-out infinite;
   }
 }
 
