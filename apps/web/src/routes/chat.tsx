@@ -1,5 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isStaticToolUIPart } from "ai";
+import { ArrowDown } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { Composer } from "../components/chat/Composer.js";
@@ -18,6 +19,8 @@ import { useQuota } from "../lib/use-quota.js";
 import { useCardsStore } from "../stores/cards-store.js";
 import { useChatsStore } from "../stores/chats-store.js";
 import { useToastStore } from "../stores/toast-store.js";
+import { ChatSkeleton } from "../components/chat/ChatSkeleton.js";
+import { Tooltip } from "../components/ui/Tooltip.js";
 
 export function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -46,7 +49,7 @@ export function ChatPage() {
     );
   }
   if (!id || initialMessages === null) {
-    return <main className="p-8 text-sm text-fg-muted">Cargando…</main>;
+    return <ChatSkeleton />;
   }
   return <ChatView key={id} chatId={id} initialMessages={initialMessages} />;
 }
@@ -65,7 +68,14 @@ function ChatView({
     transport: new DefaultChatTransport({ api: `/api/chats/${chatId}/stream` }),
   });
   const busy = status === "submitted" || status === "streaming";
-  const bottomRef = useRef<HTMLDivElement>(null);
+  // Auto-scroll (F10.6.2): el chat sigue a la respuesta SOLO si estabas en
+  // el final. Antes bajaba en cada mensaje aunque estuvieras leyendo arriba.
+  // `stick` es un ref (lo lee el ResizeObserver sin re-suscribirse) y
+  // `atBottom` el estado que pinta el botón "Ir al final".
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
   // "Adaptar a otra red" del panel (F10.5): precarga el composer y le da el
@@ -145,9 +155,35 @@ function ChatView({
       void loadChatCards(chatId);
     }
   }, [status, chatId, refreshQuota, loadChatCards]);
+  // El contenido crece por muchos lados (texto en streaming, cards que
+  // llegan, imágenes que cargan): se observa su alto, no `messages`.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length]);
+    const box = scrollRef.current;
+    const content = contentRef.current;
+    if (!box || !content) return;
+    const follow = () => {
+      if (stick.current) box.scrollTop = box.scrollHeight;
+    };
+    follow();
+    const observer = new ResizeObserver(follow);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+  function onScroll() {
+    const box = scrollRef.current;
+    if (!box) return;
+    const near = box.scrollHeight - box.scrollTop - box.clientHeight <= 80;
+    stick.current = near;
+    setAtBottom(near);
+  }
+  function scrollToEnd(smooth: boolean) {
+    stick.current = true;
+    setAtBottom(true);
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: smooth ? "smooth" : "auto",
+    });
+  }
   const quotaExhaustedError = parseQuotaExhaustedError(error);
 
   // Regenerar borra las cards de la respuesta (ADR-006). Desde F10.5 una
@@ -191,6 +227,8 @@ function ChatView({
     if (!text || busy) return;
     setInput("");
     setModalDismissed(false);
+    // Lo que tú mandas siempre se ve, aunque estuvieras leyendo arriba.
+    scrollToEnd(false);
     void sendMessage({ text });
   }
 
@@ -205,42 +243,55 @@ function ChatView({
         <SelectionBar chatId={chatId} />
         {/* El título y el menú del chat viven en la Topbar (ChatCrumb, F10.6.2). */}
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex max-w-[732px] flex-col gap-5 px-4 py-6">
-            {messages.map((message, mi) => {
-              const isLastMessage = mi === messages.length - 1;
-              if (message.role === "user") {
+        <div className="relative min-h-0 flex-1">
+          <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto">
+            <div ref={contentRef} className="mx-auto flex max-w-[732px] flex-col gap-5 px-4 py-6">
+              {messages.map((message, mi) => {
+                const isLastMessage = mi === messages.length - 1;
+                if (message.role === "user") {
+                  return (
+                    <div key={message.id} className="flex flex-col gap-[18px]">
+                      {message.parts.map((part, i) =>
+                        part.type === "text" ? <MessageUser key={i} text={part.text} /> : null,
+                      )}
+                    </div>
+                  );
+                }
                 return (
-                  <div key={message.id} className="flex flex-col gap-[18px]">
-                    {message.parts.map((part, i) =>
-                      part.type === "text" ? <MessageUser key={i} text={part.text} /> : null,
-                    )}
-                  </div>
+                  <AssistantMessage
+                    key={message.id}
+                    message={message}
+                    chatId={chatId}
+                    isLast={isLastMessage}
+                    streamingNow={status === "streaming"}
+                    canRegenerate={isLastMessage && !busy}
+                    onRegenerate={() => void requestRegenerate()}
+                  />
                 );
-              }
-              return (
-                <AssistantMessage
-                  key={message.id}
-                  message={message}
-                  chatId={chatId}
-                  isLast={isLastMessage}
-                  streamingNow={status === "streaming"}
-                  canRegenerate={isLastMessage && !busy}
-                  onRegenerate={() => void requestRegenerate()}
-                />
-              );
-            })}
-            {showTyping && <TypingDots />}
-            {error && !quotaExhaustedError && (
-              <p className="flex items-center gap-2 text-sm text-error">
-                Algo salió mal generando la respuesta.
-                <button type="button" className="underline" onClick={() => void regenerate()}>
-                  Reintentar
-                </button>
-              </p>
-            )}
-            <div ref={bottomRef} />
+              })}
+              {showTyping && <TypingDots />}
+              {error && !quotaExhaustedError && (
+                <p className="flex items-center gap-2 text-sm text-error">
+                  Algo salió mal generando la respuesta.
+                  <button type="button" className="underline" onClick={() => void regenerate()}>
+                    Reintentar
+                  </button>
+                </p>
+              )}
+            </div>
           </div>
+          {!atBottom && (
+            <Tooltip label="Ir al final">
+              <button
+                type="button"
+                aria-label="Ir al final"
+                onClick={() => scrollToEnd(true)}
+                className="absolute bottom-3 left-1/2 flex size-10 -translate-x-1/2 items-center justify-center rounded-full border border-line-subtle bg-card text-fg shadow-lg ring-4 ring-app transition-colors hover:bg-secondary-hover hover:text-fg"
+              >
+                <ArrowDown size={17} strokeWidth={2} />
+              </button>
+            </Tooltip>
+          )}
         </div>
 
         <div className="shrink-0 px-4 pb-4">

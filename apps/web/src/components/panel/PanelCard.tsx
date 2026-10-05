@@ -124,7 +124,7 @@ export function PanelCard({
     fetchCardVersions(cardId)
       .then(setVersions)
       .catch(() => {
-        // Sin historial el panel sigue sirviendo; el menú dirá "Cargando…".
+        // Sin historial el panel sigue sirviendo; el menú muestra su esqueleto de carga.
       });
   }, [cardId]);
   useEffect(() => refreshVersions(), [refreshVersions]);

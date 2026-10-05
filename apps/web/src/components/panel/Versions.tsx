@@ -139,7 +139,14 @@ export function VersionsMenu({
           VERSIONES DE ESTE BORRADOR
         </p>
         {!list ? (
-          <p className="px-2 py-3 text-sm text-fg-muted">Cargando…</p>
+          <div aria-busy="true" aria-label="Cargando versiones" className="flex flex-col gap-1 p-1">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex flex-col gap-1.5 rounded-lg px-2 py-2">
+                <div className="skeleton h-3.5 w-1/3 rounded-md" />
+                <div className="skeleton h-3 w-2/3 rounded-md" />
+              </div>
+            ))}
+          </div>
         ) : (
           list.map((v) => {
             const current = v.n === latest;

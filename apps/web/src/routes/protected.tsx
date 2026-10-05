@@ -8,6 +8,7 @@ import { ScheduleDrawer } from "../components/schedule/ScheduleDrawer.js";
 import { ToastViewport } from "../components/ui/Toast.js";
 import { authClient } from "../lib/auth-client.js";
 import { recordarRutaDeLaApp } from "../lib/ultima-ruta.js";
+import { AppLoading } from "../components/ui/AppLoading.js";
 
 // Layout de rutas autenticadas: sin sesión → /login. Con sesión pero sin
 // onboarding completo → /onboarding (excepto en la propia ruta, para no
@@ -58,7 +59,7 @@ export function ProtectedLayout() {
   }, [location.pathname, location.search]);
 
   if (isPending) {
-    return <main className="p-8">Cargando…</main>;
+    return <AppLoading />;
   }
   if (!session) {
     return <Navigate to="/login" replace />;
