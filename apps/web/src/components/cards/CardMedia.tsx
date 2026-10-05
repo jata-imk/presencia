@@ -64,6 +64,11 @@ export interface CardImageGeneration {
   busyElsewhere?: boolean;
   /** F10.6: guardar el prompt al salir del campo (el de un slide vive en la card). */
   commitPrompt?: (prompt: string) => void;
+  /**
+   * F10.6.1: el estilo lo controla alguien de afuera (el carrusel: uno para
+   * todos sus slides). Sin esto, cada imagen lleva su propio chip.
+   */
+  styleControl?: { value: ImageStyle; onChange: (style: ImageStyle) => void };
   updateAlt: (assetId: string, alt: string) => Promise<void>;
 }
 
@@ -730,7 +735,9 @@ export function EmptyImageState({
   media?: CardMediaActions;
 }) {
   const generation = media?.generation;
-  const [style, setStyle] = useState<ImageStyle | null>(null);
+  const [ownStyle, setOwnStyle] = useState<ImageStyle | null>(null);
+  const style = generation?.styleControl?.value ?? ownStyle;
+  const setStyle = generation?.styleControl?.onChange ?? setOwnStyle;
   if (generation?.job?.status === "generating") {
     return <GeneratingImage aspectRatio={generation.job.aspectRatio} />;
   }
@@ -796,7 +803,9 @@ export function SelectedImage({
   const [composing, setComposing] = useState(false);
   // El estilo que eligió en el chip; null = el de arranque (initialStyle), que
   // se sigue leyendo en vivo para que llegue el del trabajo cuando termina.
-  const [style, setStyle] = useState<ImageStyle | null>(null);
+  const [ownStyle, setOwnStyle] = useState<ImageStyle | null>(null);
+  const style = generation?.styleControl?.value ?? ownStyle;
+  const setStyle = generation?.styleControl?.onChange ?? setOwnStyle;
   const shownStyle = style ?? (generation ? initialStyle(generation) : undefined);
   const shown = picked ?? assetId;
   // La versión elegida dentro del historial, que llega aparte y después

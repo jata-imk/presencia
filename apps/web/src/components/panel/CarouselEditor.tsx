@@ -17,6 +17,7 @@ import { useEffect, useState, type DragEvent } from "react";
 import { assetContentUrl, type CarouselSlide, type ImageAspectRatio } from "@presencia/shared";
 import type { CarouselActions } from "../../lib/cards/use-card-controller.js";
 import { EmptyImageState, SelectedImage } from "../cards/CardMedia.js";
+import { StyleChip } from "../cards/StyleChip.js";
 import { Segmented } from "./PanelParts.js";
 
 // El carrusel en el modo Editar del panel (F10.6, "Chat Rediseño" §3.3):
@@ -147,6 +148,11 @@ export function CarouselEditor({
         <span className="font-display font-semibold text-fg-secondary">
           {slides.length}/{carousel.max}
         </span>
+        <StyleChip
+          value={carousel.style}
+          onChange={carousel.setStyle}
+          disabled={busy || carousel.generatingIds.length > 0}
+        />
         <div className="flex-1" />
         {carousel.aspectOptions.length > 1 && (
           <span className="inline-flex items-center gap-1.5">
@@ -168,6 +174,12 @@ export function CarouselEditor({
           </span>
         )}
       </div>
+
+      {carousel.aspectOptions.length > 1 && (
+        <p className="-mt-1 text-[11px] text-fg-muted">
+          Recortar no usa IA ni gasta tu mes; guardamos las originales.
+        </p>
+      )}
 
       {carousel.missingPercent !== null && (
         <button

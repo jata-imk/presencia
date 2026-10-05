@@ -11,6 +11,7 @@ import {
   type GenerateCardImageBody,
   type ImageAspectRatio,
   type ImageProviderSlot,
+  type ImageStyle,
   type PublicationCardDto,
   type QuotaStatusDto,
 } from "@presencia/shared";
@@ -62,6 +63,12 @@ export interface CarouselActions {
   changing: boolean;
   /** Un pedido de generar en camino (todavía sin trabajo en la card). */
   requesting: boolean;
+  /**
+   * F10.6.1: UN estilo para todo el carrusel (que se vea como una pieza). Lo
+   * comparten el chip de la barra, el de cada slide y "Generar las que faltan".
+   */
+  style: ImageStyle;
+  setStyle: (style: ImageStyle) => void;
   mediaFor: (slide: CarouselSlide, index: number) => CardMediaActions | undefined;
   add: () => Promise<boolean>;
   remove: (slideId: string) => void;
@@ -113,6 +120,10 @@ export function useCardController(
   const [uploading, setUploading] = useState(false);
   const [requestingImage, setRequestingImage] = useState(false);
   const [changingSlides, setChangingSlides] = useState(false);
+  // El estilo que eligió para el carrusel; null = el de arranque (el del
+  // último trabajo, o el de su voz). Antes cada slide tenía el suyo y
+  // "Generar las que faltan" no veía ninguno (bug del recorrido de F10.6).
+  const [carouselStyle, setCarouselStyle] = useState<ImageStyle | null>(null);
   const [cuota, setCuota] = useState<QuotaStatusDto | null>(null);
 
   // Un trabajo "generando" que no termina (el worker murió a la mitad) no
@@ -291,7 +302,7 @@ export function useCardController(
     content && content.archetype !== "video_script" && content.slides ? content.slides : null;
   const canImage = Boolean(card && editable && content && content.archetype !== "video_script");
   const max = card ? NETWORK_MAX_IMAGES[card.network] : 0;
-  const lastStyle = imageJob?.style ?? imagesConfig?.defaultStyle;
+  const lastStyle = carouselStyle ?? imageJob?.style ?? imagesConfig?.defaultStyle;
   const running = imageJob?.status === "generating" ? imageJob : null;
   const generatingIds = running ? (running.slideIds ?? [FIRST_SLIDE_ID]) : [];
 
@@ -331,6 +342,9 @@ export function useCardController(
               select: (assetId) => handleSelect(card.id, assetId, slide.id),
               edit: (instruction, provider) =>
                 void handleEdit(card.id, instruction, provider, slide.id),
+              ...(lastStyle
+                ? { styleControl: { value: lastStyle, onChange: setCarouselStyle } }
+                : {}),
               commitPrompt: (prompt) =>
                 void changeSlides("No se pudo guardar el prompt", () =>
                   updateCardSlide(card.id, slide.id, prompt),
@@ -366,6 +380,8 @@ export function useCardController(
           generatingIds,
           changing: changingSlides,
           requesting: requestingImage,
+          style: lastStyle ?? imagesConfig?.defaultStyle ?? "foto",
+          setStyle: setCarouselStyle,
           mediaFor: slideMedia,
           add: () => changeSlides("No se pudo agregar el slide", () => addCardSlide(card.id)),
           remove: (slideId) =>

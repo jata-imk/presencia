@@ -73,6 +73,13 @@ export const culturalPrompts: CulturalPrompt[] = [
     expectsTool: true,
   },
   {
+    // F10.6.1: un carrusel sin número pedido. Se esperan de 3 a 5 slides
+    // (portada incluida), no los 6 que salían antes.
+    id: "tool-carrusel-libre",
+    text: "Hazme un carrusel para Instagram con tips para preparar mejor café en casa, para mi cafetería 'La Canela'.",
+    expectsTool: true,
+  },
+  {
     // F10.6 PR5: el contrario. Una promo de un solo producto no necesita
     // carrusel: se espera UNA imagen, no un carrusel de relleno que cobra más.
     id: "tool-una-imagen",
