@@ -223,8 +223,10 @@ export function useCardController(
       await updateAssetAlt(assetId, alt);
       setVersions((list) => list.map((v) => (v.assetId === assetId ? { ...v, alt } : v)));
       toast({ title: "Texto alternativo guardado" });
+      return true;
     } catch (err) {
       failToast("No se pudo guardar el texto alternativo", err);
+      return false;
     }
   }
 

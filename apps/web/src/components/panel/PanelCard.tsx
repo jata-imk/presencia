@@ -71,6 +71,7 @@ import {
   ViewingBanner,
   versionAsContent,
 } from "./Versions.js";
+import { Tooltip } from "../ui/Tooltip.js";
 
 // El contenido del panel de publicación (F10.5, rd-panel.jsx → Panel): las
 // pestañas de las cards abiertas, el conmutador Vista previa / Editar, el
@@ -499,9 +500,11 @@ function SaveIndicator({ state, latest }: { state: SaveState; latest: number | n
   if (state.kind === "idle") return null;
   if (state.kind === "error") {
     return (
-      <span role="alert" className="truncate text-[11.5px] text-error" title={state.message}>
-        {state.message}
-      </span>
+      <Tooltip label={state.message}>
+        <span role="alert" className="truncate text-[11.5px] text-error">
+          {state.message}
+        </span>
+      </Tooltip>
     );
   }
   return (
@@ -597,15 +600,16 @@ function Tabs({
         })}
       </div>
       {!mobile && (
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Cerrar panel (Esc)"
-          title="Cerrar (Esc)"
-          className="mb-2 inline-flex size-7 items-center justify-center rounded-md text-fg-muted hover:bg-surface hover:text-fg"
-        >
-          <X size={16} />
-        </button>
+        <Tooltip label="Cerrar (Esc)">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar panel (Esc)"
+            className="mb-2 inline-flex size-7 items-center justify-center rounded-md text-fg-muted hover:bg-surface hover:text-fg"
+          >
+            <X size={16} />
+          </button>
+        </Tooltip>
       )}
     </div>
   );

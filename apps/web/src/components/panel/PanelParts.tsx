@@ -1,5 +1,6 @@
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { Tooltip } from "../ui/Tooltip.js";
 
 // Piezas del panel de publicación (F10.5) compartidas entre la vista previa,
 // el editor y las versiones.
@@ -140,21 +141,21 @@ export function Segmented<T extends string>({
       {options.map((o) => {
         const selected = o.value === value;
         return (
-          <button
-            key={o.value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            disabled={o.disabled}
-            title={o.title}
-            onClick={() => onChange(o.value)}
-            className={`inline-flex items-center gap-1.5 rounded-md font-display font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-              small ? "h-6 px-2 text-[11.5px]" : "h-7 px-2.5 text-[12.5px]"
-            } ${selected ? "bg-card text-fg shadow-xs" : "text-fg-muted hover:text-fg-secondary"}`}
-          >
-            <o.Icon size={small ? 13 : 14} aria-hidden="true" />
-            {o.label}
-          </button>
+          <Tooltip key={o.value} label={o.title}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              disabled={o.disabled}
+              onClick={() => onChange(o.value)}
+              className={`inline-flex items-center gap-1.5 rounded-md font-display font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                small ? "h-6 px-2 text-[11.5px]" : "h-7 px-2.5 text-[12.5px]"
+              } ${selected ? "bg-card text-fg shadow-xs" : "text-fg-muted hover:text-fg-secondary"}`}
+            >
+              <o.Icon size={small ? 13 : 14} aria-hidden="true" />
+              {o.label}
+            </button>
+          </Tooltip>
         );
       })}
     </div>

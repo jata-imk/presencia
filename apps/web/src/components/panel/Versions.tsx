@@ -8,6 +8,7 @@ import {
   type CardVersionDto,
   type SocialNetwork,
 } from "@presencia/shared";
+import { Tooltip } from "../ui/Tooltip.js";
 
 // Versiones del texto de una card (F10.5, rd-panel.jsx → VersionsMenu y
 // CompareBody). Nada se borra: restaurar crea una versión nueva.
@@ -240,15 +241,16 @@ export function ViewingBanner({
           Restaurar
         </button>
       )}
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label="Volver a la versión actual"
-        title="Volver a la actual"
-        className="inline-flex size-7 items-center justify-center rounded-lg text-fg-muted hover:bg-card"
-      >
-        <X size={14} />
-      </button>
+      <Tooltip label="Volver a la actual">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Volver a la versión actual"
+          className="inline-flex size-7 items-center justify-center rounded-lg text-fg-muted hover:bg-card"
+        >
+          <X size={14} />
+        </button>
+      </Tooltip>
     </div>
   );
 }
