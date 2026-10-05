@@ -1,4 +1,4 @@
-import { ChevronDown, Palette, Settings } from "lucide-react";
+import { ChevronDown, Settings } from "lucide-react";
 import { IMAGE_STYLES, imageStyleDef, type ImageStyle } from "@presencia/shared";
 import { Menu, MENU_ITEM_CLASS } from "../ui/Menu.js";
 
@@ -26,10 +26,17 @@ export function StyleChip({
       <Menu.Trigger
         disabled={disabled}
         aria-label={`Estilo de la imagen: ${actual.name}`}
-        className="inline-flex h-7 items-center gap-1.5 rounded-full border border-line bg-card px-2.5 font-display text-xs font-semibold text-fg hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50 aria-expanded:border-line-focus aria-expanded:bg-tint-plum"
+        className="inline-flex h-8 items-center gap-2 rounded-full border border-line bg-card py-1 pr-2.5 pl-1 font-display text-xs font-semibold text-fg hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50 aria-expanded:border-line-focus aria-expanded:bg-tint-plum"
       >
-        <Palette size={13} strokeWidth={1.75} aria-hidden />
-        Estilo: {actual.name}
+        {/* F10.6.1: la miniatura del estilo elegido, no un ícono genérico:
+            se ve QUÉ estilo sin abrir el menú. */}
+        <img
+          src={`/assets/estilos/${actual.id}-base.webp`}
+          alt=""
+          className="size-6 rounded-full object-cover ring-1 ring-line"
+        />
+        <span className="font-medium text-fg-muted">Estilo</span>
+        {actual.name}
         <ChevronDown size={12} aria-hidden />
       </Menu.Trigger>
       <Menu.Content className="w-80 rounded-xl border border-line bg-card p-2.5 shadow-lg outline-none">

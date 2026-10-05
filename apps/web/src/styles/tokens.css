@@ -129,6 +129,14 @@
   --bg-surface: #fafafa;
   --bg-card: #ffffff;
   --bg-overlay: rgba(0, 0, 0, 0.4);
+  /* Visor de imágenes (F10.6.1): oscuro en LOS DOS temas, como cualquier
+     lightbox — la imagen se juzga sobre un fondo neutro, y el texto encima
+     es siempre claro. Por eso no deriva de --fg-primary ni de --fg-inverse,
+     que se invierten con el tema. */
+  --bg-viewer: rgba(14, 9, 17, 0.94);
+  --fg-on-viewer: #ffffff;
+  --fg-on-viewer-faint: rgba(255, 255, 255, 0.14);
+  --fg-on-viewer-soft: rgba(255, 255, 255, 0.26);
   --bg-tint-pink: #fff0f6;
   --bg-tint-blue: #eff6ff;
   --bg-tint-plum: var(--color-plum-100);
@@ -511,6 +519,10 @@
   --color-surface: var(--bg-surface);
   --color-card: var(--bg-card);
   --color-overlay: var(--bg-overlay);
+  --color-viewer: var(--bg-viewer);
+  --color-on-viewer: var(--fg-on-viewer);
+  --color-on-viewer-faint: var(--fg-on-viewer-faint);
+  --color-on-viewer-soft: var(--fg-on-viewer-soft);
   --color-tint-pink: var(--bg-tint-pink);
   --color-tint-blue: var(--bg-tint-blue);
   --color-tint-plum: var(--bg-tint-plum);

@@ -143,6 +143,19 @@ Regla: **texto de estado usa `-fg`**; `text-success`/`text-error` quedan para í
 
 Configuración suma además `--tag-neutro-fg/-border` (chip de los TagInput), `--focus-ring` (halo de los inputs al enfocar), `--formalidad-zona-0..4` (track del slider, con los cortes de `FORMALITY_ZONES`) y `--skeleton`/`--skeleton-brillo` (carga).
 
+## Visor de imágenes: `--bg-viewer` / `--fg-on-viewer*` (F10.6.1)
+
+El visor a pantalla completa (`components/ui/ImageViewer.tsx`) es oscuro **en los dos temas**, como cualquier lightbox: la imagen se juzga sobre un fondo neutro y el texto encima siempre es claro. Por eso no sale de `--fg-primary` ni de `--fg-inverse`, que se invierten con el tema (la primera versión usaba `bg-fg/85` y en oscuro el fondo habría quedado claro).
+
+| Token                  | Valor (ambos temas)      | Utility              |
+| ---------------------- | ------------------------ | -------------------- |
+| `--bg-viewer`          | `rgba(14, 9, 17, 0.94)`  | `bg-viewer`          |
+| `--fg-on-viewer`       | `#FFFFFF`                | `text-on-viewer`     |
+| `--fg-on-viewer-faint` | `rgba(255,255,255,0.14)` | `bg-on-viewer-faint` |
+| `--fg-on-viewer-soft`  | `rgba(255,255,255,0.26)` | `bg-on-viewer-soft`  |
+
+Nota de F10.6.1: con Tailwind 4.3 `bg-card/90` y `bg-fg/85` **sí** emitieron regla (`color-mix(in oklab, var(--bg-card) 90%, transparent)`), a diferencia de lo que pasó en F6. La regla de arriba no cambia: verificar el CSS generado antes de confiar en un `/NN`.
+
 ## Movimiento (ADR-014)
 
 Decisión completa en [ADR-014](../explanation/decisions/adr-014-estrategia-de-animacion.md); acá el resumen operativo.

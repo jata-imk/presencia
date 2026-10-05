@@ -1,15 +1,26 @@
 import { useEffect, useId, useRef, useState, type ComponentType } from "react";
 import {
+  ArrowUp,
+  Brush,
   Copy,
   ImageOff,
   ImagePlus,
+  Layers,
   Loader2,
+  Maximize2,
+  MoreHorizontal,
+  Palette,
   Pencil,
   RefreshCw,
   Shuffle,
   Sparkles,
+  Square,
+  Sun,
+  TextQuote,
+  TriangleAlert,
   Upload,
   Wand2,
+  type LucideIcon,
 } from "lucide-react";
 import {
   ASSET_UPLOAD_MIME_TYPES,
@@ -22,6 +33,8 @@ import {
   type ImageStyle,
 } from "@presencia/shared";
 import { useToastStore } from "../../stores/toast-store.js";
+import { ImageViewer } from "../ui/ImageViewer.js";
+import { Menu, MENU_CONTENT_CLASS, MENU_ITEM_CLASS } from "../ui/Menu.js";
 import { StyleChip } from "./StyleChip.js";
 
 // La imagen de una card y lo que se puede hacer con ella (F10). Presentación
@@ -127,7 +140,10 @@ export function CardImage({ assetId, alt }: { assetId: string; alt: string }) {
       alt={alt}
       loading="lazy"
       onError={() => setFailed(true)}
-      className="mx-auto block h-auto max-h-[80vh] w-auto max-w-full rounded-lg"
+      // Tope de alto (F10.6.1): a 80vh un 4:5 de 1K llenaba el panel y
+      // empujaba los ajustes fuera de la vista. Para verla completa está
+      // "Ver en grande".
+      className="mx-auto block h-auto max-h-[min(50vh,360px)] w-auto max-w-full rounded-lg"
     />
   );
 }
@@ -361,20 +377,33 @@ export function VersionStrip({
 }
 
 /**
- * Ajustar la imagen elegida sin empezar de cero (plan F10, decisión 3):
- * atajos para lo más común y texto libre para lo demás, con el precio a la
- * vista. Cada ajuste es una imagen nueva que queda en el historial.
+ * Cómo se ve cada atajo de "Ajustar con IA" (F10.6.1): un ícono que dice qué
+ * hace y un color de su familia (cálido = ámbar, fondo = azul…), todos de
+ * tokens para que funcionen en claro y oscuro. Lo que se le pide al generador
+ * sigue en IMAGE_EDIT_SUGGESTIONS (shared); esto es solo la piel.
  */
-function AdjustBar({
+const SUGGESTION_LOOK: Record<string, { Icon: LucideIcon; tone: string }> = {
+  "Más cálida": { Icon: Sun, tone: "border-warning-border bg-warning-bg text-warning-fg" },
+  "Otro fondo": { Icon: Layers, tone: "border-info-border bg-info-bg text-info-fg" },
+  "Más minimalista": { Icon: Square, tone: "border-success-border bg-success-bg text-success-fg" },
+  "Más colorida": { Icon: Palette, tone: "border-ai-border bg-tint-pink text-accent" },
+  Ilustración: { Icon: Brush, tone: "border-ai-border bg-tint-plum text-accent" },
+};
+
+/**
+ * "Ajustar con IA" (plan F10, decisión 3; rediseño F10.6.1): retocar la
+ * imagen elegida sin empezar de cero. Es lo que más se usa sobre una imagen
+ * que ya gusta, así que va primero y con el campo de texto como protagonista
+ * (antes era una línea gris al final). Cada ajuste es una imagen nueva que
+ * queda en el historial.
+ */
+function AdjustCard({
   generation,
-  assetId,
   selecting,
 }: {
   generation: CardImageGeneration;
-  /** La imagen elegida: sobre la que se aplica el ajuste. Se muestra para que no haya duda. */
-  assetId: string;
   /**
-   * Hay una elección de versión guardándose: la miniatura ya muestra la nueva,
+   * Hay una elección de versión guardándose: la imagen ya muestra la nueva,
    * pero el servidor todavía tiene la anterior, y un ajuste ahora editaría la
    * que NO se ve. Se apaga hasta que la elección se confirma.
    */
@@ -383,38 +412,28 @@ function AdjustBar({
   const [instruction, setInstruction] = useState("");
   const busy = isBusy(generation) || selecting;
   const inputId = useId();
+  const ready = instruction.trim().length >= 3;
   function apply(text: string) {
     if (text.trim().length < 3) return;
     generation.edit(text.trim(), "primary");
     setInstruction("");
   }
   return (
-    <div className="mt-2.5 flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
-        <img
-          src={assetContentUrl(assetId)}
-          alt=""
-          className="size-8 shrink-0 rounded border border-line object-cover"
-        />
-        <span className="text-[11px] font-semibold tracking-wide text-fg-muted uppercase">
-          Ajustar esta imagen
+    <section
+      aria-labelledby={`${inputId}-title`}
+      className="mt-3 rounded-xl border border-ai-border bg-ai-bg p-3"
+    >
+      <div className="mb-2 flex items-center gap-1.5">
+        <Sparkles size={14} strokeWidth={2} className="text-accent" aria-hidden />
+        <h3 id={`${inputId}-title`} className="font-display text-[13px] font-semibold text-fg">
+          Ajustar con IA
+        </h3>
+        <span className="ml-auto text-[11px] text-fg-muted">
+          {priceLabel(generation.editPercent)} por ajuste
         </span>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {IMAGE_EDIT_SUGGESTIONS.map((suggestion) => (
-          <button
-            key={suggestion.label}
-            type="button"
-            disabled={busy}
-            onClick={() => apply(suggestion.instruction)}
-            className="rounded-full border border-line bg-card px-2.5 py-1 text-xs font-medium text-fg-secondary disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {suggestion.label}
-          </button>
-        ))}
-      </div>
       <form
-        className="flex items-center gap-1.5"
+        className="relative"
         onSubmit={(event) => {
           event.preventDefault();
           apply(instruction);
@@ -423,37 +442,69 @@ function AdjustBar({
         <label htmlFor={inputId} className="sr-only">
           Pide un cambio a la imagen
         </label>
-        <input
+        <textarea
           id={inputId}
           value={instruction}
           onChange={(event) => setInstruction(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter aplica; Shift+Enter, salto de línea (como el chat).
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              if (!busy) apply(instruction);
+            }
+          }}
+          rows={2}
           maxLength={500}
+          disabled={busy}
           placeholder="Pide un cambio: otro fondo, más luz, sin la taza…"
-          className="min-w-0 flex-1 rounded-md border border-line bg-card px-2.5 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
+          className="block w-full resize-none rounded-lg border border-line bg-card py-2.5 pr-12 pl-3 text-sm leading-snug text-fg placeholder:text-fg-muted focus:border-line-focus focus:ring-2 focus:ring-focus-ring focus:outline-none disabled:opacity-60"
         />
         <button
           type="submit"
-          disabled={busy || instruction.trim().length < 3}
-          className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-card px-2.5 py-1.5 text-xs font-medium whitespace-nowrap text-fg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label="Aplicar el cambio"
+          title="Aplicar (Enter)"
+          disabled={busy || !ready}
+          className="absolute right-2 bottom-2 flex size-8 items-center justify-center rounded-full bg-primary text-primary-fg transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-secondary disabled:text-fg-muted"
         >
-          <Wand2 size={13} strokeWidth={1.75} />
-          Aplicar
+          <ArrowUp size={16} strokeWidth={2.25} aria-hidden />
         </button>
       </form>
-      <p className="text-[11px] text-fg-muted">
-        Cada ajuste: {priceLabel(generation.editPercent)}. La imagen de antes se queda en tus
-        versiones.
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {IMAGE_EDIT_SUGGESTIONS.map((suggestion) => {
+          const look = SUGGESTION_LOOK[suggestion.label];
+          const Icon = look?.Icon ?? Wand2;
+          return (
+            <button
+              key={suggestion.label}
+              type="button"
+              disabled={busy}
+              onClick={() => apply(suggestion.instruction)}
+              title={suggestion.instruction}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-[filter,box-shadow] hover:shadow-sm hover:brightness-[0.97] disabled:cursor-not-allowed disabled:opacity-50 ${
+                look?.tone ?? "border-line bg-card text-fg-secondary"
+              }`}
+            >
+              <Icon size={13} strokeWidth={2} aria-hidden />
+              {suggestion.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[11px] text-fg-muted">
+        La imagen de antes se queda en tus versiones.
       </p>
-    </div>
+    </section>
   );
 }
 
 /**
  * El texto alternativo de la imagen elegida: lo que lee un lector de
  * pantalla. Las generadas nacen con la descripción que se pidió; las subidas,
- * vacías hasta que el usuario lo escriba.
+ * vacías hasta que el usuario lo escriba. F10.6.1: una fila con su estado a
+ * la vista (antes era un "▸ Texto alternativo" perdido al final): si falta,
+ * se nota.
  */
-function AltTextEditor({
+function AltTextRow({
   assetId,
   initial,
   generation,
@@ -462,46 +513,85 @@ function AltTextEditor({
   initial: string;
   generation: CardImageGeneration;
 }) {
+  const [open, setOpen] = useState(false);
   const [value, setValue] = useState(initial);
   const [saving, setSaving] = useState(false);
   const inputId = useId();
   const dirty = value.trim() !== initial.trim();
+  const written = initial.trim().length > 0;
   return (
-    <details className="mt-2 text-xs">
-      <summary className="cursor-pointer text-fg-muted">Texto alternativo</summary>
-      <form
-        className="mt-1.5 flex items-center gap-1.5"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!dirty) return;
-          setSaving(true);
-          void generation.updateAlt(assetId, value.trim()).finally(() => setSaving(false));
-        }}
-      >
-        <label htmlFor={inputId} className="sr-only">
-          Texto alternativo de la imagen
-        </label>
-        <input
-          id={inputId}
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          maxLength={500}
-          placeholder="Describe la imagen para quien no la ve"
-          className="min-w-0 flex-1 rounded-md border border-line bg-card px-2.5 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-accent focus:outline-none"
-        />
+    <div className="mt-3 rounded-lg border border-line bg-card">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <TextQuote size={14} strokeWidth={1.75} className="shrink-0 text-fg-muted" aria-hidden />
+        <span className="shrink-0 text-xs font-semibold text-fg">Texto alternativo</span>
+        {written ? (
+          <span className="min-w-0 flex-1 truncate text-xs text-fg-muted" title={initial}>
+            {initial}
+          </span>
+        ) : (
+          <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-xs font-medium text-warning-fg">
+            <TriangleAlert size={12} aria-hidden />
+            Sin escribir
+          </span>
+        )}
         <button
-          type="submit"
-          disabled={!dirty || saving}
-          className="shrink-0 rounded-md border border-line bg-card px-2.5 py-1.5 font-medium text-fg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+          type="button"
+          aria-expanded={open}
+          aria-controls={inputId}
+          onClick={() => setOpen(!open)}
+          className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-accent hover:bg-secondary"
         >
-          {saving ? "Guardando…" : "Guardar"}
+          {open ? "Cerrar" : written ? "Editar" : "Escribir"}
         </button>
-      </form>
-    </details>
+      </div>
+      {open && (
+        <form
+          className="flex items-center gap-1.5 border-t border-line px-3 py-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!dirty) return;
+            setSaving(true);
+            void generation
+              .updateAlt(assetId, value.trim())
+              .finally(() => setSaving(false))
+              .then(() => setOpen(false));
+          }}
+        >
+          <label htmlFor={inputId} className="sr-only">
+            Texto alternativo de la imagen
+          </label>
+          <input
+            id={inputId}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            maxLength={500}
+            autoFocus
+            placeholder="Describe la imagen para quien no la ve"
+            className="min-w-0 flex-1 rounded-md border border-line bg-card px-2.5 py-1.5 text-xs text-fg placeholder:text-fg-muted focus:border-line-focus focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!dirty || saving}
+            className="shrink-0 rounded-md bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-fg disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? "Guardando…" : "Guardar"}
+          </button>
+        </form>
+      )}
+    </div>
   );
 }
 
-/** La franja "IMAGEN" del mock (arquetipos.jsx): las acciones sobre una imagen que ya está. */
+/**
+ * "Generar de nuevo" (rediseño F10.6.1, antes la franja "IMAGEN" del mock):
+ * tirar la imagen y sacar otra. En una fila: el estilo (con su miniatura),
+ * Regenerar con el precio adentro y un ⋯ con lo que se usa menos (otro
+ * generador, cambiar el prompt, subir la propia). Antes eran cinco botones
+ * del mismo peso en dos filas, con el precio suelto al final.
+ *
+ * En un carrusel el estilo NO va aquí: es uno para todo el carrusel y se
+ * elige en su barra (`generation.styleControl`).
+ */
 export function ImageActionStrip({
   media,
   prompt,
@@ -522,59 +612,94 @@ export function ImageActionStrip({
   const { generation } = media;
   const busy = isBusy(generation);
   const canRegenerate = generation && prompt && aspectRatio;
+  const fileInput = useRef<HTMLInputElement>(null);
+  const regenerate = (provider: ImageProviderSlot) => {
+    if (!canRegenerate) return;
+    void generation.generate({
+      prompt,
+      aspectRatio,
+      provider,
+      style: style ?? generation.defaultStyle,
+    });
+  };
   return (
-    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-      <span className="mr-1 text-[11px] font-semibold tracking-wide text-fg-muted uppercase">
-        Imagen
-      </span>
-      {canRegenerate && style && (
-        <StyleChip value={style} onChange={onStyleChange} disabled={busy} />
-      )}
-      {canRegenerate && (
-        <ActionButton
-          Icon={RefreshCw}
-          label="Regenerar"
-          disabled={busy}
-          onClick={() =>
-            void generation.generate({
-              prompt,
-              aspectRatio,
-              provider: "primary",
-              style: style ?? generation.defaultStyle,
-            })
-          }
+    <section className="mt-3">
+      {/* Mismo encabezado que "Ajustar con IA": ícono + título, no la
+          etiqueta gris en mayúsculas de antes (dos estilos de título en la
+          misma sección se leían como jerarquías distintas). */}
+      <div className="mb-2 flex items-center gap-1.5">
+        <RefreshCw size={14} strokeWidth={2} className="text-fg-secondary" aria-hidden />
+        <h3 className="font-display text-[13px] font-semibold text-fg">
+          {canRegenerate ? "Generar de nuevo" : "Imagen"}
+        </h3>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {canRegenerate && style && !generation.styleControl && (
+          <StyleChip value={style} onChange={onStyleChange} disabled={busy} />
+        )}
+        {canRegenerate && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => regenerate("primary")}
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-line-focus bg-card px-3 font-display text-xs font-semibold text-fg transition-colors hover:bg-tint-plum disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw size={13} strokeWidth={2} aria-hidden />
+            Regenerar
+            <span className="font-medium text-fg-muted">· {priceLabel(generation.percent)}</span>
+          </button>
+        )}
+        <input
+          ref={fileInput}
+          type="file"
+          accept={ASSET_UPLOAD_MIME_TYPES.join(",")}
+          className="hidden"
+          aria-hidden
+          tabIndex={-1}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) media.upload(file);
+          }}
         />
-      )}
-      {canRegenerate && generation.alternateAvailable && (
-        <ActionButton
-          Icon={Shuffle}
-          label="Probar con otro generador"
-          disabled={busy}
-          onClick={() =>
-            void generation.generate({
-              prompt,
-              aspectRatio,
-              provider: "alternate",
-              style: style ?? generation.defaultStyle,
-            })
-          }
-        />
-      )}
-      {generation && onChangePrompt && (
-        <ActionButton
-          Icon={Pencil}
-          label="Cambiar prompt"
-          disabled={busy}
-          onClick={onChangePrompt}
-        />
-      )}
-      <UploadImageButton media={media} label="Subir otra" />
-      {canRegenerate && (
-        <span className="text-[11px] text-fg-muted">
-          Regenerar: {priceLabel(generation.percent)}
-        </span>
-      )}
-    </div>
+        {canRegenerate ? (
+          <Menu placement="bottom-end">
+            <Menu.Trigger
+              aria-label="Más opciones de imagen"
+              title="Más opciones"
+              disabled={busy || media.uploading}
+              className="flex size-8 items-center justify-center rounded-full border border-line bg-card text-fg-secondary hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {media.uploading ? (
+                <Loader2 size={15} className="animate-spin" aria-hidden />
+              ) : (
+                <MoreHorizontal size={16} aria-hidden />
+              )}
+            </Menu.Trigger>
+            <Menu.Content className={`${MENU_CONTENT_CLASS} w-60`}>
+              {generation.alternateAvailable && (
+                <Menu.Item className={MENU_ITEM_CLASS} onClick={() => regenerate("alternate")}>
+                  <Shuffle size={14} aria-hidden />
+                  Probar con otro generador
+                </Menu.Item>
+              )}
+              {onChangePrompt && (
+                <Menu.Item className={MENU_ITEM_CLASS} onClick={onChangePrompt}>
+                  <Pencil size={14} aria-hidden />
+                  Cambiar el prompt
+                </Menu.Item>
+              )}
+              <Menu.Item className={MENU_ITEM_CLASS} onClick={() => fileInput.current?.click()}>
+                <Upload size={14} aria-hidden />
+                Subir otra imagen
+              </Menu.Item>
+            </Menu.Content>
+          </Menu>
+        ) : (
+          <UploadImageButton media={media} label="Subir otra" />
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -786,11 +911,17 @@ export function SelectedImage({
   alt,
   prompt,
   media,
+  onExpand,
 }: {
   assetId: string;
   alt: string;
   prompt: string | undefined;
   media?: CardMediaActions;
+  /**
+   * F10.6.1: "Ver en grande". Un carrusel lo pasa para abrir el visor con
+   * TODOS sus slides; sin él, el visor muestra solo esta imagen.
+   */
+  onExpand?: () => void;
 }) {
   const generation = media?.generation;
   const job = generation?.job ?? null;
@@ -801,6 +932,7 @@ export function SelectedImage({
   // "Cambiar prompt": el mismo composer de una card vacía, debajo de la
   // imagen actual, que sigue ahí hasta que lleguen las nuevas.
   const [composing, setComposing] = useState(false);
+  const [viewing, setViewing] = useState(false);
   // El estilo que eligió en el chip; null = el de arranque (initialStyle), que
   // se sigue leyendo en vivo para que llegue el del trabajo cuando termina.
   const [ownStyle, setOwnStyle] = useState<ImageStyle | null>(null);
@@ -824,7 +956,24 @@ export function SelectedImage({
       {job?.status === "generating" ? (
         <GeneratingImage aspectRatio={job.aspectRatio} />
       ) : (
-        <CardImage key={shown} assetId={shown} alt={versionAlt ?? alt} />
+        <div className="group relative mx-auto w-fit">
+          <CardImage key={shown} assetId={shown} alt={versionAlt ?? alt} />
+          <button
+            type="button"
+            aria-label="Ver en grande"
+            title="Ver en grande"
+            onClick={() => (onExpand ? onExpand() : setViewing(true))}
+            className="absolute top-2 right-2 flex size-8 items-center justify-center rounded-full bg-card/90 text-fg shadow-md transition-opacity hover:bg-card sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+          >
+            <Maximize2 size={15} aria-hidden />
+          </button>
+        </div>
+      )}
+      {viewing && (
+        <ImageViewer
+          items={[{ assetId: shown, alt: versionAlt ?? alt }]}
+          onClose={() => setViewing(false)}
+        />
       )}
       {(job?.status === "failed" || job?.status === "blocked") && (
         <div className="mt-2">
@@ -853,6 +1002,9 @@ export function SelectedImage({
         </div>
       ) : (
         <>
+          {/* Ajustar primero: es lo que más se usa sobre una imagen que ya
+              gusta. Generar de nuevo (tirarla y sacar otra) va después. */}
+          {generation && <AdjustCard generation={generation} selecting={picked !== null} />}
           {media && (
             <ImageActionStrip
               media={media}
@@ -863,13 +1015,10 @@ export function SelectedImage({
               onChangePrompt={() => setComposing(true)}
             />
           )}
-          {generation && (
-            <AdjustBar generation={generation} assetId={shown} selecting={picked !== null} />
-          )}
         </>
       )}
       {generation && shownVersion && (
-        <AltTextEditor
+        <AltTextRow
           key={`alt-${shown}-${versionAlt ?? ""}`}
           assetId={shown}
           initial={versionAlt ?? ""}
