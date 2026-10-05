@@ -51,11 +51,14 @@ export function VersionsButton({
   onToggle: () => void;
 }) {
   const label =
+    // "Texto": son las versiones del caption y los hashtags; las imágenes
+    // tienen su propio historial (recorrido de F10.6: recortar no movía este
+    // número y parecía un error).
     latest === null
-      ? "Versiones"
+      ? "Texto"
       : viewing !== null && viewing !== latest
-        ? `Viendo v${String(viewing)} de ${String(latest)}`
-        : `Versión ${String(latest)}`;
+        ? `Texto · viendo v${String(viewing)} de ${String(latest)}`
+        : `Texto · v${String(latest)}`;
   return (
     <button
       type="button"
@@ -124,7 +127,7 @@ export function VersionsMenu({
       <div
         ref={ref}
         role="listbox"
-        aria-label="Versiones de este borrador"
+        aria-label="Versiones del texto de este borrador"
         className={
           mobile
             ? "fixed inset-x-0 bottom-0 z-50 max-h-[70dvh] overflow-y-auto rounded-t-2xl border-t border-line bg-card p-2 pb-5 shadow-xl"

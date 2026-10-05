@@ -25,3 +25,5 @@ No se agregó una cuarta tool de "editar card". El modelo tendría que elegir a 
 La salida también es estructurada: `generateObject` con un schema por arquetipo que solo incluye los campos de texto, todos requeridos (OpenAI strict rechaza opcionales, #92). Los campos que la reescritura no toca (`imagePrompt`, `recordingNotes`, `assetIds`) se conservan de la card.
 
 El modelo recibe la conversación donde nació la card como transcripción de texto, no como mensajes con tool calls. Mandar tool calls sin sus tools definidas lo rechazan algunos proveedores.
+
+**Addendum (F10.6.1, 2026-10-04) — de 3 a 5 slides por default.** En el recorrido de F10.6, 6 slides por carrusel se sintieron de más y cuestan 16.2% del mes. La descripción de `carouselImagePrompts` pide "normalmente de 3 a 5, portada incluida, salvo que el usuario pida otro número". Suite con Gemini (`2026-10-05-reporte-parcial.md` y `-2`): un carrusel sin número pedido salió con 5 slides; "los 5 pasos" sigue saliendo con 6, porque el usuario pidió el número; una imagen sigue sin carrusel.

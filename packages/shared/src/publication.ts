@@ -141,7 +141,8 @@ const carouselImagePromptsSchema = z
       "tips, antes y después, varios productos): un prompt por slide, en orden; " +
       "el primero es la portada. Cada prompt describe UNA imagen (sujeto, escena " +
       "y composición), sin texto dentro y sin estilo, técnica, paleta ni " +
-      "iluminación. En español. Entre 2 y 10 (en X, máximo 4). Omítelo si basta una imagen.",
+      "iluminación. En español. Normalmente de 3 a 5, portada incluida, salvo que el " +
+      "usuario pida otro número (máximo 10; en X, 4). Omítelo si basta una imagen.",
   );
 
 /**
