@@ -374,7 +374,9 @@ export class CardMediaService {
           ...(meta.originalName ? { originalName: meta.originalName } : {}),
           croppedFrom: root.id,
         },
-        slideId: shown.slideId ?? slideOf.get(assetId) ?? null,
+        // El slide donde está HOY (pudo venir de otro: antes de F10.6.1 la tira
+        // mostraba las de toda la card); el de origen, solo si no está puesta.
+        slideId: slideOf.get(assetId) ?? shown.slideId ?? null,
       });
       newAssets.push(stored);
       replacement.set(assetId, stored.id);
