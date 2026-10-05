@@ -82,7 +82,8 @@ export interface CardImageGeneration {
    * todos sus slides). Sin esto, cada imagen lleva su propio chip.
    */
   styleControl?: { value: ImageStyle; onChange: (style: ImageStyle) => void };
-  updateAlt: (assetId: string, alt: string) => Promise<void>;
+  /** `false` si no se guardó (el toast ya avisó): el editor queda abierto para reintentar. */
+  updateAlt: (assetId: string, alt: string) => Promise<boolean>;
 }
 
 export interface CardMediaActions {
@@ -553,8 +554,10 @@ function AltTextRow({
             setSaving(true);
             void generation
               .updateAlt(assetId, value.trim())
-              .finally(() => setSaving(false))
-              .then(() => setOpen(false));
+              .then((saved) => {
+                if (saved) setOpen(false);
+              })
+              .finally(() => setSaving(false));
           }}
         >
           <label htmlFor={inputId} className="sr-only">

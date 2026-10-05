@@ -1,6 +1,6 @@
 import { FloatingFocusManager, FloatingOverlay, FloatingPortal } from "@floating-ui/react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { assetContentUrl } from "@presencia/shared";
 import { useDialog } from "../../lib/floating/use-dialog.js";
 
@@ -31,18 +31,34 @@ export function ImageViewer({
   onClose: () => void;
 }) {
   const { refs, context, getFloatingProps } = useDialog({ onClose });
-  const [index, setIndex] = useState(() => Math.min(Math.max(startIndex, 0), items.length - 1));
+  // Se sigue la imagen por su id, no por su posición: la lista puede crecer
+  // con el visor abierto (un carrusel con slides generándose) y un índice
+  // fijo saltaría a otra imagen sin que la persona hiciera nada.
+  const [currentId, setCurrentId] = useState(
+    () => items[Math.min(Math.max(startIndex, 0), items.length - 1)]?.assetId,
+  );
+  const found = items.findIndex((i) => i.assetId === currentId);
+  const index = found === -1 ? Math.min(Math.max(startIndex, 0), items.length - 1) : found;
   const item = items[index];
+  const setIndex = (next: number) => {
+    const target = items[next];
+    if (target) setCurrentId(target.assetId);
+  };
   const many = items.length > 1;
 
+  // Lo que el teclado lee cada vez: la lista y la posición de este render.
+  const latest = useRef({ items, index });
+  latest.current = { items, index };
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key === "ArrowRight") setIndex((i) => Math.min(i + 1, items.length - 1));
-      if (event.key === "ArrowLeft") setIndex((i) => Math.max(i - 1, 0));
+      const { items: list, index: at } = latest.current;
+      const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+      const target = list[at + step];
+      if (step !== 0 && target) setCurrentId(target.assetId);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [items.length]);
+  }, []);
 
   if (!item) return null;
   const title = item.label ?? "Imagen";
