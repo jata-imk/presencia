@@ -75,6 +75,9 @@ function ChatView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  // Un "Ir al final" suave en camino: sus propios eventos de scroll (todavía
+  // lejos del final) no deben apagar `stick` a medio viaje.
+  const seeking = useRef(false);
   const [atBottom, setAtBottom] = useState(true);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
@@ -165,19 +168,35 @@ function ChatView({
       if (stick.current) box.scrollTop = box.scrollHeight;
     };
     follow();
+    // También la caja: si se encoge (crece el composer, aparece un aviso
+    // abajo) el final quedaría tapado sin que nadie hiciera scroll.
     const observer = new ResizeObserver(follow);
     observer.observe(content);
-    return () => observer.disconnect();
+    observer.observe(box);
+    const settle = () => {
+      seeking.current = false;
+      onScroll();
+    };
+    box.addEventListener("scrollend", settle);
+    return () => {
+      observer.disconnect();
+      box.removeEventListener("scrollend", settle);
+    };
   }, []);
   function onScroll() {
     const box = scrollRef.current;
     if (!box) return;
     const near = box.scrollHeight - box.scrollTop - box.clientHeight <= 80;
+    if (seeking.current) {
+      if (near) seeking.current = false;
+      return;
+    }
     stick.current = near;
     setAtBottom(near);
   }
   function scrollToEnd(smooth: boolean) {
     stick.current = true;
+    seeking.current = smooth;
     setAtBottom(true);
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
