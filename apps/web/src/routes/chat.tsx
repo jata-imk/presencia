@@ -263,7 +263,11 @@ function ChatView({
         {/* El título y el menú del chat viven en la Topbar (ChatCrumb, F10.6.2). */}
 
         <div className="relative min-h-0 flex-1">
-          <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto">
+          {/* `relative` aquí y no solo afuera: lo absoluto del contenido (el
+              "Notas" sr-only de las notas al pie) se ancla DENTRO de la caja
+              que hace scroll; anclado afuera estiraba el contenedor de la app
+              y la página entera se desplazaba, composer incluido. */}
+          <div ref={scrollRef} onScroll={onScroll} className="relative h-full overflow-y-auto">
             <div ref={contentRef} className="mx-auto flex max-w-[732px] flex-col gap-5 px-4 py-6">
               {messages.map((message, mi) => {
                 const isLastMessage = mi === messages.length - 1;

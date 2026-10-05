@@ -188,6 +188,7 @@ export class CardMediaService {
         parentAssetId,
         alt: (asset.metadata as AssetMetadata).alt ?? null,
         slideId: asset.slideId,
+        croppedFrom: (asset.metadata as AssetMetadata).croppedFrom ?? null,
         createdAt: asset.createdAt.toISOString(),
       }));
     });

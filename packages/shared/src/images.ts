@@ -174,6 +174,12 @@ export interface CardImageVersionDto {
    * cuenta como de la portada. La tira de un slide muestra solo las suyas.
    */
   slideId: string | null;
+  /**
+   * F10.6.2: si es un recorte de proporción, la imagen de la que salió. La
+   * tira junta una imagen y sus recortes en una sola versión: cambiar 4:5 ↔
+   * 1:1 no es una imagen nueva.
+   */
+  croppedFrom: string | null;
   createdAt: string;
 }
 
