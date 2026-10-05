@@ -17,6 +17,7 @@ import { ChatOptionsMenu } from "./ChatOptionsMenu.js";
 export function ChatCrumb({ chatId }: { chatId: string }) {
   const chats = useChatsStore((s) => s.chats);
   const refreshChats = useChatsStore((s) => s.refresh);
+  const chatsError = useChatsStore((s) => s.error);
   const rename = useChatsStore((s) => s.rename);
   const folders = useFoldersStore((s) => s.folders);
   const refreshFolders = useFoldersStore((s) => s.refresh);
@@ -57,7 +58,10 @@ export function ChatCrumb({ chatId }: { chatId: string }) {
     }
   }
 
-  if (chats === null) {
+  // El esqueleto solo mientras carga: si la lista falló, se sigue con
+  // "Conversación" y su menú (renombrar, archivar…) en vez de quedarse
+  // cargando para siempre.
+  if (chats === null && !chatsError) {
     return <span className="skeleton h-4 w-40 rounded-md" aria-label="Cargando el chat" />;
   }
 

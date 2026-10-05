@@ -53,7 +53,7 @@
      tienen su propio focus:border-line-focus bien diseñado — un anillo
      global encima se vería doble. Los inputs de renombrar (sin borde, a
      pedido de Jose) usan focus-visible:ring-* directo en su className en
-     vez de este bloque, ver ConvHeader.tsx/ChatListItem.tsx. */
+     vez de este bloque, ver ChatCrumb.tsx/ChatListItem.tsx. */
   button:focus-visible,
   a:focus-visible,
   [role="menuitem"]:focus-visible,
