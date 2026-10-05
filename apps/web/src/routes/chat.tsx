@@ -2,7 +2,6 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, isStaticToolUIPart } from "ai";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { ConvHeader } from "../components/chat/ConvHeader.js";
 import { Composer } from "../components/chat/Composer.js";
 import { PublicationPanel } from "../components/panel/PublicationPanel.js";
 import { SelectionBar } from "../components/chat/SelectionBar.js";
@@ -122,15 +121,11 @@ function ChatView({
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [modalDismissed, setModalDismissed] = useState(false);
 
-  // Título real de la conversación: chats-store lo comparte con el Sidebar
-  // (F6 PR5) — si el Sidebar ya lo cargó no hay segundo fetch; si no,
-  // refreshChats() (idempotente) lo trae.
+  // La lista de chats (chats-store, compartida con el Sidebar y el título de
+  // la Topbar): si nadie la cargó todavía, refreshChats() (idempotente) la
+  // trae.
   const chats = useChatsStore((s) => s.chats);
   const refreshChats = useChatsStore((s) => s.refresh);
-  const renameChat = useChatsStore((s) => s.rename);
-  const currentChat = chats?.find((c) => c.id === chatId);
-  const chatTitle = currentChat?.title ?? "Conversación";
-  const chatFolderId = currentChat?.folderId ?? null;
 
   // Cards y chats en efectos separados: juntos, cada cambio de identidad de
   // `chats` (renombrar, fijar, archivar desde el sidebar) volvía a pedir las
@@ -208,14 +203,7 @@ function ChatView({
     <div className="relative flex h-full">
       <div className="relative flex h-full min-w-0 flex-1 flex-col">
         <SelectionBar chatId={chatId} />
-        <ConvHeader
-          chatId={chatId}
-          title={chatTitle}
-          folderId={chatFolderId}
-          onRename={async (title) => {
-            await renameChat(chatId, title);
-          }}
-        />
+        {/* El título y el menú del chat viven en la Topbar (ChatCrumb, F10.6.2). */}
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex max-w-[732px] flex-col gap-5 px-4 py-6">
