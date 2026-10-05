@@ -34,3 +34,19 @@ FROM "assets" o
 WHERE cr."metadata"->>'croppedFrom' = o."id"::text
   AND cr."slide_id" IS NULL
   AND o."slide_id" IS NOT NULL;
+--> statement-breakpoint
+
+-- 4. Lo que queda sin slide es historial de antes de F10.6 (imagen suelta) o
+-- de un carrusel que no se pudo ubicar. Se ancla a un ID, nunca a una
+-- posición: si quedara null y "null = la portada de hoy", reordenar le
+-- pasaría ese historial a otro slide. La imagen suelta (o el carrusel que lo
+-- fue y conserva FIRST_SLIDE_ID) → FIRST_SLIDE_ID; un carrusel que nació
+-- carrusel → su portada de hoy.
+UPDATE "assets" a SET "slide_id" = CASE
+    WHEN jsonb_typeof(c."content"->'slides') = 'array'
+      AND NOT (c."content"->'slides' @> '[{"id": "00000000-0000-4000-8000-000000000001"}]')
+    THEN (c."content"->'slides'->0->>'id')::uuid
+    ELSE '00000000-0000-4000-8000-000000000001'::uuid
+  END
+FROM "publication_cards" c
+WHERE a."card_id" = c."id" AND a."slide_id" IS NULL;

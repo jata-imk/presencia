@@ -324,7 +324,7 @@ export function useCardController(
               // El trabajo de la card solo es "de este slide" si lo está llenando.
               job: here ? imageJob : null,
               // F10.6.1: el historial de ESTE slide, no el de toda la card.
-              versions: versionsOfSlide(base.versions, slide, index),
+              versions: versionsOfSlide(base.versions, slide),
               versionsLabel: "Versiones de este slide",
               busyElsewhere: Boolean(running) && !generatingIds.includes(slide.id),
               percent: index === 0 ? imagesConfig.generatePercent : imagesConfig.editPercent,
