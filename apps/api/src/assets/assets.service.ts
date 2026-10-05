@@ -47,6 +47,8 @@ export class AssetsService {
     data: Uint8Array;
     source: AssetRow["source"];
     metadata?: Partial<AssetMetadata>;
+    /** F10.6.1: el slide donde nace (sus versiones son las de ese slide). */
+    slideId?: string | null;
   }): Promise<StoredAsset> {
     const image = await inspectImage(input.data);
     const id = randomUUID();
@@ -62,6 +64,7 @@ export class AssetsService {
       userId: input.userId,
       chatId: input.chatId,
       cardId: input.cardId,
+      slideId: input.slideId ?? null,
       storageKey,
       mimeType: image.mimeType,
       sizeBytes: input.data.byteLength,

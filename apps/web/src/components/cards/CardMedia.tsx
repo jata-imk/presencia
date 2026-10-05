@@ -70,8 +70,13 @@ export interface CardImageGeneration {
   edit: (instruction: string, provider: ImageProviderSlot) => void;
   /** Lo que cuesta una edición, en % del mes. */
   editPercent: number;
-  /** Todas las imágenes que tuvo la card, de la más vieja a la más nueva. */
+  /**
+   * Las imágenes que tuvo la card (o, en un carrusel, las de ESTE slide), de
+   * la más vieja a la más nueva.
+   */
   versions: CardImageVersionDto[];
+  /** F10.6.1: el título de la tira; "Versiones de este slide" en un carrusel. */
+  versionsLabel?: string;
   /** F10.6: cuántas imágenes saca un click (la portada, 2; otro slide, 1). */
   variants?: number;
   /** F10.6: otro slide del carrusel se está generando; la card tiene un trabajo a la vez. */
@@ -315,8 +320,10 @@ export function VersionStrip({
   selectedId,
   onPick,
   disabled,
+  label = "Versiones",
 }: {
   versions: CardImageVersionDto[];
+  label?: string;
   selectedId: string | undefined;
   onPick: (assetId: string) => void;
   disabled: boolean;
@@ -341,7 +348,7 @@ export function VersionStrip({
   return (
     <div className="mt-2.5">
       <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-fg-muted uppercase">
-        Versiones · {versions.length}
+        {label} · {versions.length}
       </p>
       <div ref={row} className="flex gap-2 overflow-x-auto pb-1">
         {versions.map((version, index) => {
@@ -993,6 +1000,7 @@ export function SelectedImage({
       {generation && (
         <VersionStrip
           versions={generation.versions}
+          label={generation.versionsLabel}
           selectedId={shown}
           onPick={pick}
           disabled={isBusy(generation)}
