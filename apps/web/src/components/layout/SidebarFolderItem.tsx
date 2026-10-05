@@ -37,15 +37,17 @@ export function SidebarFolderItem({
         onClick={onToggle}
         aria-expanded={expanded}
         aria-controls={listId}
-        className={`flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors ${
-          expanded ? "bg-tint-plum text-brand" : "text-fg-secondary hover:bg-secondary-hover"
-        }`}
+        // F10.6.2: la carpeta abierta ya no se pinta (era bg-tint-plum, el
+        // mismo del chat activo, y los dos fondos se encimaban). Como en
+        // ChatGPT: la carpeta es un encabezado, y el resaltado es solo del
+        // chat activo. Mismo tamaño de letra que sus chats.
+        className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium text-fg transition-colors hover:bg-secondary-hover"
       >
         <ChevronRight
-          size={11}
-          strokeWidth={2.5}
+          size={12}
+          strokeWidth={2.25}
           aria-hidden="true"
-          className={`shrink-0 transition-transform duration-(--duration-fast) ease-(--ease-out) ${
+          className={`shrink-0 text-fg-muted transition-transform duration-(--duration-fast) ease-(--ease-out) ${
             expanded ? "rotate-90" : ""
           }`}
         />
@@ -54,7 +56,7 @@ export function SidebarFolderItem({
             emojis en chrome de navegación"). */}
         <span className="shrink-0">{folder.icon ?? "📁"}</span>
         <span className="flex-1 truncate">{folder.name}</span>
-        <span className="shrink-0 text-[9px] text-fg-muted tabular-nums">{folder.chatCount}</span>
+        <span className="shrink-0 text-[10px] text-fg-muted tabular-nums">{folder.chatCount}</span>
       </button>
 
       <AnimatePresence initial={false}>
