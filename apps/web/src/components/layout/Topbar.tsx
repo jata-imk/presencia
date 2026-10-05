@@ -2,6 +2,7 @@
 import { ChevronRight, LogOut, Menu as MenuIcon, Palette, Search, Settings } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 import { ThemeToggle } from "./ThemeToggle.js";
+import { ChatCrumb } from "../chat/ChatCrumb.js";
 import { Menu } from "../ui/Menu.js";
 import { authClient } from "../../lib/auth-client.js";
 import { useCommandPaletteStore } from "../../stores/command-palette-store.js";
@@ -16,9 +17,10 @@ import { useSidebarStore } from "../../stores/sidebar-store.js";
 //
 // El buscador ⌘K abre CommandPalette (montado en ProtectedLayout): acá es
 // solo el trigger, una píldora a ≥md y un ícono en mobile, como pide el
-// overview §5. El título de la conversación puntual (folder, red,
-// editable) es responsabilidad de ConvHeader — este breadcrumb solo ubica
-// la sección.
+// overview §5. En una conversación (F10.6.2) el breadcrumb es ChatCrumb:
+// "Carpeta / Título ▾" con el menú del chat, en vez de "Chats ›
+// Conversación" más una segunda fila con el título (ConvHeader, que se fue).
+// En las demás pantallas solo ubica la sección.
 const SECTION_LABEL: Record<string, string> = {
   chats: "Chats",
   calendario: "Calendario",
@@ -37,8 +39,10 @@ export function Topbar() {
   const openPalette = useCommandPaletteStore((s) => s.openPalette);
   const shortcut = /Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘K" : "Ctrl K";
 
-  const segment = location.pathname.split("/")[1] ?? "";
+  const [, segment = "", sub] = location.pathname.split("/");
   const label = SECTION_LABEL[segment] ?? "Presencia";
+  // /chats/:id es una conversación; /chats/archivados, la lista de archivados.
+  const chatId = segment === "chats" && sub && sub !== "archivados" ? sub : null;
 
   const name = session?.user.displayName ?? session?.user.name ?? "";
   const initials =
@@ -66,16 +70,22 @@ export function Topbar() {
       >
         <MenuIcon size={18} strokeWidth={1.75} />
       </button>
-      <div className="flex items-center gap-1.5 text-xs text-fg-muted">
-        <span>{label}</span>
-        {segment === "chats" && location.pathname !== "/chats" && (
-          <>
-            <ChevronRight size={12} strokeWidth={1.75} />
-            <span className="font-semibold text-fg">Conversación</span>
-          </>
-        )}
-      </div>
-      <div className="flex-1" />
+      {chatId ? (
+        <ChatCrumb key={chatId} chatId={chatId} />
+      ) : (
+        <>
+          <div className="flex items-center gap-1.5 text-xs text-fg-muted">
+            <span>{label}</span>
+            {sub === "archivados" && segment === "chats" && (
+              <>
+                <ChevronRight size={12} strokeWidth={1.75} />
+                <span className="font-semibold text-fg">Archivados</span>
+              </>
+            )}
+          </div>
+          <div className="flex-1" />
+        </>
+      )}
       <button
         type="button"
         onClick={openPalette}

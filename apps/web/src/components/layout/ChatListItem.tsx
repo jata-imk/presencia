@@ -6,7 +6,8 @@ import { ChatOptionsMenu } from "../chat/ChatOptionsMenu.js";
 import { useChatsStore } from "../../stores/chats-store.js";
 
 // Fila de "Recientes" en el Sidebar — antes un <Link> plano, ahora un
-// componente propio con las mismas opciones que ConvHeader (F6 PR8
+// componente propio con las mismas opciones que el título de la Topbar
+// (ChatCrumb; antes ConvHeader) (F6 PR8
 // follow-up: Jose pidió que el menú "···" no viviera solo dentro de la
 // conversación abierta). El "···" aparece al hacer hover de la fila
 // (mismo patrón que Slack/Linear), no siempre visible — a 200px de ancho

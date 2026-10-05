@@ -8,7 +8,8 @@ import {
   Share2,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import type { Placement } from "@floating-ui/react";
+import { useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { MENU_CONTENT_CLASS, MENU_ITEM_CLASS, Menu } from "../ui/Menu.js";
 import { ModalDeleteChat } from "./ModalDeleteChat.js";
@@ -22,7 +23,8 @@ const ITEM_CLASS = MENU_ITEM_CLASS;
 const CONTENT_CLASS = MENU_CONTENT_CLASS;
 
 // Menú "···" de un chat (Renombrar/Mover a carpeta/Exportar/Archivar/
-// Eliminar) — reusado en ConvHeader (header de la conversación) y en cada
+// Eliminar) — reusado en ChatCrumb (el "Título ▾" de la Topbar, F10.6.2; antes
+// ConvHeader) y en cada
 // fila de "Recientes" del Sidebar (F6 PR8 follow-up: Jose pidió las
 // mismas opciones ahí, no solo dentro de la conversación abierta). Sobre
 // <Menu> (components/ui/Menu.tsx) desde el rework a floating-ui — antes
@@ -37,10 +39,19 @@ export function ChatOptionsMenu({
   chatId,
   folderId,
   onRenameRequest,
+  trigger,
+  triggerClassName = TRIGGER_CLASS,
+  triggerLabel = "Más opciones",
+  placement,
 }: {
   chatId: string;
   folderId: string | null;
   onRenameRequest: () => void;
+  /** F10.6.2: lo que se ve en el disparador; sin él, "···". */
+  trigger?: ReactNode;
+  triggerClassName?: string;
+  triggerLabel?: string;
+  placement?: Placement;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -93,9 +104,9 @@ export function ChatOptionsMenu({
 
   return (
     <>
-      <Menu>
-        <Menu.Trigger aria-label="Más opciones" className={TRIGGER_CLASS}>
-          <MoreHorizontal size={16} strokeWidth={1.75} />
+      <Menu placement={placement}>
+        <Menu.Trigger aria-label={triggerLabel} className={triggerClassName}>
+          {trigger ?? <MoreHorizontal size={16} strokeWidth={1.75} />}
         </Menu.Trigger>
         <Menu.Content className={CONTENT_CLASS}>
           {canPin && (
