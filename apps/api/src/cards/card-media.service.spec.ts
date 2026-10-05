@@ -481,6 +481,24 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     expect(bySlide.has(null)).toBe(false);
   });
 
+  it("el recorte es versión del slide donde está la imagen, no del que la generó", async () => {
+    const cardId = await createCard(VISUAL);
+    const dto = await media.addSlide(userA, cardId, {});
+    const s2 = dto.content.archetype === "visual_first" ? dto.content.slides![1]!.id : "";
+    // Una imagen del slide 2 que se pasa a la portada (se podía antes de F10.6.1)…
+    const fromS2 = (
+      await media.attachUpload(userA, cardId, solidPng(40, 50, [1, 2, 3]), undefined, s2)
+    ).content.assetIds.at(-1)!;
+    await media.selectImage(userA, cardId, fromS2, FIRST_SLIDE_ID);
+    // …y el slide 2 cambia a otra: la imagen generada para él solo queda en la portada.
+    await media.attachUpload(userA, cardId, solidPng(40, 50, [7, 7, 7]), undefined, s2);
+    const cropped = await media.setSlidesAspect(userA, cardId, "1:1");
+    const coverCrop = cropped.content.assetIds[0]!;
+    expect(coverCrop).not.toBe(fromS2);
+    const v = (await media.versions(userA, cardId)).find((x) => x.assetId === coverCrop);
+    expect(v?.slideId).toBe(FIRST_SLIDE_ID);
+  });
+
   it("recortar parte siempre de la original: 4:5 → 1:1 → 4:5 no corta dos veces", async () => {
     const cardId = await createCard(VISUAL);
     await media.addSlide(userA, cardId, {});
