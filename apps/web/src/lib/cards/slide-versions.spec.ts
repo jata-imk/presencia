@@ -9,6 +9,7 @@ function version(
   assetId: string,
   slideId: string | null,
   croppedFrom: string | null = null,
+  [width, height]: [number, number] = [800, 1000],
 ): CardImageVersionDto {
   return {
     assetId,
@@ -19,6 +20,8 @@ function version(
     alt: null,
     slideId,
     croppedFrom,
+    width,
+    height,
     createdAt: "2026-10-04T00:00:00.000Z",
   };
 }
@@ -69,5 +72,19 @@ describe("versionsOfSlide", () => {
       "o1",
       "p",
     ]);
+  });
+
+  it("de un grupo de recortes gana el de la proporción del carrusel", () => {
+    // "o" 4:5 original, "o1" su recorte 4:5, "o2" el 1:1 de después; el slide tiene "p".
+    const list = [
+      version("o", SECOND, null, [900, 1200]),
+      version("o1", SECOND, "o", [800, 1000]),
+      version("o2", SECOND, "o", [900, 900]),
+      version("p", SECOND),
+    ];
+    const ids = (aspect: "4:5" | "1:1") =>
+      versionsOfSlide(list, { id: SECOND, assetId: "p" }, aspect).map((v) => v.assetId);
+    expect(ids("4:5")).toEqual(["o1", "p"]);
+    expect(ids("1:1")).toEqual(["o2", "p"]);
   });
 });

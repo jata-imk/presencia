@@ -180,6 +180,9 @@ export interface CardImageVersionDto {
    * 1:1 no es una imagen nueva.
    */
   croppedFrom: string | null;
+  /** F10.6.2: para elegir, de un grupo de recortes, el de la proporción del carrusel. */
+  width: number;
+  height: number;
   createdAt: string;
 }
 
