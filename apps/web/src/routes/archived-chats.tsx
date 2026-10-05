@@ -51,7 +51,23 @@ export function ArchivedChatsPage() {
 
       {error && <p className="mb-3 text-sm text-error">{error}</p>}
 
-      {archivedChats === null && <p className="text-sm text-fg-muted">Cargando…</p>}
+      {archivedChats === null && (
+        <div
+          aria-busy="true"
+          aria-label="Cargando tus archivados"
+          className="overflow-hidden rounded-xl border border-line bg-card"
+        >
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="flex items-center gap-3 border-b border-line px-4 py-3.5 last:border-b-0"
+            >
+              <div className="skeleton h-3.5 flex-1 rounded-md" />
+              <div className="skeleton h-7 w-24 rounded-lg" />
+            </div>
+          ))}
+        </div>
+      )}
       {archivedChats?.length === 0 && (
         <p className="text-sm text-fg-muted">No tienes conversaciones archivadas.</p>
       )}
