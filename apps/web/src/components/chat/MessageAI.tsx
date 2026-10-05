@@ -1,4 +1,7 @@
-import ReactMarkdown from "react-markdown";
+import { useId } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { CodeBlock } from "./CodeBlock.js";
 import { TypingDots } from "./TypingDots.js";
 
 // Texto de Presencia (F10.5, Chat Rediseño.html → AIMsg): sin burbuja ni
@@ -7,11 +10,55 @@ import { TypingDots } from "./TypingDots.js";
 // quién habla. Las acciones (copiar, regenerar) ya no viven aquí sino al pie
 // del mensaje completo (AssistantMessage): un mensaje puede traer varios
 // bloques de texto entre sus cards y copiarlos por separado no servía.
+//
+// F10.6.2: GFM (tablas, URLs sueltas como links, tachado, listas de tareas)
+// y nada que desborde el ancho del chat: el código va en su bloque con
+// scroll propio, las tablas en un contenedor con scroll, y los links abren
+// en otra pestaña (el chat no se pierde) y se cortan si son muy largos.
+const COMPONENTS: Components = {
+  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+  // Solo los links de afuera abren pestaña nueva: los de la misma página
+  // (las notas al pie de GFM, "#…-fn-1" y su "↩") navegan aquí. Se pasan
+  // todos los props: id, aria-describedby y data-footnote-* hacen funcionar
+  // esas notas.
+  a: (input) => {
+    // `node` (el nodo hast) no es un atributo del DOM.
+    const props = { ...input };
+    delete props.node;
+    return props.href?.startsWith("#") ? (
+      <a {...props} />
+    ) : (
+      <a {...props} target="_blank" rel="noopener noreferrer" />
+    );
+  },
+  table: ({ children }) => (
+    <div className="markdown-table">
+      <table>{children}</table>
+    </div>
+  ),
+};
+
+const REMARK_PLUGINS = [remarkGfm];
+
 export function MessageAI({ text, streaming }: { text: string; streaming: boolean }) {
+  // Los ids de las notas al pie, por mensaje: con el prefijo default
+  // ("user-content-") dos respuestas con [^1] chocarían en la página.
+  const prefix = `m${useId().replace(/[^a-zA-Z0-9]/g, "")}-`;
   if (streaming && !text) return <TypingDots />;
   return (
-    <div className="markdown text-[15px] leading-[1.68] text-fg">
-      <ReactMarkdown>{text}</ReactMarkdown>
+    <div className="markdown min-w-0 text-[15px] leading-[1.68] text-fg">
+      <ReactMarkdown
+        remarkPlugins={REMARK_PLUGINS}
+        remarkRehypeOptions={{
+          clobberPrefix: prefix,
+          // Default en inglés ("Footnotes", "Back to reference 1").
+          footnoteLabel: "Notas",
+          footnoteBackLabel: (n) => `Volver a la referencia ${String(n + 1)}`,
+        }}
+        components={COMPONENTS}
+      >
+        {text}
+      </ReactMarkdown>
       {streaming && (
         <span
           className="ml-0.5 inline-block h-[1em] w-0.5 translate-y-[3px] bg-pink-orchid"

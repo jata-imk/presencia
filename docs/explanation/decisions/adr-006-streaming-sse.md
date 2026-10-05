@@ -79,3 +79,16 @@ Desde F10.5 una card cambia después de nacer: se edita a mano, se restaura una 
 - **`withLiveCards`** (`chat/context-diet.ts`) sustituye contenido y estado de cada output de card por los vivos antes de armar el contexto del modelo. Va **antes** de la dieta de contexto, así que el resumen de las cards viejas también sale del contenido vivo. Es una sola query por turno (`findContentByIds`). Si falla, el turno sigue con la foto del historial: peor contexto, no un chat caído.
 - El navegador ya leía el contenido vivo de cards-store (F8.6); esto lo iguala del lado del modelo.
 - **Regenerar un turno ya no borra cards que salieron a la red.** Si la respuesta tiene alguna card programada o publicada, la API responde 409 (`hasSentCards`). Antes la borraba sin cancelarla en el proveedor, y el post se publicaba sin card que lo representara. Si alguna card tiene ediciones (más de una versión), el navegador pide confirmación antes de regenerar, porque regenerar borra las cards con sus versiones.
+
+## Addendum (2026-10-04, F10.6.2) — markdown del chat
+
+La nota provisional de arriba se resolvió así:
+
+- **`remark-gfm`** como único plugin. Las URLs sueltas se vuelven links (antes salían como texto) y se suman tablas, tachado y listas de tareas.
+- **Nada desborda el ancho del chat.** El problema real era el scroll horizontal de la página en móvil:
+  - Los bloques de código se renderizan con `CodeBlock`: caja con su propio scroll, el lenguaje arriba y "Copiar". **Sin colores de sintaxis**: Presencia no es una herramienta de código y un resaltador no se paga.
+  - Las tablas van en un contenedor con scroll.
+  - Los links y el texto sin espacios se cortan (`overflow-wrap: anywhere`).
+- **Los links abren en otra pestaña** (`target="_blank" rel="noopener noreferrer"`), así no se pierde el chat.
+- **Sigue sin `@tailwindcss/typography`**: la hoja `.markdown` de `app.css` alcanza y usa los tokens.
+- **`--font-mono` es la monoespaciada del sistema.** JetBrains Mono nunca se cargó, así que el código caía a Courier New.

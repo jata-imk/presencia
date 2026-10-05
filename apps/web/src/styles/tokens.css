@@ -11,7 +11,11 @@
   /* Fuentes */
   --font-display: "Space Grotesk", sans-serif;
   --font-sans: "Noto Sans", sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", "Courier New", monospace;
+  /* F10.6.2: la del sistema. JetBrains Mono nunca se cargó (no está en el
+     @import de Google Fonts), así que todo caía a Courier New. */
+  --font-mono:
+    ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "SF Mono", Menlo, "Roboto Mono",
+    monospace;
 
   /* Type scale */
   --text-xs: 12px;

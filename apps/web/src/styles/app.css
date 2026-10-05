@@ -137,6 +137,84 @@
   border-radius: var(--radius-sm);
   padding: 0.1em 0.3em;
 }
+/* F10.6.2: dentro de un bloque (CodeBlock) el código va sin la "píldora"
+   del inline — antes cada línea salía con su fondo morado. */
+.markdown pre code {
+  font-size: inherit;
+  background: none;
+  border-radius: 0;
+  padding: 0;
+}
+/* Nada sin espacios (una URL, un hash) empuja el ancho del chat en móvil. */
+.markdown :where(p, li, blockquote) {
+  overflow-wrap: anywhere;
+}
+.markdown a {
+  color: var(--fg-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+.markdown a:hover {
+  text-decoration-thickness: 2px;
+}
+.markdown blockquote {
+  margin: 0.6em 0;
+  padding-left: 0.9em;
+  border-left: 3px solid var(--border-default);
+  color: var(--fg-secondary);
+}
+.markdown del {
+  color: var(--fg-muted);
+}
+.markdown hr {
+  margin: 1em 0;
+  border-color: var(--border-default);
+}
+/* Listas de tareas de GFM: la casilla reemplaza a la viñeta. */
+.markdown li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.25em;
+}
+.markdown li > input[type="checkbox"] {
+  margin-right: 0.4em;
+  accent-color: var(--fg-accent);
+}
+/* Tablas: su propio scroll horizontal, como el bloque de código. */
+.markdown-table {
+  margin: 0.75em 0;
+  max-width: 100%;
+  overflow-x: auto;
+  /* Con fondo propio, como el bloque de código: sobre el plum de la app el
+     contenido transparente se leía flotando (pedido de Jose). */
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+.markdown-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.93em;
+}
+.markdown-table :where(th, td) {
+  padding: 0.45em 0.8em;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-default);
+  /* Sin `anywhere` aquí: con él la tabla se encogería letra por letra en
+     vez de desplazarse dentro de su caja. */
+  min-width: 9em;
+  overflow-wrap: break-word;
+}
+.markdown-table th {
+  background: var(--bg-app);
+  font-family: var(--font-display);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.markdown-table tr:last-child td {
+  border-bottom: none;
+}
 
 /* Barra de progreso del toast (F6, components/ui/Toast.tsx) */
 @keyframes toast-progress {
