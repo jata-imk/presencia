@@ -185,6 +185,9 @@
   margin: 0.75em 0;
   max-width: 100%;
   overflow-x: auto;
+  /* Con fondo propio, como el bloque de código: sobre el plum de la app el
+     contenido transparente se leía flotando (pedido de Jose). */
+  background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
 }
@@ -204,7 +207,7 @@
   overflow-wrap: break-word;
 }
 .markdown-table th {
-  background: var(--bg-surface);
+  background: var(--bg-app);
   font-family: var(--font-display);
   font-weight: 600;
   white-space: nowrap;
