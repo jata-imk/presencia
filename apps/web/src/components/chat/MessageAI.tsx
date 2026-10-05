@@ -1,3 +1,4 @@
+import { useId } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "./CodeBlock.js";
@@ -16,11 +17,20 @@ import { TypingDots } from "./TypingDots.js";
 // en otra pestaña (el chat no se pierde) y se cortan si son muy largos.
 const COMPONENTS: Components = {
   pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  ),
+  // Solo los links de afuera abren pestaña nueva: los de la misma página
+  // (las notas al pie de GFM, "#…-fn-1" y su "↩") navegan aquí. Se pasan
+  // todos los props: id, aria-describedby y data-footnote-* hacen funcionar
+  // esas notas.
+  a: (input) => {
+    // `node` (el nodo hast) no es un atributo del DOM.
+    const props = { ...input };
+    delete props.node;
+    return props.href?.startsWith("#") ? (
+      <a {...props} />
+    ) : (
+      <a {...props} target="_blank" rel="noopener noreferrer" />
+    );
+  },
   table: ({ children }) => (
     <div className="markdown-table">
       <table>{children}</table>
@@ -31,10 +41,22 @@ const COMPONENTS: Components = {
 const REMARK_PLUGINS = [remarkGfm];
 
 export function MessageAI({ text, streaming }: { text: string; streaming: boolean }) {
+  // Los ids de las notas al pie, por mensaje: con el prefijo default
+  // ("user-content-") dos respuestas con [^1] chocarían en la página.
+  const prefix = `m${useId().replace(/[^a-zA-Z0-9]/g, "")}-`;
   if (streaming && !text) return <TypingDots />;
   return (
     <div className="markdown min-w-0 text-[15px] leading-[1.68] text-fg">
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={COMPONENTS}>
+      <ReactMarkdown
+        remarkPlugins={REMARK_PLUGINS}
+        remarkRehypeOptions={{
+          clobberPrefix: prefix,
+          // Default en inglés ("Footnotes", "Back to reference 1").
+          footnoteLabel: "Notas",
+          footnoteBackLabel: (n) => `Volver a la referencia ${String(n + 1)}`,
+        }}
+        components={COMPONENTS}
+      >
         {text}
       </ReactMarkdown>
       {streaming && (
