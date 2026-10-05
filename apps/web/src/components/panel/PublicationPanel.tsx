@@ -10,6 +10,7 @@ import {
 import { useScheduleDrawerStore } from "../../stores/schedule-drawer-store.js";
 import { useSidebarStore } from "../../stores/sidebar-store.js";
 import { PanelCard } from "./PanelCard.js";
+import { Tooltip } from "../ui/Tooltip.js";
 
 // El panel de publicación (F10.5, Chat Rediseño.html → Split/Panel). Tres
 // formas según el ancho, decididas en el diseño (nota "Ancho del panel" y
@@ -202,25 +203,26 @@ function ResizeHandle() {
   }
 
   return (
-    <div
-      ref={ref}
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Ancho del panel"
-      aria-valuenow={Math.round(width * 100)}
-      aria-valuemin={20}
-      aria-valuemax={60}
-      tabIndex={0}
-      title="Arrastra para cambiar el ancho"
-      onPointerDown={onPointerDown}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowLeft") setWidth(width + 0.02);
-        if (e.key === "ArrowRight") setWidth(width - 0.02);
-      }}
-      className="group relative w-[7px] shrink-0 cursor-col-resize bg-app outline-none"
-    >
-      <span className="absolute inset-y-0 left-[3px] w-px bg-line" />
-      <span className="absolute top-1/2 left-px h-9 w-[5px] -translate-y-1/2 rounded-full bg-line transition-colors group-hover:bg-line-focus group-focus-visible:bg-line-focus" />
-    </div>
+    <Tooltip label="Arrastra para cambiar el ancho" placement="left">
+      <div
+        ref={ref}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Ancho del panel"
+        aria-valuenow={Math.round(width * 100)}
+        aria-valuemin={20}
+        aria-valuemax={60}
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowLeft") setWidth(width + 0.02);
+          if (e.key === "ArrowRight") setWidth(width - 0.02);
+        }}
+        className="group relative w-[7px] shrink-0 cursor-col-resize bg-app outline-none"
+      >
+        <span className="absolute inset-y-0 left-[3px] w-px bg-line" />
+        <span className="absolute top-1/2 left-px h-9 w-[5px] -translate-y-1/2 rounded-full bg-line transition-colors group-hover:bg-line-focus group-focus-visible:bg-line-focus" />
+      </div>
+    </Tooltip>
   );
 }

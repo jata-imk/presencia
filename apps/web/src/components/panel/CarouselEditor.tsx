@@ -22,6 +22,7 @@ import { EmptyImageState, SelectedImage } from "../cards/CardMedia.js";
 import { StyleChip } from "../cards/StyleChip.js";
 import { ImageViewer, type ViewerItem } from "../ui/ImageViewer.js";
 import { Menu, MENU_CONTENT_CLASS, MENU_ITEM_CLASS } from "../ui/Menu.js";
+import { Tooltip } from "../ui/Tooltip.js";
 import { Segmented } from "./PanelParts.js";
 
 // El carrusel en el modo Editar del panel (F10.6, "Chat Rediseño" §3.3;
@@ -50,6 +51,13 @@ const ASPECT_ICON: Record<ImageAspectRatio, LucideIcon> = {
   "1:1": Square,
   "16:9": RectangleHorizontal,
 };
+
+// Ancho de miniatura por el ancho de la TIRA (container query), no de la
+// ventana: el panel cambia de ancho con el drawer. Caben 3 en angosto, 4 en el
+// ancho default y 5 en el panel ancho (pedido de Jose, F10.6.1); más allá se
+// desliza. El % es del ancho de la tira, descontados los huecos de 0.5rem.
+const TILE_WIDTH =
+  "w-[calc((100%-1rem)/3)] @md:w-[calc((100%-1.5rem)/4)] @2xl:w-[calc((100%-2rem)/5)]";
 
 function priceLabel(percent: number): string {
   return `${percent.toLocaleString("es-MX", { maximumFractionDigits: 1 })}% de tu mes`;
@@ -101,7 +109,13 @@ export function CarouselEditor({
   const full = slides.length >= carousel.max;
 
   // La miniatura elegida se trae a la vista DENTRO de la tira (no con
-  // scrollIntoView, que también movería el panel).
+  // scrollIntoView, que también movería el panel). También al cambiar el
+  // ORDEN: el slide que se mueve queda elegido (`reorderTo`), así que
+  // "Hacer portada" lo manda al inicio y la tira lo sigue.
+  // Sin scroll-snap a propósito: al reordenar, Chrome re-alineaba la tira a
+  // la miniatura que estaba "enganchada" y escondía la portada nueva tras la
+  // orilla izquierda (y cortaba el arrastre que siguiera).
+  const order = slides.map((s) => s.id).join();
   const strip = useRef<HTMLOListElement>(null);
   useEffect(() => {
     const row = strip.current;
@@ -112,7 +126,7 @@ export function CarouselEditor({
     else if (left + tile.offsetWidth > row.scrollLeft + row.clientWidth) {
       row.scrollLeft = left + tile.offsetWidth - row.clientWidth + 8;
     }
-  }, [selectedId, slides.length]);
+  }, [selectedId, order]);
 
   // Qué orilla de la tira tiene más slides escondidos: esa se desvanece, para
   // que un corte a media miniatura se lea como "hay más" y no como un error.
@@ -139,6 +153,7 @@ export function CarouselEditor({
     // Con un cambio en camino el orden de acá puede ser viejo, y la API lo
     // rechazaría (409): se espera a que llegue.
     if (busy || from === to || to < 0 || to >= slides.length) return;
+    setSelectedId(slides[from]!.id);
     carousel.reorder(move(slides, from, to).map((s) => s.id));
   }
 
@@ -169,7 +184,7 @@ export function CarouselEditor({
       <ol
         ref={strip}
         aria-label="Slides del carrusel"
-        className={`-mx-1 flex snap-x scroll-px-1 gap-2 overflow-x-auto px-1 pt-1 pb-2 ${
+        className={`@container -mx-1 flex [scrollbar-width:thin] gap-2 overflow-x-auto px-1 pt-1 pb-2 ${
           edges.left ? "mask-l-from-[calc(100%-2.5rem)]" : ""
         } ${edges.right ? "mask-r-from-[calc(100%-2.5rem)]" : ""}`}
       >
@@ -202,7 +217,7 @@ export function CarouselEditor({
           />
         ))}
         {!full && (
-          <li className="w-22 shrink-0 snap-start">
+          <li className={`${TILE_WIDTH} shrink-0`}>
             <button
               type="button"
               onClick={() => {
@@ -254,7 +269,7 @@ export function CarouselEditor({
           </span>
         </div>
         <p className="text-[11px] leading-snug text-fg-muted">
-          Arrastra las miniaturas o usa su menú ⋯ para ordenar; la primera es la portada.
+          Arrastra las miniaturas para ordenar; ★ la vuelve portada y ⋯ tiene más opciones.
           {carousel.aspectOptions.length > 1 &&
             " Recortar no usa IA ni gasta tu mes; guardamos las originales."}
         </p>
@@ -316,6 +331,16 @@ export function CarouselEditor({
   );
 }
 
+const TILE_BUTTON =
+  "flex size-7 items-center justify-center rounded-full bg-card/90 text-fg shadow-sm transition-opacity hover:bg-card";
+
+/** Visible siempre en la elegida y en touch; con mouse, al pasar o enfocar. */
+function revealClass(selected: boolean): string {
+  return selected
+    ? ""
+    : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100";
+}
+
 function SlideTile({
   slide,
   index,
@@ -365,7 +390,7 @@ function SlideTile({
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
       onDrop={onDrop}
-      className="group relative w-22 shrink-0 snap-start"
+      className={`group relative ${TILE_WIDTH} shrink-0`}
     >
       <button
         type="button"
@@ -389,15 +414,15 @@ function SlideTile({
             className="size-full object-cover"
           />
         ) : (
-          <span className="flex size-full flex-col items-center justify-center gap-1 p-1.5 text-center text-[10px] leading-tight text-fg-muted">
-            <ImagePlus size={16} strokeWidth={1.5} aria-hidden />
+          <span className="flex size-full flex-col items-center justify-center gap-1.5 px-2.5 pt-8 pb-10 text-center text-[11px] leading-snug text-fg-muted">
+            <ImagePlus size={20} strokeWidth={1.5} aria-hidden />
             <span className="line-clamp-3">{slide.imagePrompt ?? "Sin imagen"}</span>
           </span>
         )}
         {generating && (
           <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-card/70">
             <Loader2
-              size={18}
+              size={22}
               className="text-accent motion-safe:animate-spin"
               aria-label="Generando"
             />
@@ -406,31 +431,72 @@ function SlideTile({
       </button>
 
       {/* Insignia: portada o número. */}
-      <span className="pointer-events-none absolute top-1 left-1 inline-flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-md bg-fg/75 px-1 font-display text-[10px] font-bold text-fg-inverse">
-        {index === 0 ? <Star size={10} aria-label="Portada" /> : index + 1}
+      <span className="pointer-events-none absolute top-1.5 left-1.5 inline-flex h-6 min-w-6 items-center justify-center gap-1 rounded-md bg-fg/75 px-1.5 font-display text-[11px] font-bold text-fg-inverse">
+        {index === 0 ? (
+          <>
+            <Star size={11} className="fill-current" aria-hidden />
+            Portada
+          </>
+        ) : (
+          index + 1
+        )}
       </span>
+
+      {/* Atajos directos (además del ⋯): con mouse aparecen al pasar por la
+          miniatura o en la elegida; en touch, siempre. */}
+      {slide.assetId && (
+        <Tooltip label="Ver en grande">
+          <button
+            type="button"
+            aria-label={`Ver ${label} en grande`}
+            onClick={onView}
+            className={`${TILE_BUTTON} absolute top-1.5 right-1.5 ${revealClass(selected)}`}
+          >
+            <Maximize2 size={14} aria-hidden />
+          </button>
+        </Tooltip>
+      )}
 
       {/* Agarre: grande y siempre visible (antes era un ícono de 14 px que
           casi no se veía). Toda la miniatura se arrastra; esto dice que se
           puede. Solo mouse: con teclado y touch está el menú ⋯. */}
-      <span
-        aria-hidden
-        title="Arrastra para reordenar"
-        className={`absolute bottom-1 left-1 hidden size-6 items-center justify-center rounded-full bg-card/90 text-fg-secondary shadow-sm sm:flex ${
-          busy ? "cursor-not-allowed opacity-50" : "cursor-grab active:cursor-grabbing"
-        }`}
-      >
-        <GripVertical size={14} />
-      </span>
+      <Tooltip label="Arrastra para reordenar">
+        <span
+          aria-hidden
+          className={`absolute bottom-1.5 left-1.5 hidden size-7 items-center justify-center rounded-full bg-card/90 text-fg-secondary shadow-sm sm:flex ${
+            busy ? "cursor-not-allowed opacity-50" : "cursor-grab active:cursor-grabbing"
+          }`}
+        >
+          <GripVertical size={16} />
+        </span>
+      </Tooltip>
+
+      {index > 0 && (
+        <Tooltip label="Hacer portada">
+          <button
+            type="button"
+            aria-label={`Hacer portada ${label}`}
+            disabled={busy}
+            onClick={() => onMove(0)}
+            className={`${TILE_BUTTON} absolute right-10 bottom-1.5 disabled:cursor-not-allowed disabled:opacity-50 ${revealClass(selected)}`}
+          >
+            <Star size={14} aria-hidden />
+          </button>
+        </Tooltip>
+      )}
 
       <Menu placement="bottom-end">
-        <Menu.Trigger
-          aria-label={`Opciones de ${label}`}
-          title="Opciones"
-          className="absolute right-1 bottom-1 flex size-6 items-center justify-center rounded-full bg-card/90 text-fg shadow-sm hover:bg-card aria-expanded:bg-card"
-        >
-          <MoreHorizontal size={14} aria-hidden />
-        </Menu.Trigger>
+        {/* El tooltip va en un span: Menu.Trigger no recibe ref de afuera. */}
+        <Tooltip label="Opciones">
+          <span className="absolute right-1.5 bottom-1.5 flex">
+            <Menu.Trigger
+              aria-label={`Opciones de ${label}`}
+              className={`${TILE_BUTTON} aria-expanded:bg-card`}
+            >
+              <MoreHorizontal size={16} aria-hidden />
+            </Menu.Trigger>
+          </span>
+        </Tooltip>
         <Menu.Content className={`${MENU_CONTENT_CLASS} w-52`}>
           <Menu.Item
             className={MENU_ITEM_CLASS}

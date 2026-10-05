@@ -1,6 +1,7 @@
 import { ChevronDown, Settings } from "lucide-react";
 import { IMAGE_STYLES, imageStyleDef, type ImageStyle } from "@presencia/shared";
 import { Menu, MENU_ITEM_CLASS } from "../ui/Menu.js";
+import { Tooltip } from "../ui/Tooltip.js";
 
 // "Estilo: X ▾" junto a las acciones de imagen (F10.6, StyleMenu de "Chat
 // Rediseño"). Elige el estilo de la SIGUIENTE generación de esta card: no
@@ -47,17 +48,19 @@ export function StyleChip({
               <Menu.Item
                 key={estilo.id}
                 onClick={() => onChange(estilo.id)}
-                title={estilo.desc}
                 className="flex flex-col items-center gap-1 rounded-lg p-0.5 outline-none data-[active]:bg-secondary-hover"
               >
-                <img
-                  src={`/assets/estilos/${estilo.id}-base.webp`}
-                  alt=""
-                  loading="lazy"
-                  className={`aspect-square w-full rounded-md object-cover ${
-                    elegido ? "outline-2 outline-offset-2 outline-primary" : ""
-                  }`}
-                />
+                {/* El tooltip cuelga de la miniatura: Menu.Item no recibe ref de afuera. */}
+                <Tooltip label={estilo.desc}>
+                  <img
+                    src={`/assets/estilos/${estilo.id}-base.webp`}
+                    alt=""
+                    loading="lazy"
+                    className={`aspect-square w-full rounded-md object-cover ${
+                      elegido ? "outline-2 outline-offset-2 outline-primary" : ""
+                    }`}
+                  />
+                </Tooltip>
                 <span
                   className={`w-full text-center text-[10.5px] leading-tight hyphens-auto ${
                     elegido ? "font-semibold text-fg" : "font-medium text-fg-secondary"

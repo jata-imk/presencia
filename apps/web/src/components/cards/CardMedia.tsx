@@ -35,6 +35,7 @@ import {
 import { useToastStore } from "../../stores/toast-store.js";
 import { ImageViewer } from "../ui/ImageViewer.js";
 import { Menu, MENU_CONTENT_CLASS, MENU_ITEM_CLASS } from "../ui/Menu.js";
+import { Tooltip } from "../ui/Tooltip.js";
 import { StyleChip } from "./StyleChip.js";
 
 // La imagen de una card y lo que se puede hacer con ella (F10). Presentación
@@ -347,29 +348,29 @@ export function VersionStrip({
           const selected = version.assetId === selectedId;
           const label = versionLabel(version, index);
           return (
-            <button
-              key={version.assetId}
-              type="button"
-              title={label}
-              aria-pressed={selected}
-              aria-label={`${label}${selected ? " (elegida)" : ""}`}
-              disabled={disabled}
-              onFocus={(event) =>
-                event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" })
-              }
-              onClick={() => {
-                if (!selected) onPick(version.assetId);
-              }}
-              className={`size-14 shrink-0 overflow-hidden rounded-md border-2 disabled:opacity-60 ${
-                selected ? "border-primary" : "border-line"
-              }`}
-            >
-              <img
-                src={assetContentUrl(version.assetId)}
-                alt=""
-                className="size-full object-cover"
-              />
-            </button>
+            <Tooltip key={version.assetId} label={label}>
+              <button
+                type="button"
+                aria-pressed={selected}
+                aria-label={`${label}${selected ? " (elegida)" : ""}`}
+                disabled={disabled}
+                onFocus={(event) =>
+                  event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" })
+                }
+                onClick={() => {
+                  if (!selected) onPick(version.assetId);
+                }}
+                className={`size-14 shrink-0 overflow-hidden rounded-md border-2 disabled:opacity-60 ${
+                  selected ? "border-primary" : "border-line"
+                }`}
+              >
+                <img
+                  src={assetContentUrl(version.assetId)}
+                  alt=""
+                  className="size-full object-cover"
+                />
+              </button>
+            </Tooltip>
           );
         })}
       </div>
@@ -460,34 +461,35 @@ function AdjustCard({
           placeholder="Pide un cambio: otro fondo, más luz, sin la taza…"
           className="block w-full resize-none rounded-lg border border-line bg-card py-2.5 pr-12 pl-3 text-sm leading-snug text-fg placeholder:text-fg-muted focus:border-line-focus focus:ring-2 focus:ring-focus-ring focus:outline-none disabled:opacity-60"
         />
-        <button
-          type="submit"
-          aria-label="Aplicar el cambio"
-          title="Aplicar (Enter)"
-          disabled={busy || !ready}
-          className="absolute right-2 bottom-2 flex size-8 items-center justify-center rounded-full bg-primary text-primary-fg transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-secondary disabled:text-fg-muted"
-        >
-          <ArrowUp size={16} strokeWidth={2.25} aria-hidden />
-        </button>
+        <Tooltip label="Aplicar (Enter)">
+          <button
+            type="submit"
+            aria-label="Aplicar el cambio"
+            disabled={busy || !ready}
+            className="absolute right-2 bottom-2 flex size-8 items-center justify-center rounded-full bg-primary text-primary-fg transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-secondary disabled:text-fg-muted"
+          >
+            <ArrowUp size={16} strokeWidth={2.25} aria-hidden />
+          </button>
+        </Tooltip>
       </form>
       <div className="mt-2.5 flex flex-wrap gap-1.5">
         {IMAGE_EDIT_SUGGESTIONS.map((suggestion) => {
           const look = SUGGESTION_LOOK[suggestion.label];
           const Icon = look?.Icon ?? Wand2;
           return (
-            <button
-              key={suggestion.label}
-              type="button"
-              disabled={busy}
-              onClick={() => apply(suggestion.instruction)}
-              title={suggestion.instruction}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-[filter,box-shadow] hover:shadow-sm hover:brightness-[0.97] disabled:cursor-not-allowed disabled:opacity-50 ${
-                look?.tone ?? "border-line bg-card text-fg-secondary"
-              }`}
-            >
-              <Icon size={13} strokeWidth={2} aria-hidden />
-              {suggestion.label}
-            </button>
+            <Tooltip key={suggestion.label} label={suggestion.instruction}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => apply(suggestion.instruction)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-[filter,box-shadow] hover:shadow-sm hover:brightness-[0.97] disabled:cursor-not-allowed disabled:opacity-50 ${
+                  look?.tone ?? "border-line bg-card text-fg-secondary"
+                }`}
+              >
+                <Icon size={13} strokeWidth={2} aria-hidden />
+                {suggestion.label}
+              </button>
+            </Tooltip>
           );
         })}
       </div>
@@ -526,9 +528,9 @@ function AltTextRow({
         <TextQuote size={14} strokeWidth={1.75} className="shrink-0 text-fg-muted" aria-hidden />
         <span className="shrink-0 text-xs font-semibold text-fg">Texto alternativo</span>
         {written ? (
-          <span className="min-w-0 flex-1 truncate text-xs text-fg-muted" title={initial}>
-            {initial}
-          </span>
+          <Tooltip label={initial}>
+            <span className="min-w-0 flex-1 truncate text-xs text-fg-muted">{initial}</span>
+          </Tooltip>
         ) : (
           <span className="inline-flex min-w-0 flex-1 items-center gap-1 text-xs font-medium text-warning-fg">
             <TriangleAlert size={12} aria-hidden />
@@ -667,18 +669,22 @@ export function ImageActionStrip({
         />
         {canRegenerate ? (
           <Menu placement="bottom-end">
-            <Menu.Trigger
-              aria-label="Más opciones de imagen"
-              title="Más opciones"
-              disabled={busy || media.uploading}
-              className="flex size-8 items-center justify-center rounded-full border border-line bg-card text-fg-secondary hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {media.uploading ? (
-                <Loader2 size={15} className="animate-spin" aria-hidden />
-              ) : (
-                <MoreHorizontal size={16} aria-hidden />
-              )}
-            </Menu.Trigger>
+            {/* El tooltip va en un span: Menu.Trigger no recibe ref de afuera. */}
+            <Tooltip label="Más opciones">
+              <span className="inline-flex">
+                <Menu.Trigger
+                  aria-label="Más opciones de imagen"
+                  disabled={busy || media.uploading}
+                  className="flex size-8 items-center justify-center rounded-full border border-line bg-card text-fg-secondary hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {media.uploading ? (
+                    <Loader2 size={15} className="animate-spin" aria-hidden />
+                  ) : (
+                    <MoreHorizontal size={16} aria-hidden />
+                  )}
+                </Menu.Trigger>
+              </span>
+            </Tooltip>
             <Menu.Content className={`${MENU_CONTENT_CLASS} w-60`}>
               {generation.alternateAvailable && (
                 <Menu.Item className={MENU_ITEM_CLASS} onClick={() => regenerate("alternate")}>
@@ -961,15 +967,16 @@ export function SelectedImage({
       ) : (
         <div className="group relative mx-auto w-fit">
           <CardImage key={shown} assetId={shown} alt={versionAlt ?? alt} />
-          <button
-            type="button"
-            aria-label="Ver en grande"
-            title="Ver en grande"
-            onClick={() => (onExpand ? onExpand() : setViewing(true))}
-            className="absolute top-2 right-2 flex size-8 items-center justify-center rounded-full bg-card/90 text-fg shadow-md transition-opacity hover:bg-card sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
-          >
-            <Maximize2 size={15} aria-hidden />
-          </button>
+          <Tooltip label="Ver en grande">
+            <button
+              type="button"
+              aria-label="Ver en grande"
+              onClick={() => (onExpand ? onExpand() : setViewing(true))}
+              className="absolute top-2 right-2 flex size-8 items-center justify-center rounded-full bg-card/90 text-fg shadow-md transition-opacity hover:bg-card sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+            >
+              <Maximize2 size={15} aria-hidden />
+            </button>
+          </Tooltip>
         </div>
       )}
       {viewing && (
