@@ -5,15 +5,12 @@ import { BrandVoiceModule } from "../brand-voice/brand-voice.module.js";
 import { CardsModule } from "../cards/cards.module.js";
 import { CreditsModule } from "../credits/credits.module.js";
 import { JobsModule } from "../jobs/jobs.module.js";
-import {
-  createImageModelResolver,
-  DEFAULT_IMAGE_MODEL_ID,
-  parseModelChain,
-} from "../ai/provider-registry.js";
+import { createImageModelResolver } from "../ai/provider-registry.js";
 import { env } from "../env.js";
 import { AiSdkImageProvider } from "./ai-sdk-image.provider.js";
 import { FakeImageProvider } from "./fake-image.provider.js";
 import { FallbackImageProvider } from "./fallback-image.provider.js";
+import { imageGeneratorIds } from "./image-models.js";
 import { parseSimulateDown } from "../ai/fallback.js";
 import { ImageGenerationService } from "./image-generation.service.js";
 import { ImageGenerationsRepository } from "./image-generations.repository.js";
@@ -21,34 +18,36 @@ import { IMAGE_PROVIDERS, type ImageProviders } from "./image-provider.js";
 import { ImagesController } from "./images.controller.js";
 
 // Factory por env (ADR-025), mismo patrón que PublishingModule. env.ts ya
-// validó al boot formato y key de los dos modelos, así que resolverlos acá no
+// validó al boot formato y key de cada modelo, así que resolverlos acá no
 // puede fallar por configuración.
+//
+// F10.7: AI_MODEL_IMAGE es la lista de generadores, en orden. El primero es
+// el principal y "Probar con otro generador" ofrece los demás. Cada uno es
+// una cadena de respaldo que arranca en él y sigue con los otros en orden:
+// elegir el 3 es "empieza por el 3", no "solo el 3", y si está caído igual
+// responde alguno. Un bloqueo de contenido nunca cae al siguiente.
 export function buildImageProviders(): ImageProviders {
   if (env.IMAGE_PROVIDER === "fake") {
+    // Dos, para que en dev se vea "Probar con otro generador" sin gastar.
     return {
-      primary: new FakeImageProvider(env.IMAGE_FAKE_DELAY_MS),
-      alternate: new FakeImageProvider(env.IMAGE_FAKE_DELAY_MS),
+      generators: [
+        new FakeImageProvider(env.IMAGE_FAKE_DELAY_MS),
+        new FakeImageProvider(env.IMAGE_FAKE_DELAY_MS),
+      ],
     };
   }
   const resolve = createImageModelResolver(process.env);
-  // F10.7: AI_MODEL_IMAGE es una cadena (principal y respaldos), igual que
-  // las de texto. Cada eslabón sin reintentos propios: reintenta la cadena.
-  const chain = parseModelChain(env.AI_MODEL_IMAGE ?? DEFAULT_IMAGE_MODEL_ID).map(
-    ({ id }) => new AiSdkImageProvider(resolve(id), id, { maxRetries: 0 }),
-  );
+  const ids = imageGeneratorIds(env.AI_MODEL_IMAGE, env.AI_MODEL_IMAGE_ALT);
+  // Cada eslabón sin reintentos propios: reintenta la cadena.
+  const links = ids.map((id) => new AiSdkImageProvider(resolve(id), id, { maxRetries: 0 }));
   const simulateDown = parseSimulateDown(env.AI_FALLBACK_SIMULATE);
-  const alternateId = env.AI_MODEL_IMAGE_ALT;
   return {
-    primary: new FallbackImageProvider(chain, { simulateDown }),
-    // El alternativo también pasa por la cadena (de un eslabón): mismo plazo
-    // y mismos reintentos que cualquier generador, sin importar qué botón se
-    // apretó. Sin esto podía colgarse el trabajo entero.
-    alternate: alternateId
-      ? new FallbackImageProvider(
-          [new AiSdkImageProvider(resolve(alternateId), alternateId, { maxRetries: 0 })],
-          { simulateDown },
-        )
-      : null,
+    generators: links.map(
+      (first, index) =>
+        new FallbackImageProvider([first, ...links.filter((_, i) => i !== index)], {
+          simulateDown,
+        }),
+    ),
   };
 }
 

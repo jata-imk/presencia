@@ -5,6 +5,8 @@
 - **`AI_MODEL_IMAGE`**, el de siempre. Default: `google:gemini-3.1-flash-image`.
 - **`AI_MODEL_IMAGE_ALT`**, el de "Probar con otro generador", opcional y sin default. En este despliegue es `openai:gpt-image-1.5`.
 
+> **Desde F10.7** `AI_MODEL_IMAGE` es una lista: el primero es el principal, los demás son su cadena de respaldo y también las opciones de "Probar con otro generador". `AI_MODEL_IMAGE_ALT` quedó obsoleta (addendum F10.7 PR6, al final).
+
 Además, `IMAGE_PROVIDER=fake` cambia los dos por `FakeImageProvider`, que dibuja un PNG liso sin red y es lo que usan los tests y conviene en dev.
 
 ## Razón
@@ -169,7 +171,7 @@ Desde `ai` 7.0.1xx, `generateImage` vuelve a llamar al modelo cuando responde si
 
 ## Addendum (2026-10-06, F10.7 PR5) — la cadena de respaldo de imagen
 
-- **`AI_MODEL_IMAGE` es una cadena**, como las de texto (ADR-004) pero sin `@esfuerzo`. El primero es el principal. `AI_MODEL_IMAGE_ALT` sigue siendo de un solo modelo hasta que "Probar con otro generador" use la misma lista.
+- **`AI_MODEL_IMAGE` es una cadena**, como las de texto (ADR-004) pero sin `@esfuerzo`. El primero es el principal. `AI_MODEL_IMAGE_ALT` siguió siendo de un solo modelo hasta el PR6, que la volvió obsoleta.
 - **`FallbackImageProvider`** (`images/fallback-image.provider.ts`) aplica la misma regla que la cadena de texto (`isFallbackError`):
   - cae al siguiente con 5xx, 408, 409, 429, sin saldo, red o timeout;
   - un reintento por generador antes de pasar al siguiente, salvo tras un timeout;
@@ -185,3 +187,19 @@ Desde `ai` 7.0.1xx, `generateImage` vuelve a llamar al modelo cuando responde si
 - **Quién dibujó.** El resultado trae `ran`. Con eso, `ai_usage_events` registra el que corrió, con `fallback_from` y `provider_raw.attempts`. `image_generations.provider`/`model` se escriben con el pedido y se corrigen al liquidar, también cuando la imagen se dibujó pero no se pudo guardar.
 - **Verificado en el navegador:** con `IMAGE_PROVIDER=real`, `AI_MODEL_IMAGE=google:gemini-3.1-flash-image,openai:gpt-image-2` y `AI_FALLBACK_SIMULATE=google`, la card recibió sus dos variantes de gpt-image-2, y las filas dicen `fallback_from=google:gemini-3.1-flash-image` con 2 intentos.
 - **Mientras llega el bake-off,** prod puede usar ya `google:gemini-3.1-flash-image,openai:gpt-image-2`: el generador de hoy, con respaldo. El orden final lo decide el bake-off.
+
+## Addendum (2026-10-06, F10.7 PR6) — "Probar con otro generador" sale de la misma lista
+
+- **Una sola variable.** `AI_MODEL_IMAGE` es la lista de generadores: el primero es el principal, y "Probar con otro generador" ofrece los demás. `AI_MODEL_IMAGE_ALT` queda obsoleta.
+  - Si un despliegue todavía la tiene, se suma al final de la lista con un aviso en el log, en vez de no arrancar (`imageGeneratorIds`).
+- **El generador N es una cadena que arranca en N** y sigue con los demás en orden. Elegir el 3 es "empieza por el 3", no "solo el 3": si está caído, igual responde alguno. Un bloqueo de contenido sigue sin pasar al siguiente.
+- **Contrato.**
+  - `generator: 1..N` en generar y editar.
+  - `ImagesConfigDto.generatorCount` en vez de `alternateAvailable`: el navegador sabe cuántos hay, nunca cuáles son.
+  - `CardImageJob.generator` guarda cuál se pidió.
+  - El `provider: "primary" | "alternate"` de antes se sigue aceptando en las requests (para las pestañas que quedaron abiertas durante un deploy) y se lee en los trabajos guardados (`requestedGenerator`, `jobGenerator`).
+- **`image_generations.provider_slot` guarda la posición** (`"1"`, `"2"`…). Las filas de antes dicen `primary`/`alternate` y se leen como 1 y 2. Sin migración: la columna ya era texto.
+- **UI.**
+  - Con dos generadores no cambia nada: "Probar con otro generador" en el menú de la imagen y "Con otro generador" en el composer.
+  - Con tres o más, el menú lista "Probar con el generador 2, 3…" y el botón del composer abre la lista ("Generador 2, 3…"). Por número y no por nombre de modelo: el creator no necesita saberlo, solo que son miradas distintas.
+  - Es el mismo componente `Menu` que ya existía, sin patrón visual nuevo: no pasó por Claude Design.

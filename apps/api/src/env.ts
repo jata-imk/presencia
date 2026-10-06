@@ -66,10 +66,10 @@ const envSchema = z
     // AI_MODEL_TRENDS: default propio (DEFAULT_IMAGE_MODEL_ID), nunca AI_MODEL,
     // porque un modelo de texto no dibuja.
     AI_MODEL_IMAGE: z.string().optional(),
-    // El "otro generador" de la card ("Probar con otro generador"). Opcional
-    // SIN default: es una segunda opinión, no una dependencia, y exigir la key
-    // de un segundo proveedor para arrancar la API sería caro para nada. Sin
-    // setear, el botón no aparece.
+    // OBSOLETA desde F10.7: "Probar con otro generador" ofrece los demás de
+    // AI_MODEL_IMAGE. Se sigue aceptando para no tumbar un despliegue que la
+    // tenga puesta: se suma al final de la lista con un aviso en el log
+    // (imageGeneratorIds, images/image-models.ts).
     AI_MODEL_IMAGE_ALT: z.string().optional(),
     // "fake" dibuja un PNG liso sin llamar a nadie: es lo que usan los tests y
     // lo que conviene en dev para probar la card sin gastar. Mismo patrón que
@@ -158,6 +158,11 @@ const envSchema = z
     ) => {
       try {
         const entries = parseModelChain(modelChain);
+        // El schema compartido acepta `generator` hasta 10: una lista más larga
+        // mostraría un "Generador 11" que el pedido rechazaría.
+        if (image && entries.length > 10) {
+          throw new Error(`${path} acepta hasta 10 generadores`);
+        }
         if (single && entries.length > 1) {
           throw new Error(`${path} acepta un solo modelo`);
         }

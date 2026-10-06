@@ -32,9 +32,47 @@ export const IMAGE_ASPECT_OPTIONS: Record<SocialNetwork, readonly ImageAspectRat
   youtube: [],
 };
 
-/** "primary" es el generador de siempre; "alternate", el de "Probar con otro generador". */
-export const imageProviderSlotSchema = z.enum(["primary", "alternate"]);
-export type ImageProviderSlot = z.infer<typeof imageProviderSlotSchema>;
+/**
+ * F10.7: qué generador se pide, por su posición en la lista AI_MODEL_IMAGE
+ * del servidor (1 = el principal). "Probar con otro generador" pide el 2, el
+ * 3… El navegador nunca sabe qué modelo es cada uno: solo cuántos hay.
+ */
+export const imageGeneratorSchema = z.number().int().min(1).max(10);
+
+/**
+ * Hasta F10.7 se pedía "primary" o "alternate". Se sigue aceptando para las
+ * pestañas que quedaron abiertas durante un deploy, y se lee en los trabajos
+ * guardados de antes.
+ */
+export const legacyImageProviderSlotSchema = z.enum(["primary", "alternate"]);
+type LegacyImageProviderSlot = z.infer<typeof legacyImageProviderSlotSchema>;
+
+/**
+ * El valor viejo traducido: "alternate" es el 2 —el ALT viejo entra en esa
+ * posición de la lista (imageGeneratorIds)— y "primary", el 1. La única
+ * traducción: la usan el pedido, el trabajo guardado y la fila de la DB.
+ */
+export function legacyGenerator(slot: string): number | null {
+  if (slot === "alternate") return 2;
+  if (slot === "primary") return 1;
+  return null;
+}
+
+/** El generador de un pedido, con el campo viejo traducido. */
+export function requestedGenerator(body: {
+  generator?: number;
+  provider?: LegacyImageProviderSlot;
+}): number {
+  return (body.provider && legacyGenerator(body.provider)) ?? body.generator ?? 1;
+}
+
+/** El generador de un trabajo guardado, nuevo (`generator`) o de antes de F10.7 (`provider`). */
+export function jobGenerator(job: {
+  generator?: number;
+  provider?: LegacyImageProviderSlot;
+}): number {
+  return job.generator ?? (job.provider ? legacyGenerator(job.provider) : null) ?? 1;
+}
 
 /**
  * Lo que manda "Generar imagen". El prompt viaja siempre, aunque sea el que
@@ -42,7 +80,9 @@ export type ImageProviderSlot = z.infer<typeof imageProviderSlotSchema>;
  * genera es lo que vio en pantalla, no lo que quedó guardado.
  */
 export const generateCardImageBodySchema = z.object({
-  provider: imageProviderSlotSchema.default("primary"),
+  generator: imageGeneratorSchema.default(1),
+  /** Legado (antes de F10.7): ver `requestedGenerator`. */
+  provider: legacyImageProviderSlotSchema.optional(),
   /** Obligatorio en una imagen suelta; en un carrusel cada slide trae el suyo. */
   prompt: z.string().trim().min(3).max(2000).optional(),
   aspectRatio: imageAspectRatioSchema,
@@ -81,7 +121,10 @@ export type SelectCardImageBody = z.infer<typeof selectCardImageBodySchema>;
 export interface CardImageJob {
   id: string;
   status: "generating" | "done" | "failed" | "blocked";
-  provider: ImageProviderSlot;
+  /** F10.7: el generador pedido (1 = el principal). Ausente en trabajos de antes. */
+  generator?: number;
+  /** Legado: los trabajos de antes de F10.7 guardaban "primary" | "alternate". */
+  provider?: LegacyImageProviderSlot;
   kind: "generate" | "edit";
   /** La proporción pedida: con ella la card dibuja el hueco mientras genera. */
   aspectRatio: ImageAspectRatio;
@@ -117,7 +160,11 @@ export interface ImagesConfigDto {
   generatePercent: number;
   /** Una edición con instrucción: una imagen. También un slide que no es la portada. */
   editPercent: number;
-  alternateAvailable: boolean;
+  /**
+   * F10.7: cuántos generadores hay en la lista del servidor. Con 2 o más se
+   * ofrece "Probar con otro generador"; nunca se dice cuáles son.
+   */
+  generatorCount: number;
   /** F10.6: el estilo de la Voz de marca (Fotográfico si nunca eligió): con él arranca el chip. */
   defaultStyle: ImageStyle;
 }
@@ -134,7 +181,9 @@ export const IMAGE_VARIANTS_PER_GENERATION = 2;
  */
 export const editCardImageBodySchema = z.object({
   instruction: z.string().trim().min(3).max(500),
-  provider: imageProviderSlotSchema.default("primary"),
+  generator: imageGeneratorSchema.default(1),
+  /** Legado (antes de F10.7): ver `requestedGenerator`. */
+  provider: legacyImageProviderSlotSchema.optional(),
   /** F10.6: en un carrusel, el slide cuya imagen se ajusta (sin él, la portada). */
   slideId: z.uuid().optional(),
 });

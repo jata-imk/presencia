@@ -1,5 +1,34 @@
-import { describe, expect, it } from "vitest";
-import { imageCallOptions } from "./image-models.js";
+import { describe, expect, it, vi } from "vitest";
+import { imageCallOptions, imageGeneratorIds } from "./image-models.js";
+
+describe("imageGeneratorIds", () => {
+  it("la lista de AI_MODEL_IMAGE en orden; sin variable, el default", () => {
+    expect(imageGeneratorIds("xai:grok-imagine-image-2.0,openai:gpt-image-2", undefined)).toEqual([
+      "xai:grok-imagine-image-2.0",
+      "openai:gpt-image-2",
+    ]);
+    expect(imageGeneratorIds(undefined, undefined)).toEqual(["google:gemini-3.1-flash-image"]);
+  });
+
+  it("el AI_MODEL_IMAGE_ALT viejo entra segundo (donde lo busca 'alternate'), con aviso y sin duplicarse", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(imageGeneratorIds("google:gemini-3.1-flash-image", "openai:gpt-image-2")).toEqual([
+      "google:gemini-3.1-flash-image",
+      "openai:gpt-image-2",
+    ]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("AI_MODEL_IMAGE_ALT está obsoleta"));
+    warn.mockClear();
+    expect(
+      imageGeneratorIds("google:gemini-3.1-flash-image,openai:gpt-image-1.5", "openai:gpt-image-2"),
+    ).toEqual(["google:gemini-3.1-flash-image", "openai:gpt-image-2", "openai:gpt-image-1.5"]);
+    warn.mockClear();
+    expect(
+      imageGeneratorIds("google:gemini-3.1-flash-image,openai:gpt-image-2", "openai:gpt-image-2"),
+    ).toHaveLength(2);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
 
 // Cómo se pide cada imagen según el generador (F10.7, ADR-025): proporción,
 // tamaño y resolución 1K, cada proveedor a su manera.

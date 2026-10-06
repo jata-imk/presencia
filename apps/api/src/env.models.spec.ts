@@ -112,6 +112,13 @@ describe("env: esfuerzo de razonamiento en los modelos", () => {
     await expect(loadEnv({ AI_FALLBACK_SIMULATE: "opneai" })).rejects.toThrow(/no es un proveedor/);
   });
 
+  it("la lista de imagen tiene tope de 10: el pedido no acepta un generador 11", async () => {
+    const once = Array.from({ length: 11 }, (_, i) => `openai:gpt-image-${String(i)}`).join(",");
+    await expect(loadEnv({ IMAGE_PROVIDER: "real", AI_MODEL_IMAGE: once })).rejects.toThrow(
+      /AI_MODEL_IMAGE acepta hasta 10 generadores/,
+    );
+  });
+
   it("un modelo de imagen no acepta esfuerzo", async () => {
     await expect(
       loadEnv({ IMAGE_PROVIDER: "real", AI_MODEL_IMAGE: "google:gemini-3.1-flash-image@high" }),

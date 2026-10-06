@@ -103,7 +103,7 @@ class HalfFailingProvider extends FakeImageProvider {
   }
 }
 
-const fake = (): ImageProviders => ({ primary: new FakeImageProvider(), alternate: null });
+const fake = (): ImageProviders => ({ generators: [new FakeImageProvider()] });
 
 describe("ImageGenerationService", { timeout: 30_000 }, () => {
   beforeAll(async () => {
@@ -170,12 +170,12 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     enqueue.mockClear();
 
     const dto = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       prompt: "Taza de café de olla, más cerca",
       aspectRatio: "4:5",
     });
 
-    expect(dto.imageJob).toMatchObject({ status: "generating", provider: "primary", assetIds: [] });
+    expect(dto.imageJob).toMatchObject({ status: "generating", generator: 1, assetIds: [] });
     // El prompt editado queda en la card: es lo que de verdad se generó.
     expect(dto.content).toMatchObject({ imagePrompt: "Taza de café de olla, más cerca" });
     const rows = await batchRows(dto.imageJob!.id);
@@ -196,7 +196,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const cardId = await createCard();
     enqueue.mockClear();
     const body = {
-      provider: "primary" as const,
+      generator: 1,
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5" as const,
     };
@@ -218,7 +218,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
       .credits;
     const gate = vi.spyOn(credits, "assertQuotaOr402");
     await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5",
     });
@@ -230,7 +230,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const service = make(fake());
     const cardId = await createCard();
     const dto = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5",
     });
@@ -272,7 +272,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const service = make(fake());
     const cardId = await createCard();
     const dto = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       prompt: `El logo de una marca famosa ${FAKE_BLOCK_MARKER}`,
       aspectRatio: "4:5",
     });
@@ -287,10 +287,10 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
   });
 
   it("si una variante falla, la otra se entrega y solo esa se cobra", async () => {
-    const service = make({ primary: new HalfFailingProvider(), alternate: null });
+    const service = make({ generators: [new HalfFailingProvider()] });
     const cardId = await createCard();
     const dto = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5",
     });
@@ -308,10 +308,10 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
 
   it("un job que la card ya reemplazó no dibuja ni cobra", async () => {
     const primary = new FakeImageProvider();
-    const service = make({ primary, alternate: null });
+    const service = make({ generators: [primary] });
     const cardId = await createCard();
     const dto = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5",
     });
@@ -333,10 +333,10 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
 
   it("un job que arranca ya pasado el corte no dibuja: la card ya lo mostró fallido", async () => {
     const primary = new FakeImageProvider();
-    const service = make({ primary, alternate: null });
+    const service = make({ generators: [primary] });
     const cardId = await createCard();
     const dto = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5",
     });
@@ -375,10 +375,10 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
         return super.generate(request);
       }
     }
-    const service = make({ primary: new SupersededWhileDrawing(), alternate: null });
+    const service = make({ generators: [new SupersededWhileDrawing()] });
     cardId = await createCard();
     const dto = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5",
     });
@@ -406,7 +406,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const job: CardImageJob = {
       id: randomUUID(),
       status: "generating",
-      provider: "primary",
+      generator: 1,
       kind: "generate",
       aspectRatio: "4:5",
       assetIds: [],
@@ -423,25 +423,39 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const cardId = await createCard();
     await expect(
       service.request(userId, cardId, {
-        provider: "alternate",
+        generator: 2,
         prompt: VISUAL.imagePrompt!,
         aspectRatio: "4:5",
       }),
-    ).rejects.toThrow(/otro generador/);
+    ).rejects.toThrow(/Ese generador no está configurado/);
   });
 
-  it("usa el generador alternativo cuando se lo piden", async () => {
-    const alternate = new FakeImageProvider();
-    const service = make({ primary: new FakeImageProvider(), alternate });
+  it("usa el generador que se pide por su posición en la lista (F10.7)", async () => {
+    const segundo = new FakeImageProvider();
+    const service = make({ generators: [new FakeImageProvider(), segundo] });
     const cardId = await createCard();
     const dto = await service.request(userId, cardId, {
+      generator: 2,
+      prompt: VISUAL.imagePrompt!,
+      aspectRatio: "1:1",
+    });
+    await service.run({ userId, cardId, batchId: dto.imageJob!.id });
+    expect(segundo.requests).toHaveLength(2);
+    expect((await card(cardId)).imageJob).toMatchObject({ status: "done", generator: 2 });
+  });
+
+  it("acepta el campo viejo (pestaña abierta durante un deploy): 'alternate' es el 2", async () => {
+    const segundo = new FakeImageProvider();
+    const service = make({ generators: [new FakeImageProvider(), segundo] });
+    const cardId = await createCard();
+    const dto = await service.request(userId, cardId, {
+      generator: 1,
       provider: "alternate",
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "1:1",
     });
     await service.run({ userId, cardId, batchId: dto.imageJob!.id });
-    expect(alternate.requests).toHaveLength(2);
-    expect((await card(cardId)).imageJob).toMatchObject({ status: "done", provider: "alternate" });
+    expect(segundo.requests).toHaveLength(2);
   });
 
   it("una proporción que la red no usa es un 400", async () => {
@@ -449,7 +463,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const cardId = await createCard();
     await expect(
       service.request(userId, cardId, {
-        provider: "primary",
+        generator: 1,
         prompt: VISUAL.imagePrompt!,
         aspectRatio: "16:9",
       }),
@@ -462,7 +476,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     enqueue.mockResolvedValueOnce(false);
     await expect(
       service.request(userId, cardId, {
-        provider: "primary",
+        generator: 1,
         prompt: VISUAL.imagePrompt!,
         aspectRatio: "4:5",
       }),
@@ -477,16 +491,16 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const service = make(fake());
     const cardId = await createCard();
     await expect(
-      service.requestEdit(userId, cardId, { instruction: "Hazla más cálida", provider: "primary" }),
+      service.requestEdit(userId, cardId, { instruction: "Hazla más cálida", generator: 1 }),
     ).rejects.toThrow(/Primero genera o sube/);
   });
 
   it("editar manda la elegida como referencia, cobra una y la deja como hija", async () => {
     const primary = new FakeImageProvider();
-    const service = make({ primary, alternate: null });
+    const service = make({ generators: [primary] });
     const cardId = await createCard();
     const generated = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5",
       style: "neo",
@@ -496,7 +510,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
 
     const dto = await service.requestEdit(userId, cardId, {
       instruction: "Quita a las personas",
-      provider: "primary",
+      generator: 1,
     });
     // F10.6: hereda el estilo del trabajo anterior (el chip arranca en él).
     expect(dto.imageJob).toMatchObject({
@@ -557,7 +571,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const service = make(fake());
     const cardId = await createCard(CAROUSEL);
     const dto = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       aspectRatio: "4:5",
       slideIds: [S1, S2],
     });
@@ -592,7 +606,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const service = make(fake());
     const cardId = await createCard();
     const dto = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5",
     });
@@ -622,7 +636,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const service = make(fake());
     const cardId = await createCard(CAROUSEL);
     const dto = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       aspectRatio: "4:5",
       slideIds: [S2],
     });
@@ -633,14 +647,14 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const service = make(fake());
     const cardId = await createCard(CAROUSEL);
     await expect(
-      service.request(userId, cardId, { provider: "primary", aspectRatio: "4:5", prompt: "x x x" }),
+      service.request(userId, cardId, { generator: 1, aspectRatio: "4:5", prompt: "x x x" }),
     ).rejects.toThrow(/Elige qué slides/);
     await expect(
-      service.request(userId, cardId, { provider: "primary", aspectRatio: "4:5", slideIds: [S3] }),
+      service.request(userId, cardId, { generator: 1, aspectRatio: "4:5", slideIds: [S3] }),
     ).rejects.toThrow(/slide 3 todavía no dice/);
     await expect(
       service.request(userId, cardId, {
-        provider: "primary",
+        generator: 1,
         aspectRatio: "4:5",
         slideIds: [randomUUID()],
       }),
@@ -648,7 +662,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
 
     const single = await createCard();
     await expect(
-      service.request(userId, single, { provider: "primary", aspectRatio: "4:5", slideIds: [S1] }),
+      service.request(userId, single, { generator: 1, aspectRatio: "4:5", slideIds: [S1] }),
     ).rejects.toThrow(/no es un carrusel/);
   });
 
@@ -656,7 +670,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const service = make(fake());
     const cardId = await createCard(CAROUSEL);
     const dto = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       aspectRatio: "4:5",
       slideIds: [S2],
     });
@@ -684,10 +698,10 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
 
   it("carrusel: ajustar un slide usa SU imagen como referencia y vuelve a ese slide", async () => {
     const primary = new FakeImageProvider();
-    const service = make({ primary, alternate: null });
+    const service = make({ generators: [primary] });
     const cardId = await createCard(CAROUSEL);
     const first = await service.request(userId, cardId, {
-      provider: "primary",
+      generator: 1,
       aspectRatio: "4:5",
       slideIds: [S2],
     });
@@ -699,7 +713,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
 
     const dto = await service.requestEdit(userId, cardId, {
       instruction: "Más cálida",
-      provider: "primary",
+      generator: 1,
       slideId: S2,
     });
     const [row] = await batchRows(dto.imageJob!.id);
@@ -718,7 +732,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     expect(config).toEqual({
       generatePercent: 4.7,
       editPercent: 2.3,
-      alternateAvailable: false,
+      generatorCount: 1,
       defaultStyle: "foto",
     });
   });

@@ -429,8 +429,10 @@ export const imageGenerations = pgTable(
     cardId: uuid("card_id").references(() => publicationCards.id, { onDelete: "set null" }),
     batchId: uuid("batch_id").notNull(),
     kind: imageGenerationKind("kind").notNull(),
-    // "primary" | "alternate": qué botón se apretó. provider/model: quién
-    // dibujó de verdad, que depende del entorno de ese momento.
+    // Qué generador se pidió: desde F10.7, su posición en AI_MODEL_IMAGE
+    // ("1", "2"…); las filas de antes dicen "primary" | "alternate" (= 1 y 2).
+    // provider/model: quién dibujó de verdad, que depende del entorno de ese
+    // momento y de la cadena de respaldo.
     providerSlot: text("provider_slot").notNull(),
     provider: text("provider").notNull(),
     model: text("model").notNull(),

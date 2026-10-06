@@ -10,7 +10,6 @@ import {
   type CarouselSlide,
   type GenerateCardImageBody,
   type ImageAspectRatio,
-  type ImageProviderSlot,
   type ImageStyle,
   type PublicationCardDto,
   type QuotaStatusDto,
@@ -196,18 +195,13 @@ export function useCardController(
     }
   }
 
-  async function handleEdit(
-    id: string,
-    instruction: string,
-    provider: ImageProviderSlot,
-    slideId?: string,
-  ) {
+  async function handleEdit(id: string, instruction: string, generator: number, slideId?: string) {
     setRequestingImage(true);
     try {
       applyCards(
         await editCardImage(
           id,
-          slideId ? { instruction, provider, slideId } : { instruction, provider },
+          slideId ? { instruction, generator, slideId } : { instruction, generator },
         ),
       );
     } catch (err) {
@@ -287,10 +281,10 @@ export function useCardController(
                 requesting: requestingImage,
                 job: imageJob,
                 percent: imagesConfig.generatePercent,
-                alternateAvailable: imagesConfig.alternateAvailable,
+                generatorCount: imagesConfig.generatorCount,
                 defaultStyle: imagesConfig.defaultStyle,
                 aspectOptions: IMAGE_ASPECT_OPTIONS[card.network],
-                edit: (instruction, provider) => void handleEdit(card.id, instruction, provider),
+                edit: (instruction, generator) => void handleEdit(card.id, instruction, generator),
                 editPercent: imagesConfig.editPercent,
                 versions,
                 updateAlt: (assetId, alt) => handleUpdateAlt(assetId, alt),
@@ -339,15 +333,15 @@ export function useCardController(
                   if (!saved) return false;
                 }
                 return handleGenerate(card.id, {
-                  provider: input.provider,
+                  generator: input.generator,
                   aspectRatio: aspect,
                   style: input.style,
                   slideIds: [slide.id],
                 });
               },
               select: (assetId) => handleSelect(card.id, assetId, slide.id),
-              edit: (instruction, provider) =>
-                void handleEdit(card.id, instruction, provider, slide.id),
+              edit: (instruction, generator) =>
+                void handleEdit(card.id, instruction, generator, slide.id),
               ...(lastStyle
                 ? { styleControl: { value: lastStyle, onChange: setCarouselStyle } }
                 : {}),
@@ -403,7 +397,7 @@ export function useCardController(
           generateMissing: () => {
             if (missing.length === 0) return;
             void handleGenerate(card.id, {
-              provider: "primary",
+              generator: 1,
               aspectRatio: carouselAspect(content, card.network),
               ...(lastStyle ? { style: lastStyle } : {}),
               slideIds: missing.map(({ slide }) => slide.id),

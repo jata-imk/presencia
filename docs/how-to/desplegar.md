@@ -106,7 +106,6 @@ AI_MODEL_UTILITY=openai:gpt-6-luna@low,google:gemini-3.8-flash@low
 AI_MODEL_ADAPT=openai:gpt-6-luna@high,google:gemini-3.8-flash@medium
 AI_MODEL_TRENDS=google:gemini-3.8-flash,google:gemini-3.6-flash
 AI_MODEL_IMAGE=google:gemini-3.1-flash-image,openai:gpt-image-2
-AI_MODEL_IMAGE_ALT=openai:gpt-image-2
 OPENAI_API_KEY=...
 GOOGLE_GENERATIVE_AI_API_KEY=...
 ANTHROPIC_API_KEY=...
@@ -120,7 +119,10 @@ UPLOAD_POST_API_KEY=...
 
 Cada modelo de una cadena (F10.7, ADR-004) necesita la key de su proveedor: un respaldo sin key no truena
 hasta el día que se cae el principal, así que `env.ts` la exige al arrancar. `AI_FALLBACK_SIMULATE` es
-solo de dev y en producción mata el arranque.
+solo de dev y en producción mata el arranque. `AI_MODEL_IMAGE_ALT` es obsoleta (F10.7): si sigue en el `.env`
+de prod, se suma al final de `AI_MODEL_IMAGE` con un aviso en el log. Conviene quitarla y poner ese
+modelo en la lista. Ojo: todo lo que esté en `AI_MODEL_IMAGE` es respaldo **y** opción de "Probar con otro
+generador" (Generador 2, 3…): no hay forma de tener un respaldo que el creator no pueda elegir.
 
 Tres cosas que se olvidan y muerden:
 
