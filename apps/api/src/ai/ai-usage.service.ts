@@ -15,7 +15,13 @@ export interface RegistroDeUso {
    * El modelo que DE VERDAD corrió: la identidad sale del mismo `ResolvedModel`
    * o, en las imágenes, del `ImageProvider` que dibujó (F10).
    */
-  modelo: { provider: string; modelName: ResolvedModel["modelName"] };
+  modelo: {
+    provider: string;
+    modelName: ResolvedModel["modelName"];
+    /** F10.7: los trae un `ResolvedModel` de texto; un generador de imagen todavía no. */
+    fallbackFrom?: ResolvedModel["fallbackFrom"];
+    attempts?: ResolvedModel["attempts"];
+  };
   /**
    * El usage de un modelo de texto, o el de uno de imagen, que solo trae
    * tokens de entrada y salida (y a veces ni eso: sin dato cuenta como 0).
@@ -65,7 +71,13 @@ export class AiUsageService {
           durationMs: Date.now() - registro.arranque,
           searchQueries: registro.searchQueries ?? null,
           imagesCount: registro.imagesCount ?? null,
-          providerRaw: registro.providerRaw,
+          fallbackFrom: modelo.fallbackFrom ?? null,
+          // Los intentos que fallaron viajan con el crudo: son el porqué del
+          // respaldo, y solo importan cuando se investiga uno.
+          providerRaw:
+            modelo.attempts && modelo.attempts.length > 0
+              ? { ...(registro.providerRaw as object), attempts: modelo.attempts }
+              : registro.providerRaw,
         }),
       );
     } catch (error) {

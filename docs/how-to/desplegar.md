@@ -100,8 +100,14 @@ BETTER_AUTH_SECRET=<openssl rand -base64 32>
 BETTER_AUTH_URL=https://presencia.josetejero.com
 WEB_URL=https://presencia.josetejero.com
 
-AI_MODEL=google:gemini-3.6-flash
+AI_MODEL=openai:gpt-6-luna@high
+AI_MODEL_CHAT=openai:gpt-6-luna@high,google:gemini-3.8-flash@medium,anthropic:claude-sonnet-5-5
+AI_MODEL_UTILITY=openai:gpt-6-luna@low,google:gemini-3.8-flash@low
+AI_MODEL_ADAPT=openai:gpt-6-luna@high,google:gemini-3.8-flash@medium
+AI_MODEL_TRENDS=google:gemini-3.8-flash,google:gemini-3.6-flash
+OPENAI_API_KEY=...
 GOOGLE_GENERATIVE_AI_API_KEY=...
+ANTHROPIC_API_KEY=...
 
 ZEPTOMAIL_TOKEN=...
 MAIL_FROM=no-reply@josetejero.com
@@ -109,6 +115,10 @@ MAIL_FROM=no-reply@josetejero.com
 PUBLISHING_PROVIDER=upload_post
 UPLOAD_POST_API_KEY=...
 ```
+
+Cada modelo de una cadena (F10.7, ADR-004) necesita la key de su proveedor: un respaldo sin key no truena
+hasta el día que se cae el principal, así que `env.ts` la exige al arrancar. `AI_FALLBACK_SIMULATE` es
+solo de dev y en producción mata el arranque.
 
 Tres cosas que se olvidan y muerden:
 

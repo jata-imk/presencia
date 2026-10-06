@@ -25,6 +25,8 @@ const TOUCHED = [
   "AI_MODEL_IMAGE",
   "AI_MODEL_IMAGE_ALT",
   "IMAGE_PROVIDER",
+  "AI_FALLBACK_SIMULATE",
+  "ASSETS_STORAGE",
 ];
 const ORIGINAL = Object.fromEntries(TOUCHED.map((key) => [key, process.env[key]]));
 
@@ -62,6 +64,47 @@ describe("env: esfuerzo de razonamiento en los modelos", () => {
     await expect(loadEnv({ AI_MODEL_CHAT: "anthropic:claude-sonnet-5-5@high" })).rejects.toThrow(
       /AI_MODEL_CHAT usa el proveedor .{0,2}anthropic.{0,2} pero falta ANTHROPIC_API_KEY/,
     );
+  });
+
+  it("acepta una cadena de respaldo con esfuerzo por modelo", async () => {
+    const { env } = await loadEnv({
+      AI_MODEL_CHAT: "openai:gpt-6-luna@high, google:gemini-3.8-flash@medium",
+    });
+    expect(env.AI_MODEL_CHAT).toBe("openai:gpt-6-luna@high, google:gemini-3.8-flash@medium");
+  });
+
+  it("cada respaldo necesita su key: no se descubre el día que cae el principal", async () => {
+    await expect(
+      loadEnv({ AI_MODEL_CHAT: "openai:gpt-6-luna@high,anthropic:claude-sonnet-5-5" }),
+    ).rejects.toThrow(/falta ANTHROPIC_API_KEY/);
+  });
+
+  it("el mismo modelo dos veces no es un respaldo", async () => {
+    await expect(
+      loadEnv({ AI_MODEL_CHAT: "openai:gpt-6-luna@high,openai:gpt-6-luna@low" }),
+    ).rejects.toThrow(/repeats/);
+  });
+
+  it("las tendencias solo aceptan modelos de Google, también en los respaldos", async () => {
+    await expect(
+      loadEnv({ AI_MODEL_TRENDS: "google:gemini-3.8-flash,openai:gpt-6-luna" }),
+    ).rejects.toThrow(/AI_MODEL_TRENDS solo acepta modelos de .{0,2}google/);
+  });
+
+  it("las de imagen siguen siendo de un solo modelo", async () => {
+    await expect(
+      loadEnv({
+        IMAGE_PROVIDER: "real",
+        AI_MODEL_IMAGE: "google:gemini-3.1-flash-image,openai:gpt-image-2",
+      }),
+    ).rejects.toThrow(/AI_MODEL_IMAGE acepta un solo modelo/);
+  });
+
+  it("el simulador de caídas no se permite en producción ni con un proveedor inventado", async () => {
+    await expect(
+      loadEnv({ NODE_ENV: "production", AI_FALLBACK_SIMULATE: "openai" }),
+    ).rejects.toThrow(/AI_FALLBACK_SIMULATE no se permite en producción/);
+    await expect(loadEnv({ AI_FALLBACK_SIMULATE: "opneai" })).rejects.toThrow(/no es un proveedor/);
   });
 
   it("un modelo de imagen no acepta esfuerzo", async () => {

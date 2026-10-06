@@ -1,25 +1,41 @@
+import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { Injectable } from "@nestjs/common";
 import type { LanguageModel } from "ai";
 import { env } from "../env.js";
+import { createFallbackChain, type FallbackAttempt } from "./fallback.js";
 import {
   createModelResolver,
+  formatModelEntry,
   MODEL_BY_TASK,
-  parseModelEntry,
+  parseModelChain,
+  type ModelEntry,
   type ModelResolver,
   type ProviderId,
   type ReasoningLevel,
   type RoutedTaskKind,
 } from "./provider-registry.js";
 
+/**
+ * Un modelo listo para UNA llamada: la cadena de respaldo (F10.7) ya armada,
+ * cada eslabón con su esfuerzo pegado.
+ *
+ * La identidad (`id`, `provider`, `modelName`, `reasoning`) es la del modelo
+ * que corrió: antes de la llamada, el principal; después, el que respondió.
+ * Así la telemetría (`ai_usage_events`) nunca reporta un modelo distinto del
+ * que de verdad produjo el texto, aunque haya caído a un respaldo. Por eso
+ * NO se reutiliza entre llamadas: cada una pide el suyo a `AiService`.
+ */
 export interface ResolvedModel {
-  /** Ya trae pegado su esfuerzo de razonamiento, si la entrada lo pedía. */
   model: LanguageModel;
-  /** Id completo "proveedor:modelo" que se resolvió — nunca se releé env.AI_MODEL por separado. */
-  id: string;
-  provider: ProviderId;
-  modelName: string;
-  /** El `@esfuerzo` de la entrada del `.env`; sin él, el default del proveedor. */
-  reasoning?: ReasoningLevel;
+  /** "proveedor:modelo" del que corrió (sin el `@esfuerzo`). */
+  readonly id: string;
+  readonly provider: ProviderId;
+  readonly modelName: string;
+  readonly reasoning?: ReasoningLevel;
+  /** El principal pedido, si respondió un respaldo; null si respondió el principal. */
+  readonly fallbackFrom: string | null;
+  /** Los intentos que fallaron antes del que respondió. */
+  readonly attempts: readonly FallbackAttempt[];
 }
 
 // Fachada inyectable sobre el registry (ADR-004): el resto de la app pide
@@ -29,25 +45,43 @@ export class AiService {
   // process.env ya pasó la validación de env.ts al boot; el registry lee las
   // keys por nombre desde la tabla PROVIDERS (fuente única, ADR-004).
   private readonly resolver: ModelResolver = createModelResolver(process.env, env.AI_MODEL);
+  private readonly simulateDown =
+    env.AI_FALLBACK_SIMULATE?.split(",")
+      .map((provider) => provider.trim())
+      .filter(Boolean) ?? [];
 
-  // F4.5: devuelve el modelo junto con su identidad ya parseada — así la
-  // telemetría (ai_usage_events) nunca puede reportar un proveedor/modelo
-  // distinto del que de verdad ejecutó la llamada.
-  resolve(modelEntry?: string): ResolvedModel {
-    // Mismo fallback que usa el resolver por dentro (env.AI_MODEL) — así la
-    // identidad reportada nunca puede desalinearse del modelo que corrió.
-    const {
-      id,
-      provider,
-      model: modelName,
-      reasoning,
-    } = parseModelEntry(modelEntry ?? env.AI_MODEL);
+  resolve(modelChain?: string): ResolvedModel {
+    const entries = parseModelChain(modelChain ?? env.AI_MODEL);
+    const chain = createFallbackChain(
+      entries.map((entry) => ({
+        entry,
+        // Todos los proveedores del registry son del spec v4 desde F10.7 PR1.
+        model: this.resolver(formatModelEntry(entry)) as LanguageModelV4,
+      })),
+      { simulateDown: this.simulateDown },
+    );
+    const principal = entries[0]!;
+    const ran = (): ModelEntry => chain.ran;
     return {
-      model: this.resolver(modelEntry),
-      id,
-      provider,
-      modelName,
-      ...(reasoning ? { reasoning } : {}),
+      model: chain.model,
+      get id() {
+        return ran().id;
+      },
+      get provider() {
+        return ran().provider;
+      },
+      get modelName() {
+        return ran().model;
+      },
+      get reasoning() {
+        return ran().reasoning;
+      },
+      get fallbackFrom() {
+        return ran().id === principal.id ? null : principal.id;
+      },
+      get attempts() {
+        return chain.attempts;
+      },
     };
   }
 

@@ -217,6 +217,33 @@ export function parseModelEntry(entry: string): ModelEntry {
 }
 
 /**
+ * Una variable de modelo del `.env` es una cadena (F10.7): el principal y sus
+ * respaldos en orden, separados por coma, cada uno con su `@esfuerzo`.
+ * `openai:gpt-6-luna@high, google:gemini-3.8-flash@medium`. Un solo id sigue
+ * siendo válido: una cadena de uno.
+ */
+export function parseModelChain(value: string): ModelEntry[] {
+  const entries = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (entries.length === 0) throw new Error(`Model chain "${value}" is empty.`);
+  const parsed = entries.map(parseModelEntry);
+  const seen = new Set<string>();
+  for (const entry of parsed) {
+    // El mismo modelo dos veces no es un respaldo: se cae junto con el primero.
+    if (seen.has(entry.id)) throw new Error(`Model chain "${value}" repeats "${entry.id}".`);
+    seen.add(entry.id);
+  }
+  return parsed;
+}
+
+/** La entrada como se escribe en el `.env`, de vuelta a texto. */
+export function formatModelEntry(entry: ModelEntry): string {
+  return entry.reasoning ? `${entry.id}@${entry.reasoning}` : entry.id;
+}
+
+/**
  * Pega el esfuerzo al modelo resuelto, para que los call sites no lo tengan
  * que repetir y cada modelo de una cadena de respaldo lleve el suyo. Solo
  * llena el hueco: si una llamada pide su propio `reasoning`, gana la llamada.

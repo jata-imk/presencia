@@ -26,6 +26,8 @@ export interface InsertAiUsageEventInput {
   searchQueries: number | null;
   // Imágenes producidas (F10). `null` = la llamada no dibuja.
   imagesCount: number | null;
+  // F10.7: el principal pedido si respondió un respaldo; `null` = el principal.
+  fallbackFrom: string | null;
   // Crudo del proveedor (usage + providerMetadata por step, finishReason).
   // Nunca se normaliza aquí — esa lectura es trabajo de F5.
   providerRaw: unknown;

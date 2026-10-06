@@ -4,8 +4,9 @@ import {
   DEFAULT_MODEL_ID,
   DEFAULT_TRENDS_MODEL_ID,
   MODEL_TIER_ENV_VARS,
-  parseModelEntry,
+  parseModelChain,
   PROVIDERS,
+  SEARCH_PROVIDER,
 } from "./ai/provider-registry.js";
 
 // Validación fail-fast del entorno (se invoca en main.ts antes de crear la app).
@@ -52,6 +53,10 @@ const envSchema = z
     // Google, el job falla con un motivo escrito en vez de producir tendencias
     // sin fuente.
     AI_MODEL_TRENDS: z.string().optional(),
+    // Solo dev (F10.7): proveedores que la cadena de respaldo finge caídos
+    // (503), para ver el respaldo en el navegador sin romper nada. Separados
+    // por coma: "openai" o "openai,google".
+    AI_FALLBACK_SIMULATE: z.string().optional(),
     // Generación de imágenes (F10, ADR-025). Mismo criterio que
     // AI_MODEL_TRENDS: default propio (DEFAULT_IMAGE_MODEL_ID), nunca AI_MODEL,
     // porque un modelo de texto no dibuja.
@@ -132,19 +137,38 @@ const envSchema = z
     // Formato e inventario vienen de la tabla PROVIDERS.
     // El `@esfuerzo` (F10.7) solo vale en modelos de texto: un generador de
     // imágenes no razona, y aceptarlo en silencio haría creer que se aplicó.
-    const validateModelEnv = (path: string, modelEntry: string, { image = false } = {}) => {
+    //
+    // Desde F10.7 las de texto son cadenas: principal y respaldos separados
+    // por coma, y CADA uno necesita su key — un respaldo sin key se
+    // descubriría justo el día que se cae el principal. Las de imagen siguen
+    // siendo de un solo modelo hasta que tengan su cadena.
+    const validateModelEnv = (
+      path: string,
+      modelChain: string,
+      { image = false, onlyProvider }: { image?: boolean; onlyProvider?: string } = {},
+    ) => {
       try {
-        const { provider, reasoning } = parseModelEntry(modelEntry);
-        if (image && reasoning) {
-          throw new Error(`${path} no acepta "@${reasoning}": un modelo de imagen no razona`);
+        const entries = parseModelChain(modelChain);
+        if (image && entries.length > 1) {
+          throw new Error(`${path} acepta un solo modelo`);
         }
-        const envKey = PROVIDERS[provider].envKey;
-        if (!(value as Record<string, unknown>)[envKey]) {
-          ctx.addIssue({
-            code: "custom",
-            path: [path],
-            message: `${path} usa el proveedor "${provider}" pero falta ${envKey} en el entorno`,
-          });
+        for (const { id, provider, reasoning } of entries) {
+          if (image && reasoning) {
+            throw new Error(`${path} no acepta "@${reasoning}": un modelo de imagen no razona`);
+          }
+          if (onlyProvider && provider !== onlyProvider) {
+            throw new Error(
+              `${path} solo acepta modelos de "${onlyProvider}" y "${id}" no lo es: esta tarea necesita búsqueda con grounding`,
+            );
+          }
+          const envKey = PROVIDERS[provider].envKey;
+          if (!(value as Record<string, unknown>)[envKey]) {
+            ctx.addIssue({
+              code: "custom",
+              path: [path],
+              message: `${path} usa el proveedor "${provider}" pero falta ${envKey} en el entorno`,
+            });
+          }
         }
       } catch (error) {
         ctx.addIssue({
@@ -166,7 +190,30 @@ const envSchema = z
     // la variable cae a un modelo de Google, y si no hay key de Google eso es
     // un job que truena cada 6 h con la única señal en `pgboss.job`. Un boot
     // roto se ve; un job que falla en silencio, no.
-    validateModelEnv("AI_MODEL_TRENDS", value.AI_MODEL_TRENDS ?? DEFAULT_TRENDS_MODEL_ID);
+    validateModelEnv("AI_MODEL_TRENDS", value.AI_MODEL_TRENDS ?? DEFAULT_TRENDS_MODEL_ID, {
+      onlyProvider: SEARCH_PROVIDER,
+    });
+
+    // El simulador de caídas (F10.7) es para probar la cadena en dev. En
+    // producción, un proveedor fingido caído es una caída real del producto.
+    if (value.AI_FALLBACK_SIMULATE) {
+      if (value.NODE_ENV === "production") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["AI_FALLBACK_SIMULATE"],
+          message: "AI_FALLBACK_SIMULATE no se permite en producción",
+        });
+      }
+      for (const provider of value.AI_FALLBACK_SIMULATE.split(",").map((p) => p.trim())) {
+        if (provider && !Object.hasOwn(PROVIDERS, provider)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["AI_FALLBACK_SIMULATE"],
+            message: `AI_FALLBACK_SIMULATE: "${provider}" no es un proveedor (${Object.keys(PROVIDERS).join(", ")})`,
+          });
+        }
+      }
+    }
     // Mismo razonamiento para las imágenes: sin setear cae a Google, y sin su
     // key la primera generación truena dentro de un job. Con el fake no se
     // llama a nadie, así que no hay key que exigir.

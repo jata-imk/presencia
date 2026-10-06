@@ -802,6 +802,12 @@ export const aiUsageEvents = pgTable(
     // imagen se suma por imagen, no escarbando tokens. `null` = la llamada no
     // dibuja; `0` = debía dibujar y el proveedor no devolvió nada (bloqueo).
     imagesCount: smallint("images_count"),
+    // F10.7: el principal que se pidió cuando respondió un respaldo de la
+    // cadena (ADR-004); `provider`/`model` son siempre el que corrió. `null`
+    // = respondió el principal. Columna y no jsonb: "¿cuántas veces caímos, y
+    // desde dónde?" se cuenta, y lo que se cuenta no se escarba. Los intentos
+    // fallidos, con su error, van en `provider_raw.attempts`.
+    fallbackFrom: text("fallback_from"),
     // Crudo del proveedor: usage + providerMetadata por step, finishReason.
     // Ver runAgentTurn (chat.service.ts) — nunca se normaliza aquí.
     providerRaw: jsonb("provider_raw").notNull(),
