@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { parseSimulateDown } from "./ai/fallback.js";
+import { imageGeneratorIds } from "./images/image-models.js";
 import {
   DEFAULT_IMAGE_MODEL_ID,
   DEFAULT_MODEL_ID,
@@ -221,8 +223,8 @@ const envSchema = z
           message: "AI_FALLBACK_SIMULATE no se permite en producción",
         });
       }
-      for (const provider of value.AI_FALLBACK_SIMULATE.split(",").map((p) => p.trim())) {
-        if (provider && !Object.hasOwn(PROVIDERS, provider)) {
+      for (const provider of parseSimulateDown(value.AI_FALLBACK_SIMULATE)) {
+        if (!Object.hasOwn(PROVIDERS, provider)) {
           ctx.addIssue({
             code: "custom",
             path: ["AI_FALLBACK_SIMULATE"],
@@ -238,6 +240,17 @@ const envSchema = z
       validateModelEnv("AI_MODEL_IMAGE", value.AI_MODEL_IMAGE ?? DEFAULT_IMAGE_MODEL_ID, {
         image: true,
       });
+      // El ALT viejo se suma a la lista (imageGeneratorIds): cuenta para el tope.
+      if (
+        value.AI_MODEL_IMAGE_ALT &&
+        imageGeneratorIds(value.AI_MODEL_IMAGE, value.AI_MODEL_IMAGE_ALT).length > 10
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["AI_MODEL_IMAGE_ALT"],
+          message: "AI_MODEL_IMAGE más AI_MODEL_IMAGE_ALT pasan de 10 generadores",
+        });
+      }
       if (value.AI_MODEL_IMAGE_ALT)
         validateModelEnv("AI_MODEL_IMAGE_ALT", value.AI_MODEL_IMAGE_ALT, {
           image: true,

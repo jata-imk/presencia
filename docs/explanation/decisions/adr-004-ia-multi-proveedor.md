@@ -93,3 +93,10 @@ El enum `ai_task_kind` (`chat`, `chat_title`, `history_compaction`, `post_adapt`
   - Gemini, como respaldo, escribió un post de X por arriba de los 280 caracteres. El panel lo marca y ofrece recortar.
 - **Registro.** La migración `0045` agrega `ai_usage_events.fallback_from` (el principal pedido; `null` si respondió él). `provider` y `model` son siempre el que corrió, y `provider_raw.attempts` guarda cada intento fallido con su status y su error.
 - **Para probarlo en dev:** `AI_FALLBACK_SIMULATE=openai` (o `openai,google`) finge caídos esos proveedores con un 503, sin llamarlos. `env.ts` lo rechaza en producción.
+
+**Addendum (F10.7, review de la fase, 2026-10-06) — lo que encontró el `/code-review` del rango completo.**
+
+- **Un error dentro del stream sin `isRetryable`** (un objeto con `type: "server_error"` u `overloaded_error`) no contaba como caída. Ahora, si no trae `isRetryable`, se juzga por su status (408, 409, 429 o 5xx) o por su tipo (`STREAM_OUTAGE`).
+- **`supportedUrls` con respaldos.** Con más de un eslabón, la cadena no deja pasar ninguna URL cruda: el SDK las descarga y manda los bytes. Si no, decidía lo que acepta el principal, y un respaldo que no acepta esa URL respondía 400 justo durante la caída.
+- **El error de un respaldo conserva lo que pasó antes**, igual que en la cadena de imagen.
+- **Deuda anotada:** la cadena de texto y la de imagen comparten reglas, errores y helpers (`ai/fallback.ts`), pero cada una tiene su propio loop. La de texto fija el modelo a mitad del turno y lee el stream; la de imagen tiene presupuesto total. Unirlos en un loop genérico se dejó para cuando haya un tercer consumidor (video). Mientras tanto, un cambio de regla va en `isFallbackError` y aplica a los dos.

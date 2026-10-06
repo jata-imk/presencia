@@ -76,7 +76,7 @@ export class AiUsageService {
           // respaldo, y solo importan cuando se investiga uno.
           providerRaw:
             modelo.attempts && modelo.attempts.length > 0
-              ? { ...(registro.providerRaw as object), attempts: modelo.attempts }
+              ? withAttempts(registro.providerRaw, modelo.attempts)
               : registro.providerRaw,
         }),
       );
@@ -84,4 +84,11 @@ export class AiUsageService {
       console.error(`[ai] No se pudo registrar el usage de ${task} para ${userId}:`, error);
     }
   }
+}
+
+/** Los intentos fallidos junto al crudo, sin aplanar un crudo que no es objeto. */
+function withAttempts(raw: unknown, attempts: NonNullable<RegistroDeUso["modelo"]["attempts"]>) {
+  return typeof raw === "object" && raw !== null && !Array.isArray(raw)
+    ? { ...raw, attempts }
+    : { raw, attempts };
 }

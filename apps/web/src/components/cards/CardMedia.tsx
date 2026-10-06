@@ -278,7 +278,12 @@ function OtherGeneratorButton({
       </Menu.Trigger>
       <Menu.Content className={`${MENU_CONTENT_CLASS} w-52`}>
         {others.map((generator) => (
-          <Menu.Item key={generator} className={MENU_ITEM_CLASS} onClick={() => onPick(generator)}>
+          <Menu.Item
+            key={generator}
+            className={MENU_ITEM_CLASS}
+            disabled={disabled}
+            onClick={() => onPick(generator)}
+          >
             <Shuffle size={14} aria-hidden />
             Generador {generator}
           </Menu.Item>
@@ -759,6 +764,7 @@ export function ImageActionStrip({
                 <Menu.Item
                   key={generator}
                   className={MENU_ITEM_CLASS}
+                  disabled={busy}
                   onClick={() => regenerate(generator)}
                 >
                   <Shuffle size={14} aria-hidden />

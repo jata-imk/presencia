@@ -113,6 +113,14 @@ describe("isFallbackError", () => {
     expect(isFallbackError({ message: "server_error", isRetryable: true })).toBe(true);
     expect(isFallbackError({ message: "invalid", isRetryable: false })).toBe(false);
   });
+
+  it("un error de stream sin isRetryable se juzga por su status o su tipo", () => {
+    expect(isFallbackError({ message: "x", type: "server_error" })).toBe(true);
+    expect(isFallbackError({ message: "x", code: "overloaded_error" })).toBe(true);
+    expect(isFallbackError({ message: "x", statusCode: 503 })).toBe(true);
+    expect(isFallbackError({ message: "x", statusCode: 400, type: "server_error" })).toBe(false);
+    expect(isFallbackError({ message: "x", type: "invalid_request_error" })).toBe(false);
+  });
 });
 
 describe("createFallbackChain", () => {
@@ -161,6 +169,35 @@ describe("createFallbackChain", () => {
     await expect(generateText({ model: chain.model, prompt: "p" })).rejects.toThrow(/HTTP 400/);
     expect(respaldo.calls()).toBe(0);
     expect(principal.calls()).toBe(1);
+  });
+
+  it("si el respaldo falla con un error que no es caída, el error dice que el principal ya había caído", async () => {
+    const chain = createFallbackChain(
+      [
+        link("openai:gpt-6-luna", { steps: [fails(apiError(503))] }),
+        link("google:gemini-3.8-flash", { steps: [fails(apiError(400))] }),
+      ],
+      FAST,
+    );
+    const error: unknown = await generateText({ model: chain.model, prompt: "p" }).catch(
+      (e: unknown) => e,
+    );
+    expect((error as Error).message).toContain(
+      "google:gemini-3.8-flash falló tras caer el principal (openai:gpt-6-luna: 503",
+    );
+  });
+
+  it("con respaldos ninguna URL viaja cruda; con un solo modelo, las suyas", () => {
+    const solo = createFallbackChain([link("openai:gpt-6-luna", { steps: [ok("x")] })], FAST);
+    const varios = createFallbackChain(
+      [
+        link("openai:gpt-6-luna", { steps: [ok("x")] }),
+        link("google:gemini-3.8-flash", { steps: [ok("x")] }),
+      ],
+      FAST,
+    );
+    expect(varios.model.supportedUrls).toEqual({});
+    expect(solo.model.supportedUrls).not.toBeUndefined();
   });
 
   it("un 401 tampoco: una key mal puesta se arregla, no se esconde", async () => {

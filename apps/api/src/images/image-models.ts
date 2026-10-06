@@ -89,10 +89,13 @@ export function imageCallOptions(
  */
 export function imageGeneratorIds(chain: string | undefined, legacyAlternate: string | undefined) {
   const ids = parseModelChain(chain ?? DEFAULT_IMAGE_MODEL_ID).map(({ id }) => id);
-  if (legacyAlternate && !ids.includes(legacyAlternate)) {
+  if (legacyAlternate && ids[0] !== legacyAlternate && ids[1] !== legacyAlternate) {
     console.warn(
-      `[images] AI_MODEL_IMAGE_ALT está obsoleta (F10.7): "${legacyAlternate}" entró como segundo de AI_MODEL_IMAGE. Muévelo a esa lista.`,
+      `[images] AI_MODEL_IMAGE_ALT está obsoleta (F10.7): "${legacyAlternate}" quedó como segundo de AI_MODEL_IMAGE. Muévelo a esa lista.`,
     );
+    // Si ya estaba más abajo, se mueve: un "alternate" viejo es el 2.
+    const at = ids.indexOf(legacyAlternate);
+    if (at !== -1) ids.splice(at, 1);
     ids.splice(1, 0, legacyAlternate);
   }
   return ids;

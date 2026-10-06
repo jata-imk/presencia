@@ -109,6 +109,8 @@ export function simulatedOutage(provider: string): APICallError {
 }
 
 const QUOTA_BODY = /insufficient_quota|billing|credit balance|quota exceeded/i;
+/** Tipos de error de stream que son caída, cuando el proveedor no dice si se reintenta. */
+const STREAM_OUTAGE = /server_error|internal|overloaded|unavailable|rate_limit|timeout/i;
 const NETWORK_CODES = new Set([
   "ECONNRESET",
   "ECONNREFUSED",
@@ -143,9 +145,15 @@ export function isFallbackError(error: unknown): boolean {
     if (error.isRetryable) return true;
     return QUOTA_BODY.test(error.responseBody ?? error.message);
   }
-  // Error de un stream (ProviderStreamError): objeto plano con su propio isRetryable.
-  if (typeof error === "object" && error !== null && "isRetryable" in error) {
-    return (error as { isRetryable?: unknown }).isRetryable === true;
+  // Error de un stream (ProviderStreamError): objeto plano. Manda su
+  // isRetryable si lo trae; si no, su status o su tipo: un proveedor que
+  // responde 200 y manda "server_error" adentro está caído igual.
+  if (typeof error === "object" && error !== null && !(error instanceof Error)) {
+    const streamError = error as { isRetryable?: unknown; type?: unknown; code?: unknown };
+    if (typeof streamError.isRetryable === "boolean") return streamError.isRetryable;
+    if (status !== null) return status === 408 || status === 409 || status === 429 || status >= 500;
+    const text = (value: unknown) => (typeof value === "string" ? value : "");
+    return STREAM_OUTAGE.test(`${text(streamError.type)} ${text(streamError.code)}`);
   }
   const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
   return typeof code === "string" && NETWORK_CODES.has(code);
@@ -283,7 +291,16 @@ export function createFallbackChain(
           const cause = timedOutWith(guard.timedOut(), error) ? guard.timeout : error;
           // Si ya está fijo, el loop no pasa a otro eslabón: tiene su reintento
           // y luego la cadena se rinde, sin mezclar dos voces en un turno.
-          if (!isFallbackError(cause)) throw cause;
+          if (!isFallbackError(cause)) {
+            // Con lo que pasó antes: sin eso, el log diría que falló el
+            // principal cuando el que falló fue el respaldo (igual que la
+            // cadena de imagen).
+            if (attempts.length === 0) throw cause;
+            throw new Error(
+              `${link.entry.id} falló tras caer el principal (${attempts.map((a) => `${a.id}: ${String(a.status ?? "sin status")}`).join(", ")}): ${describeError(error)}`,
+              { cause: error },
+            );
+          }
           attempts.push({
             id: link.entry.id,
             status: statusOf(cause),
@@ -307,7 +324,10 @@ export function createFallbackChain(
     get modelId() {
       return (links.find((link) => link.entry === ran) ?? principal).model.modelId;
     },
-    supportedUrls: principal.model.supportedUrls,
+    // Con respaldos, ninguna URL viaja cruda: el SDK las descarga y manda los
+    // bytes. Si no, decidiría por lo que acepta el principal, y un respaldo
+    // que no acepta esa URL respondería 400 justo durante la caída.
+    supportedUrls: links.length === 1 ? principal.model.supportedUrls : {},
     doGenerate: (callOptions) =>
       run(
         (link, signal) =>
