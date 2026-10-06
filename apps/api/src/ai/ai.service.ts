@@ -4,18 +4,22 @@ import { env } from "../env.js";
 import {
   createModelResolver,
   MODEL_BY_TASK,
-  parseModelId,
+  parseModelEntry,
   type ModelResolver,
   type ProviderId,
+  type ReasoningLevel,
   type RoutedTaskKind,
 } from "./provider-registry.js";
 
 export interface ResolvedModel {
+  /** Ya trae pegado su esfuerzo de razonamiento, si la entrada lo pedía. */
   model: LanguageModel;
   /** Id completo "proveedor:modelo" que se resolvió — nunca se releé env.AI_MODEL por separado. */
   id: string;
   provider: ProviderId;
   modelName: string;
+  /** El `@esfuerzo` de la entrada del `.env`; sin él, el default del proveedor. */
+  reasoning?: ReasoningLevel;
 }
 
 // Fachada inyectable sobre el registry (ADR-004): el resto de la app pide
@@ -29,12 +33,22 @@ export class AiService {
   // F4.5: devuelve el modelo junto con su identidad ya parseada — así la
   // telemetría (ai_usage_events) nunca puede reportar un proveedor/modelo
   // distinto del que de verdad ejecutó la llamada.
-  resolve(modelId?: string): ResolvedModel {
+  resolve(modelEntry?: string): ResolvedModel {
     // Mismo fallback que usa el resolver por dentro (env.AI_MODEL) — así la
     // identidad reportada nunca puede desalinearse del modelo que corrió.
-    const id = modelId ?? env.AI_MODEL;
-    const { provider, model: modelName } = parseModelId(id);
-    return { model: this.resolver(modelId), id, provider, modelName };
+    const {
+      id,
+      provider,
+      model: modelName,
+      reasoning,
+    } = parseModelEntry(modelEntry ?? env.AI_MODEL);
+    return {
+      model: this.resolver(modelEntry),
+      id,
+      provider,
+      modelName,
+      ...(reasoning ? { reasoning } : {}),
+    };
   }
 
   // Routing por tarea (F4.5, addendum ADR-004): el call site declara su

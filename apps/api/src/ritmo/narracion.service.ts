@@ -4,6 +4,7 @@ import type { RitmoNarracionDto } from "@presencia/shared";
 import { AiService, type ResolvedModel } from "../ai/ai.service.js";
 import { AiUsageService } from "../ai/ai-usage.service.js";
 import { CreditsService } from "../credits/credits.service.js";
+import { chargeUsageOf } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
 import { MetricsEngineService } from "../metrics/metrics-engine.service.js";
 import { fechaLocal } from "../metrics/hora-local.js";
@@ -120,11 +121,7 @@ export class NarracionService {
       // se cobra y se produce el efecto, o ninguna de las dos").
       await this.credits.charge(tx, {
         userId,
-        usage: {
-          inputTokens: respuesta.usage.inputTokens ?? 0,
-          outputTokens: respuesta.usage.outputTokens ?? 0,
-          cachedInputTokens: respuesta.usage.inputTokenDetails.cacheReadTokens ?? null,
-        },
+        usage: chargeUsageOf(respuesta.usage),
         taskKind: TASK_KIND,
         reason: "ritmo_narration",
         referenceType: REFERENCE_TYPE,

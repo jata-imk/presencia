@@ -15,7 +15,7 @@ import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
 import { CardsRepository } from "../cards/cards.repository.js";
 import { buildPublicationCardTools } from "../cards/publication-card.tools.js";
 import { CreditsService } from "../credits/credits.service.js";
-import { getRateCard } from "../credits/rate-card.js";
+import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
 import { FoldersService } from "../folders/folders.service.js";
 import { ChatRepository, type MessageRow } from "./chat.repository.js";
@@ -442,11 +442,7 @@ export class ChatService {
               // que evita que esto sea frecuente, no esto.
               await this.creditsService.charge(tx, {
                 userId,
-                usage: {
-                  inputTokens: usage.inputTokens ?? 0,
-                  outputTokens: usage.outputTokens ?? 0,
-                  cachedInputTokens: usage.inputTokenDetails.cacheReadTokens ?? null,
-                },
+                usage: chargeUsageOf(usage),
                 taskKind: "chat",
                 reason: "chat_message",
                 referenceType: "message",

@@ -5,7 +5,8 @@
 // del founder.
 //
 // Uso: pnpm --filter @presencia/api suite:cultural
-// Modelos: env AI_SUITE_MODELS="google:x,openai:y" o el default de abajo.
+// Modelos: env AI_SUITE_MODELS="google:x,openai:y@high" (la sintaxis del .env,
+// con `@esfuerzo` opcional) o el default de abajo.
 // AI_SUITE_PROMPTS="id1,id2" re-corre solo esos prompts (ids de prompts.ts).
 // AI_SUITE_VOICES="id1,id2" corre cada prompt de cada modelo contra las voces
 // de marca indicadas (ids de voices.ts) en vez del prompt base — DoD de F4
@@ -16,24 +17,32 @@
 // AI_SUITE_DELAY_MS pausa entre llamadas (default 10000 — el free tier de
 // Gemini limita requests por minuto y cada prompt puede usar varios steps).
 
-import { generateText, stepCountIs, tool, type ToolSet } from "ai";
+import { stepCountIs, streamText, tool, type ToolSet } from "ai";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CARD_ARCHETYPE_TOOLS } from "@presencia/shared";
-import { createModelResolver, DEFAULT_MODEL_ID } from "../../src/ai/provider-registry.js";
+import { costOf } from "../../src/ai/model-prices.js";
+import {
+  createModelResolver,
+  DEFAULT_MODEL_ID,
+  parseModelEntry,
+} from "../../src/ai/provider-registry.js";
 import { buildSystemPrompt } from "../../src/chat/system-prompt.js";
 import { culturalPrompts } from "./prompts.js";
 import { CULTURAL_SUITE_VOICES, type VoiceFixture } from "./voices.js";
 import { registrarGasto, splitModelId } from "../gasto-local.js";
 
+// Los candidatos de F10.7 (ADR-004): Terra como referencia de lo que corre
+// hoy, Luna en los dos esfuerzos que se comparan, y los respaldos. Cada
+// entrada usa la misma sintaxis del `.env` (`proveedor:modelo@esfuerzo`).
+// Haiku 4.5 salió: Anthropic puede retirarlo desde el 2026-10-15.
 const DEFAULT_MODELS = [
-  "google:gemini-3.6-flash",
-  "openai:gpt-5.6-terra",
-  "anthropic:claude-haiku-4-5",
-  "deepseek:deepseek-v4-flash",
-  "minimax:MiniMax-M2",
-  "kimi:kimi-latest",
+  "openai:gpt-5.6-terra@medium",
+  "openai:gpt-6-luna@high",
+  "openai:gpt-6-luna@xhigh",
+  "google:gemini-3.8-flash@medium",
+  "anthropic:claude-sonnet-5-5",
 ];
 
 // Mismo cableado que producción: el registry lee keys y base URLs desde la
@@ -68,43 +77,86 @@ interface RunResult {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  /** Parte de `outputTokens` que el modelo gastó pensando (no se ve). */
+  reasoningTokens: number;
+  /** Del envío al primer texto o a la primera card: lo que el creator espera viendo "pensando". */
+  firstVisibleMs: number | null;
+  totalMs: number;
+  /** Dólares (`model-prices.ts`); null si el modelo no tiene precio. */
+  costUsd: number | null;
   error?: string;
 }
 
-async function runPrompt(modelId: string, promptText: string, system: string): Promise<RunResult> {
+// streamText y no generateText: el chat de producción hace streaming, y lo
+// que el creator siente con un esfuerzo alto es cuánto tarda en aparecer
+// algo — eso solo se mide leyendo el stream.
+async function runPrompt(
+  modelEntry: string,
+  promptText: string,
+  system: string,
+): Promise<RunResult> {
+  const startedAt = Date.now();
   try {
-    const result = await generateText({
-      model: resolveModel(modelId),
+    const result = streamText({
+      model: resolveModel(modelEntry),
       system,
       prompt: promptText,
       tools: culturalSuiteTools,
       stopWhen: stepCountIs(3),
     });
+    let firstVisibleMs: number | null = null;
+    for await (const part of result.fullStream) {
+      if (part.type === "error") throw part.error;
+      if (
+        firstVisibleMs === null &&
+        (part.type === "text-delta" || part.type === "tool-input-start")
+      ) {
+        firstVisibleMs = Date.now() - startedAt;
+      }
+    }
+    const [text, finishReason, steps, totalUsage] = await Promise.all([
+      result.text,
+      result.finishReason,
+      result.steps,
+      result.totalUsage,
+    ]);
     // totalUsage y no usage: un turno con tool call son varios pasos, y se
     // pagan todos.
+    const ids = splitModelId(modelEntry);
+    const inputTokens = totalUsage.inputTokens ?? 0;
+    const outputTokens = totalUsage.outputTokens ?? 0;
     await registrarGasto({
       script: "suite-cultural",
-      ...splitModelId(modelId),
+      ...ids,
       task: "chat",
-      inputTokens: result.totalUsage.inputTokens ?? 0,
-      outputTokens: result.totalUsage.outputTokens ?? 0,
+      inputTokens,
+      outputTokens,
     });
     // Los intentos con input inválido no ejecutan la tool pero sí cuentan:
     // miden la disciplina de tool calling del proveedor (ADR-004). Se guarda
     // el input completo (la card generada) para que el veredicto humano
     // pueda juzgar el copy, no solo si la tool se llamó bien.
-    const attempts = result.steps.flatMap((step) => step.toolCalls);
+    const attempts = steps.flatMap((step) => step.toolCalls);
     return {
-      text: result.text,
-      finishReason: result.finishReason,
+      text,
+      finishReason,
       toolAttempts: attempts.map((call) => ({
         toolName: call.toolName,
         valid: call.invalid !== true,
         input: call.input as unknown,
       })),
-      inputTokens: result.usage.inputTokens ?? 0,
-      outputTokens: result.usage.outputTokens ?? 0,
-      totalTokens: result.usage.totalTokens ?? 0,
+      inputTokens,
+      outputTokens,
+      totalTokens: totalUsage.totalTokens ?? 0,
+      reasoningTokens: totalUsage.outputTokenDetails.reasoningTokens ?? 0,
+      firstVisibleMs,
+      totalMs: Date.now() - startedAt,
+      costUsd: costOf({
+        ...ids,
+        inputTokens,
+        outputTokens,
+        cachedInputTokens: totalUsage.inputTokenDetails.cacheReadTokens ?? 0,
+      }),
     };
   } catch (error) {
     return {
@@ -114,6 +166,10 @@ async function runPrompt(modelId: string, promptText: string, system: string): P
       inputTokens: 0,
       outputTokens: 0,
       totalTokens: 0,
+      reasoningTokens: 0,
+      firstVisibleMs: null,
+      totalMs: Date.now() - startedAt,
+      costUsd: null,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -154,10 +210,31 @@ function appendResultLines(lines: string[], result: RunResult, expectsTool: bool
   }
   if (!result.error) {
     lines.push(
-      `- Tokens: input ${result.inputTokens} / output ${result.outputTokens} / total ${result.totalTokens}`,
+      `- Tokens: input ${result.inputTokens} / output ${result.outputTokens} (razonamiento ${result.reasoningTokens}) / total ${result.totalTokens}`,
+      `- Primer token visible: ${formatMs(result.firstVisibleMs)} · total ${formatMs(result.totalMs)} · costo ${formatUsd(result.costUsd)}`,
       "",
     );
   }
+}
+
+interface ModelTotals {
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  /** Corridas sin error: el promedio por turno se divide entre estas. */
+  runs: number;
+  firstVisibleMs: number[];
+  /** null en cuanto una corrida no tiene precio: un total a medias engañaría. */
+  costUsd: number | null;
+}
+
+function formatMs(ms: number | null): string {
+  return ms === null ? "—" : `${(ms / 1000).toFixed(1)} s`;
+}
+
+function formatUsd(usd: number | null): string {
+  return usd === null ? "sin precio" : `$${usd.toFixed(4)}`;
 }
 
 function findRepoRoot(start: string): string {
@@ -176,12 +253,16 @@ async function main(): Promise<void> {
   ).filter(Boolean);
   // Proveedores sin API key se saltan (con aviso) en vez de llenar el
   // reporte de filas de error.
+  // Una entrada mal escrita (nivel o proveedor que no existen) es un error de
+  // quien corre la suite: truena aquí con el motivo, en vez de saltarse el
+  // modelo como si le faltara la key.
+  requested.forEach((entry) => parseModelEntry(entry));
   const models = requested.filter((id) => {
     try {
       resolveModel(id);
       return true;
-    } catch {
-      console.warn(`⚠ ${id}: proveedor sin configurar (falta API key) — saltado`);
+    } catch (error) {
+      console.warn(`⚠ ${id}: ${error instanceof Error ? error.message : String(error)} — saltado`);
       return false;
     }
   });
@@ -250,8 +331,19 @@ async function main(): Promise<void> {
   // Acumulado de tokens por modelo a lo largo de todas las corridas — mide si
   // el diseño de tool (3 tools por arquetipo vs. discriminatedUnion/aplanado)
   // realmente cuesta menos por evitar reintentos de input inválido.
-  const tokensByModel = new Map(
-    models.map((m) => [m, { inputTokens: 0, outputTokens: 0, totalTokens: 0 }]),
+  const tokensByModel = new Map<string, ModelTotals>(
+    models.map((m) => [
+      m,
+      {
+        inputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 0,
+        runs: 0,
+        firstVisibleMs: [],
+        costUsd: 0,
+      },
+    ]),
   );
 
   for (const prompt of prompts) {
@@ -273,10 +365,17 @@ async function main(): Promise<void> {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
 
         const totals = tokensByModel.get(modelId);
-        if (totals) {
+        if (totals && !result.error) {
+          totals.runs += 1;
           totals.inputTokens += result.inputTokens;
           totals.outputTokens += result.outputTokens;
+          totals.reasoningTokens += result.reasoningTokens;
           totals.totalTokens += result.totalTokens;
+          if (result.firstVisibleMs !== null) totals.firstVisibleMs.push(result.firstVisibleMs);
+          totals.costUsd =
+            totals.costUsd === null || result.costUsd === null
+              ? null
+              : totals.costUsd + result.costUsd;
         }
 
         if (voiceFixture) lines.push(`#### Voz: ${voiceFixture.label}`, "");
@@ -290,11 +389,18 @@ async function main(): Promise<void> {
     "",
     `## Consumo de tokens por proveedor (${prompts.length} prompts${voices.length > 0 ? ` × ${voices.length} voces` : ""})`,
     "",
-    "| Modelo | Input | Output | Total |",
-    "| ------ | ----- | ------ | ----- |",
+    "Primer token visible: mediana y peor caso. Costo: promedio por turno, con los precios de `apps/api/src/ai/model-prices.ts`.",
+    "",
+    "| Modelo | Input | Output | Razonamiento | % razonamiento | Primer token (mediana / peor) | Costo por turno |",
+    "| ------ | ----- | ------ | ------------ | -------------- | ----------------------------- | --------------- |",
     ...models.map((m) => {
       const t = tokensByModel.get(m)!;
-      return `| \`${m}\` | ${t.inputTokens} | ${t.outputTokens} | ${t.totalTokens} |`;
+      const sorted = [...t.firstVisibleMs].sort((a, b) => a - b);
+      const median = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)]! : null;
+      const worst = sorted.length > 0 ? sorted[sorted.length - 1]! : null;
+      const share = t.outputTokens > 0 ? Math.round((t.reasoningTokens / t.outputTokens) * 100) : 0;
+      const perTurn = t.costUsd === null || t.runs === 0 ? null : t.costUsd / t.runs;
+      return `| \`${m}\` | ${t.inputTokens} | ${t.outputTokens} | ${t.reasoningTokens} | ${share}% | ${formatMs(median)} / ${formatMs(worst)} | ${formatUsd(perTurn)} |`;
     }),
     "",
     "## Veredicto (juicio humano)",

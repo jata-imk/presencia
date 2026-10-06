@@ -3,7 +3,7 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI, google } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createProviderRegistry, type ImageModel, type LanguageModel } from "ai";
+import { createProviderRegistry, wrapLanguageModel, type ImageModel, type LanguageModel } from "ai";
 
 // Capa de proveedor de ADR-004: los modelos se nombran "proveedor:modelo"
 // (ej. "google:gemini-3.5-flash") y se resuelven contra un registry. Hoy el
@@ -177,6 +177,65 @@ export type ModelResolver = (modelId?: string) => LanguageModel;
 export type ResolvedImageModel = Exclude<ImageModel, string>;
 export type ImageModelResolver = (modelId: string) => ResolvedImageModel;
 
+/**
+ * El esfuerzo de razonamiento que se puede pedir con `@` (F10.7): el vocabulario
+ * de la opción `reasoning` del AI SDK. Cada proveedor lo traduce a lo suyo
+ * (OpenAI `reasoningEffort`, Gemini `thinkingLevel`, Anthropic `effort`), y si
+ * un modelo no tiene ese nivel, el SDK usa el más cercano y deja un aviso en el
+ * log — por eso no hay tabla propia de niveles por modelo: sería copiar al SDK.
+ * Sin `max` a propósito: el SDK no lo expone, y no lo queremos (costo y
+ * latencia para el creator, que paga la salida).
+ */
+export const REASONING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
+export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
+
+/**
+ * Una entrada de modelo como se escribe en el `.env`: `proveedor:modelo` con un
+ * esfuerzo opcional, `openai:gpt-6-luna@high`. Sin `@`, el proveedor usa su
+ * default. Se separa con `@` y no con otro `:` porque el primer `:` ya es del
+ * id y OpenRouter usa `:` dentro del nombre (`modelo:free`).
+ */
+export interface ModelEntry {
+  /** "proveedor:modelo", sin el esfuerzo: es lo que va a `ai_usage_events`. */
+  id: string;
+  provider: ProviderId;
+  model: string;
+  reasoning?: ReasoningLevel;
+}
+
+export function parseModelEntry(entry: string): ModelEntry {
+  const at = entry.lastIndexOf("@");
+  const id = at === -1 ? entry : entry.slice(0, at);
+  const level = at === -1 ? undefined : entry.slice(at + 1);
+  if (level !== undefined && !(REASONING_LEVELS as readonly string[]).includes(level)) {
+    throw new Error(
+      `Model "${entry}" has an unknown reasoning level "${level}". Use one of: ${REASONING_LEVELS.join(", ")}.`,
+    );
+  }
+  const { provider, model } = parseModelId(id);
+  return { id, provider, model, ...(level ? { reasoning: level as ReasoningLevel } : {}) };
+}
+
+/**
+ * Pega el esfuerzo al modelo resuelto, para que los call sites no lo tengan
+ * que repetir y cada modelo de una cadena de respaldo lleve el suyo. Solo
+ * llena el hueco: si una llamada pide su propio `reasoning`, gana la llamada.
+ */
+export function withReasoning(model: LanguageModel, reasoning: ReasoningLevel): LanguageModel {
+  return wrapLanguageModel({
+    model: model as Exclude<LanguageModel, string>,
+    middleware: {
+      specificationVersion: "v4",
+      transformParams: ({ params }) =>
+        Promise.resolve(
+          params.reasoning === undefined || params.reasoning === "provider-default"
+            ? { ...params, reasoning }
+            : params,
+        ),
+    },
+  });
+}
+
 /** Valida formato "proveedor:modelo" contra la tabla; error claro si no cumple. */
 export function parseModelId(id: string): { provider: ProviderId; model: string } {
   const separatorIndex = id.indexOf(":");
@@ -221,12 +280,15 @@ function buildRegistry(source: EnvSource) {
 }
 
 // Función pura (recibe el entorno como dato) para poder testearla sin env real.
+// Acepta la entrada completa del `.env` (`proveedor:modelo@esfuerzo`): el
+// esfuerzo viaja pegado al modelo que devuelve.
 export function createModelResolver(source: EnvSource, defaultModelId: string): ModelResolver {
   const { registry, assertConfigured } = buildRegistry(source);
-  return (modelId?: string): LanguageModel => {
-    const id = modelId ?? defaultModelId;
+  return (modelEntry?: string): LanguageModel => {
+    const { id, reasoning } = parseModelEntry(modelEntry ?? defaultModelId);
     assertConfigured(id);
-    return registry.languageModel(id as `${string}:${string}`);
+    const model = registry.languageModel(id as `${string}:${string}`);
+    return reasoning ? withReasoning(model, reasoning) : model;
   };
 }
 
