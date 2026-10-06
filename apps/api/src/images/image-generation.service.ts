@@ -486,7 +486,6 @@ export class ImageGenerationService {
       row.slideId && slidesIn(content)
         ? carouselAspect(content, card.network)
         : (row.aspectRatio as ImageAspectRatio);
-    const modelo = { provider: provider.provider, modelName: provider.modelName };
     const task = row.kind === "edit" ? "image_edit" : "image_generate";
 
     // Una edición manda la imagen de partida. Sin ella no hay edición posible,
@@ -518,6 +517,18 @@ export class ImageGenerationService {
       return { status: "failed" };
     }
 
+    // F10.7: el que dibujó de verdad. Con la cadena de respaldo puede no ser
+    // el pedido, y la telemetría y la fila tienen que decir quién fue.
+    const modelo = result.ran
+      ? {
+          provider: result.ran.provider,
+          modelName: result.ran.modelName,
+          fallbackFrom: result.ran.fallbackFrom,
+          attempts: result.ran.attempts,
+        }
+      : { provider: provider.provider, modelName: provider.modelName };
+    const ran = { provider: modelo.provider, model: modelo.modelName };
+
     if (result.kind === "blocked") {
       // Se registra aunque no haya imagen: Gemini cobra la entrada igual.
       await this.aiUsage.registrar({
@@ -535,7 +546,7 @@ export class ImageGenerationService {
         imagesCount: 0,
         providerRaw: result.providerRaw,
       });
-      await this.settle(userId, row.id, { status: "blocked" });
+      await this.settle(userId, row.id, { status: "blocked", ran });
       return { status: "blocked" };
     }
 
@@ -577,7 +588,7 @@ export class ImageGenerationService {
         // insert del asset, el mismo orden en las dos variantes.
         const current = await this.cards.isImageJobCurrent(tx, card.id, row.batchId);
         await this.assets.record(tx, stored);
-        await this.generations.settle(tx, row.id, { status: "succeeded", assetId: stored.id });
+        await this.generations.settle(tx, row.id, { status: "succeeded", assetId: stored.id, ran });
         if (current) {
           await this.credits.spend(tx, {
             userId,
@@ -606,7 +617,11 @@ export class ImageGenerationService {
   private async settle(
     userId: string,
     id: string,
-    result: { status: "failed" | "blocked"; errorMessage?: string },
+    result: {
+      status: "failed" | "blocked";
+      errorMessage?: string;
+      ran?: { provider: string; model: string };
+    },
   ): Promise<void> {
     try {
       await this.dbService.runWithTenant(userId, (tx) => this.generations.settle(tx, id, result));

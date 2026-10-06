@@ -91,13 +91,18 @@ describe("env: esfuerzo de razonamiento en los modelos", () => {
     ).rejects.toThrow(/AI_MODEL_TRENDS solo acepta modelos de .{0,2}google/);
   });
 
-  it("las de imagen siguen siendo de un solo modelo", async () => {
+  it("AI_MODEL_IMAGE acepta cadena; el generador alternativo, uno solo", async () => {
+    const { env } = await loadEnv({
+      IMAGE_PROVIDER: "real",
+      AI_MODEL_IMAGE: "google:gemini-3.1-flash-image,openai:gpt-image-2",
+    });
+    expect(env.AI_MODEL_IMAGE).toBe("google:gemini-3.1-flash-image,openai:gpt-image-2");
     await expect(
       loadEnv({
         IMAGE_PROVIDER: "real",
-        AI_MODEL_IMAGE: "google:gemini-3.1-flash-image,openai:gpt-image-2",
+        AI_MODEL_IMAGE_ALT: "google:gemini-3.1-flash-image,openai:gpt-image-2",
       }),
-    ).rejects.toThrow(/AI_MODEL_IMAGE acepta un solo modelo/);
+    ).rejects.toThrow(/AI_MODEL_IMAGE_ALT acepta un solo modelo/);
   });
 
   it("el simulador de caídas no se permite en producción ni con un proveedor inventado", async () => {

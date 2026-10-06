@@ -26,6 +26,8 @@ export class ImageGenerationsRepository {
       status: "succeeded" | "failed" | "blocked";
       assetId?: string;
       errorMessage?: string;
+      /** F10.7: el generador que de verdad corrió, si un respaldo reemplazó al pedido. */
+      ran?: { provider: string; model: string };
     },
   ): Promise<void> {
     await tx
@@ -35,6 +37,7 @@ export class ImageGenerationsRepository {
         assetId: result.assetId ?? null,
         errorMessage: result.errorMessage ?? null,
         settledAt: new Date(),
+        ...(result.ran ? { provider: result.ran.provider, model: result.ran.model } : {}),
       })
       .where(eq(imageGenerations.id, id));
   }

@@ -1,5 +1,6 @@
 import type { ImageAspectRatio } from "@presencia/shared";
 import type { ImageModelUsage } from "ai";
+import type { FallbackAttempt } from "../ai/fallback.js";
 
 // El contrato del generador de imágenes (F10, ADR-025). Mismo patrón que
 // PublishingProvider (ADR-009): la app habla con esta interfaz, y qué
@@ -23,9 +24,23 @@ export interface ImageRequest {
   aspectRatio: ImageAspectRatio;
   /** Editar en vez de generar: la imagen de partida, y el prompt es la instrucción. */
   reference?: ReferenceImage;
+  /** El plazo por intento de la cadena de respaldo (F10.7). */
+  abortSignal?: AbortSignal;
 }
 
-export type ImageResult =
+/**
+ * Qué generador dibujó de verdad (F10.7). Lo pone la cadena de respaldo; un
+ * generador suelto no lo trae y su identidad es la del provider.
+ */
+export interface ImageRun {
+  provider: string;
+  modelName: string;
+  /** El principal pedido, si respondió un respaldo; null si respondió el principal. */
+  fallbackFrom: string | null;
+  attempts: readonly FallbackAttempt[];
+}
+
+export type ImageResult = (
   | {
       kind: "image";
       data: Uint8Array;
@@ -47,7 +62,8 @@ export type ImageResult =
        */
       usage?: ImageModelUsage;
       providerRaw: unknown;
-    };
+    }
+) & { ran?: ImageRun };
 
 export interface ImageProvider {
   /** Identidad para la telemetría: la misma forma que `ResolvedModel`. */
