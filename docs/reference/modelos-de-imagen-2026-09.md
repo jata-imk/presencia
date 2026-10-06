@@ -59,3 +59,18 @@ Para el bake-off conviene el **batch** de Google cuando se pueda ($0.034 en vez 
 - [MAI-Image-2.6](https://microsoft.ai/news/pushing-the-quality-cost-frontier-with-mai-image-2-6/) · [MAI-Image-2.6 en OpenRouter](https://openrouter.ai/microsoft/mai-image-2.6)
 - [Nano Banana 2 Lite vs NB2](https://blog.segmind.com/nano-banana-2-vs-nano-banana-2-lite-when-is-lite-enough/)
 - [AI SDK · Black Forest Labs](https://ai-sdk.dev/providers/ai-sdk-providers/black-forest-labs) · [Grok Imagine en Vercel AI Gateway](https://vercel.com/changelog/grok-imagine-image-2-0-preview-now-available-on-vercel-ai-gateway)
+
+## Actualización 2026-10-06 (F10.7)
+
+Lo que cambió o se verificó al implementar los proveedores, con la spec de máquina en mano:
+
+- **Grok Imagine 2.0 (xAI)** entra como proveedor `xai` (`@ai-sdk/xai`). Resolución `1k`/`2k`. **No tiene 4:5**: se le pide 3:4 y `image-fit` recorta ~6% de arriba y de abajo (`apps/api/src/images/image-models.ts`). xAI lo publica a $0.04; Artificial Analysis lo mide en $0.06 a 1K. El bake-off dice cuál es.
+- **Muse y MAI-Image-2.6 por OpenRouter** entran como proveedor `openrouter`, con adapter propio (`apps/api/src/ai/openrouter-images.ts`). `@openrouter/ai-sdk-provider` no tiene modelos de imagen, y su API es `POST /api/v1/images`, no `/images/generations`.
+  - Ids: `meta/muse-image` y `microsoft/mai-image-2.6`.
+  - MAI tampoco tiene 4:5 (sus proporciones son 1:1, 4:3, 3:4, 16:9, 9:16, 3:2 y 2:3), y genera una imagen por llamada.
+  - Muse no publica parámetros: lo que entregue se recorta.
+  - La respuesta trae `usage.cost` en dólares, que queda en el crudo de `ai_usage_events`.
+- **Nuevos en el ranking desde el 2026-09-30:** `gpt-image-2.5-flare` y `-sunburst` encabezan generación y edición en Artificial Analysis, medidos en su nivel máximo (~$0.21). `MAI-Image-2.6-Flash` ($0.0195, Elo 1106) es la opción barata de Microsoft. Ninguno entra a este bake-off, por decisión de Jose.
+- **Visto en la prueba del script:** Nano Banana 2, el de hoy, dibujó "NUTELLA" en un carrito de marquesitas aunque el prompt compuesto pide "sin logotipos". Es el mismo riesgo que descalificó a Flash Lite en F10. El bake-off lo mide en los cinco con un prompt dedicado (`tiendita-sin-logos`).
+
+Fuentes: [OpenRouter OpenAPI](https://openrouter.ai/openapi.json) (`createImages`) · [OpenRouter catálogo de imágenes](https://openrouter.ai/api/v1/images/models) · [AI SDK xAI](https://ai-sdk.dev/providers/ai-sdk-providers/xai) · [Artificial Analysis](https://artificialanalysis.ai/image/leaderboard/text-to-image).

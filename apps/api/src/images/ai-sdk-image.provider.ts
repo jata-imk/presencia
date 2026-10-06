@@ -6,40 +6,19 @@ import {
   type ImageModelUsage,
 } from "ai";
 import { parseModelId, type ProviderId, type ResolvedImageModel } from "../ai/provider-registry.js";
-import type {
-  ImageAspectRatio,
-  ImageProvider,
-  ImageRequest,
-  ImageResult,
-} from "./image-provider.js";
+import { imageCallOptions } from "./image-models.js";
+import type { ImageProvider, ImageRequest, ImageResult } from "./image-provider.js";
 
 // El adapter real (ADR-025): cualquier modelo de imagen que el AI SDK sepa
 // resolver. Lo que cambia entre proveedores está acá y en ningún otro lado.
 
-// OpenAI no acepta proporciones, solo tres tamaños fijos. 4:5 no existe: el
-// más cercano es 2:3 (1024x1536), más alto que lo que el feed muestra, y el
-// recorte a 4:5 lo hace quien guarda la imagen (F10 PR3), no el adapter — un
-// adapter que recorta decide por el producto qué parte de la imagen sobra.
-const OPENAI_SIZES: Record<ImageAspectRatio, `${number}x${number}`> = {
-  "1:1": "1024x1024",
-  "4:5": "1024x1536",
-  "16:9": "1536x1024",
-};
-
-// gpt-image-2 acepta tamaños libres (múltiplos de 16, proporción entre 1:3 y
-// 3:1): la proporción pedida sale exacta y no hay nada que recortar después.
-const EXACT_OPENAI_SIZES: Record<ImageAspectRatio, `${number}x${number}`> = {
-  "1:1": "1024x1024",
-  "4:5": "1024x1280",
-  "16:9": "1536x864",
-};
-
-function openaiSize(modelName: string, aspect: ImageAspectRatio): `${number}x${number}` {
-  return modelName.startsWith("gpt-image-2") ? EXACT_OPENAI_SIZES[aspect] : OPENAI_SIZES[aspect];
-}
-
-// OpenAI rechaza con un 400 que lo dice en el cuerpo.
-const OPENAI_BLOCKED = /moderation_blocked|safety system|safety_violations/i;
+// Un generador que se niega a dibujar responde 400 o 403 con el motivo en el
+// cuerpo: OpenAI `moderation_blocked`; xAI y OpenRouter no lo documentan en
+// su spec, así que se reconoce por el texto. Solo palabras de moderación: un
+// "not allowed" o un 403 de permisos es un problema de configuración, y
+// mostrarlo como "pide otra cosa" lo escondería. Lo que no se reconozca queda
+// como error — que tampoco dispara respaldo (es 4xx), y sí deja rastro.
+const BLOCKED_BODY = /moderation|safety system|safety_violations|flagged|content[ _-]?policy/i;
 
 /** Lo que devolvió el modelo antes de que `generateImage` decidiera si había imagen. */
 interface Crudo {
@@ -113,14 +92,7 @@ export class AiSdkImageProvider implements ImageProvider {
       const result = await generateImage({
         model,
         prompt,
-        ...(this.provider === "openai"
-          ? {
-              size: openaiSize(this.modelName, request.aspectRatio),
-              // Explícito: el default de gpt-image es "auto", que en la
-              // práctica elige "high" y cuesta 4x lo que se tarifó (ADR-025).
-              providerOptions: { openai: { quality: "medium" } },
-            }
-          : { aspectRatio: request.aspectRatio }),
+        ...imageCallOptions(this.provider, this.modelName, request.aspectRatio),
       });
 
       return {
@@ -130,7 +102,10 @@ export class AiSdkImageProvider implements ImageProvider {
         usage: result.usage,
         providerRaw: {
           usage: result.usage,
-          providerMetadata: result.providerMetadata,
+          // El del modelo, no el de `generateImage`: al juntar llamadas, el SDK
+          // solo conserva `images` de cada proveedor, y se perdería, p. ej.,
+          // el costo en dólares que reporta OpenRouter.
+          providerMetadata: crudo.providerMetadata ?? result.providerMetadata,
           warnings: result.warnings,
         },
       };
@@ -144,8 +119,8 @@ export class AiSdkImageProvider implements ImageProvider {
       }
       if (
         APICallError.isInstance(error) &&
-        error.statusCode === 400 &&
-        OPENAI_BLOCKED.test(error.responseBody ?? error.message)
+        (error.statusCode === 400 || error.statusCode === 403) &&
+        BLOCKED_BODY.test(error.responseBody ?? error.message)
       ) {
         return {
           kind: "blocked",

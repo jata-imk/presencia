@@ -141,3 +141,28 @@ En el recorrido de F10.6, cada slide mostraba "Versiones · 18": la tira traía 
 ## Addendum (2026-10-05, F10.7 PR1) — una respuesta sin imagen no se repite
 
 Desde `ai` 7.0.1xx, `generateImage` vuelve a llamar al modelo cuando responde sin imagen, salvo que el proveedor la marque `isRetryable: false` (Google lo hace solo con su filtro de contenido). Eso habría cambiado dos reglas de este ADR sin decidirlo: un bloqueo que Gemini no marca como filtro se cobraría hasta tres veces, y la respuesta vacía sin señal —que es del usuario reintentar— la repetiría el adapter. El middleware que ya guardaba el usage marca toda respuesta sin imagen como no reintentable. Los errores de API (red, 5xx) siguen con los reintentos del SDK, como antes; F10.7 los reemplaza por la cadena de respaldo.
+
+## Addendum (2026-10-06, F10.7 PR4) — dos proveedores nuevos y el bake-off
+
+- **xAI** (`XAI_API_KEY`) y **OpenRouter** (`OPENROUTER_API_KEY`) entran a `PROVIDERS` (ADR-004).
+  - xAI usa el provider oficial del AI SDK.
+  - OpenRouter usa un `ImageModelV4` propio (`ai/openrouter-images.ts`), armado contra su openapi.
+  - OpenRouter es solo de imágenes: en una variable de texto, `env.ts` truena.
+- **Cómo se pide cada imagen vive en un solo lugar:** `images/image-models.ts` decide la proporción, el tamaño y la resolución de cada generador.
+  - **Resolución:** 1K en todos, cada proveedor a su manera. Google recibe `imageConfig: { imageSize: "1K" }`, que el SDK junta con la proporción.
+  - **4:5:** Grok y MAI no la tienen, así que se les pide 3:4 (la más cercana que es más alta) y el recorte de `image-fit` quita ~6% de arriba y de abajo.
+  - Pedir 1:1 habría recortado 20% de los lados. El encuadre seguro deja fondo en los bordes para eso.
+- **Bloqueo.** Un 400 o 403 cuyo texto habla de moderación cuenta como bloqueo en cualquier proveedor (antes, solo el 400 de OpenAI). xAI y OpenRouter no documentan un código propio.
+  - Solo palabras de moderación (`moderation`, `flagged`, `content policy`, `safety system`). Un "not allowed" o un 403 de permisos es configuración, y mostrarlo como "pide otra cosa" lo escondería: lo encontró el `/code-review`.
+  - **Grok y MAI van por familia**, no por versión: un alias o la versión siguiente heredan el 3:4 en vez de pedir 4:5 y fallar todas las imágenes del feed.
+  - Lo que no se reconozca queda como error. Tampoco dispara respaldo, porque es un 4xx: solo cambia el texto de la card.
+- **El crudo que se guarda es el del modelo**, no el de `generateImage`. Al juntar llamadas, el SDK solo conserva `images` de cada proveedor y se perdía el costo en dólares que reporta OpenRouter.
+- **El bake-off de F10.7** (`scripts/image-bakeoff/run.ts`):
+  - **Modelos:** Grok Imagine 2.0, Muse, MAI-Image-2.6, Nano Banana 2 (control) y gpt-image-2 (el alternativo de hoy).
+  - **Prompts:** los 8 de F10 más 2 ediciones, más "tiendita sin logotipos" y "pizarrón en español". Las de texto van sin componer, porque el prompt compuesto siempre pide "sin texto".
+  - **Prompt compuesto real.** Usa `composeImagePrompt`/`composeEditPrompt`, no el estilo fijo de F10: así mide lo que de verdad le llega al generador.
+  - **Dos variantes por prompt**, como la card.
+  - **Imágenes recortadas** a la proporción de la card, como las vería el creator.
+  - **Costo por imagen:** el reportado por el proveedor si lo hay, si no `model-prices.ts`.
+  - **Galería a ciegas** (`out/<corrida>/index.html`): por prompt, los modelos en columnas barajadas con calificación 1–5 y nota; "Revelar modelos" y "Copiar resultados" en JSON.
+- La decisión sale del bake-off y va en el PR5 de F10.7. Panorama actualizado: `docs/reference/modelos-de-imagen-2026-09.md`.
