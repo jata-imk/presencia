@@ -383,101 +383,109 @@ export class ChatService {
       abortSignal: abortController.signal,
     });
 
-    result.pipeUIMessageStreamToResponse(res, {
-      originalMessages: history,
-      onError: (error) => {
-        console.error("Error en el stream del chat:", error);
-        return "Algo salió mal generando la respuesta. Inténtalo de nuevo.";
-      },
-      onEnd: async ({ responseMessage, isAborted, finishReason }) => {
-        if (isAborted) return;
+    // Desde ai 7.0.1xx devuelve una promesa que se cumple al cerrar el stream.
+    // No se espera: los headers ya salieron, así que un rechazo no tiene a
+    // quién responderle (el filtro de Nest intentaría mandar un 500 encima).
+    // Solo se registra; el usuario ya recibió el error por `onError`.
+    void result
+      .pipeUIMessageStreamToResponse(res, {
+        originalMessages: history,
+        onError: (error) => {
+          console.error("Error en el stream del chat:", error);
+          return "Algo salió mal generando la respuesta. Inténtalo de nuevo.";
+        },
+        onEnd: async ({ responseMessage, isAborted, finishReason }) => {
+          if (isAborted) return;
 
-        // Se lee una sola vez, antes de las dos transacciones de abajo: si
-        // esto falla, ni el mensaje ni el cobro se persisten — mismo hueco
-        // conocido que ya existía para ai_usage_events (turno abortado no
-        // llega aquí), extendido a créditos porque ahora comparten
-        // transacción con el mensaje. En un turno abortado tampoco se llega
-        // aquí — los tokens de esa llamada quedan sin medir y sin cobrar
-        // (hueco conocido, ver PR feat/f45-usage-telemetry).
-        let usage: Awaited<typeof result.totalUsage>;
-        let steps: Awaited<typeof result.steps>;
-        try {
-          [usage, steps] = await Promise.all([result.totalUsage, result.steps]);
-        } catch (error) {
-          console.error(
-            `[chat] No se pudo leer el usage del turno de chat ${chatId}; ni el mensaje ni el cobro se persisten:`,
-            error,
-          );
-          return;
-        }
+          // Se lee una sola vez, antes de las dos transacciones de abajo: si
+          // esto falla, ni el mensaje ni el cobro se persisten — mismo hueco
+          // conocido que ya existía para ai_usage_events (turno abortado no
+          // llega aquí), extendido a créditos porque ahora comparten
+          // transacción con el mensaje. En un turno abortado tampoco se llega
+          // aquí — los tokens de esa llamada quedan sin medir y sin cobrar
+          // (hueco conocido, ver PR feat/f45-usage-telemetry).
+          let usage: Awaited<typeof result.totalUsage>;
+          let steps: Awaited<typeof result.steps>;
+          try {
+            [usage, steps] = await Promise.all([result.totalUsage, result.steps]);
+          } catch (error) {
+            console.error(
+              `[chat] No se pudo leer el usage del turno de chat ${chatId}; ni el mensaje ni el cobro se persisten:`,
+              error,
+            );
+            return;
+          }
 
-        if (steps.length >= MAX_AGENT_STEPS && finishReason === "tool-calls") {
-          console.warn(
-            `[chat] Turno truncado por el límite de ${MAX_AGENT_STEPS} steps ` +
-              `(chat ${chatId}): el modelo aún quería llamar otra tool.`,
-          );
-        }
+          if (steps.length >= MAX_AGENT_STEPS && finishReason === "tool-calls") {
+            console.warn(
+              `[chat] Turno truncado por el límite de ${MAX_AGENT_STEPS} steps ` +
+                `(chat ${chatId}): el modelo aún quería llamar otra tool.`,
+            );
+          }
 
-        try {
-          await this.dbService.runWithTenant(userId, async (tx) => {
-            const saved = await this.repo.insertMessage(tx, {
-              chatId,
-              userId,
-              role: "assistant",
-              parts: responseMessage.parts,
+          try {
+            await this.dbService.runWithTenant(userId, async (tx) => {
+              const saved = await this.repo.insertMessage(tx, {
+                chatId,
+                userId,
+                role: "assistant",
+                parts: responseMessage.parts,
+              });
+              await this.repo.touchChat(tx, chatId);
+              if (createdCardIds.length > 0) {
+                await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
+              }
+              // Cobro real con el usage real del turno, en la MISMA
+              // transacción que el mensaje que cobra (modelo-de-datos.md: "o
+              // se cobra y se produce, o ninguna de las dos"). charge() puede
+              // dejar saldo negativo a propósito — el gate de arriba es lo
+              // que evita que esto sea frecuente, no esto.
+              await this.creditsService.charge(tx, {
+                userId,
+                usage: {
+                  inputTokens: usage.inputTokens ?? 0,
+                  outputTokens: usage.outputTokens ?? 0,
+                  cachedInputTokens: usage.inputTokenDetails.cacheReadTokens ?? null,
+                },
+                taskKind: "chat",
+                reason: "chat_message",
+                referenceType: "message",
+                referenceId: saved.id,
+              });
             });
-            await this.repo.touchChat(tx, chatId);
-            if (createdCardIds.length > 0) {
-              await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
-            }
-            // Cobro real con el usage real del turno, en la MISMA
-            // transacción que el mensaje que cobra (modelo-de-datos.md: "o
-            // se cobra y se produce, o ninguna de las dos"). charge() puede
-            // dejar saldo negativo a propósito — el gate de arriba es lo
-            // que evita que esto sea frecuente, no esto.
-            await this.creditsService.charge(tx, {
-              userId,
-              usage: {
-                inputTokens: usage.inputTokens ?? 0,
-                outputTokens: usage.outputTokens ?? 0,
-                cachedInputTokens: usage.inputTokenDetails.cacheReadTokens ?? null,
-              },
-              taskKind: "chat",
-              reason: "chat_message",
-              referenceType: "message",
-              referenceId: saved.id,
-            });
+          } catch (error) {
+            console.error(
+              `[chat] onEnd falló para chat ${chatId} (turno no abortado). ` +
+                `Cards de este turno posiblemente huérfanas: ` +
+                `${createdCardIds.length > 0 ? createdCardIds.join(", ") : "ninguna"}.`,
+              error,
+            );
+          }
+
+          // Fuera de la transacción del mensaje, y AiUsageService nunca lanza:
+          // un fallo al registrar usage no puede costar el mensaje ni el cobro,
+          // que ya se persistieron arriba.
+          await this.aiUsage.registrar({
+            userId,
+            chatId,
+            task: "chat",
+            modelo: resolved,
+            usage,
+            stepsCount: steps.length,
+            arranque: startedAt,
+            providerRaw: {
+              steps: steps.map((step) => ({
+                usage: step.usage,
+                providerMetadata: step.providerMetadata,
+              })),
+              finishReason,
+            },
           });
-        } catch (error) {
-          console.error(
-            `[chat] onEnd falló para chat ${chatId} (turno no abortado). ` +
-              `Cards de este turno posiblemente huérfanas: ` +
-              `${createdCardIds.length > 0 ? createdCardIds.join(", ") : "ninguna"}.`,
-            error,
-          );
-        }
-
-        // Fuera de la transacción del mensaje, y AiUsageService nunca lanza:
-        // un fallo al registrar usage no puede costar el mensaje ni el cobro,
-        // que ya se persistieron arriba.
-        await this.aiUsage.registrar({
-          userId,
-          chatId,
-          task: "chat",
-          modelo: resolved,
-          usage,
-          stepsCount: steps.length,
-          arranque: startedAt,
-          providerRaw: {
-            steps: steps.map((step) => ({
-              usage: step.usage,
-              providerMetadata: step.providerMetadata,
-            })),
-            finishReason,
-          },
-        });
-      },
-    });
+        },
+      })
+      .catch((error: unknown) => {
+        console.error("Error escribiendo el stream del chat:", error);
+      });
   }
 
   private toSummary(chat: {
