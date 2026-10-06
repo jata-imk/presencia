@@ -14,6 +14,7 @@ import { env } from "../env.js";
 import { AiSdkImageProvider } from "./ai-sdk-image.provider.js";
 import { FakeImageProvider } from "./fake-image.provider.js";
 import { FallbackImageProvider } from "./fallback-image.provider.js";
+import { parseSimulateDown } from "../ai/fallback.js";
 import { ImageGenerationService } from "./image-generation.service.js";
 import { ImageGenerationsRepository } from "./image-generations.repository.js";
 import { IMAGE_PROVIDERS, type ImageProviders } from "./image-provider.js";
@@ -35,14 +36,19 @@ export function buildImageProviders(): ImageProviders {
   const chain = parseModelChain(env.AI_MODEL_IMAGE ?? DEFAULT_IMAGE_MODEL_ID).map(
     ({ id }) => new AiSdkImageProvider(resolve(id), id, { maxRetries: 0 }),
   );
-  const simulateDown =
-    env.AI_FALLBACK_SIMULATE?.split(",")
-      .map((provider) => provider.trim())
-      .filter(Boolean) ?? [];
+  const simulateDown = parseSimulateDown(env.AI_FALLBACK_SIMULATE);
   const alternateId = env.AI_MODEL_IMAGE_ALT;
   return {
     primary: new FallbackImageProvider(chain, { simulateDown }),
-    alternate: alternateId ? new AiSdkImageProvider(resolve(alternateId), alternateId) : null,
+    // El alternativo también pasa por la cadena (de un eslabón): mismo plazo
+    // y mismos reintentos que cualquier generador, sin importar qué botón se
+    // apretó. Sin esto podía colgarse el trabajo entero.
+    alternate: alternateId
+      ? new FallbackImageProvider(
+          [new AiSdkImageProvider(resolve(alternateId), alternateId, { maxRetries: 0 })],
+          { simulateDown },
+        )
+      : null,
   };
 }
 

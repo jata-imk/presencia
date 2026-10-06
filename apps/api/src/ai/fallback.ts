@@ -68,12 +68,44 @@ export class FallbackExhaustedError extends Error {
   }
 }
 
-/** Nuestro timeout por intento, para distinguirlo del aborto del usuario. */
-class AttemptTimeoutError extends Error {
+/** Nuestro timeout por intento, para distinguirlo del aborto del usuario. La cadena de imagen usa el mismo. */
+export class AttemptTimeoutError extends Error {
   constructor(ms: number) {
-    super(`Sin respuesta del proveedor en ${String(ms / 1000)} s`);
+    super(`Sin respuesta del proveedor en ${String(Math.round(ms / 1000))} s`);
     this.name = "AttemptTimeoutError";
   }
+}
+
+/**
+ * ¿El intento cayó por NUESTRO plazo? Solo si venció y lo que se recibió no
+ * es una respuesta del proveedor. Un `APICallError` que llega justo cuando
+ * vence el plazo es lo que el proveedor contestó de verdad —un 400 de
+ * moderación, por ejemplo— y manda él: tomarlo por timeout lo haría caer al
+ * siguiente, que es esquivar la moderación.
+ */
+export function timedOutWith(timedOut: boolean, error: unknown): boolean {
+  return timedOut && !APICallError.isInstance(error);
+}
+
+/** Los proveedores que AI_FALLBACK_SIMULATE finge caídos (solo dev). Un solo parser para texto e imagen. */
+export function parseSimulateDown(value: string | undefined): string[] {
+  return (
+    value
+      ?.split(",")
+      .map((provider) => provider.trim())
+      .filter(Boolean) ?? []
+  );
+}
+
+/** La caída fingida de un proveedor: un 503 reintentable, sin llamarlo. */
+export function simulatedOutage(provider: string): APICallError {
+  return new APICallError({
+    message: `Caída simulada de ${provider} (AI_FALLBACK_SIMULATE)`,
+    url: "simulado",
+    requestBodyValues: {},
+    statusCode: 503,
+    isRetryable: true,
+  });
 }
 
 const QUOTA_BODY = /insufficient_quota|billing|credit balance|quota exceeded/i;
@@ -87,7 +119,7 @@ const NETWORK_CODES = new Set([
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
 
-function statusOf(error: unknown): number | null {
+export function statusOf(error: unknown): number | null {
   if (APICallError.isInstance(error)) return error.statusCode ?? null;
   if (typeof error === "object" && error !== null && "statusCode" in error) {
     const status = (error as { statusCode?: unknown }).statusCode;
@@ -119,7 +151,7 @@ export function isFallbackError(error: unknown): boolean {
   return typeof code === "string" && NETWORK_CODES.has(code);
 }
 
-function describe(error: unknown): string {
+export function describeError(error: unknown): string {
   if (error instanceof Error) return error.message.slice(0, 300);
   if (typeof error === "object" && error !== null && "message" in error) {
     return String(error.message).slice(0, 300);
@@ -237,13 +269,7 @@ export function createFallbackChain(
         const guard = attemptSignal(callOptions.abortSignal, timeoutMs);
         try {
           if (simulateDown.has(link.entry.provider)) {
-            throw new APICallError({
-              message: `Caída simulada de ${link.entry.provider} (AI_FALLBACK_SIMULATE)`,
-              url: "simulado",
-              requestBodyValues: {},
-              statusCode: 503,
-              isRetryable: true,
-            });
+            throw simulatedOutage(link.entry.provider);
           }
           const result = await settleOn(await call(link, guard.signal));
           guard.settle();
@@ -254,11 +280,15 @@ export function createFallbackChain(
           guard.release();
           // El usuario se fue: no hay a quién responderle, no se gasta otro modelo.
           if (callOptions.abortSignal?.aborted) throw error;
-          const cause = guard.timedOut() ? guard.timeout : error;
+          const cause = timedOutWith(guard.timedOut(), error) ? guard.timeout : error;
           // Si ya está fijo, el loop no pasa a otro eslabón: tiene su reintento
           // y luego la cadena se rinde, sin mezclar dos voces en un turno.
           if (!isFallbackError(cause)) throw cause;
-          attempts.push({ id: link.entry.id, status: statusOf(cause), error: describe(cause) });
+          attempts.push({
+            id: link.entry.id,
+            status: statusOf(cause),
+            error: describeError(cause),
+          });
           lastError = cause;
         }
       }

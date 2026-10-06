@@ -117,7 +117,7 @@ describe("FallbackImageProvider", () => {
     const result = await chain.generate(REQUEST);
     expect(result.ran?.provider).toBe("google");
     expect(colgado.calls()).toBe(1);
-    expect(result.ran?.attempts[0]?.error).toMatch(/no respondió/);
+    expect(result.ran?.attempts[0]?.error).toMatch(/Sin respuesta del proveedor/);
   });
 
   it("si todos caen, el error lista cada intento", async () => {
@@ -129,8 +129,60 @@ describe("FallbackImageProvider", () => {
       FAST,
     );
     await expect(chain.generate(REQUEST)).rejects.toThrow(
-      /Todos los generadores fallaron: .*xai:grok-imagine-image-2\.0 \(503.*google:gemini-3\.1-flash-image \(429/,
+      /Todos los modelos de la cadena fallaron: .*xai:grok-imagine-image-2\.0 \(503.*google:gemini-3\.1-flash-image \(429/,
     );
+  });
+
+  it("un 400 que llega justo al vencer el plazo es la respuesta real: no cae al siguiente", async () => {
+    const principal = generador("xai:grok-imagine-image-2.0", [
+      (request) =>
+        new Promise((_, reject) => {
+          request.abortSignal?.addEventListener("abort", () => reject(apiError(400)));
+        }),
+    ]);
+    const respaldo = generador("google:gemini-3.1-flash-image", [() => Promise.resolve(image())]);
+    const chain = new FallbackImageProvider([principal, respaldo], {
+      ...FAST,
+      attemptTimeoutMs: 20,
+    });
+    await expect(chain.generate(REQUEST)).rejects.toThrow("HTTP 400");
+    expect(respaldo.calls()).toBe(0);
+  });
+
+  it("respeta el presupuesto total: no empieza un intento que ya no alcanzaría", async () => {
+    const lento = (request: ImageRequest) =>
+      new Promise<ImageResult>((_, reject) => {
+        request.abortSignal?.addEventListener("abort", () => reject(new Error("abortado")));
+      });
+    const principal = generador("xai:grok-imagine-image-2.0", [lento]);
+    const respaldo = generador("google:gemini-3.1-flash-image", [lento]);
+    const chain = new FallbackImageProvider([principal, respaldo], {
+      ...FAST,
+      attemptTimeoutMs: 10_000,
+      // El primer intento se come todo el presupuesto: el respaldo no arranca.
+      budgetMs: 10_050,
+    });
+    const started = Date.now();
+    await expect(chain.generate(REQUEST)).rejects.toThrow(
+      /Todos los modelos de la cadena fallaron/,
+    );
+    expect(respaldo.calls()).toBe(0);
+    expect(Date.now() - started).toBeLessThan(11_000);
+  }, 15_000);
+
+  it("si el respaldo falla con un error que no es caída, el error dice que el principal ya había caído", async () => {
+    const chain = new FallbackImageProvider(
+      [
+        generador("google:gemini-3.1-flash-image", [() => Promise.reject(apiError(503))]),
+        generador("openai:gpt-image-2", [() => Promise.reject(apiError(401))]),
+      ],
+      FAST,
+    );
+    const error: unknown = await chain.generate(REQUEST).catch((e: unknown) => e);
+    expect((error as Error).message).toContain(
+      "openai:gpt-image-2 falló tras caer el principal (google:gemini-3.1-flash-image: 503",
+    );
+    expect((error as Error).message).toContain("HTTP 401");
   });
 
   it("el simulador finge caído al proveedor sin llamarlo", async () => {

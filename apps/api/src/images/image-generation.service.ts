@@ -604,7 +604,12 @@ export class ImageGenerationService {
       // El proveedor dibujó pero no la pudimos guardar: falla nuestra, no se
       // cobra. El gasto queda en ai_usage_events.
       console.error(`[images] no se pudo guardar la imagen de ${row.id}:`, error);
-      await this.settle(userId, row.id, { status: "failed", errorMessage: messageOf(error) });
+      // Ya se dibujó: aunque no se pudo guardar, la fila dice quién lo hizo.
+      await this.settle(userId, row.id, {
+        status: "failed",
+        errorMessage: messageOf(error),
+        ran,
+      });
       return { status: "failed" };
     }
   }

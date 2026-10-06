@@ -2,7 +2,7 @@ import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { Injectable } from "@nestjs/common";
 import type { LanguageModel } from "ai";
 import { env } from "../env.js";
-import { createFallbackChain, type FallbackAttempt } from "./fallback.js";
+import { createFallbackChain, parseSimulateDown, type FallbackAttempt } from "./fallback.js";
 import {
   createModelResolver,
   formatModelEntry,
@@ -45,10 +45,7 @@ export class AiService {
   // process.env ya pasó la validación de env.ts al boot; el registry lee las
   // keys por nombre desde la tabla PROVIDERS (fuente única, ADR-004).
   private readonly resolver: ModelResolver = createModelResolver(process.env, env.AI_MODEL);
-  private readonly simulateDown =
-    env.AI_FALLBACK_SIMULATE?.split(",")
-      .map((provider) => provider.trim())
-      .filter(Boolean) ?? [];
+  private readonly simulateDown = parseSimulateDown(env.AI_FALLBACK_SIMULATE);
 
   resolve(modelChain?: string): ResolvedModel {
     const entries = parseModelChain(modelChain ?? env.AI_MODEL);
