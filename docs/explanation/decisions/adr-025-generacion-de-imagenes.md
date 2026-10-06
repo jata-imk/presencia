@@ -203,3 +203,14 @@ Desde `ai` 7.0.1xx, `generateImage` vuelve a llamar al modelo cuando responde si
   - Con dos generadores no cambia nada: "Probar con otro generador" en el menú de la imagen y "Con otro generador" en el composer.
   - Con tres o más, el menú lista "Probar con el generador 2, 3…" y el botón del composer abre la lista ("Generador 2, 3…"). Por número y no por nombre de modelo: el creator no necesita saberlo, solo que son miradas distintas.
   - Es el mismo componente `Menu` que ya existía, sin patrón visual nuevo: no pasó por Claude Design.
+
+## Addendum (2026-10-06, F10.7) — el bake-off no paga dos veces la misma imagen
+
+Idea de Jose: si una imagen ya se generó, no hay por qué volver a pagarla.
+
+- **Caché** (`scripts/image-bakeoff/cache.ts`, en `out/cache/`, sin versionar). Cada imagen se guarda con su huella: modelo, prompt exacto, cómo se pide (`imageCallOptions`: proporción real, tamaño, calidad), variante y, en una edición, la huella de la imagen de partida (la huella y no sus bytes recortados, que cambian con la versión de sharp). Si la huella existe, se reusa sin pagar, con su fecha en el reporte. Los bloqueos también se guardan: re-correrlos cobraría otra vez la entrada. El reporte separa "Costo de las imágenes" de "Pagado en esta corrida", y la latencia mediana es solo de lo generado en la corrida. `IMAGE_BAKEOFF_FRESH=1` fuerza imágenes nuevas.
+- **Por qué no sirven las imágenes de F10:** se generaron con el prompt viejo, sin el encuadre seguro, sin el estilo compuesto y con otra redacción de "sin logotipos". Una huella que no coincide es otra prueba, y compararlas sería injusto justo en lo que más importa (logos y encuadre). Las pruebas del 2026-10-06 sí usaron el prompt actual y se sembraron en el caché: NB2 marquesitas, su edición y pizarrón; gpt-image-2 marquesitas y pizarrón.
+- **Variantes por modelo:** dos para los candidatos (Grok, Muse, MAI) y una para los dos conocidos (NB2 y gpt-image-2), que están de referencia. Nano Banana 2 es el más caro (~$0.095 en 4:5). Para no romper lo ciego, la galería muestra a todos una sola imagen por prompt; la segunda variante de los candidatos, y las medidas, el costo y la fecha del caché (que delatarían al modelo), aparecen al revelar.
+- La corrida completa de F10.7 sale en ~$3.30, en vez de ~$5, y una nueva corrida solo paga lo que cambió.
+- `scripts/image-bakeoff/prompts.ts` separa los prompts de `run.ts`, para que el caché y cualquier script de mantenimiento calculen la misma huella.
+- **Corregido de paso:** el resumen del reporte había perdido el `$` de los costos. El código del bake-off no tenía el error: lo metió el script con el que apliqué los cambios del review del PR4, porque `String.replace` toma `$$` como un `$` literal en el texto de reemplazo. Lo encontré al volver a tocar esa línea. Además, la carpeta y el reporte de cada corrida llevan segundos en el nombre: dos corridas parciales en el mismo minuto chocaban.
