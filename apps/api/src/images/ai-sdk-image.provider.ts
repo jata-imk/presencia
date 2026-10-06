@@ -98,7 +98,13 @@ export class AiSdkImageProvider implements ImageProvider {
           const result = await doGenerate();
           crudo.usage = result.usage;
           crudo.providerMetadata = result.providerMetadata;
-          return result;
+          // Desde ai 7.0.1xx, `generateImage` repite la llamada cuando vuelve
+          // sin imagen, salvo que el modelo diga `isRetryable: false`. Aquí no
+          // se repite nunca: un bloqueo se volvería a cobrar, y una respuesta
+          // vacía sin señal la reintenta el usuario, no el adapter (el job
+          // tampoco reintenta, ADR-025). Los errores de API sí siguen con los
+          // reintentos del SDK, como antes.
+          return result.images.length === 0 ? { ...result, isRetryable: false } : result;
         },
       },
     });

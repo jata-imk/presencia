@@ -137,3 +137,7 @@ En el recorrido de F10.6, cada slide mostraba "Versiones · 18": la tira traía 
 - **Siempre la imagen actual.** Aunque no sea "del slide" (alguien la eligió de otro lado), la tira la incluye para poder marcarla como la elegida.
 - **Un recorte no es una versión nueva (F10.6.2).** Una imagen y sus recortes de proporción (`croppedFrom`, que el DTO ya expone) ocupan una sola miniatura: la que el slide tiene ahora; si no, la más reciente en la proporción del carrusel (el DTO trae `width`/`height`; elegir una versión no recorta, así que una de otra proporción quedaría mal puesta); si no, la más reciente. Antes, cambiar 4:5 ↔ 1:1 sumaba una versión por slide.
 - La regla vive en `versionsOfSlide` (web, con su test) y la API solo agrega `slideId` a `CardImageVersionDto`: el historial completo de la card sigue disponible para Biblioteca (F12).
+
+## Addendum (2026-10-05, F10.7 PR1) — una respuesta sin imagen no se repite
+
+Desde `ai` 7.0.1xx, `generateImage` vuelve a llamar al modelo cuando responde sin imagen, salvo que el proveedor la marque `isRetryable: false` (Google lo hace solo con su filtro de contenido). Eso habría cambiado dos reglas de este ADR sin decidirlo: un bloqueo que Gemini no marca como filtro se cobraría hasta tres veces, y la respuesta vacía sin señal —que es del usuario reintentar— la repetiría el adapter. El middleware que ya guardaba el usage marca toda respuesta sin imagen como no reintentable. Los errores de API (red, 5xx) siguen con los reintentos del SDK, como antes; F10.7 los reemplaza por la cadena de respaldo.
