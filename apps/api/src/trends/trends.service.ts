@@ -247,7 +247,9 @@ export class TrendsService {
     if (modelo.provider !== SEARCH_PROVIDER) {
       // Fail-fast y no degradación: sin búsqueda, el modelo contestaría desde
       // su entrenamiento. Eso son tendencias viejas con cara de frescas, que
-      // es el escenario que presencia-ritmo.md descarta por nombre.
+      // es el escenario que presencia-ritmo.md descarta por nombre. Desde
+      // F10.7 env.ts ya lo bloquea al arrancar, en toda la cadena; esto queda
+      // como segunda red, por si este id llegara de otro lado.
       throw new Error(
         `Las tendencias necesitan búsqueda con grounding y hoy solo la da "${SEARCH_PROVIDER}". ` +
           `AI_MODEL_TRENDS resolvió "${modelo.id}". Apunta esa variable a un modelo de ${SEARCH_PROVIDER}.`,

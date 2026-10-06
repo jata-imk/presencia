@@ -63,6 +63,52 @@ describe("AiUsageService.registrar", () => {
     );
   });
 
+  it("con un respaldo, registra el que corrió, de cuál cayó y por qué (F10.7)", async () => {
+    const insertEvent = vi.fn();
+    const aiUsage = await servicio((_userId, fn) => fn({} as never), insertEvent);
+    await aiUsage.registrar({
+      userId: "u1",
+      task: "chat",
+      modelo: {
+        provider: "google",
+        modelName: "gemini-3.8-flash",
+        fallbackFrom: "openai:gpt-6-luna",
+        attempts: [{ id: "openai:gpt-6-luna", status: 503, error: "HTTP 503" }],
+      },
+      usage: USAGE,
+      stepsCount: 1,
+      arranque: Date.now(),
+      providerRaw: { steps: [] },
+    });
+    expect(insertEvent.mock.calls[0]?.[1]).toMatchObject({
+      provider: "google",
+      model: "gemini-3.8-flash",
+      fallbackFrom: "openai:gpt-6-luna",
+      providerRaw: {
+        steps: [],
+        attempts: [{ id: "openai:gpt-6-luna", status: 503, error: "HTTP 503" }],
+      },
+    });
+  });
+
+  it("sin respaldo, fallback_from es null y el crudo no cambia", async () => {
+    const insertEvent = vi.fn();
+    const aiUsage = await servicio((_userId, fn) => fn({} as never), insertEvent);
+    await aiUsage.registrar({
+      userId: "u1",
+      task: "chat",
+      modelo: { provider: "openai", modelName: "gpt-6-luna", fallbackFrom: null, attempts: [] },
+      usage: USAGE,
+      stepsCount: 1,
+      arranque: Date.now(),
+      providerRaw: { steps: [] },
+    });
+    expect(insertEvent.mock.calls[0]?.[1]).toMatchObject({
+      fallbackFrom: null,
+      providerRaw: { steps: [] },
+    });
+  });
+
   it("sin searchQueries escribe null: la llamada no busca", async () => {
     const insertEvent = vi.fn();
     const aiUsage = await servicio((_userId, fn) => fn({} as never), insertEvent);

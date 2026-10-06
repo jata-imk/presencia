@@ -65,3 +65,31 @@ El enum `ai_task_kind` (`chat`, `chat_title`, `history_compaction`, `post_adapt`
   - Respaldos del chat, en orden: `google:gemini-3.8-flash@medium` (el más lento, 6.6 s de mediana, aceptable en una caída) y `anthropic:claude-sonnet-5-5` (el más rápido y el más caro, solo si caen OpenAI y Google).
   - DeepSeek V4 Pro queda fuera: precio doble en la noche de México, datos en China, y un 400 por `reasoning_content` en un historial que hizo otro proveedor. Panorama completo: `docs/reference/modelos-2026-10.md`.
   - "Ese nivel no se abarata" sigue en pie: se cambió el modelo porque pasó la suite, no por precio.
+
+**Addendum (F10.7 PR3, 2026-10-06) — la cadena de respaldo de texto.**
+
+- **Configuración.** Cada variable de modelo de texto es una cadena: `AI_MODEL_CHAT=openai:gpt-6-luna@high,google:gemini-3.8-flash@medium,anthropic:claude-sonnet-5-5`.
+  - El primero es el principal; los demás son los respaldos, en orden, cada uno con su esfuerzo.
+  - `parseModelChain()` rechaza una cadena vacía o el mismo modelo dos veces: un modelo repetido se cae junto con el primero.
+  - `env.ts` exige la key de **cada** eslabón, porque un respaldo sin key se descubriría el día que cae el principal.
+  - `AI_MODEL_TRENDS` solo acepta modelos de Google, también en los respaldos: necesita grounding.
+  - Las variables de imagen siguen siendo de un solo modelo hasta su propia cadena.
+- **Dónde vive.** `createFallbackChain()` (`ai/fallback.ts`) es un `LanguageModelV4` más. `streamText`/`generateText` no saben que existe, y ningún call site cambió.
+  - `AiService.resolve()` arma una cadena nueva por llamada. Su `ResolvedModel` reporta el modelo que **corrió**: `id`, `provider`, `modelName`, más `fallbackFrom` y `attempts`. Por eso no se reutiliza entre llamadas.
+- **Cuándo cae** (`isFallbackError`): 5xx, 408, 409, 429, 402, cuota agotada (`insufficient_quota` en el cuerpo), red y nuestro timeout. Es el `isRetryable` del SDK, más el saldo.
+  - **Nunca** con un 400 (bloqueo de contenido, request mal armado), un 401/403 (una key mal puesta se arregla, no se esconde) ni un aborto del usuario.
+  - Antes de cambiar de modelo, un reintento en el mismo: un 503 suelto no merece cambiar de voz. Después de nuestro timeout no se reintenta: ya se esperó el plazo entero.
+  - Si cae toda la cadena, `FallbackExhaustedError` no es reintentable: el SDK no la repite entera. Por eso los call sites no necesitan `maxRetries: 0`.
+- **Solo antes de la primera salida.** El wrapper lee el stream hasta el primer texto, razonamiento o tool:
+  - un error que llega antes (algunos proveedores responden 200 y mandan el 5xx adentro) cuenta como caída;
+  - uno que llega después no, porque cambiar de modelo a la mitad pegaría dos voces en una respuesta.
+  - OpenAI 4.x ya convierte su error temprano en un `APICallError`. La lectura es para que no dependa de cada proveedor.
+- **Timeouts.** 60 s hasta la primera salida de un stream (el peor caso medido es ~15 s) y 120 s para una llamada sin stream (la más lenta medida es ~31 s, `post_adapt`).
+- **Un turno, un modelo.** Un turno con tool calls son varios pasos, y cada uno vuelve a llamar al modelo. Una vez que un eslabón respondió, la llamada queda **fija** en él. Los pasos siguientes no vuelven a esperar al principal caído, y si el fijo se cae a mitad del turno, el error sube en vez de saltar al siguiente: el turno es de un solo modelo, en voz y en usage.
+  - Se encontró en el navegador: sin esto, el segundo paso volvía a esperar al principal caído, y si había regresado, un turno mezclaba las dos voces. El caso inverso (el principal responde el primer paso y se cae en el segundo, y el turno seguía con el respaldo) lo encontró el `/code-review`.
+- **Historial mixto.** Probado en el navegador con un chat cuyos turnos previos eran de Luna (Responses, con partes de razonamiento y tool calls):
+  - **Gemini** lo acepta. El SDK detecta las tool calls sin `thoughtSignature` y pone el centinela que documenta Google, sin 400.
+  - **Sonnet** también. Descarta las partes de razonamiento ajenas, con un aviso en el log.
+  - Gemini, como respaldo, escribió un post de X por arriba de los 280 caracteres. El panel lo marca y ofrece recortar.
+- **Registro.** La migración `0045` agrega `ai_usage_events.fallback_from` (el principal pedido; `null` si respondió él). `provider` y `model` son siempre el que corrió, y `provider_raw.attempts` guarda cada intento fallido con su status y su error.
+- **Para probarlo en dev:** `AI_FALLBACK_SIMULATE=openai` (o `openai,google`) finge caídos esos proveedores con un 503, sin llamarlos. `env.ts` lo rechaza en producción.

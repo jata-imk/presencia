@@ -118,6 +118,25 @@ describe("AiService.resolveForTask", () => {
     }
   });
 
+  it("una cadena se resuelve al principal hasta que corre (F10.7)", async () => {
+    const aiService = await loadAiServiceWith({
+      ...BASE_ENV,
+      AI_MODEL: "google:gemini-3.6-flash",
+      AI_MODEL_CHAT: "anthropic:claude-sonnet-5-5@high, google:gemini-3.8-flash@medium",
+    });
+    const resolved = aiService.resolveForTask("chat");
+    expect(resolved).toMatchObject({
+      id: "anthropic:claude-sonnet-5-5",
+      provider: "anthropic",
+      modelName: "claude-sonnet-5-5",
+      reasoning: "high",
+      fallbackFrom: null,
+      attempts: [],
+    });
+    // Cada llamada estrena su cadena: la identidad de una no se cuela en otra.
+    expect(aiService.resolveForTask("chat")).not.toBe(resolved);
+  });
+
   it("boot truena si un tier apunta a un proveedor sin API key", async () => {
     await expect(
       loadAiServiceWith({
