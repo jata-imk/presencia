@@ -95,3 +95,13 @@ Dos clicks simultáneos chocan contra el índice único, no contra una condició
 - **Mismo principio de "o se cobra y se produce, o ninguna de las dos":** el asiento va en la misma transacción que la versión nueva de la card.
 - **Una respuesta que no pasa el schema** se registra en `ai_usage_events` y **se cobra** (el proveedor la facturó), pero no deja versión.
 - **Detener no cobra.** El DELETE explícito aborta la llamada, y una abortada no deja versión. Detenida a media llamada, el SDK no entrega usage de lo que el proveedor alcanzó a generar: es el mismo hueco conocido que un turno de chat abortado (ADR-006), y se acepta igual.
+
+## Addendum (2026-10-06, F10.7 PR2) — el razonamiento va en la tarifa, no aparte
+
+Desde F10.7 el esfuerzo de razonamiento se elige por modelo (`openai:gpt-6-luna@high`, ADR-004), y el chat corre en `high`. El proveedor cobra lo que el modelo piensa como tokens de salida, y `outputTokens` del SDK los incluye. Con la v1, un turno en `high` le habría gastado al creator más % de cuota que el mismo pedido en `medium`, por algo que no ve y que no eligió.
+
+- **Rate card v2** (`CURRENT_RATE_CARD_VERSION = 2`): mismas tarifas, con `outputBasis: "visible"`. La salida que se cobra es `outputTokens − reasoningTokens`. La v1 se queda con `"total"`: los asientos viejos se re-derivan con su fórmula, como pide el versionado de este ADR.
+- **Lo habitual en productos de consumo.** Se cobra por uso visible o por mensaje, con el costo de pensar ya metido en la tarifa. Cobrar al creator el razonamiento token por token es cosa de las APIs.
+- **Las unidades no suben.** En la suite cultural del 2026-10-06, un turno con `gpt-6-luna@high` costó $0.0003 contra $0.0077 de `gpt-5.6-terra@medium`, con el que se fijaron las tarifas provisionales. Pensar es el 32% de la salida de Luna, y aun así queda ~25× por debajo. La recalibración completa sigue en "Backlog · Calibrar rate card con datos reales de consumo".
+- **Un solo armado del usage:** `chargeUsageOf()` (`credits/rate-card.ts`) convierte el usage del SDK en lo que cobra `charge()`, razonamiento incluido. Antes cada call site lo armaba a mano y cualquiera podía olvidar el campo nuevo.
+- **Sin dato de razonamiento** (proveedores que no lo reportan), se cobra la salida completa, como en v1.

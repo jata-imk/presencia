@@ -27,8 +27,14 @@ export interface GastoLocal {
 // los arranca desde apps/api (la API compila a CommonJS: sin import.meta).
 export const GASTO_LOCAL_FILE = path.resolve("scripts/.gasto-local.jsonl");
 
-/** "google:gemini-3.1-flash-image" → { provider, model }. */
-export function splitModelId(modelId: string): { provider: string; model: string } {
+/**
+ * "google:gemini-3.1-flash-image" → { provider, model }. Ignora el
+ * `@esfuerzo` de una entrada del `.env` (F10.7): el precio es del modelo, no
+ * del esfuerzo, y `costOf` lo busca sin él.
+ */
+export function splitModelId(modelEntry: string): { provider: string; model: string } {
+  const at = modelEntry.lastIndexOf("@");
+  const modelId = at === -1 ? modelEntry : modelEntry.slice(0, at);
   const i = modelId.indexOf(":");
   return i === -1
     ? { provider: "desconocido", model: modelId }

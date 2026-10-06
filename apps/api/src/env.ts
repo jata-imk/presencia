@@ -4,7 +4,7 @@ import {
   DEFAULT_MODEL_ID,
   DEFAULT_TRENDS_MODEL_ID,
   MODEL_TIER_ENV_VARS,
-  parseModelId,
+  parseModelEntry,
   PROVIDERS,
 } from "./ai/provider-registry.js";
 
@@ -35,7 +35,7 @@ const envSchema = z
     KIMI_BASE_URL: z.url().optional(),
     // Modelo default con formato "proveedor:modelo" (ADR-004). Cambiar de
     // proveedor es cambiar esta variable y reiniciar el proceso. El formato
-    // y el inventario de proveedores los valida parseModelId (fuente única).
+    // y el inventario de proveedores los valida parseModelEntry (fuente única), que acepta un `@esfuerzo` opcional (F10.7).
     AI_MODEL: z.string().default(DEFAULT_MODEL_ID),
     // Routing por tarea (F4.5, addendum ADR-004): tiers opcionales sobre
     // AI_MODEL — MODEL_BY_TASK (provider-registry.ts) mapea cada AiTaskKind
@@ -130,9 +130,14 @@ const envSchema = z
     // Fail-fast: toda var de modelo (AI_MODEL + los 3 tiers opcionales) debe
     // tener formato válido y su proveedor debe tener API key al boot.
     // Formato e inventario vienen de la tabla PROVIDERS.
-    const validateModelEnv = (path: string, modelId: string) => {
+    // El `@esfuerzo` (F10.7) solo vale en modelos de texto: un generador de
+    // imágenes no razona, y aceptarlo en silencio haría creer que se aplicó.
+    const validateModelEnv = (path: string, modelEntry: string, { image = false } = {}) => {
       try {
-        const { provider } = parseModelId(modelId);
+        const { provider, reasoning } = parseModelEntry(modelEntry);
+        if (image && reasoning) {
+          throw new Error(`${path} no acepta "@${reasoning}": un modelo de imagen no razona`);
+        }
         const envKey = PROVIDERS[provider].envKey;
         if (!(value as Record<string, unknown>)[envKey]) {
           ctx.addIssue({
@@ -166,9 +171,11 @@ const envSchema = z
     // key la primera generación truena dentro de un job. Con el fake no se
     // llama a nadie, así que no hay key que exigir.
     if (value.IMAGE_PROVIDER === "real") {
-      validateModelEnv("AI_MODEL_IMAGE", value.AI_MODEL_IMAGE ?? DEFAULT_IMAGE_MODEL_ID);
+      validateModelEnv("AI_MODEL_IMAGE", value.AI_MODEL_IMAGE ?? DEFAULT_IMAGE_MODEL_ID, {
+        image: true,
+      });
       if (value.AI_MODEL_IMAGE_ALT)
-        validateModelEnv("AI_MODEL_IMAGE_ALT", value.AI_MODEL_IMAGE_ALT);
+        validateModelEnv("AI_MODEL_IMAGE_ALT", value.AI_MODEL_IMAGE_ALT, { image: true });
     }
 
     // Fail-fast (mismo criterio que el modelo de IA): pedir el provider real

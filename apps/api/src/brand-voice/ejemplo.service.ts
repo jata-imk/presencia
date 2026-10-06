@@ -5,7 +5,7 @@ import { AiUsageService } from "../ai/ai-usage.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { buildSystemPrompt } from "../chat/system-prompt.js";
 import { CreditsService } from "../credits/credits.service.js";
-import { getRateCard } from "../credits/rate-card.js";
+import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
 import { BrandVoiceService } from "./brand-voice.service.js";
 import { promptDeEjemplo } from "./ejemplo.js";
@@ -82,11 +82,7 @@ export class EjemploDeVozService {
     await this.dbService.runWithTenant(userId, (tx) =>
       this.credits.charge(tx, {
         userId,
-        usage: {
-          inputTokens: respuesta.usage.inputTokens ?? 0,
-          outputTokens: respuesta.usage.outputTokens ?? 0,
-          cachedInputTokens: respuesta.usage.inputTokenDetails.cacheReadTokens ?? null,
-        },
+        usage: chargeUsageOf(respuesta.usage),
         taskKind: TASK_KIND,
         reason: "voice_preview",
       }),

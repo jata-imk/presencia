@@ -1,3 +1,4 @@
+import type { LanguageModelUsage } from "ai";
 import { creditReason, planTier } from "../db/schema.js";
 import type { AiTaskKind, ImageTaskKind } from "../ai/provider-registry.js";
 
@@ -44,6 +45,14 @@ export interface RateCard {
   unitsPerPublication: number;
   /** Gate antes de arrancar un turno de chat (bloqueo suave, no cobro). */
   minimumTurnUnits: number;
+  /**
+   * Qué salida se cobra. "total" (v1) incluye los tokens de razonamiento, que
+   * el creator no ve; "visible" (v2, F10.7) los descuenta: el esfuerzo lo
+   * elegimos nosotros por calidad, y el mismo pedido no debe gastar más % de
+   * cuota porque un turno pensó el doble. El costo promedio de pensar va en
+   * la tarifa, no en la variación de cada turno.
+   */
+  outputBasis: "total" | "visible";
   perThousandTokens: Record<TokenBilledTaskKind, TokenRate>;
   /** Costo fijo para acciones que no se miden en tokens del turno de chat. */
   flat: Partial<Record<CreditReason, number>>;
@@ -55,46 +64,56 @@ export interface RateCard {
 // F5 entrega el mecanismo: versionado, para que recalibrar no rompa los
 // asientos viejos (ADR-012).
 
-export const CURRENT_RATE_CARD_VERSION = 1;
+export const CURRENT_RATE_CARD_VERSION = 2;
 
 const UTILITY_RATE: TokenRate = { input: 2, output: 6, cachedInput: 1 };
 const ADAPT_RATE: TokenRate = { input: 5, output: 15, cachedInput: 2 };
 const CHAT_RATE: TokenRate = { input: 8, output: 24, cachedInput: 2 };
 
-export const RATE_CARDS: Record<number, RateCard> = {
-  1: {
-    version: 1,
-    unitsPerPublication: 1000,
-    minimumTurnUnits: 50,
-    perThousandTokens: {
-      chat: CHAT_RATE,
-      chat_title: UTILITY_RATE,
-      history_compaction: UTILITY_RATE,
-      analytics_narration: UTILITY_RATE,
-      post_adapt: ADAPT_RATE,
-      voice_distill: ADAPT_RATE,
-      // Mismo modelo que el chat (MODEL_BY_TASK), misma tarifa.
-      voice_preview: CHAT_RATE,
-    },
-    flat: {
-      idea_generation: 300,
-      multi_adapt: 900,
-      image_generation: 700,
-      weekly_calendar: 1800,
-      // Adelantar el refresco de tendencias (F9.6). Tarifa fija y no por
-      // tokens porque el grueso del costo NO son tokens: el fee del grounding
-      // se cobra por consulta de búsqueda —medidas, 4 por refresco— y los dos
-      // modelos que intervienen aportan unos pocos miles de tokens entre los
-      // dos. Cobrarlo por tokens subestimaría justo la parte cara.
-      //
-      // El refresco PERIÓDICO no pasa por acá: lo absorbe el negocio
-      // (ADR-024). Esto solo cobra adelantarlo.
-      trend_refresh: 800,
-      // `ritmo_narration` NO está acá, y no es un olvido: se cobra por tokens
-      // (perThousandTokens.analytics_narration), no con tarifa fija, porque su
-      // costo depende del texto que produce.
-    },
+const PER_THOUSAND_TOKENS: Record<TokenBilledTaskKind, TokenRate> = {
+  chat: CHAT_RATE,
+  chat_title: UTILITY_RATE,
+  history_compaction: UTILITY_RATE,
+  analytics_narration: UTILITY_RATE,
+  post_adapt: ADAPT_RATE,
+  voice_distill: ADAPT_RATE,
+  // Mismo modelo que el chat (MODEL_BY_TASK), misma tarifa.
+  voice_preview: CHAT_RATE,
+};
+
+const V1: RateCard = {
+  version: 1,
+  unitsPerPublication: 1000,
+  minimumTurnUnits: 50,
+  outputBasis: "total",
+  perThousandTokens: PER_THOUSAND_TOKENS,
+  flat: {
+    idea_generation: 300,
+    multi_adapt: 900,
+    image_generation: 700,
+    weekly_calendar: 1800,
+    // Adelantar el refresco de tendencias (F9.6). Tarifa fija y no por
+    // tokens porque el grueso del costo NO son tokens: el fee del grounding
+    // se cobra por consulta de búsqueda —medidas, 4 por refresco— y los dos
+    // modelos que intervienen aportan unos pocos miles de tokens entre los
+    // dos. Cobrarlo por tokens subestimaría justo la parte cara.
+    //
+    // El refresco PERIÓDICO no pasa por acá: lo absorbe el negocio
+    // (ADR-024). Esto solo cobra adelantarlo.
+    trend_refresh: 800,
+    // `ritmo_narration` NO está acá, y no es un olvido: se cobra por tokens
+    // (perThousandTokens.analytics_narration), no con tarifa fija, porque su
+    // costo depende del texto que produce.
   },
+};
+
+export const RATE_CARDS: Record<number, RateCard> = {
+  1: V1,
+  // F10.7: misma tarifa, la salida se cobra sin el razonamiento. Las unidades
+  // no suben para cubrirlo: con gpt-6-luna@high un turno cuesta ~25× menos que con
+  // gpt-5.6-terra, con el que se fijaron las de v1 (suite cultural del
+  // 2026-10-06 en docs/reference/suite-cultural/).
+  2: { ...V1, version: 2, outputBasis: "visible" },
 };
 
 // Cuota mensual por tier (unidades). Vive en código, no en la DB —
@@ -113,8 +132,21 @@ export function getRateCard(version: number = CURRENT_RATE_CARD_VERSION): RateCa
 
 export interface ChatTurnUsage {
   inputTokens: number;
+  /** Total de salida, razonamiento incluido: lo que reporta el proveedor. */
   outputTokens: number;
   cachedInputTokens: number | null;
+  /** La parte de `outputTokens` que el modelo pensó; null si no la reporta. */
+  reasoningTokens?: number | null;
+}
+
+/** El usage del SDK en la forma que cobra `charge()`. Un solo lugar, para que ningún call site olvide el razonamiento. */
+export function chargeUsageOf(usage: LanguageModelUsage): ChatTurnUsage {
+  return {
+    inputTokens: usage.inputTokens ?? 0,
+    outputTokens: usage.outputTokens ?? 0,
+    cachedInputTokens: usage.inputTokenDetails.cacheReadTokens ?? null,
+    reasoningTokens: usage.outputTokenDetails.reasoningTokens ?? null,
+  };
 }
 
 /**
@@ -128,13 +160,18 @@ export function quoteChatTurn(
   taskKind: TokenBilledTaskKind,
   version: number = CURRENT_RATE_CARD_VERSION,
 ): number {
-  const rate = getRateCard(version).perThousandTokens[taskKind];
+  const card = getRateCard(version);
+  const rate = card.perThousandTokens[taskKind];
   const cached = usage.cachedInputTokens ?? 0;
   const billableInput = Math.max(usage.inputTokens - cached, 0);
+  const billableOutput =
+    card.outputBasis === "visible"
+      ? Math.max(usage.outputTokens - (usage.reasoningTokens ?? 0), 0)
+      : usage.outputTokens;
   const units =
     (billableInput / 1000) * rate.input +
     (cached / 1000) * rate.cachedInput +
-    (usage.outputTokens / 1000) * rate.output;
+    (billableOutput / 1000) * rate.output;
   return Math.max(Math.ceil(units), 1);
 }
 

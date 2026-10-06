@@ -42,3 +42,26 @@ El enum `ai_task_kind` (`chat`, `chat_title`, `history_compaction`, `post_adapt`
 - **Versiones con al menos un día publicadas.** pnpm 11 trae `minimumReleaseAge` por defecto y, al instalar algo más nuevo, lo agrega solo a `minimumReleaseAgeExclude` — eso apaga la protección contra un paquete comprometido recién publicado. No se acepta la excepción: se elige la tanda anterior (7.0.127 en vez de 7.0.128, publicada ese mismo día).
 - **La web NO sube** (`ai@7.0.31`, `@ai-sdk/react@4.0.34`). `@ai-sdk/react` 4.0.1xx agregó `chat.stop()` al desmontar `useChat`, y cambia dos cosas que funcionan hoy: el prompt inicial de un chat nuevo se aborta en dev (StrictMode desmonta en falso justo después del efecto que lo manda, y la guarda de un solo envío ya no lo repite), y en prod salir del chat a media respuesta abortaría el turno — el servidor no lo guarda ni lo cobra, y la respuesta desaparece. Antes el stream seguía en segundo plano y la respuesta estaba ahí al volver. Subirla pide pasarle a `useChat` un `Chat` propio por chat (fuera del componente), y eso es una tarea aparte. Verificado en el navegador que el cliente 7.0.31 lee bien el stream del servidor 7.0.127: chat con card, segundo turno con razonamiento de Responses en el historial, y "Pide un cambio".
 - **`pipeUIMessageStreamToResponse` ahora devuelve una promesa.** No se espera (los headers ya salieron; un rechazo no tiene a quién responder) y su rechazo solo se registra.
+
+**Addendum (F10.7 PR2, 2026-10-06) — esfuerzo de razonamiento por modelo, y el chat pasa a `gpt-6-luna@high`.**
+
+- **Sintaxis.** Cualquier variable de modelo de texto acepta `@esfuerzo`: `AI_MODEL_CHAT=openai:gpt-6-luna@high`.
+  - El vocabulario es el de la opción `reasoning` del AI SDK: `none | minimal | low | medium | high | xhigh`. No incluye `max`: el SDK no lo expone y no lo queremos, porque el creator paga la salida.
+  - Sin `@`, corre el default del proveedor.
+  - Se separa con `@` porque el primer `:` ya es del id, y OpenRouter usa `:` dentro del nombre (`:free`).
+  - Lo decide el operador en el `.env`, por modelo y no por tier: en la cadena del PR3, cada respaldo lleva su propio esfuerzo.
+- **Dónde vive.** `parseModelEntry()` (`provider-registry.ts`) separa y valida el esfuerzo. `withReasoning()` lo pega al modelo resuelto con un middleware que solo llena el hueco: si una llamada pide su propio `reasoning`, gana la llamada. Ningún call site cambió.
+  - `env.ts` truena al boot con un nivel que no existe, y con `@` en las variables de imagen (un generador no razona).
+- **Sin tabla propia de niveles por modelo.** Cada proveedor del SDK ya traduce el nivel (OpenAI `reasoningEffort`, Gemini `thinkingLevel`, Anthropic `effort`/presupuesto). Si el modelo no tiene ese nivel, usa el más cercano y avisa en el log: Gemini 3.8 no tiene `minimal` y pasa a `low`. Una tabla nuestra copiaría eso y envejecería sola.
+  - Requisito: el PR1 subió los proveedores al spec v4. Antes, `@ai-sdk/openai@3` ignoraba la opción.
+- **Suite cultural.**
+  - Acepta la misma sintaxis en `AI_SUITE_MODELS`.
+  - Corre con `streamText`, como el chat, y reporta el primer token visible, los tokens de razonamiento y el costo por turno.
+  - Haiku 4.5 salió de los defaults: Anthropic puede retirarlo desde el 2026-10-15.
+- **Veredicto (Jose, 2026-10-06, `docs/reference/suite-cultural/2026-10-06-reporte.md`).**
+  - **El chat pasa de `gpt-5.6-terra` a `gpt-6-luna@high`.** No vosea, crea la card en 6/6, y la voz prohibida da 0/20. Sale a $0.0003 por turno contra $0.0077 de Terra. El primer token visible tarda 3.3 s de mediana y 6.7 s en el peor caso.
+  - Suena algo más neutro que Terra, que mete más modismos.
+  - `xhigh` no gana lo que cuesta en espera: el peor caso pasa los 8 s.
+  - Respaldos del chat, en orden: `google:gemini-3.8-flash@medium` (el más lento, 6.6 s de mediana, aceptable en una caída) y `anthropic:claude-sonnet-5-5` (el más rápido y el más caro, solo si caen OpenAI y Google).
+  - DeepSeek V4 Pro queda fuera: precio doble en la noche de México, datos en China, y un 400 por `reasoning_content` en un historial que hizo otro proveedor. Panorama completo: `docs/reference/modelos-2026-10.md`.
+  - "Ese nivel no se abarata" sigue en pie: se cambió el modelo porque pasó la suite, no por precio.

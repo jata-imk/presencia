@@ -28,7 +28,7 @@ import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
 import { CardContentService } from "../cards/card-content.service.js";
 import { CardsRepository } from "../cards/cards.repository.js";
 import { CreditsService } from "../credits/credits.service.js";
-import { getRateCard } from "../credits/rate-card.js";
+import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
 import { ChatRepository } from "./chat.repository.js";
 import { cardIdsIn, withLiveCards, type LiveCard } from "./context-diet.js";
@@ -234,7 +234,7 @@ export class CardRewriteService {
       // y queda la versión, o ninguna de las dos (modelo-de-datos.md).
       await this.credits.charge(tx, {
         userId,
-        usage: toChargeUsage(result.usage),
+        usage: chargeUsageOf(result.usage),
         taskKind: TASK_KIND,
         reason: "card_rewrite",
       });
@@ -249,20 +249,12 @@ export class CardRewriteService {
     await this.dbService.runWithTenant(userId, (tx) =>
       this.credits.charge(tx, {
         userId,
-        usage: toChargeUsage(usage),
+        usage: chargeUsageOf(usage),
         taskKind: TASK_KIND,
         reason: "card_rewrite",
       }),
     );
   }
-}
-
-function toChargeUsage(usage: LanguageModelUsage) {
-  return {
-    inputTokens: usage.inputTokens ?? 0,
-    outputTokens: usage.outputTokens ?? 0,
-    cachedInputTokens: usage.inputTokenDetails.cacheReadTokens ?? null,
-  };
 }
 
 /** El texto de la card que el modelo puede cambiar, legible. */

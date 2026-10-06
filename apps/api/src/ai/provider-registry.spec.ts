@@ -1,3 +1,5 @@
+import { generateText } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import {
   AI_TASK_KINDS,
@@ -5,7 +7,9 @@ import {
   createModelResolver,
   MODEL_BY_TASK,
   MODEL_TIER_ENV_VARS,
+  parseModelEntry,
   parseModelId,
+  withReasoning,
   type AiTaskKind,
   type EnvSource,
   type RoutedTaskKind,
@@ -41,7 +45,84 @@ describe("parseModelId", () => {
   });
 });
 
+describe("parseModelEntry", () => {
+  it("sin @ no hay esfuerzo: el proveedor usa su default", () => {
+    expect(parseModelEntry("openai:gpt-6-luna")).toEqual({
+      id: "openai:gpt-6-luna",
+      provider: "openai",
+      model: "gpt-6-luna",
+    });
+  });
+
+  it("separa el esfuerzo del id", () => {
+    expect(parseModelEntry("openai:gpt-6-luna@high")).toEqual({
+      id: "openai:gpt-6-luna",
+      provider: "openai",
+      model: "gpt-6-luna",
+      reasoning: "high",
+    });
+  });
+
+  it("un nivel desconocido o vacío truena con la lista de los válidos", () => {
+    expect(() => parseModelEntry("openai:gpt-6-luna@ultra")).toThrow(/high, xhigh/);
+    expect(() => parseModelEntry("openai:gpt-6-luna@")).toThrow(/unknown reasoning level ""/);
+  });
+
+  it("valida el id igual que parseModelId", () => {
+    expect(() => parseModelEntry("mistral:small@high")).toThrow(/provider:model/);
+  });
+});
+
+describe("withReasoning", () => {
+  const modelo = () => {
+    const llamadas: Parameters<MockLanguageModelV4["doGenerate"]>[0][] = [];
+    const model = new MockLanguageModelV4({
+      doGenerate: (options) => {
+        llamadas.push(options);
+        return Promise.resolve({
+          content: [{ type: "text", text: "ok" }],
+          finishReason: { unified: "stop", raw: "stop" },
+          usage: {
+            inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 1, text: 1, reasoning: 0 },
+          },
+          warnings: [],
+        });
+      },
+    });
+    return { model, llamadas };
+  };
+
+  it("el modelo recibe el esfuerzo sin que la llamada lo pida", async () => {
+    const { model, llamadas } = modelo();
+    await generateText({ model: withReasoning(model, "high"), prompt: "hola" });
+    expect(llamadas[0]?.reasoning).toBe("high");
+  });
+
+  it("si la llamada pide su propio esfuerzo, gana la llamada", async () => {
+    const { model, llamadas } = modelo();
+    await generateText({ model: withReasoning(model, "high"), prompt: "hola", reasoning: "low" });
+    expect(llamadas[0]?.reasoning).toBe("low");
+  });
+
+  it("conserva la identidad del modelo para la telemetría", () => {
+    const { model } = modelo();
+    expect(withReasoning(model, "high")).toMatchObject({
+      provider: model.provider,
+      modelId: model.modelId,
+    });
+  });
+});
+
 describe("createModelResolver", () => {
+  it("acepta la entrada del .env con @esfuerzo", () => {
+    const resolve = createModelResolver(
+      { ...baseEnv, OPENAI_API_KEY: "test-openai-key" },
+      "google:gemini-3.5-flash",
+    );
+    expect(resolve("openai:gpt-6-luna@high")).toMatchObject({ modelId: "gpt-6-luna" });
+  });
+
   it("resuelve el modelo default cuando no se pasa id", () => {
     const resolve = createModelResolver(baseEnv, "google:gemini-3.5-flash");
     expect(resolve()).toMatchObject({ modelId: "gemini-3.5-flash" });

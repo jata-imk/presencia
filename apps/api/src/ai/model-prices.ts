@@ -38,6 +38,25 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
     perSearch: 14 / 1000,
     source: "ai.google.dev/gemini-api/docs/pricing, 2026-09-30 (hasta 2026-12-31; luego 1.50/7.50)",
   },
+  "google:gemini-3.8-flash": {
+    inputPerM: 0.75,
+    cachedInputPerM: 0.075,
+    outputPerM: 3.75,
+    perSearch: 14 / 1000,
+    source: "ai.google.dev/gemini-api/docs/pricing, 2026-10-06 (hasta 2026-12-31; luego 1.50/7.50)",
+  },
+  "openai:gpt-6-luna": {
+    inputPerM: 0.1,
+    cachedInputPerM: 0.01,
+    outputPerM: 0.5,
+    source: "developers.openai.com/api/docs/models/gpt-6-luna, 2026-10-06",
+  },
+  "anthropic:claude-sonnet-5-5": {
+    inputPerM: 2,
+    cachedInputPerM: 0.2,
+    outputPerM: 10,
+    source: "platform.claude.com/docs/en/about-claude/pricing, 2026-10-06",
+  },
   "google:gemini-3.1-flash-image": {
     inputPerM: 0.5,
     // ~1,120 tokens por imagen 1K = $0.067.
