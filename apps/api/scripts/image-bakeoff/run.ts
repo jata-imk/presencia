@@ -5,18 +5,22 @@
 // prompt compuesto de producción (AiSdkImageProvider + composeImagePrompt), y
 // deja:
 //   - una galería a ciegas para calificar (out/<corrida>/index.html): por
-//     prompt, los modelos en columnas barajadas (A, B, C…), dos variantes cada
-//     uno como en la card, ya recortadas a la proporción que vería el creator;
+//     prompt, los modelos en columnas barajadas (A, B, C…), todos con el mismo
+//     número de imágenes (las variantes de más salen al revelar), ya
+//     recortadas a la proporción que vería el creator;
 //   - un reporte markdown con latencia, medidas, costo y bloqueos por imagen.
 // El juicio de calidad es humano: se califica en la galería y se pega el JSON.
 //
 // Uso: pnpm --filter @presencia/api bakeoff:imagenes
 // IMAGE_BAKEOFF_MODELS="google:x,openai:y" cambia los modelos.
 // IMAGE_BAKEOFF_PROMPTS="id1,id2" re-corre solo esos prompts.
-// IMAGE_BAKEOFF_VARIANTS=1 genera una imagen por prompt en vez de dos.
+// IMAGE_BAKEOFF_VARIANTS=1 genera una imagen por prompt en todos los modelos.
+// IMAGE_BAKEOFF_FRESH=1 ignora el caché (cache.ts) y paga todo de nuevo.
 //
-// Cuesta dinero de verdad (~$5–8 la corrida completa de F10.7: 12 prompts × 2
-// variantes × 5 modelos). Las imágenes NO se versionan: caen en
+// Cuesta dinero de verdad, pero una imagen ya generada con el mismo modelo y
+// el mismo prompt sale del caché sin pagarse otra vez. La corrida de F10.7
+// sin caché: ~$3.30 (dos variantes para los candidatos, una para los dos
+// conocidos). Las imágenes NO se versionan: caen en
 // scripts/image-bakeoff/out/ (en .gitignore). El reporte sí, en
 // docs/reference/bakeoff-imagenes/.
 
@@ -27,143 +31,29 @@ import { costOf } from "../../src/ai/model-prices.js";
 import { createImageModelResolver } from "../../src/ai/provider-registry.js";
 import { AiSdkImageProvider } from "../../src/images/ai-sdk-image.provider.js";
 import { fitToAspect } from "../../src/images/image-fit.js";
-import type { ImageAspectRatio, ImageRequest } from "../../src/images/image-provider.js";
-import { composeEditPrompt, composeImagePrompt } from "../../src/images/image-prompt.js";
+import type { ImageRequest } from "../../src/images/image-provider.js";
+import { OUT_ROOT, cacheKey, readCached, writeCached } from "./cache.js";
+import { PROMPTS, promptFor, type BakeoffPrompt } from "./prompts.js";
 import { registrarGasto, splitModelId } from "../gasto-local.js";
 
 // Los candidatos de F10.7 (docs/reference/modelos-de-imagen-2026-09.md):
 // Grok Imagine 2.0 (principal propuesto), Muse y MAI-Image por OpenRouter,
 // Nano Banana 2 (el de hoy, control) y gpt-image-2 (el alternativo de hoy).
-const DEFAULT_MODELS = [
-  "xai:grok-imagine-image-2.0",
-  "openrouter:meta/muse-image",
-  "openrouter:microsoft/mai-image-2.6",
-  "google:gemini-3.1-flash-image",
-  "openai:gpt-image-2",
-];
-
-interface BakeoffPrompt {
-  id: string;
-  aspectRatio: ImageAspectRatio;
-  /** Lo que escribiría el chat (el "qué se ve"); se compone como en producción. */
-  description: string;
-  /**
-   * Se manda tal cual, sin componer. Solo las pruebas de texto: el prompt
-   * compuesto siempre pide "sin texto", y lo que se mide ahí es si el
-   * generador escribe bien cuando el creator lo pide.
-   */
-  raw?: boolean;
-  /** Si está, se edita la primera variante que produjo ese prompt. */
-  editOf?: string;
-  /** Qué mirar en este prompt al calificar. */
-  mirar: string;
-}
-
-const PROMPTS: BakeoffPrompt[] = [
-  {
-    id: "marquesitas",
-    aspectRatio: "4:5",
-    description:
-      "Un puesto de marquesitas en el Paseo de Montejo de Mérida al atardecer, con el vendedor preparando una marquesita con queso de bola.",
-    mirar: "¿Se reconoce el Paseo de Montejo? ¿La marquesita es una marquesita?",
-  },
-  {
-    id: "cafe-centro",
-    aspectRatio: "4:5",
-    description:
-      "Taza de café de olla sobre una mesa de madera en una cafetería del centro histórico de Mérida, paredes de colores y mosaico de pasta al fondo.",
-    mirar: "Mosaico de pasta y paredes del centro; café de olla creíble.",
-  },
-  {
-    id: "nutriologa",
-    aspectRatio: "1:1",
-    description:
-      "Plato de desayuno saludable mexicano: chilaquiles verdes horneados con pollo, aguacate y frijoles, vista cenital, para una nutrióloga.",
-    mirar: "Comida mexicana real, no genérica; vista cenital.",
-  },
-  {
-    id: "inmobiliaria",
-    aspectRatio: "4:5",
-    description:
-      "Fachada de una casa colonial restaurada en el barrio de Santiago en Mérida, con puerta de madera y herrería, cielo despejado.",
-    mirar: "Arquitectura yucateca, no colonial genérica.",
-  },
-  {
-    id: "gym",
-    aspectRatio: "4:5",
-    description:
-      "Mujer de 30 años entrenando con mancuernas en un gimnasio pequeño de barrio, energía y esfuerzo, sin marcas de ropa visibles.",
-    mirar: "Persona creíble (manos, cara); sin logos en la ropa.",
-  },
-  {
-    id: "linkedin-equipo",
-    aspectRatio: "1:1",
-    description:
-      "Equipo pequeño de una agencia de marketing en Monterrey conversando alrededor de una laptop en una oficina luminosa.",
-    mirar: "Personas naturales, sin logos en la laptop.",
-  },
-  {
-    id: "x-cenote",
-    aspectRatio: "16:9",
-    description:
-      "Cenote de Yucatán visto desde arriba con agua turquesa y raíces colgando, una persona flotando.",
-    mirar: "Cenote real, proporción 16:9.",
-  },
-  {
-    id: "tiendita-sin-logos",
-    aspectRatio: "4:5",
-    // F10.7: el prompt que más tienta a dibujar marcas (refrescos, botanas).
-    description:
-      "Refrigerador de refrescos y estante de botanas en una tiendita de la esquina en Mérida, luz de la tarde entrando por la puerta.",
-    mirar: "¿Metió marcas reconocibles? Eso descalifica (así cayó Flash Lite en F10).",
-  },
-  {
-    id: "texto-en-imagen",
-    aspectRatio: "1:1",
-    raw: true,
-    // Control de F10: pide texto exacto en mayúsculas.
-    description:
-      "Cartel de promoción de una taquería que diga exactamente 'MARTES DE 2X1 EN TACOS DE COCHINITA', estilo cartel pintado a mano mexicano.",
-    mirar: "¿El texto dice exactamente eso, sin letras de más ni de menos?",
-  },
-  {
-    id: "pizarron-espanol",
-    aspectRatio: "4:5",
-    raw: true,
-    // F10.7: acentos y signos, que es donde fallan.
-    description:
-      "Pizarrón de gis en la entrada de un puesto de marquesitas que diga exactamente: 'Marquesitas de cajeta y queso de bola · 2×1 los martes'. Fotografía natural, luz cálida, Mérida.",
-    mirar: "Acentos, la ×, el punto medio; sin palabras inventadas.",
-  },
-  {
-    id: "marquesitas-calida",
-    aspectRatio: "4:5",
-    editOf: "marquesitas",
-    description:
-      "Hazla más cálida y quita a las personas del fondo; conserva el puesto y la composición.",
-    mirar: "Edición fiel: misma escena, más cálida, sin gente al fondo.",
-  },
-  {
-    id: "cafe-minimalista",
-    aspectRatio: "4:5",
-    editOf: "cafe-centro",
-    description:
-      "Cambia el fondo por una pared lisa color terracota, estilo minimalista; conserva la taza.",
-    mirar: "Edición fiel: la misma taza, fondo terracota liso.",
-  },
+// Los dos conocidos van con una variante: están de referencia, ya se sabe
+// cómo dibujan, y Nano Banana 2 es el más caro de todos (~$0.095 en 4:5).
+const DEFAULT_MODELS: { id: string; variants: number }[] = [
+  { id: "xai:grok-imagine-image-2.0", variants: 2 },
+  { id: "openrouter:meta/muse-image", variants: 2 },
+  { id: "openrouter:microsoft/mai-image-2.6", variants: 2 },
+  { id: "google:gemini-3.1-flash-image", variants: 1 },
+  { id: "openai:gpt-image-2", variants: 1 },
 ];
 
 // pnpm --filter corre el script con apps/api como cwd.
-const OUT_ROOT = path.resolve("scripts/image-bakeoff/out");
 const REPORT_DIR = path.resolve("../../docs/reference/bakeoff-imagenes");
 
 function extension(mediaType: string) {
   return mediaType.split("/")[1]?.replace("jpeg", "jpg") ?? "bin";
-}
-
-function promptFor(p: BakeoffPrompt): string {
-  if (p.raw) return p.description;
-  return p.editOf ? composeEditPrompt(p.description) : composeImagePrompt(p.description, null);
 }
 
 interface Pieza {
@@ -177,6 +67,8 @@ interface Pieza {
   segundos?: number;
   costUsd?: number | null;
   nota?: string;
+  /** Fecha (ISO) en que se generó, si salió del caché: no se pagó en esta corrida. */
+  reusada?: string;
 }
 
 async function medidas(data: Uint8Array): Promise<string> {
@@ -185,7 +77,13 @@ async function medidas(data: Uint8Array): Promise<string> {
 }
 
 /** El costo que cobró el proveedor si lo reporta (OpenRouter), si no la tabla de precios. */
-function costo(model: string, raw: unknown, input: number, output: number): number | null {
+function costo(
+  model: string,
+  raw: unknown,
+  input: number,
+  output: number,
+  images: number,
+): number | null {
   const reportado = (raw as { providerMetadata?: { openrouter?: { cost?: number | null } } })
     ?.providerMetadata?.openrouter?.cost;
   if (typeof reportado === "number") return reportado;
@@ -193,9 +91,14 @@ function costo(model: string, raw: unknown, input: number, output: number): numb
     ...splitModelId(model),
     inputTokens: input,
     outputTokens: output,
-    imagesCount: 1,
+    imagesCount: images,
   });
 }
+
+/** Lo que salió de una imagen, recién pagada o del caché. */
+type Salida =
+  | { status: "ok"; data: Uint8Array; mediaType: string; segundos: number; costUsd: number | null }
+  | { status: "bloqueada"; segundos: number; costUsd: number | null };
 
 async function correrModelo(
   modelId: string,
@@ -203,6 +106,7 @@ async function correrModelo(
   variants: number,
   runDir: string,
   fecha: string,
+  fresh: boolean,
 ): Promise<Pieza[]> {
   const resolve = createImageModelResolver(process.env);
   const provider = new AiSdkImageProvider(resolve(modelId), modelId);
@@ -210,73 +114,128 @@ async function correrModelo(
   const piezas: Pieza[] = [];
   // La primera variante que salió de cada prompt, YA recortada: en producción
   // se edita el asset guardado, que image-fit ya llevó a la proporción.
-  const bases = new Map<string, { data: Uint8Array; mediaType: string }>();
+  const bases = new Map<string, { data: Uint8Array; mediaType: string; key: string }>();
 
   for (const p of prompts) {
     const cuantas = p.editOf ? 1 : variants;
     for (let variant = 1; variant <= cuantas; variant++) {
       const request: ImageRequest = { prompt: promptFor(p), aspectRatio: p.aspectRatio };
+      const base = p.editOf ? bases.get(p.editOf) : undefined;
       if (p.editOf) {
-        const base = bases.get(p.editOf);
         if (!base) {
           piezas.push({ promptId: p.id, model: modelId, variant, status: "sin base" });
           continue;
         }
-        request.reference = base;
+        request.reference = { data: base.data, mediaType: base.mediaType };
       }
-      const arranque = Date.now();
-      try {
-        const result = await provider.generate(request);
-        const segundos = (Date.now() - arranque) / 1000;
-        const input = result.usage?.inputTokens ?? 0;
-        const output = result.usage?.outputTokens ?? 0;
-        if (result.usage) {
-          await registrarGasto({
-            script: "bakeoff",
-            ...splitModelId(modelId),
-            task: request.reference ? "image_edit" : "image_generate",
-            inputTokens: input,
-            outputTokens: output,
-            imagesCount: result.kind === "blocked" ? 0 : 1,
+      const key = cacheKey({
+        model: modelId,
+        prompt: request.prompt,
+        aspectRatio: p.aspectRatio,
+        variant,
+        baseKey: base?.key,
+      });
+      const etiqueta = `[${modelId}] ${p.id} v${String(variant)}`;
+
+      let salida: Salida;
+      let reusada: string | undefined;
+      const cached = fresh ? null : await readCached(key);
+      if (cached) {
+        const { meta, data } = cached;
+        salida =
+          meta.status === "ok" && data && meta.mediaType
+            ? { ...meta, status: "ok", data, mediaType: meta.mediaType }
+            : { ...meta, status: "bloqueada" };
+        reusada = meta.generatedAt;
+      } else {
+        const arranque = Date.now();
+        try {
+          const result = await provider.generate(request);
+          const segundos = (Date.now() - arranque) / 1000;
+          const input = result.usage?.inputTokens ?? 0;
+          const output = result.usage?.outputTokens ?? 0;
+          const images = result.kind === "blocked" ? 0 : 1;
+          if (result.usage) {
+            await registrarGasto({
+              script: "bakeoff",
+              ...splitModelId(modelId),
+              task: request.reference ? "image_edit" : "image_generate",
+              inputTokens: input,
+              outputTokens: output,
+              imagesCount: images,
+            });
+          }
+          const costUsd = costo(modelId, result.providerRaw, input, output, images);
+          salida =
+            result.kind === "blocked"
+              ? { status: "bloqueada", segundos, costUsd }
+              : { status: "ok", data: result.data, mediaType: result.mediaType, segundos, costUsd };
+          await writeCached(
+            key,
+            {
+              model: modelId,
+              promptId: p.id,
+              variant,
+              status: salida.status,
+              mediaType: salida.status === "ok" ? salida.mediaType : undefined,
+              generatedAt: new Date().toISOString(),
+              segundos,
+              costUsd,
+            },
+            salida.status === "ok" ? salida.data : null,
+          );
+        } catch (error) {
+          const nota =
+            error instanceof Error
+              ? error.message.replace(/\|/g, "/").slice(0, 200)
+              : String(error);
+          piezas.push({
+            promptId: p.id,
+            model: modelId,
+            variant,
+            status: "error",
+            segundos: (Date.now() - arranque) / 1000,
+            nota,
           });
-        }
-        if (result.kind === "blocked") {
-          piezas.push({ promptId: p.id, model: modelId, variant, status: "bloqueada", segundos });
-          console.log(`[${modelId}] ${p.id} v${String(variant)}: bloqueada`);
+          console.error(`${etiqueta}: error ${nota}`);
           continue;
         }
-        // Lo que vería el creator: recortada a la proporción de la card,
-        // como hace image-fit.ts al guardarla.
-        const final = await fitToAspect(result.data, p.aspectRatio);
-        if (!bases.has(p.id)) bases.set(p.id, { data: final, mediaType: result.mediaType });
-        const file = `${p.id}__${slug}__v${String(variant)}.${extension(result.mediaType)}`;
-        await writeFile(path.join(runDir, file), final);
-        await writeFile(path.join(runDir, "originales", `${fecha}_${file}`), result.data);
-        piezas.push({
-          promptId: p.id,
-          model: modelId,
-          variant,
-          status: "ok",
-          file,
-          original: await medidas(result.data),
-          final: await medidas(final),
-          segundos,
-          costUsd: costo(modelId, result.providerRaw, input, output),
-        });
-        console.log(`[${modelId}] ${p.id} v${String(variant)}: ok ${segundos.toFixed(1)} s`);
-      } catch (error) {
-        const nota =
-          error instanceof Error ? error.message.replace(/\|/g, "/").slice(0, 200) : String(error);
-        piezas.push({
-          promptId: p.id,
-          model: modelId,
-          variant,
-          status: "error",
-          segundos: (Date.now() - arranque) / 1000,
-          nota,
-        });
-        console.error(`[${modelId}] ${p.id} v${String(variant)}: error ${nota}`);
       }
+
+      const origen = reusada ? `del caché (${reusada.slice(0, 10)})` : "";
+      if (salida.status === "bloqueada") {
+        piezas.push({
+          promptId: p.id,
+          model: modelId,
+          variant,
+          status: "bloqueada",
+          segundos: salida.segundos,
+          costUsd: salida.costUsd,
+          reusada,
+        });
+        console.log(`${etiqueta}: bloqueada ${origen}`);
+        continue;
+      }
+      // Lo que vería el creator: recortada a la proporción de la card,
+      // como hace image-fit.ts al guardarla.
+      const final = await fitToAspect(salida.data, p.aspectRatio);
+      if (!bases.has(p.id)) bases.set(p.id, { data: final, mediaType: salida.mediaType, key });
+      const file = `${p.id}__${slug}__v${String(variant)}.${extension(salida.mediaType)}`;
+      await writeFile(path.join(runDir, file), final);
+      await writeFile(path.join(runDir, "originales", `${fecha}_${file}`), salida.data);
+      piezas.push({
+        promptId: p.id,
+        model: modelId,
+        variant,
+        status: "ok",
+        file,
+        original: await medidas(salida.data),
+        final: await medidas(final),
+        segundos: salida.segundos,
+        costUsd: salida.costUsd,
+        reusada,
+      });
+      console.log(`${etiqueta}: ok ${origen || `${salida.segundos.toFixed(1)} s`}`);
     }
   }
   return piezas;
@@ -287,10 +246,12 @@ function galeria(
   prompts: BakeoffPrompt[],
   models: string[],
   piezas: Pieza[],
+  ciegas: number,
 ): string {
   const datos = {
     runId,
     models,
+    ciegas,
     prompts: prompts.map((p) => ({
       id: p.id,
       aspect: p.aspectRatio,
@@ -317,9 +278,10 @@ section h2{font-size:16px;margin:0 0 4px}
 .fila{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 .celda{background:#fff;border-radius:12px;padding:10px;border:2px solid transparent}
 .celda h3{margin:0 0 8px;font-size:15px}
-.imgs{display:flex;gap:6px}.imgs img{width:50%;height:auto;border-radius:6px;cursor:zoom-in;background:#eee}
+.imgs{display:flex;gap:6px}.imgs img{flex:1 1 0;min-width:0;height:auto;border-radius:6px;cursor:zoom-in;background:#eee}
+.imgs .extra{display:none}.revelado .imgs .extra{display:block}
 .falla{font-size:12px;color:#b00;padding:20px 0}
-.meta{font-size:11px;color:#777;margin-top:6px;min-height:14px}
+.meta{display:none;font-size:11px;color:#777;margin-top:6px}.revelado .meta{display:block}
 .score{display:flex;gap:4px;margin-top:8px}.score button{padding:4px 10px}
 textarea{width:100%;box-sizing:border-box;margin-top:6px;font:inherit;font-size:13px;min-height:38px}
 .modelo{display:none;font-size:12px;color:#3d2347;font-weight:600}.revelado .modelo{display:inline}
@@ -329,7 +291,11 @@ dialog{border:0;padding:0;background:transparent}dialog img{max-width:92vw;max-h
 <header><h1>Bake-off de imágenes · ${runId}</h1>
 <button id="revelar">Revelar modelos</button>
 <button id="copiar">Copiar resultados</button><span id="estado" style="font-size:13px;color:#555"></span></header>
-<p class="criterios">Califica cada columna de 1 a 5 mirando las dos variantes: <b>lugar reconocible</b> (sureste), <b>sin logotipos</b>, <b>español bien escrito</b> (cuando lo pide), <b>proporción</b> (ya recortada como la vería el creator) y, en las ediciones, <b>fidelidad</b>. Las columnas están barajadas por fila: no busques patrón. Clic en una imagen para verla grande.</p>
+<p class="criterios">Califica cada columna de 1 a 5 mirando sus imágenes: <b>lugar reconocible</b> (sureste), <b>sin logotipos</b>, <b>español bien escrito</b> (cuando lo pide), <b>proporción</b> (ya recortada como la vería el creator) y, en las ediciones, <b>fidelidad</b>. Las columnas están barajadas por fila: no busques patrón. Clic en una imagen para verla grande.${
+    ciegas < Math.max(...piezas.map((x) => x.variant), 1)
+      ? " Todas las columnas muestran el mismo número de imágenes; las variantes de más de algunos modelos aparecen al revelar, con las medidas y el costo, para ver si su calidad es pareja."
+      : " Las medidas y el costo aparecen al revelar: delatarían al modelo."
+  }</p>
 <main id="app"></main>
 <dialog id="zoom"><img alt=""></dialog>
 <script>
@@ -348,8 +314,8 @@ D.prompts.forEach((p,i)=>{
     const k=p.id+"|"+m;const letra=String.fromCharCode(65+j);
     const piezas=D.piezas.filter(x=>x.promptId===p.id&&x.model===m);
     const c=document.createElement("div");c.className="celda";
-    const imgs=piezas.map(x=>x.status==="ok"?'<img loading=lazy src="'+esc(x.file)+'" alt="'+letra+' v'+x.variant+'">':'<div class=falla>'+esc(x.status)+(x.nota?": "+esc(x.nota):"")+'</div>').join("");
-    const meta=piezas.filter(x=>x.status==="ok").map(x=>x.original+(x.final!==x.original?" → "+x.final:"")+" · "+x.segundos.toFixed(1)+" s · "+(x.costUsd==null?"sin precio":"$"+x.costUsd.toFixed(3))).join(" | ");
+    const imgs=piezas.map(x=>{const extra=x.variant>D.ciegas?' extra':'';return x.status==="ok"?'<img class="'+extra+'" loading=lazy src="'+esc(x.file)+'" alt="'+letra+' v'+x.variant+'">':'<div class="falla'+extra+'">'+esc(x.status)+(x.nota?": "+esc(x.nota):"")+'</div>'}).join("");
+    const meta=piezas.filter(x=>x.status==="ok").map(x=>x.original+(x.final!==x.original?" → "+x.final:"")+" · "+x.segundos.toFixed(1)+" s · "+(x.costUsd==null?"sin precio":"$"+x.costUsd.toFixed(3))+(x.reusada?" · del "+x.reusada.slice(0,10):"")).join(" | ");
     c.innerHTML="<h3>"+letra+' <span class=modelo>· '+esc(m)+"</span></h3><div class=imgs>"+(imgs||'<div class=falla>sin imagen</div>')+"</div><div class=meta>"+meta+"</div>";
     const sc=document.createElement("div");sc.className="score";
     for(let n=1;n<=5;n++){const b=document.createElement("button");b.textContent=n;if(estado[k]?.score===n)b.className="on";b.onclick=()=>{estado[k]={...estado[k],score:n};guardar();[...sc.children].forEach(x=>x.className="");b.className="on";};sc.appendChild(b);}
@@ -379,14 +345,24 @@ function reporte(
   piezas: Pieza[],
 ) {
   const fila = (x: Pieza) =>
-    `| ${x.model} | ${x.promptId} | v${String(x.variant)} | ${x.segundos !== undefined ? `${x.segundos.toFixed(1)} s` : "—"} | ${x.original ?? "—"}${x.final && x.final !== x.original ? ` → ${x.final}` : ""} | ${x.costUsd === undefined ? "—" : x.costUsd === null ? "sin precio" : `$${x.costUsd.toFixed(4)}`} | ${x.status === "ok" ? "" : `**${x.status}**${x.nota ? `: ${x.nota}` : ""}`} |`;
+    `| ${x.model} | ${x.promptId} | v${String(x.variant)} | ${x.segundos !== undefined ? `${x.segundos.toFixed(1)} s` : "—"} | ${x.original ?? "—"}${x.final && x.final !== x.original ? ` → ${x.final}` : ""} | ${x.costUsd === undefined ? "—" : x.costUsd === null ? "sin precio" : `$${x.costUsd.toFixed(4)}`} | ${[x.status === "ok" ? "" : `**${x.status}**${x.nota ? `: ${x.nota}` : ""}`, x.reusada ? `del caché (${x.reusada.slice(0, 10)})` : ""].filter(Boolean).join(" · ")} |`;
   const resumen = models.map((m) => {
     const de = piezas.filter((x) => x.model === m);
     const ok = de.filter((x) => x.status === "ok");
-    const total = ok.reduce((s, x) => s + (x.costUsd ?? 0), 0);
-    const lat = ok.map((x) => x.segundos ?? 0).sort((a, b) => a - b);
+    // Un bloqueo también cuesta (Gemini cobra la entrada).
+    const total = de.reduce((s, x) => s + (x.costUsd ?? 0), 0);
+    const pagado = de.filter((x) => !x.reusada).reduce((s, x) => s + (x.costUsd ?? 0), 0);
+    // La latencia de lo generado en esta corrida; la del caché es de otro día
+    // y otra carga del proveedor, y solo se usa si no hay nada más.
+    const nuevas = ok.filter((x) => !x.reusada);
+    const base = nuevas.length > 0 ? nuevas : ok;
+    const lat = base.map((x) => x.segundos ?? 0).sort((a, b) => a - b);
     const mediana = lat.length > 0 ? lat[Math.floor(lat.length / 2)]! : null;
-    return `| ${m} | ${String(ok.length)}/${String(de.length)} | ${String(de.filter((x) => x.status === "bloqueada").length)} | ${String(de.filter((x) => x.status === "error").length)} | ${mediana === null ? "—" : `${mediana.toFixed(1)} s`} | ${total.toFixed(3)} | ${ok.length > 0 ? `${(total / ok.length).toFixed(4)}` : "—"} |`;
+    const latencia =
+      mediana === null
+        ? "—"
+        : `${mediana.toFixed(1)} s${nuevas.length === 0 ? " (del caché)" : ""}`;
+    return `| ${m} | ${String(ok.length)}/${String(de.length)} | ${String(de.filter((x) => x.status === "bloqueada").length)} | ${String(de.filter((x) => x.status === "error").length)} | ${latencia} | $${total.toFixed(3)} | $${pagado.toFixed(3)} | ${ok.length > 0 ? `$${(total / ok.length).toFixed(4)}` : "—"} |`;
   });
   return [
     `# Bake-off de generadores de imagen — ${fecha}`,
@@ -395,8 +371,8 @@ function reporte(
     "",
     "## Resumen por modelo",
     "",
-    "| Modelo | Imágenes | Bloqueadas | Errores | Latencia mediana | Costo total | Costo por imagen |",
-    "|---|---|---|---|---|---|---|",
+    "| Modelo | Imágenes | Bloqueadas | Errores | Latencia mediana | Costo de las imágenes | Pagado en esta corrida | Costo por imagen |",
+    "|---|---|---|---|---|---|---|---|",
     ...resumen,
     "",
     "## Calificaciones (juicio humano)",
@@ -420,11 +396,19 @@ function reporte(
 }
 
 async function main() {
-  const models = (process.env.IMAGE_BAKEOFF_MODELS?.split(",") ?? DEFAULT_MODELS).map((m) =>
-    m.trim(),
-  );
+  // IMAGE_BAKEOFF_VARIANTS, si viene, manda sobre todos los modelos; si no,
+  // los de IMAGE_BAKEOFF_MODELS van con dos y los de default con las suyas.
+  const envVariants = Number(process.env.IMAGE_BAKEOFF_VARIANTS) || undefined;
+  const runs = (
+    process.env.IMAGE_BAKEOFF_MODELS?.split(",").map((m) => ({ id: m.trim(), variants: 2 })) ??
+    DEFAULT_MODELS
+  ).map((r) => ({ ...r, variants: envVariants ?? r.variants }));
+  const models = runs.map((r) => r.id);
+  // La galería ciega muestra a todos el mismo número de imágenes: una columna
+  // con menos delataría a los conocidos.
+  const ciegas = Math.min(...runs.map((r) => r.variants));
+  const fresh = process.env.IMAGE_BAKEOFF_FRESH === "1";
   const only = process.env.IMAGE_BAKEOFF_PROMPTS?.split(",").map((p) => p.trim());
-  const variants = Number(process.env.IMAGE_BAKEOFF_VARIANTS ?? 2) || 2;
   // Una edición necesita su base: pedir solo "marquesitas-calida" corre
   // también "marquesitas", o la edición no tendría qué editar.
   const bases = PROMPTS.filter((p) => only?.includes(p.id) && p.editOf).map((p) => p.editOf);
@@ -440,7 +424,9 @@ async function main() {
   for (const m of models) resolve(m);
 
   const fecha = new Date().toISOString().slice(0, 10);
-  const hora = new Date().toISOString().slice(11, 16).replace(":", "");
+  // Con segundos: dos corridas en el mismo minuto (p. ej. dos parciales seguidas)
+  // chocaban en la carpeta y en el reporte, que se escribe sin pisar.
+  const hora = new Date().toISOString().slice(11, 19).replaceAll(":", "");
   const runId = `${fecha}-${hora}`;
   const runDir = path.join(OUT_ROOT, runId);
   await mkdir(path.join(runDir, "originales"), { recursive: true });
@@ -449,10 +435,12 @@ async function main() {
   // Un modelo por carril, en paralelo: el bake-off completo son ~120
   // imágenes, y en fila serían más de media hora.
   const piezas = (
-    await Promise.all(models.map((m) => correrModelo(m, prompts, variants, runDir, fecha)))
+    await Promise.all(
+      runs.map((r) => correrModelo(r.id, prompts, r.variants, runDir, fecha, fresh)),
+    )
   ).flat();
 
-  await writeFile(path.join(runDir, "index.html"), galeria(runId, prompts, models, piezas));
+  await writeFile(path.join(runDir, "index.html"), galeria(runId, prompts, models, piezas, ciegas));
   // Nunca pisa un reporte: el de una corrida completa es la evidencia que cita
   // ADR-025, y una re-corrida parcial del mismo día lo reemplazaría.
   const parcial = only ? "-parcial" : "";
