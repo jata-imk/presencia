@@ -91,6 +91,28 @@ describe("AiUsageService.registrar", () => {
     });
   });
 
+  it("si el crudo no es un objeto, los intentos van junto a él sin aplanarlo", async () => {
+    const insertEvent = vi.fn();
+    const aiUsage = await servicio((_userId, fn) => fn({} as never), insertEvent);
+    await aiUsage.registrar({
+      userId: "u1",
+      task: "chat",
+      modelo: {
+        provider: "google",
+        modelName: "gemini-3.8-flash",
+        fallbackFrom: "openai:gpt-6-luna",
+        attempts: [{ id: "openai:gpt-6-luna", status: 503, error: "HTTP 503" }],
+      },
+      usage: USAGE,
+      stepsCount: 1,
+      arranque: Date.now(),
+      providerRaw: ["paso 1", "paso 2"],
+    });
+    expect(insertEvent.mock.calls[0]?.[1]).toMatchObject({
+      providerRaw: { raw: ["paso 1", "paso 2"], attempts: [{ status: 503 }] },
+    });
+  });
+
   it("sin respaldo, fallback_from es null y el crudo no cambia", async () => {
     const insertEvent = vi.fn();
     const aiUsage = await servicio((_userId, fn) => fn({} as never), insertEvent);

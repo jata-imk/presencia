@@ -22,6 +22,14 @@ describe("imageGeneratorIds", () => {
       imageGeneratorIds("google:gemini-3.1-flash-image,openai:gpt-image-1.5", "openai:gpt-image-2"),
     ).toEqual(["google:gemini-3.1-flash-image", "openai:gpt-image-2", "openai:gpt-image-1.5"]);
     warn.mockClear();
+    // Ya en la lista, pero más abajo: se mueve al segundo lugar.
+    expect(
+      imageGeneratorIds(
+        "google:gemini-3.1-flash-image,openai:gpt-image-1.5,openai:gpt-image-2",
+        "openai:gpt-image-2",
+      ),
+    ).toEqual(["google:gemini-3.1-flash-image", "openai:gpt-image-2", "openai:gpt-image-1.5"]);
+    warn.mockClear();
     expect(
       imageGeneratorIds("google:gemini-3.1-flash-image,openai:gpt-image-2", "openai:gpt-image-2"),
     ).toHaveLength(2);
