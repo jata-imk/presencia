@@ -88,6 +88,23 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
     perImage: 0.04,
     source: "docs.x.ai/developers/pricing, 2026-09-30",
   },
+  "openrouter:meta/muse-image": {
+    inputPerM: 0,
+    outputPerM: 0,
+    perImage: 0.01,
+    source:
+      "openrouter.ai/meta/muse-image y dev.meta.ai, 2026-10-06 (plano por imagen; OpenRouter reporta el costo real en provider_raw)",
+  },
+  "openrouter:microsoft/mai-image-2.6": {
+    // Por tokens: $5/M de texto y $38/M de salida; ~$0.039 una imagen 1K. La
+    // imagen de partida de una edición es $8/M y aquí se cuenta como texto:
+    // el reporte subestima las ediciones. El costo exacto de cada llamada
+    // queda en provider_raw.providerMetadata.openrouter.cost. No toca el cobro
+    // al creator, que es tarifa fija por imagen (ADR-012).
+    inputPerM: 5,
+    outputPerM: 38,
+    source: "openrouter.ai/microsoft/mai-image-2.6, 2026-10-06",
+  },
   "fake:solid-png": { inputPerM: 0, outputPerM: 0, source: "generador de mentira de dev" },
 };
 

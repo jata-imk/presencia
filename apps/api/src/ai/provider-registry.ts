@@ -3,7 +3,9 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI, google } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createXai } from "@ai-sdk/xai";
 import { createProviderRegistry, wrapLanguageModel, type ImageModel, type LanguageModel } from "ai";
+import { createOpenRouterImages, OPENROUTER_BASE_URL } from "./openrouter-images.js";
 
 // Capa de proveedor de ADR-004: los modelos se nombran "proveedor:modelo"
 // (ej. "google:gemini-3.5-flash") y se resuelven contra un registry. Hoy el
@@ -20,6 +22,8 @@ interface ProviderDescriptor {
   baseUrlEnvKey?: string;
   defaultBaseUrl?: string;
   create: (apiKey: string, baseUrl?: string) => RegistrableProvider;
+  /** Solo genera imágenes: no puede ir en una variable de modelo de texto (env.ts lo rechaza). */
+  imageOnly?: boolean;
 }
 
 // Fuente única de verdad del inventario de proveedores. Registro, validación
@@ -55,6 +59,21 @@ export const PROVIDERS = {
     defaultBaseUrl: "https://api.moonshot.ai/v1",
     create: (apiKey, baseURL) =>
       createOpenAICompatible({ name: "kimi", baseURL: baseURL!, apiKey }),
+  },
+  // F10.7: Grok Imagine (ADR-025). Provider oficial del AI SDK; también tiene
+  // texto (Grok), que nadie usa todavía.
+  xai: {
+    envKey: "XAI_API_KEY",
+    create: (apiKey) => createXai({ apiKey }),
+  },
+  // F10.7: Muse (Meta) y MAI-Image (Microsoft) con una sola key. Adapter
+  // propio y solo de imágenes: ver ai/openrouter-images.ts.
+  openrouter: {
+    envKey: "OPENROUTER_API_KEY",
+    baseUrlEnvKey: "OPENROUTER_BASE_URL",
+    defaultBaseUrl: OPENROUTER_BASE_URL,
+    create: (apiKey, baseUrl) => createOpenRouterImages({ apiKey, baseUrl }),
+    imageOnly: true,
   },
 } as const satisfies Record<string, ProviderDescriptor>;
 

@@ -34,6 +34,11 @@ const envSchema = z
     MINIMAX_BASE_URL: z.url().optional(),
     KIMI_API_KEY: z.string().min(1).optional(),
     KIMI_BASE_URL: z.url().optional(),
+    // F10.7: generadores de imagen. xAI (Grok Imagine) y OpenRouter (Muse y
+    // MAI-Image con una sola key; solo imágenes).
+    XAI_API_KEY: z.string().min(1).optional(),
+    OPENROUTER_API_KEY: z.string().min(1).optional(),
+    OPENROUTER_BASE_URL: z.url().optional(),
     // Modelo default con formato "proveedor:modelo" (ADR-004). Cambiar de
     // proveedor es cambiar esta variable y reiniciar el proceso. El formato
     // y el inventario de proveedores los valida parseModelEntry (fuente única), que acepta un `@esfuerzo` opcional (F10.7).
@@ -155,6 +160,9 @@ const envSchema = z
         for (const { id, provider, reasoning } of entries) {
           if (image && reasoning) {
             throw new Error(`${path} no acepta "@${reasoning}": un modelo de imagen no razona`);
+          }
+          if (!image && (PROVIDERS[provider] as { imageOnly?: boolean }).imageOnly) {
+            throw new Error(`${path}: "${provider}" solo genera imágenes`);
           }
           if (onlyProvider && provider !== onlyProvider) {
             throw new Error(
