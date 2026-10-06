@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ComponentType } from "react";
 import {
   ArrowUp,
   Brush,
+  ChevronDown,
   Copy,
   ImageOff,
   ImagePlus,
@@ -29,7 +30,6 @@ import {
   type CardImageJob,
   type CardImageVersionDto,
   type ImageAspectRatio,
-  type ImageProviderSlot,
   type ImageStyle,
 } from "@presencia/shared";
 import { useToastStore } from "../../stores/toast-store.js";
@@ -46,7 +46,8 @@ import { StyleChip } from "./StyleChip.js";
 export interface GenerateInput {
   prompt: string;
   aspectRatio: ImageAspectRatio;
-  provider: ImageProviderSlot;
+  /** F10.7: qué generador de la lista del servidor (1 = el principal). */
+  generator: number;
   /** F10.6: siempre explícito, el del chip; así el trabajo guarda el que se vio. */
   style: ImageStyle;
 }
@@ -61,13 +62,14 @@ export interface CardImageGeneration {
   job: CardImageJob | null;
   /** Lo que cuesta un click, en % del mes. Nunca unidades (addendum ADR-012). */
   percent: number;
-  alternateAvailable: boolean;
+  /** F10.7: cuántos generadores hay; con 2 o más se ofrece "Probar con otro generador". */
+  generatorCount: number;
   /** F10.6: el estilo de la Voz de marca; el chip arranca en él si la card no tiene trabajo. */
   defaultStyle: ImageStyle;
   /** Las proporciones de esta red; la primera es la default. */
   aspectOptions: readonly ImageAspectRatio[];
   /** "Más cálida", "sin gente": edita la imagen elegida (una imagen). */
-  edit: (instruction: string, provider: ImageProviderSlot) => void;
+  edit: (instruction: string, generator: number) => void;
   /** Lo que cuesta una edición, en % del mes. */
   editPercent: number;
   /**
@@ -223,6 +225,66 @@ function CopyPromptButton({ prompt }: { prompt: string }) {
       <Copy size={12} strokeWidth={1.75} />
       Copiar
     </button>
+  );
+}
+
+/** F10.7: los generadores que ofrece "Probar con otro generador": todos menos el principal. */
+function otherGenerators(count: number): number[] {
+  return Array.from({ length: Math.max(count - 1, 0) }, (_, i) => i + 2);
+}
+
+/**
+ * Con dos generadores, el texto de siempre. Con más, por número: el creator no
+ * necesita saber qué modelo es cada uno, solo que son miradas distintas.
+ */
+function otherGeneratorLabel(generator: number, count: number): string {
+  return count === 2 ? "Probar con otro generador" : `Probar con el generador ${String(generator)}`;
+}
+
+/**
+ * "Con otro generador" del composer. Con dos generadores es un botón, como
+ * siempre; con más, el mismo botón abre la lista.
+ */
+function OtherGeneratorButton({
+  count,
+  disabled,
+  onPick,
+}: {
+  count: number;
+  disabled: boolean;
+  onPick: (generator: number) => void;
+}) {
+  const others = otherGenerators(count);
+  if (others.length === 0) return null;
+  if (others.length === 1) {
+    return (
+      <ActionButton
+        Icon={Shuffle}
+        label="Con otro generador"
+        disabled={disabled}
+        onClick={() => onPick(others[0]!)}
+      />
+    );
+  }
+  return (
+    <Menu placement="bottom-start">
+      <Menu.Trigger
+        disabled={disabled}
+        className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-card px-2.5 py-1.5 text-xs font-medium whitespace-nowrap text-fg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Shuffle size={13} strokeWidth={1.75} aria-hidden />
+        Con otro generador
+        <ChevronDown size={13} aria-hidden />
+      </Menu.Trigger>
+      <Menu.Content className={`${MENU_CONTENT_CLASS} w-52`}>
+        {others.map((generator) => (
+          <Menu.Item key={generator} className={MENU_ITEM_CLASS} onClick={() => onPick(generator)}>
+            <Shuffle size={14} aria-hidden />
+            Generador {generator}
+          </Menu.Item>
+        ))}
+      </Menu.Content>
+    </Menu>
   );
 }
 
@@ -424,7 +486,7 @@ function AdjustCard({
   const ready = instruction.trim().length >= 3;
   function apply(text: string) {
     if (text.trim().length < 3) return;
-    generation.edit(text.trim(), "primary");
+    generation.edit(text.trim(), 1);
     setInstruction("");
   }
   return (
@@ -625,12 +687,12 @@ export function ImageActionStrip({
   const busy = isBusy(generation);
   const canRegenerate = generation && prompt && aspectRatio;
   const fileInput = useRef<HTMLInputElement>(null);
-  const regenerate = (provider: ImageProviderSlot) => {
+  const regenerate = (generator: number) => {
     if (!canRegenerate) return;
     void generation.generate({
       prompt,
       aspectRatio,
-      provider,
+      generator,
       style: style ?? generation.defaultStyle,
     });
   };
@@ -653,7 +715,7 @@ export function ImageActionStrip({
           <button
             type="button"
             disabled={busy}
-            onClick={() => regenerate("primary")}
+            onClick={() => regenerate(1)}
             className="inline-flex h-8 items-center gap-1.5 rounded-full border border-line-focus bg-card px-3 font-display text-xs font-semibold text-fg transition-colors hover:bg-tint-plum disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RefreshCw size={13} strokeWidth={2} aria-hidden />
@@ -693,12 +755,16 @@ export function ImageActionStrip({
               </span>
             </Tooltip>
             <Menu.Content className={`${MENU_CONTENT_CLASS} w-60`}>
-              {generation.alternateAvailable && (
-                <Menu.Item className={MENU_ITEM_CLASS} onClick={() => regenerate("alternate")}>
+              {otherGenerators(generation.generatorCount).map((generator) => (
+                <Menu.Item
+                  key={generator}
+                  className={MENU_ITEM_CLASS}
+                  onClick={() => regenerate(generator)}
+                >
                   <Shuffle size={14} aria-hidden />
-                  Probar con otro generador
+                  {otherGeneratorLabel(generator, generation.generatorCount)}
                 </Menu.Item>
-              )}
+              ))}
               {onChangePrompt && (
                 <Menu.Item className={MENU_ITEM_CLASS} onClick={onChangePrompt}>
                   <Pencil size={14} aria-hidden />
@@ -818,26 +884,23 @@ function ImageComposer({
             // Se cierra solo si la API aceptó: con un 402 o un error de red, el
             // prompt que el usuario reescribió se queda en el campo.
             void generation
-              .generate({ prompt: prompt.trim(), aspectRatio, provider: "primary", style })
+              .generate({ prompt: prompt.trim(), aspectRatio, generator: 1, style })
               .then((ok) => {
                 if (ok) onGenerate?.();
               });
           }}
         />
-        {generation.alternateAvailable && (
-          <ActionButton
-            Icon={Shuffle}
-            label="Con otro generador"
-            disabled={busy || !ready}
-            onClick={() => {
-              void generation
-                .generate({ prompt: prompt.trim(), aspectRatio, provider: "alternate", style })
-                .then((ok) => {
-                  if (ok) onGenerate?.();
-                });
-            }}
-          />
-        )}
+        <OtherGeneratorButton
+          count={generation.generatorCount}
+          disabled={busy || !ready}
+          onPick={(generator) => {
+            void generation
+              .generate({ prompt: prompt.trim(), aspectRatio, generator, style })
+              .then((ok) => {
+                if (ok) onGenerate?.();
+              });
+          }}
+        />
         {onCancel ? (
           <button
             type="button"

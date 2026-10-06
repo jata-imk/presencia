@@ -1,6 +1,10 @@
 import type { ImageAspectRatio } from "@presencia/shared";
 import type { SharedV4ProviderOptions } from "@ai-sdk/provider";
-import type { ProviderId } from "../ai/provider-registry.js";
+import {
+  DEFAULT_IMAGE_MODEL_ID,
+  parseModelChain,
+  type ProviderId,
+} from "../ai/provider-registry.js";
 
 // Lo que cambia entre generadores al pedir una imagen (ADR-025): cómo se
 // pide la proporción y la resolución. Es dato del modelo, no del operador:
@@ -74,4 +78,22 @@ export function imageCallOptions(
     default:
       return { aspectRatio: asked };
   }
+}
+
+/**
+ * Los ids de la lista de generadores. AI_MODEL_IMAGE_ALT (hasta F10.7, el de
+ * "Probar con otro generador") entra en la posición 2 si no estaba ya en la
+ * lista, con un aviso: un despliegue que todavía lo tiene puesto sigue
+ * funcionando igual en vez de no arrancar, y un pedido viejo de "alternate"
+ * (que se traduce al 2) sigue yendo al modelo que el operador configuró.
+ */
+export function imageGeneratorIds(chain: string | undefined, legacyAlternate: string | undefined) {
+  const ids = parseModelChain(chain ?? DEFAULT_IMAGE_MODEL_ID).map(({ id }) => id);
+  if (legacyAlternate && !ids.includes(legacyAlternate)) {
+    console.warn(
+      `[images] AI_MODEL_IMAGE_ALT está obsoleta (F10.7): "${legacyAlternate}" entró como segundo de AI_MODEL_IMAGE. Muévelo a esa lista.`,
+    );
+    ids.splice(1, 0, legacyAlternate);
+  }
+  return ids;
 }

@@ -21,10 +21,12 @@ import {
   type EditCardImageBody,
   type GenerateCardImageBody,
   type ImageAspectRatio,
-  type ImageProviderSlot,
   type ImageStyle,
   type ImagesConfigDto,
   type PublicationCardDto,
+  jobGenerator,
+  legacyGenerator,
+  requestedGenerator,
 } from "@presencia/shared";
 import { AiUsageService } from "../ai/ai-usage.service.js";
 import type { AssetMetadata } from "../assets/assets.repository.js";
@@ -137,7 +139,7 @@ export class ImageGenerationService {
     return {
       generatePercent: flatActionsPercentOfQuota(REASON, IMAGE_VARIANTS_PER_GENERATION, tier),
       editPercent: flatActionPercentOfQuota(REASON, tier),
-      alternateAvailable: this.providers.alternate !== null,
+      generatorCount: this.providers.generators.length,
       // El mismo que usa `request` cuando el body no trae estilo.
       defaultStyle: imageStyleDef(voice?.imageStyle as ImageStyle | null).id,
     };
@@ -154,7 +156,8 @@ export class ImageGenerationService {
     cardId: string,
     body: GenerateCardImageBody,
   ): Promise<PublicationCardDto> {
-    const provider = this.requireProvider(body.provider);
+    const generator = requestedGenerator(body);
+    const provider = this.requireProvider(generator);
     const card = await this.loadEditableCard(userId, cardId);
     if (!IMAGE_ASPECT_OPTIONS[card.network].includes(body.aspectRatio)) {
       throw new BadRequestException("Esa proporción no se usa en esta red.");
@@ -214,7 +217,7 @@ export class ImageGenerationService {
 
     return this.startJob(userId, cardId, {
       kind: "generate",
-      slot: body.provider,
+      generator,
       provider,
       aspectRatio,
       style,
@@ -237,7 +240,8 @@ export class ImageGenerationService {
     cardId: string,
     body: EditCardImageBody,
   ): Promise<PublicationCardDto> {
-    const provider = this.requireProvider(body.provider);
+    const generator = requestedGenerator(body);
+    const provider = this.requireProvider(generator);
     const card = await this.loadEditableCard(userId, cardId);
     const content = card.content as CardContent;
     const slides = slidesIn(content);
@@ -268,7 +272,7 @@ export class ImageGenerationService {
 
     return this.startJob(userId, cardId, {
       kind: "edit",
-      slot: body.provider,
+      generator,
       provider,
       aspectRatio,
       // La edición no aplica estilo (conserva el de su imagen), pero hereda el
@@ -285,9 +289,9 @@ export class ImageGenerationService {
     });
   }
 
-  private requireProvider(slot: ImageProviderSlot): ImageProvider {
-    const provider = this.providerFor(slot);
-    if (!provider) throw new BadRequestException("No hay otro generador configurado.");
+  private requireProvider(generator: number): ImageProvider {
+    const provider = this.providerFor(generator);
+    if (!provider) throw new BadRequestException("Ese generador no está configurado.");
     return provider;
   }
 
@@ -315,7 +319,8 @@ export class ImageGenerationService {
     cardId: string,
     spec: {
       kind: "generate" | "edit";
-      slot: ImageProviderSlot;
+      /** F10.7: la posición en AI_MODEL_IMAGE (1 = el principal). */
+      generator: number;
       provider: ImageProvider;
       aspectRatio: ImageAspectRatio;
       style: ImageStyle | undefined;
@@ -335,7 +340,7 @@ export class ImageGenerationService {
     const job: CardImageJob = {
       id: batchId,
       status: "generating",
-      provider: spec.slot,
+      generator: spec.generator,
       kind: spec.kind,
       aspectRatio: spec.aspectRatio,
       ...(spec.style ? { style: spec.style } : {}),
@@ -354,7 +359,7 @@ export class ImageGenerationService {
           cardId,
           batchId,
           kind: spec.kind,
-          providerSlot: spec.slot,
+          providerSlot: String(spec.generator),
           provider: spec.provider.provider,
           model: spec.provider.modelName,
           prompt: image.prompt,
@@ -419,9 +424,7 @@ export class ImageGenerationService {
       return;
     }
 
-    const provider = this.providerFor(
-      pending[0]!.providerSlot === "alternate" ? "alternate" : "primary",
-    );
+    const provider = this.providerFor(generatorOfSlot(pending[0]!.providerSlot));
     const outcomes = await Promise.all(
       pending.map((row) => this.generateOne(userId, card, row, provider)),
     );
@@ -451,7 +454,7 @@ export class ImageGenerationService {
       {
         id: batchId,
         status,
-        provider: previous?.provider ?? "primary",
+        generator: previous ? jobGenerator(previous) : 1,
         kind: previous?.kind ?? "generate",
         aspectRatio: previous?.aspectRatio ?? (pending[0]!.aspectRatio as ImageAspectRatio),
         // F10.6: sin esto el estilo se perdía al terminar cualquier trabajo, y
@@ -614,8 +617,9 @@ export class ImageGenerationService {
     }
   }
 
-  private providerFor(slot: ImageProviderSlot): ImageProvider | null {
-    return slot === "alternate" ? this.providers.alternate : this.providers.primary;
+  /** El generador N de la lista (1 = el principal); null si no existe. Lo viejo lo traduce generatorOfSlot. */
+  private providerFor(generator: number): ImageProvider | null {
+    return this.providers.generators[generator - 1] ?? null;
   }
 
   /** Liquida una fila sin imagen. Nunca lanza: el lote tiene que poder cerrar. */
@@ -685,4 +689,17 @@ function altFor(
 
 function messageOf(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 500);
+}
+
+/**
+ * La columna `provider_slot` de `image_generations` es texto: desde F10.7
+ * guarda la posición del generador ("1", "2"…); las filas de antes dicen
+ * "primary" o "alternate" (= 1 y 2), y una que quedó pendiente durante el
+ * deploy se lee igual.
+ */
+function generatorOfSlot(slot: string): number {
+  const legacy = legacyGenerator(slot);
+  if (legacy !== null) return legacy;
+  const n = Number(slot);
+  return Number.isInteger(n) && n >= 1 ? n : 1;
 }

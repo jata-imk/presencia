@@ -76,10 +76,14 @@ export interface ImageProvider {
   generate(request: ImageRequest): Promise<ImageResult>;
 }
 
-/** El generador de siempre y, si está configurado, el de "Probar con otro generador". */
+/**
+ * F10.7: los generadores de la lista AI_MODEL_IMAGE, en orden. El generador N
+ * (`generators[N - 1]`) es una cadena de respaldo que arranca en el N-ésimo y
+ * sigue con los demás: "Probar con otro generador" elige con cuál empezar, y
+ * si ese está caído, igual responde alguno.
+ */
 export interface ImageProviders {
-  primary: ImageProvider;
-  alternate: ImageProvider | null;
+  generators: ImageProvider[];
 }
 
 export const IMAGE_PROVIDERS = Symbol("IMAGE_PROVIDERS");
