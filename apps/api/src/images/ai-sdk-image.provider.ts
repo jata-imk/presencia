@@ -53,6 +53,12 @@ export class AiSdkImageProvider implements ImageProvider {
     // El objeto, no el id en texto: `wrapImageModel` necesita el modelo ya resuelto.
     private readonly model: ResolvedImageModel,
     modelId: string,
+    /**
+     * Reintentos del SDK ante errores de API. Dentro de la cadena de respaldo
+     * van en 0: reintenta la cadena, que además sabe cuándo cambiar de
+     * generador. Suelto (bake-off, ejemplos de estilos), el default del SDK.
+     */
+    private readonly options: { maxRetries?: number } = {},
   ) {
     const { provider, model: modelName } = parseModelId(modelId);
     this.provider = provider;
@@ -93,6 +99,8 @@ export class AiSdkImageProvider implements ImageProvider {
         model,
         prompt,
         ...imageCallOptions(this.provider, this.modelName, request.aspectRatio),
+        ...(this.options.maxRetries !== undefined ? { maxRetries: this.options.maxRetries } : {}),
+        ...(request.abortSignal ? { abortSignal: request.abortSignal } : {}),
       });
 
       return {

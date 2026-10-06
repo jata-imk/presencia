@@ -5,10 +5,16 @@ import { BrandVoiceModule } from "../brand-voice/brand-voice.module.js";
 import { CardsModule } from "../cards/cards.module.js";
 import { CreditsModule } from "../credits/credits.module.js";
 import { JobsModule } from "../jobs/jobs.module.js";
-import { createImageModelResolver, DEFAULT_IMAGE_MODEL_ID } from "../ai/provider-registry.js";
+import {
+  createImageModelResolver,
+  DEFAULT_IMAGE_MODEL_ID,
+  parseModelChain,
+} from "../ai/provider-registry.js";
 import { env } from "../env.js";
 import { AiSdkImageProvider } from "./ai-sdk-image.provider.js";
 import { FakeImageProvider } from "./fake-image.provider.js";
+import { FallbackImageProvider } from "./fallback-image.provider.js";
+import { parseSimulateDown } from "../ai/fallback.js";
 import { ImageGenerationService } from "./image-generation.service.js";
 import { ImageGenerationsRepository } from "./image-generations.repository.js";
 import { IMAGE_PROVIDERS, type ImageProviders } from "./image-provider.js";
@@ -25,11 +31,24 @@ export function buildImageProviders(): ImageProviders {
     };
   }
   const resolve = createImageModelResolver(process.env);
-  const primaryId = env.AI_MODEL_IMAGE ?? DEFAULT_IMAGE_MODEL_ID;
+  // F10.7: AI_MODEL_IMAGE es una cadena (principal y respaldos), igual que
+  // las de texto. Cada eslabón sin reintentos propios: reintenta la cadena.
+  const chain = parseModelChain(env.AI_MODEL_IMAGE ?? DEFAULT_IMAGE_MODEL_ID).map(
+    ({ id }) => new AiSdkImageProvider(resolve(id), id, { maxRetries: 0 }),
+  );
+  const simulateDown = parseSimulateDown(env.AI_FALLBACK_SIMULATE);
   const alternateId = env.AI_MODEL_IMAGE_ALT;
   return {
-    primary: new AiSdkImageProvider(resolve(primaryId), primaryId),
-    alternate: alternateId ? new AiSdkImageProvider(resolve(alternateId), alternateId) : null,
+    primary: new FallbackImageProvider(chain, { simulateDown }),
+    // El alternativo también pasa por la cadena (de un eslabón): mismo plazo
+    // y mismos reintentos que cualquier generador, sin importar qué botón se
+    // apretó. Sin esto podía colgarse el trabajo entero.
+    alternate: alternateId
+      ? new FallbackImageProvider(
+          [new AiSdkImageProvider(resolve(alternateId), alternateId, { maxRetries: 0 })],
+          { simulateDown },
+        )
+      : null,
   };
 }
 

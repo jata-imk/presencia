@@ -248,6 +248,28 @@ describe("createFallbackChain", () => {
     expect(chain.attempts[0]?.error).toMatch(/Sin respuesta del proveedor/);
   });
 
+  it("un 400 que llega justo al vencer el plazo es la respuesta real: no cae al siguiente", async () => {
+    const tardio = new MockLanguageModelV4({
+      provider: "openai",
+      modelId: "gpt-6-luna",
+      doStream: ({ abortSignal }) =>
+        new Promise((_, reject) => {
+          abortSignal?.addEventListener("abort", () => reject(apiError(400)));
+        }),
+    });
+    const respaldo = link("google:gemini-3.8-flash", { steps: [ok("no")] });
+    const chain = createFallbackChain(
+      [{ entry: parseModelEntry("openai:gpt-6-luna"), model: tardio }, respaldo],
+      { ...FAST, firstOutputTimeoutMs: 20 },
+    );
+    const parts: string[] = [];
+    for await (const part of streamText({ model: chain.model, prompt: "p" }).fullStream) {
+      parts.push(part.type);
+    }
+    expect(parts).toContain("error");
+    expect(respaldo.calls()).toBe(0);
+  });
+
   it("si el usuario aborta, no se gasta otro modelo", async () => {
     const controller = new AbortController();
     const principal = link("openai:gpt-6-luna", {

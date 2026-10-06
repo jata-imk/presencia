@@ -166,3 +166,22 @@ Desde `ai` 7.0.1xx, `generateImage` vuelve a llamar al modelo cuando responde si
   - **Costo por imagen:** el reportado por el proveedor si lo hay, si no `model-prices.ts`.
   - **Galería a ciegas** (`out/<corrida>/index.html`): por prompt, los modelos en columnas barajadas con calificación 1–5 y nota; "Revelar modelos" y "Copiar resultados" en JSON.
 - La decisión sale del bake-off y va en el PR5 de F10.7. Panorama actualizado: `docs/reference/modelos-de-imagen-2026-09.md`.
+
+## Addendum (2026-10-06, F10.7 PR5) — la cadena de respaldo de imagen
+
+- **`AI_MODEL_IMAGE` es una cadena**, como las de texto (ADR-004) pero sin `@esfuerzo`. El primero es el principal. `AI_MODEL_IMAGE_ALT` sigue siendo de un solo modelo hasta que "Probar con otro generador" use la misma lista.
+- **`FallbackImageProvider`** (`images/fallback-image.provider.ts`) aplica la misma regla que la cadena de texto (`isFallbackError`):
+  - cae al siguiente con 5xx, 408, 409, 429, sin saldo, red o timeout;
+  - un reintento por generador antes de pasar al siguiente, salvo tras un timeout;
+  - **un bloqueo nunca pasa al siguiente**: probar con otro generador una imagen que uno se negó a dibujar sería esquivar la moderación.
+- **Plazos.** Cada intento espera hasta 120 s: gpt-image puede tardar ~2 min en una edición, y lo que se corta es un generador colgado (Gemini llegó a 131 s). La cadena entera tiene un presupuesto de 220 s, por debajo de los 240 s del trabajo y con margen para guardar.
+  - Cada intento recibe lo que quede del presupuesto, y no se empieza uno con menos de 10 s.
+  - Sin ese tope, una cadena larga terminaba después de que el trabajo venció: la imagen se pagaba y no se mostraba. Lo encontró el `/code-review`.
+  - Cada eslabón corre con `maxRetries: 0`: reintenta la cadena, que además sabe cuándo cambiar de generador.
+- **El alternativo también pasa por la cadena**, de un solo eslabón: mismo plazo y mismos reintentos, sin importar qué botón se apretó.
+- **Un 400 que llega justo cuando vence el plazo es la respuesta real del proveedor**, no un timeout. Si se tomaba por timeout, caía al siguiente generador: era esquivar la moderación por una carrera. La cadena de texto tenía la misma carrera y se corrigió igual (`timedOutWith`, `ai/fallback.ts`).
+- **Un solo código para las dos cadenas.** `FallbackExhaustedError`, `isFallbackError`, el timeout, la caída simulada y el parser de `AI_FALLBACK_SIMULATE` viven en `ai/fallback.ts`.
+- **Un error que no es caída de un respaldo** se lanza con lo que pasó antes. Sin eso, el log decía que falló el principal cuando el que falló fue el respaldo.
+- **Quién dibujó.** El resultado trae `ran`. Con eso, `ai_usage_events` registra el que corrió, con `fallback_from` y `provider_raw.attempts`. `image_generations.provider`/`model` se escriben con el pedido y se corrigen al liquidar, también cuando la imagen se dibujó pero no se pudo guardar.
+- **Verificado en el navegador:** con `IMAGE_PROVIDER=real`, `AI_MODEL_IMAGE=google:gemini-3.1-flash-image,openai:gpt-image-2` y `AI_FALLBACK_SIMULATE=google`, la card recibió sus dos variantes de gpt-image-2, y las filas dicen `fallback_from=google:gemini-3.1-flash-image` con 2 intentos.
+- **Mientras llega el bake-off,** prod puede usar ya `google:gemini-3.1-flash-image,openai:gpt-image-2`: el generador de hoy, con respaldo. El orden final lo decide el bake-off.

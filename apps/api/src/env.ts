@@ -145,16 +145,20 @@ const envSchema = z
     //
     // Desde F10.7 las de texto son cadenas: principal y respaldos separados
     // por coma, y CADA uno necesita su key — un respaldo sin key se
-    // descubriría justo el día que se cae el principal. Las de imagen siguen
-    // siendo de un solo modelo hasta que tengan su cadena.
+    // descubriría justo el día que se cae el principal. AI_MODEL_IMAGE también
+    // es cadena (F10.7 PR5); el ALT, de un solo modelo.
     const validateModelEnv = (
       path: string,
       modelChain: string,
-      { image = false, onlyProvider }: { image?: boolean; onlyProvider?: string } = {},
+      {
+        image = false,
+        single = false,
+        onlyProvider,
+      }: { image?: boolean; single?: boolean; onlyProvider?: string } = {},
     ) => {
       try {
         const entries = parseModelChain(modelChain);
-        if (image && entries.length > 1) {
+        if (single && entries.length > 1) {
           throw new Error(`${path} acepta un solo modelo`);
         }
         for (const { id, provider, reasoning } of entries) {
@@ -230,7 +234,10 @@ const envSchema = z
         image: true,
       });
       if (value.AI_MODEL_IMAGE_ALT)
-        validateModelEnv("AI_MODEL_IMAGE_ALT", value.AI_MODEL_IMAGE_ALT, { image: true });
+        validateModelEnv("AI_MODEL_IMAGE_ALT", value.AI_MODEL_IMAGE_ALT, {
+          image: true,
+          single: true,
+        });
     }
 
     // Fail-fast (mismo criterio que el modelo de IA): pedir el provider real
