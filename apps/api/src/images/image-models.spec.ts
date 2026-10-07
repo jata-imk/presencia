@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { imageCallOptions, imageGeneratorIds } from "./image-models.js";
+import { generatorStrength, imageCallOptions, imageGeneratorIds } from "./image-models.js";
 
 describe("imageGeneratorIds", () => {
   it("la lista de AI_MODEL_IMAGE en orden; sin variable, el default", () => {
@@ -77,5 +77,15 @@ describe("imageCallOptions", () => {
 
   it("Muse recibe 4:5 tal cual: OpenRouter normaliza y lo que entregue lo recorta image-fit", () => {
     expect(imageCallOptions("openrouter", "meta/muse-image", "4:5").aspectRatio).toBe("4:5");
+  });
+});
+
+describe("generatorStrength", () => {
+  it("el fuerte medido en el bake-off; un modelo sin medir no tiene", () => {
+    expect(generatorStrength("google:gemini-3.1-flash-image")).toBe("Personas y realismo");
+    expect(generatorStrength("openai:gpt-image-2")).toBe("Uso general");
+    // Otro de la familia de OpenAI que no pasó por el bake-off no hereda el fuerte.
+    expect(generatorStrength("openai:gpt-image-1.5")).toBeNull();
+    expect(generatorStrength("openrouter:meta/muse-image")).toBeNull();
   });
 });

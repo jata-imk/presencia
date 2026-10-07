@@ -35,7 +35,7 @@ Es opcional y sin default a propósito: exigir la key de un segundo proveedor pa
 
 ## Contrato
 
-- **Una llamada = una imagen.** Las dos variantes de la card son dos llamadas en paralelo, no `n: 2`. Gemini no acepta `n` (el SDK lanza), y además cada imagen se cobra y se guarda por separado: si una de las dos falla, la otra no se pierde con ella.
+- **Una llamada = una imagen.** Las imágenes de un trabajo (hasta F10.7, las dos variantes de un click; desde entonces, los slides de un carrusel) son llamadas en paralelo, no `n: 2`. Gemini no acepta `n` (el SDK lanza), y además cada imagen se cobra y se guarda por separado: si una falla, las otras no se pierden con ella.
 - **Proporciones de la app, no del proveedor.** `IMAGE_ASPECT_RATIOS` = `1:1`, `4:5`, `16:9`.
   - Google las recibe tal cual (`aspectRatio`).
   - OpenAI las recibe traducidas a tamaño (`1024x1024`, `1024x1536`, `1536x1024`).
@@ -105,7 +105,7 @@ El QA de F10 dejó ver que el estilo lo decidía el chat: el `.describe` de `ima
 
 - **`content.slides` junto a `assetIds`, no en su lugar.** Cada slide es `{ id, imagePrompt?, assetId? }`, en orden; `assetIds` se deriva al escribir. Publicar y las vistas previas siguen leyendo `assetIds`. Una imagen suelta es un carrusel de uno (`slidesOf`, con un id fijo), así "agregar slide" conserva la imagen que ya estaba como portada, y quitar slides hasta dejar uno vuelve a imagen suelta.
 - **Un trabajo, varios slides.** La card sigue teniendo un solo trabajo de imagen a la vez (el candado de F10). En vez de una espera por slide, un trabajo trae una fila de `image_generations` por imagen, cada una con su `slide_id`, y al cerrar cada slide recibe la primera imagen que salió para él (`finishImageJob` aplica `placeImage` sobre la fila bloqueada). Cada fila apunta a su slide por id, incluso la imagen suelta (`FIRST_SLIDE_ID`): si la card se vuelve carrusel o se reordena mientras genera, la imagen igual llega a su slide. Mientras corre un trabajo no se puede quitar ningún slide, porque quitar uno puede devolver la card a imagen suelta y la imagen, ya cobrada, se quedaría sin lugar. Agregar y reordenar sí se permiten: no cambian ids. Subir o elegir a un slide que no existe es 404.
-- **Cobro:** la portada genera dos variantes (4.7%) y cualquier otro slide una (2.3%), por decisión del founder. Se cobra por imagen entregada, como siempre.
+- **Cobro:** la portada genera dos variantes (4.7%) y cualquier otro slide una (2.3%), por decisión del founder. _Reemplazado en F10.7: una imagen por slide, la portada también._ Se cobra por imagen entregada, como siempre.
 - **El prompt es del slide.** En un carrusel, "Generar" exige `slideIds` y cada imagen usa el `imagePrompt` de su slide (se edita con `PATCH /cards/:id/slides/:slideId`). El estilo es uno por trabajo.
 - **Endpoints:** `POST /cards/:id/slides` (con tope por red, `NETWORK_MAX_IMAGES`), `PATCH /cards/:id/slides/:slideId`, `DELETE /cards/:id/slides/:slideId` y `PATCH /cards/:id/slides/order` (una permutación completa; si el carrusel cambió en otra pestaña, 409). Subir (`?slideId=`), elegir (`slideId`) y ajustar (`slideId`) apuntan a un slide; sin él, a la portada.
 - **Las versiones de texto no incluyen `slides`**, igual que no incluyen `assetIds`: restaurar el texto no cambia imágenes que costaron cuota.
@@ -235,4 +235,28 @@ La evidencia está en `docs/reference/bakeoff-imagenes/2026-10-07-040055-reporte
 - **Lo que no resuelve ningún modelo:** la marquesita y el taco de cochinita salieron mal en todos. Es conocimiento regional que el modelo no tiene, y se ataca en el prompt (el chat describiendo el antojito), no cambiando de generador.
 - **El bake-off ahora califica cada imagen sola.** La galería pone una columna por imagen, barajadas, y `IMAGE_BAKEOFF_GALLERY_VARIANTS` limita qué variantes entran, para una segunda ronda que no repita lo ya calificado. Antes se calificaba por modelo, con todas sus variantes juntas; eso medía "la mejor de dos", y con una imagen por clic (abajo) la métrica correcta es cada imagen. Una sola muestra por modelo engañaba: gpt-image-2 sacó 3.70 en su primera variante y 4.50 en la segunda.
 - **Bloqueos de MAI reconocidos como bloqueo** (`BLOCKED_BODY` en `ai-sdk-image.provider.ts`): "content blocked … 'DallEBlockList'" y "violated mainline safety policies" llegan como 400. Antes ya no disparaban respaldo, pero el creator veía un error genérico en vez de "pide otra cosa".
-- **Siguiente, en su propio PR:** una imagen por clic en vez de dos variantes (decisión de Jose del 2026-10-07), y el generador alterno con su fuerte en la UI ("Personas y realismo") en vez de "Generador 2", sin nombrar el modelo.
+- **Siguiente, en su propio PR:** una imagen por clic en vez de dos variantes (decisión de Jose del 2026-10-07), y el generador alterno con su fuerte en la UI ("Personas y realismo") en vez de "Generador 2", sin nombrar el modelo. Hecho: ver el addendum siguiente.
+
+## Addendum (2026-10-07, F10.7) — una imagen por clic, y el generador alterno dice para qué es mejor
+
+Dos decisiones de Jose tomadas con el bake-off a la vista.
+
+- **Una imagen por clic, no dos variantes.** `IMAGES_PER_GENERATION = 1` (`@presencia/shared`) reemplaza a `IMAGE_VARIANTS_PER_GENERATION = 2`, y aplica a la imagen suelta y a cada slide de un carrusel, portada incluida.
+  - **Por qué:** el creator ya no paga una segunda imagen que no pidió. Si no le gusta, "Regenerar" saca otra con el principal y "Probar con otro generador" pide al alterno. Un click cuesta lo mismo que una edición: 700 unidades, ~2.3% del plan Creator. La tarifa por imagen no cambió, así que no se sube la versión de la rate card (ADR-012).
+  - **El techo de gasto por creator no baja.** La cuota sigue alcanzando para las mismas imágenes al mes. Lo que baja es el consumo real, porque cada imagen se pide a propósito.
+  - Las cards de antes, con dos variantes, siguen igual: las dos quedan en la tira de versiones.
+  - **Un trabajo con varias imágenes sigue existiendo:** son los slides de un carrusel. Ahí sigue valiendo que si una falla, las otras se entregan y solo esas se cobran.
+- **El generador alterno dice para qué es mejor, sin nombrar el modelo.**
+  - `generatorStrength` (`images/image-models.ts`) es un dato del modelo, por familia, como `WITHOUT_4_5`, y sale de un bake-off a ciegas:
+    - Nano Banana 2, "Personas y realismo": el gym y el cenote del bake-off del 2026-10-07.
+    - gpt-image-2, "Uso general".
+
+    Un modelo que no pasó por un bake-off no tiene fuerte, y la UI dice lo de siempre.
+
+  - `ImagesConfigDto.generatorStrengths` viaja por posición, sin ids de modelo. `generatorCount` se queda para las pestañas abiertas durante el deploy.
+  - **En la UI** (copy elegido por Jose):
+    - En el menú ⋯ de la imagen, "Probar con otro generador" lleva debajo una línea gris: "Mejor para personas y realismo".
+    - En el composer, el botón "Con otro generador" lleva el mismo texto en el tooltip.
+    - "Regenerar" siempre usa el principal, así que el principal no lleva etiqueta.
+    - Es el mismo `Menu` con una línea secundaria en tokens, sin patrón visual nuevo.
+  - **El fuerte es del generador pedido.** Si ese está caído y dibuja un respaldo de la cadena, la etiqueta no cambia. Es la misma regla de "el respaldo es invisible".

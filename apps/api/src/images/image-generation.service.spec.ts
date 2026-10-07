@@ -48,7 +48,10 @@ let storageDir: string;
 let userId: string;
 let chatId: string;
 let enqueue: ReturnType<typeof vi.fn>;
-let make: (providers: ImageProviders) => ServiceType;
+// Los fuertes no importan para la mayoría de los tests: sin ellos, ninguno medido.
+let make: (
+  providers: Omit<ImageProviders, "strengths"> & Partial<Pick<ImageProviders, "strengths">>,
+) => ServiceType;
 
 const VISUAL: CardContent = {
   archetype: "visual_first",
@@ -93,7 +96,7 @@ async function batchRows(batchId: string) {
   );
 }
 
-/** Genera la primera vez y truena la segunda: una variante sale y la otra no. */
+/** Genera la primera vez y truena la segunda: un slide sale y el otro no. */
 class HalfFailingProvider extends FakeImageProvider {
   private calls = 0;
   override generate(request: ImageRequest): Promise<ImageResult> {
@@ -103,7 +106,7 @@ class HalfFailingProvider extends FakeImageProvider {
   }
 }
 
-const fake = (): ImageProviders => ({ generators: [new FakeImageProvider()] });
+const fake = () => ({ generators: [new FakeImageProvider()] });
 
 describe("ImageGenerationService", { timeout: 30_000 }, () => {
   beforeAll(async () => {
@@ -144,7 +147,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
         aiUsage,
         new BrandVoiceRepository(),
         { enqueue } as unknown as BossService,
-        providers,
+        { strengths: providers.generators.map(() => null), ...providers },
       );
 
     const [user] = await dbService.db
@@ -164,7 +167,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     await rm(storageDir, { recursive: true, force: true });
   });
 
-  it("pedir deja la card generando, dos filas pendientes y un job en la cola", async () => {
+  it("pedir deja la card generando, una fila pendiente y un job en la cola", async () => {
     const service = make(fake());
     const cardId = await createCard();
     enqueue.mockClear();
@@ -179,7 +182,8 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     // El prompt editado queda en la card: es lo que de verdad se generó.
     expect(dto.content).toMatchObject({ imagePrompt: "Taza de café de olla, más cerca" });
     const rows = await batchRows(dto.imageJob!.id);
-    expect(rows).toHaveLength(2);
+    // F10.7: una imagen por clic.
+    expect(rows).toHaveLength(1);
     expect(rows.every((r) => r.status === "pending" && r.aspectRatio === "4:5")).toBe(true);
     expect(rows[0]!.prompt).toContain("Taza de café de olla, más cerca");
     // Sin estilo elegido ni en la voz: el Fotográfico natural, y el trabajo lo
@@ -208,10 +212,10 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
 
     expect(a.imageJob?.id).toBe(b.imageJob?.id);
     expect(enqueue).toHaveBeenCalledTimes(1);
-    expect(await batchRows(a.imageJob!.id)).toHaveLength(2);
+    expect(await batchRows(a.imageJob!.id)).toHaveLength(1);
   });
 
-  it("anuncia el cobro de dos imágenes antes de encolar", async () => {
+  it("anuncia el cobro de una imagen antes de encolar", async () => {
     const service = make(fake());
     const cardId = await createCard();
     const credits = (service as unknown as { credits: { assertQuotaOr402: () => Promise<void> } })
@@ -222,11 +226,11 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
       prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5",
     });
-    expect(gate).toHaveBeenCalledWith(userId, 1400);
+    expect(gate).toHaveBeenCalledWith(userId, 700);
     gate.mockRestore();
   });
 
-  it("correr el job guarda las dos, cobra una vez por imagen y elige la primera", async () => {
+  it("correr el job guarda la imagen, la cobra una vez y la elige", async () => {
     const service = make(fake());
     const cardId = await createCard();
     const dto = await service.request(userId, cardId, {
@@ -241,13 +245,13 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const final = await card(cardId);
     const imageJob = final.imageJob as CardImageJob;
     expect(imageJob.status).toBe("done");
-    expect(imageJob.assetIds).toHaveLength(2);
+    expect(imageJob.assetIds).toHaveLength(1);
     expect((final.content as CardContent).assetIds).toEqual([imageJob.assetIds[0]]);
 
     const rows = await batchRows(job.batchId);
     expect(rows.every((r) => r.status === "succeeded" && r.assetId)).toBe(true);
     const ledger = await ledgerFor(rows.map((r) => r.id));
-    expect(ledger).toHaveLength(2);
+    expect(ledger).toHaveLength(1);
     expect(ledger.every((e) => e.delta === -700)).toBe(true);
 
     const stored = await dbService.runWithTenant(userId, (tx) =>
@@ -261,11 +265,11 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
         .from(aiUsageEvents)
         .where(and(eq(aiUsageEvents.chatId, chatId), eq(aiUsageEvents.taskKind, "image_generate"))),
     );
-    expect(usage.filter((u) => u.imagesCount === 1).length).toBeGreaterThanOrEqual(2);
+    expect(usage.filter((u) => u.imagesCount === 1).length).toBeGreaterThanOrEqual(1);
 
     // Correrlo otra vez (pg-boss lo entregó dos veces) no vuelve a cobrar.
     await service.run(job);
-    expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(2);
+    expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(1);
   });
 
   it("un bloqueo del proveedor no cobra y la card lo dice", async () => {
@@ -286,13 +290,13 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(0);
   });
 
-  it("si una variante falla, la otra se entrega y solo esa se cobra", async () => {
+  it("si un slide del lote falla, el otro se entrega y solo ese se cobra", async () => {
     const service = make({ generators: [new HalfFailingProvider()] });
-    const cardId = await createCard();
+    const cardId = await createCard(CAROUSEL);
     const dto = await service.request(userId, cardId, {
       generator: 1,
-      prompt: VISUAL.imagePrompt!,
       aspectRatio: "4:5",
+      slideIds: [S1, S2],
     });
     vi.spyOn(console, "error").mockImplementation(() => {});
     await service.run({ userId, cardId, batchId: dto.imageJob!.id });
@@ -440,7 +444,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
       aspectRatio: "1:1",
     });
     await service.run({ userId, cardId, batchId: dto.imageJob!.id });
-    expect(segundo.requests).toHaveLength(2);
+    expect(segundo.requests).toHaveLength(1);
     expect((await card(cardId)).imageJob).toMatchObject({ status: "done", generator: 2 });
   });
 
@@ -455,7 +459,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
       aspectRatio: "1:1",
     });
     await service.run({ userId, cardId, batchId: dto.imageJob!.id });
-    expect(segundo.requests).toHaveLength(2);
+    expect(segundo.requests).toHaveLength(1);
   });
 
   it("una proporción que la red no usa es un 400", async () => {
@@ -567,7 +571,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     ],
   };
 
-  it("carrusel: un lote llena varios slides; la portada con dos variantes y el resto con una", async () => {
+  it("carrusel: un lote llena varios slides, una imagen cada uno (la portada también)", async () => {
     const service = make(fake());
     const cardId = await createCard(CAROUSEL);
     const dto = await service.request(userId, cardId, {
@@ -577,7 +581,7 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     });
     expect(dto.imageJob).toMatchObject({ status: "generating", slideIds: [S1, S2] });
     const rows = await batchRows(dto.imageJob!.id);
-    expect(rows.map((r) => r.slideId).sort()).toEqual([S1, S1, S2].sort());
+    expect(rows.map((r) => r.slideId).sort()).toEqual([S1, S2].sort());
     // Cada slide con SU prompt, y el estilo aparte.
     const second = rows.find((r) => r.slideId === S2)!;
     expect(second.prompt).toContain("Qué se ve: Un café de olla servido");
@@ -596,9 +600,9 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const born = await dbService.runWithTenant(userId, (tx) =>
       tx.select({ slideId: assets.slideId }).from(assets).where(eq(assets.cardId, cardId)),
     );
-    expect(born.map((a) => a.slideId).sort()).toEqual([S1, S1, S2].sort());
-    // Se cobra por imagen entregada: tres.
-    expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(3);
+    expect(born.map((a) => a.slideId).sort()).toEqual([S1, S2].sort());
+    // Se cobra por imagen entregada: dos.
+    expect(await ledgerFor(rows.map((r) => r.id))).toHaveLength(2);
     expect(final.imageJob).toMatchObject({ status: "done", slideIds: [S1, S2] });
   });
 
@@ -726,13 +730,19 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     expect(after.slides[0]!.assetId).toBeUndefined();
   });
 
-  it("el config anuncia el precio en %, nunca en unidades", async () => {
-    const config = await make(fake()).config(userId);
-    // Plan creator: 30,000 unidades; 2 × 700 = 4.7%, 700 = 2.3%.
+  it("el config anuncia el precio en %, nunca en unidades, y el fuerte sin el modelo", async () => {
+    const config = await make({
+      generators: [new FakeImageProvider(), new FakeImageProvider()],
+      strengths: [null, "Personas y realismo"],
+    }).config(userId);
+    // Plan creator: 30,000 unidades; una imagen, 700 = 2.3%.
     expect(config).toEqual({
-      generatePercent: 4.7,
+      generatePercent: 2.3,
       editPercent: 2.3,
-      generatorCount: 1,
+      generatorCount: 2,
+      generatorStrengths: [null, "Personas y realismo"],
+      // n imágenes redondeadas UNA vez: 3 son 7.0%, no 3 × 2.3 = 6.9%.
+      batchPercents: [2.3, 4.7, 7, 9.3, 11.7, 14, 16.3, 18.7, 21, 23.3],
       defaultStyle: "foto",
     });
   });

@@ -139,8 +139,8 @@ export class CardMediaService {
   }
 
   /**
-   * Elegir otra de las imágenes de la card: la otra variante, o una versión
-   * anterior. Solo imágenes de ESTA card: un id de otra (o de otro usuario,
+   * Elegir otra de las imágenes de la card: una versión anterior (otra
+   * generación, una edición, una subida). Solo imágenes de ESTA card: un id de otra (o de otro usuario,
    * que por RLS no existe) se rechaza igual.
    */
   async selectImage(

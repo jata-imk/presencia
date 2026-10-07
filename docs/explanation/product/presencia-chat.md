@@ -390,11 +390,12 @@ El tratamiento depende del arquetipo de la card:
 > - **Generarla aquí**, con cobro. El prompt sugerido se puede editar
 >   antes, se elige el formato (4:5 o 1:1 en IG/FB, 1:1 o 16:9 en
 >   LinkedIn, etc.) y el botón dice el precio antes del click:
->   "Generar imagen · 4.7% de tu mes". Nunca se genera sola. Cada click
->   da **dos variantes**: la primera queda elegida y la otra se elige
->   con un toque; las dos se guardan en Biblioteca. "Regenerar" repite
->   con el mismo generador y "Probar con otro generador" usa el
->   alternativo (ADR-025). Mientras genera (10 a 60 s) la card muestra
+>   "Generar imagen · 2.3% de tu mes". Nunca se genera sola. Cada click
+>   da **una imagen** (F10.7; antes eran dos variantes): si no gusta,
+>   "Regenerar" saca otra con el generador principal y "Probar con otro
+>   generador" usa el alterno, que dice para qué es mejor ("Mejor para
+>   personas y realismo") sin nombrar el modelo (ADR-025). Todas se
+>   guardan en Biblioteca y en las versiones de la card. Mientras genera (10 a 60 s) la card muestra
 >   el hueco con la proporción pedida y se puede seguir en el chat: el
 >   resultado llega solo. Si el generador se niega (personas reales,
 >   marcas) o falla, la card lo dice y **no se cobra**.

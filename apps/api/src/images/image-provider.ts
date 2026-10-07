@@ -6,10 +6,11 @@ import type { FallbackAttempt } from "../ai/fallback.js";
 // PublishingProvider (ADR-009): la app habla con esta interfaz, y qué
 // proveedor dibuja detrás es una variable de entorno.
 //
-// Una llamada = una imagen. Las dos variantes que pide la card son dos
-// llamadas, no `n: 2`: Gemini no acepta `n`, y aunque lo aceptara, cada
-// imagen se cobra y se guarda por separado — si una de las dos falla, la otra
-// no tiene por qué perderse con ella.
+// Una llamada = una imagen. Varias imágenes de un trabajo (los slides de un
+// carrusel; hasta F10.7, las dos variantes de un click) son varias llamadas,
+// no `n: 2`: Gemini no acepta `n`, y aunque lo aceptara, cada imagen se
+// cobra y se guarda por separado — si una falla, las otras no tienen por qué
+// perderse con ella.
 
 // Las proporciones viven en @presencia/shared: la card las ofrece como chips.
 export type { ImageAspectRatio };
@@ -84,6 +85,8 @@ export interface ImageProvider {
  */
 export interface ImageProviders {
   generators: ImageProvider[];
+  /** Para qué es mejor cada uno (`generatorStrength`), en el mismo orden; null si no se midió. */
+  strengths: (string | null)[];
 }
 
 export const IMAGE_PROVIDERS = Symbol("IMAGE_PROVIDERS");

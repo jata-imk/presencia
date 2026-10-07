@@ -10,7 +10,8 @@ import {
 import {
   IMAGE_ASPECT_OPTIONS,
   IMAGE_JOB_STALE_MS,
-  IMAGE_VARIANTS_PER_GENERATION,
+  IMAGES_PER_GENERATION,
+  NETWORK_MAX_IMAGES,
   carouselAspect,
   FIRST_SLIDE_ID,
   imageStyleDef,
@@ -74,8 +75,8 @@ const REASON = "image_generation" as const;
 export const IMAGE_QUEUE = "images.generate";
 
 /**
- * Techo del job: dos imágenes en paralelo, y gpt-image tarda hasta ~2 min en
- * los prompts pesados. pg-boss no mata al handler al expirar; esto solo acota
+ * Techo del job: las imágenes de un trabajo van en paralelo (los slides de un
+ * carrusel), y gpt-image tarda hasta ~2 min en los prompts pesados. pg-boss no mata al handler al expirar; esto solo acota
  * cuánto tapa la cola un job colgado. Menor que IMAGE_JOB_STALE_MS (5 min):
  * cuando la card da el trabajo por muerto, la cola ya lo soltó.
  */
@@ -137,9 +138,15 @@ export class ImageGenerationService {
       this.brandVoice.findDefault(tx),
     );
     return {
-      generatePercent: flatActionsPercentOfQuota(REASON, IMAGE_VARIANTS_PER_GENERATION, tier),
+      generatePercent: flatActionsPercentOfQuota(REASON, IMAGES_PER_GENERATION, tier),
       editPercent: flatActionPercentOfQuota(REASON, tier),
       generatorCount: this.providers.generators.length,
+      generatorStrengths: this.providers.strengths,
+      // "Generar las n que faltan": hasta el tope más alto de las redes.
+      batchPercents: Array.from(
+        { length: Math.max(...Object.values(NETWORK_MAX_IMAGES)) },
+        (_, i) => flatActionsPercentOfQuota(REASON, i + 1, tier),
+      ),
       // El mismo que usa `request` cuando el body no trae estilo.
       defaultStyle: imageStyleDef(voice?.imageStyle as ImageStyle | null).id,
     };
@@ -182,8 +189,8 @@ export class ImageGenerationService {
     let editedPrompt: string | undefined;
     if (slides) {
       // F10.6: un carrusel genera por slide, cada uno con SU prompt (se edita
-      // con PATCH del slide antes de generar). La portada lleva dos variantes
-      // para elegir; el resto, una (decisión del founder: 2.3% por slide).
+      // con PATCH del slide antes de generar). F10.7: una imagen por slide,
+      // también la portada (antes llevaba dos variantes).
       if (!body.slideIds) throw new BadRequestException("Elige qué slides generar.");
       const ids = [...new Set(body.slideIds)];
       images = ids.flatMap((id) => {
@@ -196,8 +203,7 @@ export class ImageGenerationService {
           );
         }
         const prompt = composeImagePrompt(described, voice ?? null, style);
-        const count = index === 0 ? IMAGE_VARIANTS_PER_GENERATION : 1;
-        return Array.from({ length: count }, () => ({ prompt, slideId: id }));
+        return Array.from({ length: IMAGES_PER_GENERATION }, () => ({ prompt, slideId: id }));
       });
     } else {
       if (body.slideIds) throw new BadRequestException("Esta publicación no es un carrusel.");
@@ -205,7 +211,7 @@ export class ImageGenerationService {
       const prompt = composeImagePrompt(body.prompt, voice ?? null, style);
       // FIRST_SLIDE_ID y no null: si la card se vuelve carrusel mientras
       // genera, la imagen sigue yendo a ESTE slide aunque ya no sea la portada.
-      images = Array.from({ length: IMAGE_VARIANTS_PER_GENERATION }, () => ({
+      images = Array.from({ length: IMAGES_PER_GENERATION }, () => ({
         prompt,
         slideId: FIRST_SLIDE_ID,
       }));
@@ -399,7 +405,7 @@ export class ImageGenerationService {
     return toDto(started);
   }
 
-  /** El handler del worker: dibuja las variantes del lote, cobra lo que salió y cierra el trabajo. */
+  /** El handler del worker: dibuja las imágenes del lote, cobra lo que salió y cierra el trabajo. */
   async run(job: ImageGenerationJob): Promise<void> {
     const { userId, cardId, batchId } = job;
     const [card, rows] = await this.dbService.runWithTenant(
@@ -431,7 +437,7 @@ export class ImageGenerationService {
 
     const assetIds = outcomes.flatMap((o) => (o.status === "succeeded" ? [o.assetId] : []));
     // La primera imagen que salió para cada destino (cada slide, o la imagen
-    // suelta) queda elegida; las demás variantes, en las versiones.
+    // suelta) queda elegida; las demás (trabajos de antes de F10.7), en las versiones.
     const placements: ImagePlacement[] = [];
     const placed = new Set<string>();
     pending.forEach((row, i) => {
@@ -469,8 +475,8 @@ export class ImageGenerationService {
   }
 
   /**
-   * Una imagen del lote. Nunca lanza: una variante que falla no se lleva a
-   * la otra, y el lote siempre termina cerrando el trabajo en la card.
+   * Una imagen del lote. Nunca lanza: una imagen que falla no se lleva a
+   * las otras, y el lote siempre termina cerrando el trabajo en la card.
    */
   private async generateOne(
     userId: string,
@@ -588,7 +594,7 @@ export class ImageGenerationService {
         // por muerto y le diga al usuario "no se cobró". Si pasó eso, la
         // imagen se guarda (queda en sus versiones) pero no se cobra. Va
         // primero en la transacción: el lock de la card antes que el del
-        // insert del asset, el mismo orden en las dos variantes.
+        // insert del asset, el mismo orden en todas las imágenes del lote.
         const current = await this.cards.isImageJobCurrent(tx, card.id, row.batchId);
         await this.assets.record(tx, stored);
         await this.generations.settle(tx, row.id, { status: "succeeded", assetId: stored.id, ran });

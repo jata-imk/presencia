@@ -76,8 +76,8 @@ export class AiSdkImageProvider implements ImageProvider {
     // Cuando no hay imagen, `generateImage` lanza y se lleva el usage y la
     // metadata que el modelo sí devolvió — y un bloqueo de Gemini igual cobra
     // los tokens de entrada. El middleware los guarda antes. Uno por llamada,
-    // no uno por instancia: las dos variantes corren en paralelo sobre el
-    // mismo provider.
+    // no uno por instancia: los slides de un carrusel corren en paralelo
+    // sobre el mismo provider.
     const crudo: Crudo = {};
     const model = wrapImageModel({
       model: this.model,

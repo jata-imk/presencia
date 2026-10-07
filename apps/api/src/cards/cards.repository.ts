@@ -356,10 +356,10 @@ export class CardsRepository {
    * IMAGE_JOB_STALE_MS. Pasado el corte, la card ya le dijo al usuario "no
    * se pudo generar, no se cobró", y eso se cumple aunque el job termine.
    *
-   * `FOR NO KEY UPDATE` y no `FOR UPDATE`: las dos variantes cobran en
-   * paralelo e insertan un asset con FK a esta card, y ese insert toma
-   * `KEY SHARE` sobre la fila. `FOR UPDATE` choca con él y las dos
-   * transacciones se esperaban mutuamente (deadlock en CI); `NO KEY UPDATE`
+   * `FOR NO KEY UPDATE` y no `FOR UPDATE`: las imágenes de un trabajo (los
+   * slides de un carrusel) cobran en paralelo e insertan un asset con FK a
+   * esta card, y ese insert toma `KEY SHARE` sobre la fila. `FOR UPDATE`
+   * choca con él y las transacciones se esperaban mutuamente (deadlock en CI); `NO KEY UPDATE`
    * es compatible y sigue ordenando a las escrituras de la card.
    */
   async isImageJobCurrent(tx: Tx, id: string, batchId: string): Promise<boolean> {
