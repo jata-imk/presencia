@@ -408,10 +408,11 @@ export const publicationCards = pgTable(
   ],
 );
 
-// F10: una fila por imagen PEDIDA a un generador — las dos variantes de un
-// click son dos filas del mismo `batch_id`. Tres trabajos:
+// F10: una fila por imagen PEDIDA a un generador — las imágenes de un click
+// (los slides de un carrusel; hasta F10.7, dos variantes) son filas del mismo
+// `batch_id`. Tres trabajos:
 //
-//  - Es el `reference_id` del asiento: se cobra por imagen, y dos variantes
+//  - Es el `reference_id` del asiento: se cobra por imagen, y dos imágenes
 //    con la misma referencia chocarían contra `ledger_dedup` y la segunda se
 //    perdería en silencio.
 //  - Guarda con qué se pidió (prompt completo, instrucción, proporción,

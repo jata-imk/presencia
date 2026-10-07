@@ -282,6 +282,8 @@ export function useCardController(
                 job: imageJob,
                 percent: imagesConfig.generatePercent,
                 generatorCount: imagesConfig.generatorCount,
+                // Una pestaña con el config de antes del deploy no lo trae.
+                generatorStrengths: imagesConfig.generatorStrengths ?? [],
                 defaultStyle: imagesConfig.defaultStyle,
                 aspectOptions: IMAGE_ASPECT_OPTIONS[card.network],
                 edit: (instruction, generator) => void handleEdit(card.id, instruction, generator),
@@ -303,7 +305,7 @@ export function useCardController(
   const running = imageJob?.status === "generating" ? imageJob : null;
   const generatingIds = running ? (running.slideIds ?? [FIRST_SLIDE_ID]) : [];
 
-  function slideMedia(slide: CarouselSlide, index: number): CardMediaActions | undefined {
+  function slideMedia(slide: CarouselSlide): CardMediaActions | undefined {
     if (!card || !media || !content) return undefined;
     const aspect = carouselAspect(content, card.network);
     const here = generatingIds.includes(slide.id) || imageJob?.slideIds?.includes(slide.id);
@@ -321,8 +323,6 @@ export function useCardController(
               versions: versionsOfSlide(base.versions, slide, aspect),
               versionsLabel: "Versiones de este slide",
               busyElsewhere: Boolean(running) && !generatingIds.includes(slide.id),
-              percent: index === 0 ? imagesConfig.generatePercent : imagesConfig.editPercent,
-              variants: index === 0 ? 2 : 1,
               aspectOptions: [aspect],
               generate: async (input) => {
                 // El prompt de un slide vive en la card: se guarda antes de generar.
@@ -355,19 +355,15 @@ export function useCardController(
   }
 
   const missing = slides
-    ? slides
-        .map((slide, index) => ({ slide, index }))
-        .filter(({ slide }) => !slide.assetId && (slide.imagePrompt?.trim().length ?? 0) >= 3)
+    ? slides.filter((slide) => !slide.assetId && (slide.imagePrompt?.trim().length ?? 0) >= 3)
     : [];
+  // F10.7: una imagen por slide, también la portada. El precio del lote lo
+  // calcula el servidor redondeando una vez (n × 2.3 daría 6.9% por 7.0%);
+  // una pestaña con el config de antes del deploy cae a multiplicar.
   const missingPercent =
     imagesConfig && missing.length > 0
-      ? Math.round(
-          missing.reduce(
-            (sum, { index }) =>
-              sum + (index === 0 ? imagesConfig.generatePercent : imagesConfig.editPercent),
-            0,
-          ) * 10,
-        ) / 10
+      ? (imagesConfig.batchPercents?.[missing.length - 1] ??
+        Math.round(missing.length * imagesConfig.generatePercent * 10) / 10)
       : null;
 
   const carousel: CarouselActions | undefined =
@@ -400,7 +396,7 @@ export function useCardController(
               generator: 1,
               aspectRatio: carouselAspect(content, card.network),
               ...(lastStyle ? { style: lastStyle } : {}),
-              slideIds: missing.map(({ slide }) => slide.id),
+              slideIds: missing.map((slide) => slide.id),
             });
           },
           missingPercent,

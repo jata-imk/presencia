@@ -9,7 +9,8 @@ import type {
 
 // Generador de mentira para tests y dev (`IMAGE_PROVIDER=fake`): un PNG de un
 // solo color, sin red y sin costo. El color sale del prompt y de un contador,
-// así dos variantes del mismo prompt se distinguen a simple vista en la card.
+// así dos imágenes del mismo prompt (regenerar, otro slide) se distinguen a
+// simple vista en la card.
 //
 // Un prompt con "[bloquear]" simula la negativa del proveedor, para poder
 // probar ese estado de la card sin tener que provocarla de verdad.

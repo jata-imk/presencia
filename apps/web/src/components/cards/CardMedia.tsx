@@ -64,6 +64,8 @@ export interface CardImageGeneration {
   percent: number;
   /** F10.7: cuántos generadores hay; con 2 o más se ofrece "Probar con otro generador". */
   generatorCount: number;
+  /** F10.7: para qué es mejor cada generador (índice = generador − 1); null si no se midió. */
+  generatorStrengths: (string | null)[];
   /** F10.6: el estilo de la Voz de marca; el chip arranca en él si la card no tiene trabajo. */
   defaultStyle: ImageStyle;
   /** Las proporciones de esta red; la primera es la default. */
@@ -79,8 +81,6 @@ export interface CardImageGeneration {
   versions: CardImageVersionDto[];
   /** F10.6.1: el título de la tira; "Versiones de este slide" en un carrusel. */
   versionsLabel?: string;
-  /** F10.6: cuántas imágenes saca un click (la portada, 2; otro slide, 1). */
-  variants?: number;
   /** F10.6: otro slide del carrusel se está generando; la card tiene un trabajo a la vez. */
   busyElsewhere?: boolean;
   /** F10.6: guardar el prompt al salir del campo (el de un slide vive en la card). */
@@ -242,15 +242,37 @@ function otherGeneratorLabel(generator: number, count: number): string {
 }
 
 /**
- * "Con otro generador" del composer. Con dos generadores es un botón, como
- * siempre; con más, el mismo botón abre la lista.
+ * F10.7: para qué es mejor un generador, como lo lee el creator ("Mejor para
+ * personas y realismo"). Lo que midió el bake-off, nunca el modelo. Sin
+ * fuerte medido, nada.
+ */
+function strengthNote(strengths: (string | null)[], generator: number): string | null {
+  const strength = strengths[generator - 1];
+  return strength ? `Mejor para ${strength.charAt(0).toLowerCase()}${strength.slice(1)}` : null;
+}
+
+/** El texto de un ítem "otro generador": la acción y, debajo, su fuerte. */
+function OtherGeneratorItemLabel({ label, note }: { label: string; note: string | null }) {
+  return (
+    <span className="flex min-w-0 flex-col">
+      <span>{label}</span>
+      {note && <span className="text-[11px] leading-snug text-fg-muted">{note}</span>}
+    </span>
+  );
+}
+
+/**
+ * "Con otro generador" del composer. Con dos generadores es un botón, con su
+ * fuerte en el tooltip; con más, el mismo botón abre la lista.
  */
 function OtherGeneratorButton({
   count,
+  strengths,
   disabled,
   onPick,
 }: {
   count: number;
+  strengths: (string | null)[];
   disabled: boolean;
   onPick: (generator: number) => void;
 }) {
@@ -258,12 +280,17 @@ function OtherGeneratorButton({
   if (others.length === 0) return null;
   if (others.length === 1) {
     return (
-      <ActionButton
-        Icon={Shuffle}
-        label="Con otro generador"
-        disabled={disabled}
-        onClick={() => onPick(others[0]!)}
-      />
+      // El tooltip va en un span: ActionButton no recibe ref de afuera.
+      <Tooltip label={strengthNote(strengths, others[0]!)}>
+        <span className="inline-flex shrink-0">
+          <ActionButton
+            Icon={Shuffle}
+            label="Con otro generador"
+            disabled={disabled}
+            onClick={() => onPick(others[0]!)}
+          />
+        </span>
+      </Tooltip>
     );
   }
   return (
@@ -285,7 +312,10 @@ function OtherGeneratorButton({
             onClick={() => onPick(generator)}
           >
             <Shuffle size={14} aria-hidden />
-            Generador {generator}
+            <OtherGeneratorItemLabel
+              label={`Generador ${String(generator)}`}
+              note={strengthNote(strengths, generator)}
+            />
           </Menu.Item>
         ))}
       </Menu.Content>
@@ -377,8 +407,8 @@ function versionLabel(version: CardImageVersionDto, index: number): string {
 
 /**
  * Todas las imágenes que tuvo la card (mock A8: las miniaturas bajo la
- * imagen), de la más vieja a la más nueva: las dos variantes de cada
- * "Generar", las ediciones y las subidas. Tocar una la vuelve la elegida. Es
+ * imagen), de la más vieja a la más nueva: lo que sacó cada "Generar" (dos
+ * variantes hasta F10.7, una desde entonces), las ediciones y las subidas. Tocar una la vuelve la elegida. Es
  * una fila de botones con scroll horizontal: con teclado se recorre con Tab,
  * y el que recibe el foco se trae a la vista.
  */
@@ -768,7 +798,10 @@ export function ImageActionStrip({
                   onClick={() => regenerate(generator)}
                 >
                   <Shuffle size={14} aria-hidden />
-                  {otherGeneratorLabel(generator, generation.generatorCount)}
+                  <OtherGeneratorItemLabel
+                    label={otherGeneratorLabel(generator, generation.generatorCount)}
+                    note={strengthNote(generation.generatorStrengths, generator)}
+                  />
                 </Menu.Item>
               ))}
               {onChangePrompt && (
@@ -823,6 +856,10 @@ function ImageComposer({
   const busy = isBusy(generation);
   const ready = prompt.trim().length >= 3;
   const promptId = useId();
+  // Con un solo alterno, el botón no abre lista: su fuerte va en el tooltip
+  // y en la nota de abajo. Con varios, cada opción de la lista lleva el suyo.
+  const alternateNote =
+    generation.generatorCount === 2 ? strengthNote(generation.generatorStrengths, 2) : null;
 
   return (
     <div className="flex w-full flex-col gap-2.5 text-left">
@@ -898,6 +935,7 @@ function ImageComposer({
         />
         <OtherGeneratorButton
           count={generation.generatorCount}
+          strengths={generation.generatorStrengths}
           disabled={busy || !ready}
           onPick={(generator) => {
             void generation
@@ -922,13 +960,14 @@ function ImageComposer({
       <p className="text-[11px] text-fg-muted">
         {generation.busyElsewhere
           ? "Se está generando otro slide. Cuando termine, puedes generar este."
-          : (generation.variants ?? 2) === 1
-            ? onCancel
-              ? "Genera una imagen nueva desde cero con este prompt. La que ya tienes se queda en tus versiones."
-              : "Genera una imagen para este slide. Si prefieres hacerla afuera, copia el prompt y sube el resultado: eso no tiene costo."
-            : onCancel
-              ? "Genera dos opciones nuevas desde cero con este prompt. Las imágenes que ya tienes se quedan en tus versiones."
-              : "Genera dos opciones para que elijas. Si prefieres hacerla afuera, copia el prompt y sube el resultado: eso no tiene costo."}
+          : onCancel
+            ? "Genera una imagen nueva desde cero con este prompt. La que ya tienes se queda en tus versiones."
+            : "Genera una imagen con este prompt. Si prefieres hacerla afuera, copia el prompt y sube el resultado: eso no tiene costo."}
+        {/* El tooltip del botón no existe en una pantalla táctil: el fuerte
+            del alterno también va aquí, donde se lee en el celular. */}
+        {!generation.busyElsewhere &&
+          alternateNote &&
+          ` "Con otro generador" es ${alternateNote.charAt(0).toLowerCase()}${alternateNote.slice(1)}.`}
       </p>
     </div>
   );

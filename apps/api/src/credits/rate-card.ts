@@ -207,9 +207,10 @@ export function flatActionPercentOfQuota(
 }
 
 /**
- * Lo mismo para `count` acciones de un golpe — un click de "Generar imagen"
- * son dos imágenes (F10). Se redondea UNA vez sobre el total: sumar dos
- * porcentajes ya redondeados daría 4.6% por algo que cuesta 4.7%.
+ * Lo mismo para `count` acciones de un golpe: "Generar las 3 que faltan" de
+ * un carrusel (F10.7: una imagen por slide). Se redondea UNA vez sobre el
+ * total: sumar porcentajes ya redondeados daría 6.9% por algo que cuesta
+ * 7.0%. La web recibe estos totales ya calculados (`batchPercents`).
  */
 export function flatActionsPercentOfQuota(
   reason: CreditReason,

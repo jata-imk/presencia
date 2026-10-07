@@ -10,7 +10,7 @@ import { env } from "../env.js";
 import { AiSdkImageProvider } from "./ai-sdk-image.provider.js";
 import { FakeImageProvider } from "./fake-image.provider.js";
 import { FallbackImageProvider } from "./fallback-image.provider.js";
-import { imageGeneratorIds } from "./image-models.js";
+import { generatorStrength, imageGeneratorIds } from "./image-models.js";
 import { parseSimulateDown } from "../ai/fallback.js";
 import { ImageGenerationService } from "./image-generation.service.js";
 import { ImageGenerationsRepository } from "./image-generations.repository.js";
@@ -26,6 +26,21 @@ import { ImagesController } from "./images.controller.js";
 // una cadena de respaldo que arranca en él y sigue con los otros en orden:
 // elegir el 3 es "empieza por el 3", no "solo el 3", y si está caído igual
 // responde alguno. Un bloqueo de contenido nunca cae al siguiente.
+/**
+ * Con el fake, los fuertes de los dos primeros de la lista, para que dev
+ * muestre el mismo texto que prod. Sin el ALT viejo (no repite su aviso) y
+ * sin tumbar el arranque: con el fake, env.ts no valida AI_MODEL_IMAGE, y una
+ * lista mal escrita que nadie va a usar no debe impedir levantar el stack.
+ */
+function fakeStrengths(): (string | null)[] {
+  try {
+    const ids = imageGeneratorIds(env.AI_MODEL_IMAGE, undefined);
+    return [0, 1].map((i) => (ids[i] ? generatorStrength(ids[i]) : null));
+  } catch {
+    return [null, null];
+  }
+}
+
 export function buildImageProviders(): ImageProviders {
   if (env.IMAGE_PROVIDER === "fake") {
     // Dos, para que en dev se vea "Probar con otro generador" sin gastar.
@@ -34,6 +49,7 @@ export function buildImageProviders(): ImageProviders {
         new FakeImageProvider(env.IMAGE_FAKE_DELAY_MS),
         new FakeImageProvider(env.IMAGE_FAKE_DELAY_MS),
       ],
+      strengths: fakeStrengths(),
     };
   }
   const resolve = createImageModelResolver(process.env);
@@ -48,6 +64,8 @@ export function buildImageProviders(): ImageProviders {
           simulateDown,
         }),
     ),
+    // El fuerte del que se pidió, aunque un respaldo dibuje si ese se cae.
+    strengths: ids.map(generatorStrength),
   };
 }
 

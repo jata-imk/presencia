@@ -160,7 +160,7 @@ export class CardsController {
     return this.media.versions(user.id, this.parseCardId(id));
   }
 
-  /** Elegir otra de las imágenes de la card (F10): una variante, una versión anterior. */
+  /** Elegir otra de las imágenes de la card (F10): una versión anterior. */
   @Patch("cards/:id/image")
   selectImage(
     @CurrentUser() user: SessionUser,

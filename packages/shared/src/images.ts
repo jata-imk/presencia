@@ -88,8 +88,8 @@ export const generateCardImageBodySchema = z.object({
   aspectRatio: imageAspectRatioSchema,
   /**
    * F10.6: en un carrusel, qué slides generar (uno, o "los que faltan" en un
-   * solo trabajo). Cada uno con su propio prompt; la portada lleva dos
-   * variantes y el resto una. Obligatorio en carruseles, prohibido fuera.
+   * solo trabajo). Cada uno con su propio prompt y una imagen (F10.7: la
+   * portada también). Obligatorio en carruseles, prohibido fuera.
    */
   slideIds: z.array(z.uuid()).min(1).max(10).optional(),
   /**
@@ -156,21 +156,43 @@ export const IMAGE_JOB_STALE_MS = 5 * 60 * 1000;
  * segundo generador configurado.
  */
 export interface ImagesConfigDto {
-  /** Un click en "Generar": dos variantes. */
+  /** Un click en "Generar" (una imagen), o un slide de un carrusel. */
   generatePercent: number;
-  /** Una edición con instrucción: una imagen. También un slide que no es la portada. */
+  /**
+   * Una edición con instrucción: una imagen. Desde F10.7 vale lo mismo que
+   * `generatePercent` (las dos son una imagen a la misma tarifa); siguen
+   * separadas porque son dos acciones distintas y una podría cambiar de precio.
+   */
   editPercent: number;
+  /**
+   * Lo que cuestan n imágenes de un trabajo (índice = n − 1, hasta
+   * NETWORK_MAX_IMAGES): "Generar las 3 que faltan". Redondeado UNA vez sobre
+   * el total, como lo valida el servidor; sumar porcentajes ya redondeados
+   * anunciaría 6.9% por algo que cuesta 7.0%.
+   */
+  batchPercents: number[];
   /**
    * F10.7: cuántos generadores hay en la lista del servidor. Con 2 o más se
    * ofrece "Probar con otro generador"; nunca se dice cuáles son.
    */
   generatorCount: number;
+  /**
+   * F10.7: para qué es mejor cada generador ("Personas y realismo"), por
+   * posición (índice = generador − 1); null si no se midió. Lo que mide el
+   * bake-off, nunca el nombre del modelo.
+   */
+  generatorStrengths: (string | null)[];
   /** F10.6: el estilo de la Voz de marca (Fotográfico si nunca eligió): con él arranca el chip. */
   defaultStyle: ImageStyle;
 }
 
-/** Cuántas imágenes produce un click en "Generar" (decisión de producto de F10). */
-export const IMAGE_VARIANTS_PER_GENERATION = 2;
+/**
+ * Cuántas imágenes produce un click en "Generar", y cada slide de un carrusel.
+ * F10 eran dos variantes para elegir; desde F10.7 es una (decisión de Jose,
+ * 2026-10-07): el creator no paga una segunda imagen que no pidió, y si no le
+ * gusta la regenera o prueba con otro generador.
+ */
+export const IMAGES_PER_GENERATION = 1;
 
 // ── F10 PR4: iterar la imagen ─────────────────────────────────────────
 
