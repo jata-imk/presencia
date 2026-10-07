@@ -13,12 +13,15 @@ import type { ImageProvider, ImageRequest, ImageResult } from "./image-provider.
 // resolver. Lo que cambia entre proveedores está acá y en ningún otro lado.
 
 // Un generador que se niega a dibujar responde 400 o 403 con el motivo en el
-// cuerpo: OpenAI `moderation_blocked`; xAI y OpenRouter no lo documentan en
-// su spec, así que se reconoce por el texto. Solo palabras de moderación: un
-// "not allowed" o un 403 de permisos es un problema de configuración, y
-// mostrarlo como "pide otra cosa" lo escondería. Lo que no se reconozca queda
-// como error — que tampoco dispara respaldo (es 4xx), y sí deja rastro.
-const BLOCKED_BODY = /moderation|safety system|safety_violations|flagged|content[ _-]?policy/i;
+// cuerpo: OpenAI `moderation_blocked`; MAI-Image por OpenRouter (Azure) un
+// 400 "Response content blocked by label 'DallEBlockList'" o "Input content
+// violated mainline safety policies" (vistos en el bake-off de F10.7); xAI y OpenRouter no lo documentan en su spec, así que se
+// reconoce por el texto. Solo palabras de moderación: un "not allowed" o un
+// 403 de permisos es un problema de configuración, y mostrarlo como "pide
+// otra cosa" lo escondería. Lo que no se reconozca queda como error — que
+// tampoco dispara respaldo (es 4xx), y sí deja rastro.
+const BLOCKED_BODY =
+  /moderation|safety system|safety_violations|flagged|content[ _-]?policy|content blocked by label|mainline safety polic/i;
 
 /** Lo que devolvió el modelo antes de que `generateImage` decidiera si había imagen. */
 interface Crudo {

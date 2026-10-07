@@ -26,8 +26,9 @@ const envSchema = z
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_URL: z.url(),
     WEB_URL: z.url(),
-    // API keys por proveedor de IA (ADR-004): todas opcionales; solo la del
-    // proveedor de AI_MODEL es obligatoria (lo valida el superRefine abajo).
+    // API keys por proveedor de IA (ADR-004): todas opcionales aquí; la de
+    // cada modelo de cada variable AI_MODEL* es obligatoria (lo valida el
+    // superRefine abajo; las de imagen, solo con IMAGE_PROVIDER=real).
     GOOGLE_GENERATIVE_AI_API_KEY: z.string().min(1).optional(),
     OPENAI_API_KEY: z.string().min(1).optional(),
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
@@ -70,7 +71,7 @@ const envSchema = z
     AI_MODEL_IMAGE: z.string().optional(),
     // OBSOLETA desde F10.7: "Probar con otro generador" ofrece los demás de
     // AI_MODEL_IMAGE. Se sigue aceptando para no tumbar un despliegue que la
-    // tenga puesta: se suma al final de la lista con un aviso en el log
+    // tenga puesta: entra segunda en la lista con un aviso en el log
     // (imageGeneratorIds, images/image-models.ts).
     AI_MODEL_IMAGE_ALT: z.string().optional(),
     // "fake" dibuja un PNG liso sin llamar a nadie: es lo que usan los tests y

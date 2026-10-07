@@ -129,6 +129,53 @@ describe("AiSdkImageProvider", () => {
     });
   });
 
+  // Los cuerpos reales que devolvió el bake-off del 2026-10-06 (marquesitas en
+  // Mérida y el cenote).
+  it.each([
+    "Response content blocked by label 'DallEBlockList'.",
+    "Input content violated mainline safety policies.",
+  ])("el filtro de Azure de MAI-Image (por OpenRouter) es un bloqueo: %s", async (message) => {
+    const { model } = modelo(() =>
+      Promise.reject(
+        new APICallError({
+          message,
+          url: "https://openrouter.ai/api/v1/images",
+          requestBodyValues: {},
+          statusCode: 400,
+          responseBody: JSON.stringify({
+            error: { message, code: 400, metadata: { provider_name: "Azure" } },
+          }),
+          isRetryable: false,
+        }),
+      ),
+    );
+    const provider = new AiSdkImageProvider(model, "openrouter:microsoft/mai-image-2.6");
+
+    await expect(provider.generate({ prompt: "x", aspectRatio: "1:1" })).resolves.toMatchObject({
+      kind: "blocked",
+    });
+  });
+
+  it("un 403 de cuenta en una lista de bloqueo es configuración, no contenido", async () => {
+    const { model } = modelo(() =>
+      Promise.reject(
+        new APICallError({
+          message: "Your account is on a blocklist.",
+          url: "https://openrouter.ai/api/v1/images",
+          requestBodyValues: {},
+          statusCode: 403,
+          responseBody: '{"error":{"message":"Your account is on a blocklist.","code":403}}',
+          isRetryable: false,
+        }),
+      ),
+    );
+    const provider = new AiSdkImageProvider(model, "openrouter:microsoft/mai-image-2.6");
+
+    await expect(provider.generate({ prompt: "x", aspectRatio: "1:1" })).rejects.toThrow(
+      /blocklist/,
+    );
+  });
+
   it("cualquier otra falla se propaga: es del sistema, no del contenido", async () => {
     const { model } = modelo(() =>
       Promise.reject(

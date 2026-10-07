@@ -5,9 +5,8 @@
 // prompt compuesto de producción (AiSdkImageProvider + composeImagePrompt), y
 // deja:
 //   - una galería a ciegas para calificar (out/<corrida>/index.html): por
-//     prompt, los modelos en columnas barajadas (A, B, C…), todos con el mismo
-//     número de imágenes (las variantes de más salen al revelar), ya
-//     recortadas a la proporción que vería el creator;
+//     prompt, una columna por imagen, barajadas (A, B, C…), ya recortadas a
+//     la proporción que vería el creator, que recibe una por clic;
 //   - un reporte markdown con latencia, medidas, costo y bloqueos por imagen.
 // El juicio de calidad es humano: se califica en la galería y se pega el JSON.
 //
@@ -15,6 +14,7 @@
 // IMAGE_BAKEOFF_MODELS="google:x,openai:y" cambia los modelos.
 // IMAGE_BAKEOFF_PROMPTS="id1,id2" re-corre solo esos prompts.
 // IMAGE_BAKEOFF_VARIANTS=1 genera una imagen por prompt en todos los modelos.
+// IMAGE_BAKEOFF_GALLERY_VARIANTS=2 califica solo esas variantes en la galería.
 // IMAGE_BAKEOFF_FRESH=1 ignora el caché (cache.ts) y paga todo de nuevo.
 //
 // Cuesta dinero de verdad, pero una imagen ya generada con el mismo modelo y
@@ -244,14 +244,12 @@ async function correrModelo(
 function galeria(
   runId: string,
   prompts: BakeoffPrompt[],
-  models: string[],
   piezas: Pieza[],
-  ciegas: number,
+  variantes: number[] | null,
 ): string {
   const datos = {
     runId,
-    models,
-    ciegas,
+    variantes,
     prompts: prompts.map((p) => ({
       id: p.id,
       aspect: p.aspectRatio,
@@ -279,7 +277,6 @@ section h2{font-size:16px;margin:0 0 4px}
 .celda{background:#fff;border-radius:12px;padding:10px;border:2px solid transparent}
 .celda h3{margin:0 0 8px;font-size:15px}
 .imgs{display:flex;gap:6px}.imgs img{flex:1 1 0;min-width:0;height:auto;border-radius:6px;cursor:zoom-in;background:#eee}
-.imgs .extra{display:none}.revelado .imgs .extra{display:block}
 .falla{font-size:12px;color:#b00;padding:20px 0}
 .meta{display:none;font-size:11px;color:#777;margin-top:6px}.revelado .meta{display:block}
 .score{display:flex;gap:4px;margin-top:8px}.score button{padding:4px 10px}
@@ -291,10 +288,8 @@ dialog{border:0;padding:0;background:transparent}dialog img{max-width:92vw;max-h
 <header><h1>Bake-off de imágenes · ${runId}</h1>
 <button id="revelar">Revelar modelos</button>
 <button id="copiar">Copiar resultados</button><span id="estado" style="font-size:13px;color:#555"></span></header>
-<p class="criterios">Califica cada columna de 1 a 5 mirando sus imágenes: <b>lugar reconocible</b> (sureste), <b>sin logotipos</b>, <b>español bien escrito</b> (cuando lo pide), <b>proporción</b> (ya recortada como la vería el creator) y, en las ediciones, <b>fidelidad</b>. Las columnas están barajadas por fila: no busques patrón. Clic en una imagen para verla grande.${
-    ciegas < Math.max(...piezas.map((x) => x.variant), 1)
-      ? " Todas las columnas muestran el mismo número de imágenes; las variantes de más de algunos modelos aparecen al revelar, con las medidas y el costo, para ver si su calidad es pareja."
-      : " Las medidas y el costo aparecen al revelar: delatarían al modelo."
+<p class="criterios">Califica cada imagen de 1 a 5, sola, como la vería el creator (una por clic): <b>lugar reconocible</b> (sureste), <b>sin logotipos</b>, <b>español bien escrito</b> (cuando lo pide), <b>proporción</b> (ya recortada como la vería el creator) y, en las ediciones, <b>fidelidad</b>. Cada columna es una imagen, barajadas por fila: dos columnas pueden ser del mismo modelo, y no busques patrón. Las medidas y el costo aparecen al revelar: delatarían al modelo. Clic en una imagen para verla grande.${
+    variantes ? ` Solo se muestran las variantes ${variantes.join(", ")}.` : ""
   }</p>
 <main id="app"></main>
 <dialog id="zoom"><img alt=""></dialog>
@@ -310,13 +305,17 @@ D.prompts.forEach((p,i)=>{
   const sec=document.createElement("section");
   sec.innerHTML="<h2>"+esc(p.id)+" · "+esc(p.aspect)+(p.editOf?" · edita "+esc(p.editOf):"")+"</h2><p class=desc>"+esc(p.description)+"</p><p class=mirar>Mirar: "+esc(p.mirar)+"</p>";
   const fila=document.createElement("div");fila.className="fila";
-  barajar(D.models,(i+1)*7919).forEach((m,j)=>{
-    const k=p.id+"|"+m;const letra=String.fromCharCode(65+j);
-    const piezas=D.piezas.filter(x=>x.promptId===p.id&&x.model===m);
+  // Una columna por imagen: con una imagen por clic, eso es lo que ve el creator.
+  const columnas=D.piezas.filter(x=>x.promptId===p.id&&(!D.variantes||D.variantes.includes(x.variant)));
+  if(columnas.length===0)return;
+  barajar(columnas,(i+1)*7919).forEach((x,j)=>{
+    const m=x.model;const k=p.id+"|"+m+"|"+x.variant;const letra=String.fromCharCode(65+j);
     const c=document.createElement("div");c.className="celda";
-    const imgs=piezas.map(x=>{const extra=x.variant>D.ciegas?' extra':'';return x.status==="ok"?'<img class="'+extra+'" loading=lazy src="'+esc(x.file)+'" alt="'+letra+' v'+x.variant+'">':'<div class="falla'+extra+'">'+esc(x.status)+(x.nota?": "+esc(x.nota):"")+'</div>'}).join("");
-    const meta=piezas.filter(x=>x.status==="ok").map(x=>x.original+(x.final!==x.original?" → "+x.final:"")+" · "+x.segundos.toFixed(1)+" s · "+(x.costUsd==null?"sin precio":"$"+x.costUsd.toFixed(3))+(x.reusada?" · del "+x.reusada.slice(0,10):"")).join(" | ");
-    c.innerHTML="<h3>"+letra+' <span class=modelo>· '+esc(m)+"</span></h3><div class=imgs>"+(imgs||'<div class=falla>sin imagen</div>')+"</div><div class=meta>"+meta+"</div>";
+    // A ciegas, una falla solo dice que no hubo imagen: el texto del proveedor
+    // (DallEBlockList, el de xAI…) delataría al modelo. El detalle, al revelar.
+    const img=x.status==="ok"?'<img loading=lazy src="'+esc(x.file)+'" alt="'+letra+'">':'<div class=falla>No generó imagen</div>';
+    const meta=x.status==="ok"?x.original+(x.final!==x.original?" → "+x.final:"")+" · "+x.segundos.toFixed(1)+" s · "+(x.costUsd==null?"sin precio":"$"+x.costUsd.toFixed(3))+(x.reusada?" · del "+x.reusada.slice(0,10):""):esc(x.status)+(x.nota?": "+esc(x.nota):"");
+    c.innerHTML="<h3>"+letra+' <span class=modelo>· '+esc(m)+" v"+x.variant+"</span></h3><div class=imgs>"+img+"</div><div class=meta>"+meta+"</div>";
     const sc=document.createElement("div");sc.className="score";
     for(let n=1;n<=5;n++){const b=document.createElement("button");b.textContent=n;if(estado[k]?.score===n)b.className="on";b.onclick=()=>{estado[k]={...estado[k],score:n};guardar();[...sc.children].forEach(x=>x.className="");b.className="on";};sc.appendChild(b);}
     const t=document.createElement("textarea");t.placeholder="Nota (opcional)";t.value=estado[k]?.nota||"";t.oninput=()=>{estado[k]={...estado[k],nota:t.value};guardar();};
@@ -326,7 +325,7 @@ D.prompts.forEach((p,i)=>{
 });
 document.getElementById("revelar").onclick=e=>{document.body.classList.toggle("revelado");e.target.classList.toggle("on");};
 document.getElementById("copiar").onclick=async()=>{
-  const scores=Object.entries(estado).map(([k,v])=>{const[promptId,model]=k.split("|");return{promptId,model,score:v.score??null,nota:v.nota??""}});
+  const scores=Object.entries(estado).map(([k,v])=>{const[promptId,model,variant]=k.split("|");return{promptId,model,variant:Number(variant),score:v.score??null,nota:v.nota??""}});
   const txt=JSON.stringify({runId:D.runId,scores},null,1);
   try{await navigator.clipboard.writeText(txt);document.getElementById("estado").textContent="Copiado: "+scores.length+" calificaciones";}
   catch(e){prompt("Copia esto:",txt);}
@@ -404,9 +403,17 @@ async function main() {
     DEFAULT_MODELS
   ).map((r) => ({ ...r, variants: envVariants ?? r.variants }));
   const models = runs.map((r) => r.id);
-  // La galería ciega muestra a todos el mismo número de imágenes: una columna
-  // con menos delataría a los conocidos.
-  const ciegas = Math.min(...runs.map((r) => r.variants));
+  // Qué variantes entran a la galería (default: todas). Para calificar solo
+  // las nuevas de una segunda ronda sin repetir las ya calificadas: "2".
+  const variantes =
+    process.env.IMAGE_BAKEOFF_GALLERY_VARIANTS?.split(",").map((v) => Number(v.trim())) ?? null;
+  // Falla antes de gastar: un valor mal escrito ("v2") dejaría la galería
+  // vacía después de pagar la corrida.
+  if (variantes?.some((v) => !Number.isInteger(v) || v < 1)) {
+    throw new Error(
+      `IMAGE_BAKEOFF_GALLERY_VARIANTS="${process.env.IMAGE_BAKEOFF_GALLERY_VARIANTS ?? ""}" no es una lista de números (p. ej. "2" o "1,2").`,
+    );
+  }
   const fresh = process.env.IMAGE_BAKEOFF_FRESH === "1";
   const only = process.env.IMAGE_BAKEOFF_PROMPTS?.split(",").map((p) => p.trim());
   // Una edición necesita su base: pedir solo "marquesitas-calida" corre
@@ -440,7 +447,7 @@ async function main() {
     )
   ).flat();
 
-  await writeFile(path.join(runDir, "index.html"), galeria(runId, prompts, models, piezas, ciegas));
+  await writeFile(path.join(runDir, "index.html"), galeria(runId, prompts, piezas, variantes));
   // Nunca pisa un reporte: el de una corrida completa es la evidencia que cita
   // ADR-025, y una re-corrida parcial del mismo día lo reemplazaría.
   const parcial = only ? "-parcial" : "";

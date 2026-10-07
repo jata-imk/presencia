@@ -191,7 +191,7 @@ Desde `ai` 7.0.1xx, `generateImage` vuelve a llamar al modelo cuando responde si
 ## Addendum (2026-10-06, F10.7 PR6) — "Probar con otro generador" sale de la misma lista
 
 - **Una sola variable.** `AI_MODEL_IMAGE` es la lista de generadores: el primero es el principal, y "Probar con otro generador" ofrece los demás. `AI_MODEL_IMAGE_ALT` queda obsoleta.
-  - Si un despliegue todavía la tiene, se suma al final de la lista con un aviso en el log, en vez de no arrancar (`imageGeneratorIds`).
+  - Si un despliegue todavía la tiene, entra segunda en la lista con un aviso en el log, en vez de no arrancar (`imageGeneratorIds`).
 - **El generador N es una cadena que arranca en N** y sigue con los demás en orden. Elegir el 3 es "empieza por el 3", no "solo el 3": si está caído, igual responde alguno. Un bloqueo de contenido sigue sin pasar al siguiente.
 - **Contrato.**
   - `generator: 1..N` en generar y editar.
@@ -214,3 +214,25 @@ Idea de Jose: si una imagen ya se generó, no hay por qué volver a pagarla.
 - La corrida completa de F10.7 sale en ~$3.30, en vez de ~$5, y una nueva corrida solo paga lo que cambió.
 - `scripts/image-bakeoff/prompts.ts` separa los prompts de `run.ts`, para que el caché y cualquier script de mantenimiento calculen la misma huella.
 - **Corregido de paso:** el resumen del reporte había perdido el `$` de los costos. El código del bake-off no tenía el error: lo metió el script con el que apliqué los cambios del review del PR4, porque `String.replace` toma `$$` como un `$` literal en el texto de reemplazo. Lo encontré al volver a tocar esa línea. Además, la carpeta y el reporte de cada corrida llevan segundos en el nombre: dos corridas parciales en el mismo minuto chocaban.
+
+## Addendum (2026-10-07, F10.7) — el resultado del bake-off: gpt-image-2 principal, Nano Banana 2 de respaldo
+
+```
+AI_MODEL_IMAGE=openai:gpt-image-2,google:gemini-3.1-flash-image
+```
+
+La evidencia está en `docs/reference/bakeoff-imagenes/2026-10-07-040055-reporte.md` (primera ronda, los cinco modelos) y `2026-10-07-045433-reporte.md` (segunda ronda y resultado combinado). Jose calificó las dos a ciegas.
+
+- **La hipótesis de entrada no se sostuvo.** Grok Imagine 2.0 iba a ser el principal y quedó cuarto (2.92): bloqueó el gym y el cenote con una persona, justo los casos de coaches y turismo, y no supo dibujar una marquesita.
+- **MAI-Image 2.6 queda descalificado para el sureste.** El filtro de Azure (`DallEBlockList`) rechaza la palabra "Mérida": el mismo prompt con "Yucatán" sí generó. Con el beachhead en Mérida, más de la mitad de los posts saldrían bloqueados.
+- **Muse** no bloqueó nada y cuesta $0.01, pero el 30% de sus imágenes salió mala (2 o menos).
+- **Nano Banana 2 y gpt-image-2 empatan en calidad** (4.15 y 4.10 en 20 imágenes cada uno). Se desempata por lo demás:
+  - **Costo:** gpt-image-2 cuesta la mitad ($0.047 contra $0.095).
+  - **Logotipos:** Nano Banana 2 metió marcas de terceros en las tres imágenes con producto, y gpt-image-2 en ninguna. Para un creator que publica con su nombre, una marca ajena es un riesgo, no un detalle.
+  - **Velocidad:** gpt-image-2 tarda 33 s contra 9 s. Pesa menos que lo anterior: en la decisión de 2026-09-30, Jose priorizó calidad y precio sobre velocidad.
+  - **El reparto de fuertes:** Nano Banana 2 es mejor con personas y gpt-image-2 con texto en español y producto. Por eso Nano Banana 2 es el segundo de la lista: respaldo si OpenAI se cae, y la mirada complementaria de "Probar con otro generador".
+- **Se descartó una tercera entrada.** Ningún tercer modelo pasó la prueba, y con dos generadores la UI se queda como estaba: un solo botón.
+- **Lo que no resuelve ningún modelo:** la marquesita y el taco de cochinita salieron mal en todos. Es conocimiento regional que el modelo no tiene, y se ataca en el prompt (el chat describiendo el antojito), no cambiando de generador.
+- **El bake-off ahora califica cada imagen sola.** La galería pone una columna por imagen, barajadas, y `IMAGE_BAKEOFF_GALLERY_VARIANTS` limita qué variantes entran, para una segunda ronda que no repita lo ya calificado. Antes se calificaba por modelo, con todas sus variantes juntas; eso medía "la mejor de dos", y con una imagen por clic (abajo) la métrica correcta es cada imagen. Una sola muestra por modelo engañaba: gpt-image-2 sacó 3.70 en su primera variante y 4.50 en la segunda.
+- **Bloqueos de MAI reconocidos como bloqueo** (`BLOCKED_BODY` en `ai-sdk-image.provider.ts`): "content blocked … 'DallEBlockList'" y "violated mainline safety policies" llegan como 400. Antes ya no disparaban respaldo, pero el creator veía un error genérico en vez de "pide otra cosa".
+- **Siguiente, en su propio PR:** una imagen por clic en vez de dos variantes (decisión de Jose del 2026-10-07), y el generador alterno con su fuerte en la UI ("Personas y realismo") en vez de "Generador 2", sin nombrar el modelo.
