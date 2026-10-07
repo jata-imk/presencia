@@ -27,14 +27,15 @@ import { ImagesController } from "./images.controller.js";
 // elegir el 3 es "empieza por el 3", no "solo el 3", y si está caído igual
 // responde alguno. Un bloqueo de contenido nunca cae al siguiente.
 /**
- * Con el fake, los fuertes de los dos primeros de la lista, para que dev
- * muestre el mismo texto que prod. Sin el ALT viejo (no repite su aviso) y
- * sin tumbar el arranque: con el fake, env.ts no valida AI_MODEL_IMAGE, y una
- * lista mal escrita que nadie va a usar no debe impedir levantar el stack.
+ * Con el fake, los fuertes de los dos primeros de la lista, armada igual que
+ * en prod (con el ALT viejo, si quedó puesto) para que dev muestre el mismo
+ * texto. Sin tumbar el arranque: con el fake, env.ts no valida
+ * AI_MODEL_IMAGE, y una lista mal escrita que nadie va a usar no debe impedir
+ * levantar el stack.
  */
 function fakeStrengths(): (string | null)[] {
   try {
-    const ids = imageGeneratorIds(env.AI_MODEL_IMAGE, undefined);
+    const ids = imageGeneratorIds(env.AI_MODEL_IMAGE, env.AI_MODEL_IMAGE_ALT);
     return [0, 1].map((i) => (ids[i] ? generatorStrength(ids[i]) : null));
   } catch {
     return [null, null];

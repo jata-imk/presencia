@@ -16,7 +16,7 @@ import {
  * ImageGenerationService; esto solo la registra.
  *
  * `retryLimit` implícito en 0, como el resto de las colas: un reintento acá
- * no es gratis — vuelve a pagarle al generador. Una variante que falla se
+ * no es gratis — vuelve a pagarle al generador. Una imagen que falla se
  * reintenta a mano, desde la card.
  */
 @Injectable()

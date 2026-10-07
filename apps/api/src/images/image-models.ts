@@ -106,15 +106,18 @@ export function imageGeneratorIds(chain: string | undefined, legacyAlternate: st
  * bajo "Probar con otro generador" ("Mejor para personas y realismo"). Es
  * dato medido, no marketing: cada fuerte sale de un bake-off a ciegas y se
  * cambia con el siguiente. Un modelo sin medir no tiene fuerte, y la UI dice
- * lo de siempre. Por familia, como WITHOUT_4_5.
+ * lo de siempre. Por id exacto (con sus snapshots fechados), NO por familia
+ * como WITHOUT_4_5: aquel es una limitación técnica que hereda la versión
+ * siguiente; un fuerte medido no se hereda — gpt-image-2-mini no es
+ * gpt-image-2.
  */
 const GENERATOR_STRENGTHS: { family: RegExp; strength: string }[] = [
   // Bake-off 2026-10-07: empata con Nano Banana 2 en promedio, gana en
   // lugares, producto sin logotipos y texto en español.
-  { family: /^openai:gpt-image-2/, strength: "Uso general" },
+  { family: /^openai:gpt-image-2(?:-\d{4}-\d{2}-\d{2})?$/, strength: "Uso general" },
   // Bake-off 2026-10-07: el mejor con personas (gym 4.5 contra 4.0, cenote
   // 4.5 contra 3.0) y el más realista según las notas de Jose.
-  { family: /^google:gemini-3\.1-flash-image/, strength: "Personas y realismo" },
+  { family: /^google:gemini-3\.1-flash-image(?:-preview)?$/, strength: "Personas y realismo" },
 ];
 
 export function generatorStrength(id: string): string | null {
