@@ -54,6 +54,14 @@ interface ChatsState {
   archive: (id: string) => Promise<void>;
   unarchive: (id: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  /**
+   * F10.8: un chat cuyo título cambió en el servidor (el automático, o un
+   * renombre en otra pestaña) y llegó por el stream de eventos. Es la fila
+   * completa, así que se acomoda según `archivedAt`: si se archivó en otra
+   * pestaña, sale de Recientes. No agrega chats que la lista no tenía: eso
+   * lo arma GET /chats.
+   */
+  applyRemote: (chat: ChatSummary) => void;
 }
 
 export const useChatsStore = create<ChatsState>()(
@@ -62,6 +70,29 @@ export const useChatsStore = create<ChatsState>()(
       chats: null,
       archivedChats: null,
       error: null,
+      applyRemote: (chat) => {
+        set(
+          (state) => {
+            const known =
+              (state.chats?.some((c) => c.id === chat.id) ?? false) ||
+              (state.archivedChats?.some((c) => c.id === chat.id) ?? false);
+            if (!known) return {};
+            const without = (rows: ChatSummary[] | null) =>
+              rows?.filter((c) => c.id !== chat.id) ?? null;
+            const archived = chat.archivedAt !== null;
+            return {
+              chats: archived
+                ? without(state.chats)
+                : state.chats && sortLikeServer([chat, ...(without(state.chats) ?? [])]),
+              archivedChats: archived
+                ? state.archivedChats && [chat, ...(without(state.archivedChats) ?? [])]
+                : without(state.archivedChats),
+            };
+          },
+          false,
+          "chats/applyRemote",
+        );
+      },
       refresh: async () => {
         try {
           const rows = await apiFetch<ChatSummary[]>("/api/chats");

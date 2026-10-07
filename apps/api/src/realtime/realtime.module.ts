@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { CardsModule } from "../cards/cards.module.js";
+import { ChatRepository } from "../chat/chat.repository.js";
 import { CardListener } from "./card-listener.service.js";
 import { StreamController } from "./stream.controller.js";
 import { StreamRegistry } from "./stream-registry.service.js";
@@ -10,6 +11,8 @@ import { StreamRegistry } from "./stream-registry.service.js";
 @Module({
   imports: [CardsModule],
   controllers: [StreamController],
-  providers: [StreamRegistry, CardListener],
+  // ChatRepository y no ChatService (F10.8): el listener solo lee una fila de
+  // chats, y el servicio arrastra la IA, los créditos y la voz de marca.
+  providers: [StreamRegistry, CardListener, ChatRepository],
 })
 export class RealtimeModule {}

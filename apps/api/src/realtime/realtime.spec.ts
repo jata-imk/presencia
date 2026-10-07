@@ -133,6 +133,7 @@ describe("NOTIFY → LISTEN → stream", { timeout: 30_000 }, () => {
   let service: CardsServiceType;
   let registry: StreamRegistry;
   let listener: CardListenerType;
+  let chatRepo: InstanceType<typeof import("../chat/chat.repository.js").ChatRepository>;
   let userA: string;
   let userB: string;
   let chatA: string;
@@ -148,6 +149,7 @@ describe("NOTIFY → LISTEN → stream", { timeout: 30_000 }, () => {
     const { ChannelsRepository } = await import("../channels/channels.repository.js");
     const { CardsService } = await import("../cards/cards.service.js");
     const { CardListener } = await import("./card-listener.service.js");
+    const { ChatRepository } = await import("../chat/chat.repository.js");
 
     dbService = new DbService();
     cardsRepo = new CardsRepository();
@@ -160,7 +162,8 @@ describe("NOTIFY → LISTEN → stream", { timeout: 30_000 }, () => {
       {} as never,
     );
     registry = new StreamRegistry();
-    listener = new CardListener(registry, service);
+    chatRepo = new ChatRepository();
+    listener = new CardListener(registry, service, dbService, chatRepo);
     await listener.onModuleInit();
 
     const [a, b] = await dbService.db
@@ -208,6 +211,27 @@ describe("NOTIFY → LISTEN → stream", { timeout: 30_000 }, () => {
       data: { id: card.id, status: "draft" },
     });
     registry.remove(userA, tab);
+  });
+
+  it("F10.8: el título automático llega al stream del dueño, y a nadie más", async () => {
+    const tabA = connect(userA);
+    const tabB = connect(userB);
+    const saved = await dbService.runWithTenant(userA, (tx) =>
+      chatRepo.setAutoTitle(tx, chatA, "Promo de marquesitas"),
+    );
+    expect(saved?.titleSource).toBe("auto");
+    await until(() => tabA.events().some((e) => e.event === "chat"));
+    expect(tabA.events().find((e) => e.event === "chat")).toMatchObject({
+      data: { id: chatA, title: "Promo de marquesitas" },
+    });
+    expect(tabB.events().filter((e) => e.event === "chat")).toEqual([]);
+    // Ya titulado: el automático no vuelve a escribir.
+    const again = await dbService.runWithTenant(userA, (tx) =>
+      chatRepo.setAutoTitle(tx, chatA, "Otro título"),
+    );
+    expect(again).toBeUndefined();
+    registry.remove(userA, tabA);
+    registry.remove(userB, tabB);
   });
 
   it("con ROLLBACK no avisa nada", async () => {

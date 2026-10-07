@@ -1,0 +1,73 @@
+import type { UIMessage } from "ai";
+
+// Lo puro del título automático (F10.8): qué lee el modelo y cómo se limpia lo
+// que responde. Aparte del servicio para probarlo sin levantar env ni base.
+
+/** Hasta qué respuesta del asistente se intenta titular. */
+export const TITLE_ATTEMPTS = 3;
+
+const MAX_TITLE_CHARS = 60;
+/** Cuánto de cada mensaje lee el modelo: el inicio basta para el tema. */
+const MAX_CHARS_PER_MESSAGE = 600;
+/** Lo que responde el modelo cuando todavía no hay tema. */
+const NO_TOPIC = "VACÍO";
+
+export const TITLE_SYSTEM = `Titulas conversaciones de Presencia, un asistente que ayuda a creators mexicanos con sus redes sociales.
+
+Lee el inicio de la conversación y escribe un título en español mexicano que diga de qué trata:
+- De 2 a 6 palabras, como lo escribiría el propio creator en su lista de chats.
+- Concreto: el tema o la tarea ("Promo de marquesitas para el martes"), no frases genéricas como "Ayuda con redes" o "Nueva conversación".
+- Sin comillas, sin emojis y sin punto final.
+- Si todavía no hay un tema claro (solo un saludo o una pregunta vaga), responde exactamente ${NO_TOPIC}.
+
+Responde solo con el título.`;
+
+function textOf(message: UIMessage): string {
+  return message.parts
+    .flatMap((part) => (part.type === "text" ? [part.text] : []))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Las respuestas del asistente en la conversación (cuenta la que acaba de llegar). */
+export function assistantTurns(conversation: UIMessage[]): number {
+  return conversation.filter((m) => m.role === "assistant").length;
+}
+
+/**
+ * Lo que lee el modelo: solo el texto de los primeros mensajes, sin tools ni
+ * razonamiento. El JSON de una card no ayuda a titular y sí cuesta tokens.
+ */
+export function transcriptForTitle(conversation: UIMessage[]): string {
+  return conversation
+    .slice(0, 2 * TITLE_ATTEMPTS)
+    .flatMap((message) => {
+      const text = textOf(message).slice(0, MAX_CHARS_PER_MESSAGE);
+      if (!text) return [];
+      return [`${message.role === "user" ? "Creator" : "Presencia"}: ${text}`];
+    })
+    .join("\n\n");
+}
+
+/**
+ * El título limpio, o `null` si el modelo dijo que aún no hay tema (o no dijo
+ * nada). Los modelos a veces envuelven en comillas o cierran con punto aunque
+ * se les pida que no: se quitan aquí en vez de confiar en el prompt.
+ */
+export function cleanTitle(raw: string): string | null {
+  let title = (raw.split("\n").find((line) => line.trim()) ?? "").trim();
+  title = title.replace(/^["'“”«»`*]+|["'“”«»`*]+$/g, "").trim();
+  title = title.replace(/[.:;,!¡¿?]+$/u, "").trim();
+  title = title.replace(/\s+/g, " ");
+  const bare = title
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toUpperCase();
+  if (!title || bare === "VACIO") return null;
+  if (title.length > MAX_TITLE_CHARS) {
+    const cut = title.slice(0, MAX_TITLE_CHARS);
+    title = cut.slice(0, cut.lastIndexOf(" ") > 20 ? cut.lastIndexOf(" ") : MAX_TITLE_CHARS).trim();
+  }
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}

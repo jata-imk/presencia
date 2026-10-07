@@ -1,6 +1,7 @@
 import { useEffect } from "react";
-import type { PublicationCardDto } from "@presencia/shared";
+import type { ChatSummary, PublicationCardDto } from "@presencia/shared";
 import { useCardsStore } from "../../stores/cards-store.js";
+import { useChatsStore } from "../../stores/chats-store.js";
 
 const RECONNECT_MIN_MS = 3_000;
 const RECONNECT_MAX_MS = 60_000;
@@ -25,13 +26,30 @@ const STALE_MS = 50_000;
  * Vive dentro del shell y no en ProtectedLayout: ahí los hooks correrían
  * antes de saber si hay sesión, y en onboarding no hay cards que mirar.
  * Cerrar sesión desmonta el shell y el cleanup cierra el stream.
+ *
+ * F10.8: el mismo stream trae los chats cuyo título cambió (el automático, o
+ * un renombre en otra pestaña). Al revalidar se vuelven a pedir también las
+ * listas de chats que ya estaban cargadas.
  */
 export function LiveCards(): null {
   const apply = useCardsStore((s) => s.apply);
   const remove = useCardsStore((s) => s.remove);
-  const revalidate = useCardsStore((s) => s.revalidate);
+  const revalidateCards = useCardsStore((s) => s.revalidate);
+  const applyChat = useChatsStore((s) => s.applyRemote);
+  const refreshChats = useChatsStore((s) => s.refresh);
+  const refreshArchived = useChatsStore((s) => s.refreshArchived);
 
   useEffect(() => {
+    // Las listas de chats solo si ya se cargaron: no adelanta la carga del
+    // sidebar ni la de Archivados.
+    const revalidate = () => {
+      const { chats, archivedChats } = useChatsStore.getState();
+      return Promise.all([
+        revalidateCards(),
+        chats ? refreshChats() : Promise.resolve(),
+        archivedChats ? refreshArchived() : Promise.resolve(),
+      ]);
+    };
     let source: EventSource | null = null;
     let disposed = false;
     // Arranca en true: la primera apertura también revalida. Las pantallas
@@ -90,6 +108,10 @@ export function LiveCards(): null {
         seen();
         remove((JSON.parse((event as MessageEvent<string>).data) as { id: string }).id);
       });
+      es.addEventListener("chat", (event) => {
+        seen();
+        applyChat(JSON.parse((event as MessageEvent<string>).data) as ChatSummary);
+      });
       es.addEventListener("resync", () => {
         seen();
         revalidateOnce();
@@ -139,7 +161,7 @@ export function LiveCards(): null {
       source?.close();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [apply, remove, revalidate]);
+  }, [apply, remove, revalidateCards, applyChat, refreshChats, refreshArchived]);
 
   return null;
 }

@@ -37,6 +37,11 @@ export const messageRole = pgEnum("message_role", ["user", "assistant", "system"
 
 export const channel = pgEnum("channel", ["web", "telegram", "whatsapp"]);
 
+// F10.8: de dónde salió el título de un chat. `default` es el "Nuevo chat"
+// con que nace; `auto` lo puso el modelo tras la primera respuesta; `user`
+// lo escribió el creator, y ése nunca se vuelve a tocar.
+export const chatTitleSource = pgEnum("chat_title_source", ["default", "auto", "user"]);
+
 export const publicationArchetype = pgEnum("publication_archetype", [
   "visual_first",
   "video_script",
@@ -108,6 +113,9 @@ export const creditReason = pgEnum("credit_reason", [
   // F10.5: pedirle a la IA un cambio sobre una card ("más corto"). Por
   // tokens, como el ejemplo de voz: cuesta lo que ocupa la reescritura.
   "card_rewrite",
+  // F10.8: el título automático del chat. Por tokens, con la tarifa utility:
+  // cuesta lo que ocupa leer el inicio de la conversación.
+  "chat_title",
   "refund",
   "adjustment",
 ]);
@@ -303,6 +311,7 @@ export const chats = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     folderId: uuid("folder_id").references(() => folders.id, { onDelete: "set null" }),
     title: text("title").notNull().default("Nuevo chat"),
+    titleSource: chatTitleSource("title_source").notNull().default("default"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     // F6.5: timestamp nullable, no boolean — mismo patrón que archivedAt y
     // socialConnectIntents.consumedAt. Además de "está fijado" da gratis el
