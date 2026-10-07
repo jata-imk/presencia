@@ -92,3 +92,10 @@ La nota provisional de arriba se resolvió así:
 - **Los links abren en otra pestaña** (`target="_blank" rel="noopener noreferrer"`), así no se pierde el chat.
 - **Sigue sin `@tailwindcss/typography`**: la hoja `.markdown` de `app.css` alcanza y usa los tokens.
 - **`--font-mono` es la monoespaciada del sistema.** JetBrains Mono nunca se cargó, así que el código caía a Courier New.
+
+## Addendum (2026-10-07, F10.8 PR1) — el stream de eventos también trae chats
+
+- **El título automático llega por el mismo puente que las cards (F8.6).** `chat_changed` es un segundo canal de NOTIFY, con el mismo formato de payload (`<userId>:<chatId>`) y la misma conexión LISTEN y cola en serie de `CardListener`. El navegador recibe `event: chat` con el `ChatSummary` de esa fila, leída con el RLS del usuario y traducida por `toChatSummary`, la misma función que usa `GET /api/chats`. El listener lee con `ChatRepository` y no con `ChatService`, que arrastra la IA, los créditos y la voz de marca.
+- **Quién notifica:** el título automático (`ChatRepository.setAutoTitle`) y el renombre (`renameChat`), en la misma transacción que la escritura. Así, otra pestaña o el celular ven el nombre nuevo sin recargar. Los demás cambios del chat (fijar, archivar, mover) no notifican todavía: el contrato del evento es el **título**. Como el evento trae la fila completa, la web la acomoda según `archivedAt` (si se archivó en otra pestaña, sale de Recientes). Los demás cambios se suman cuando otro canal (Telegram, F11) los necesite.
+- **Al revalidar** (reconexión, `resync`, la pestaña vuelve a ser visible), la web pide de nuevo la lista de chats, además de las cards, si ya la tenía cargada.
+- **Por qué el stream de eventos y no el stream del turno:** el título se genera después de que la respuesta terminó (necesita el primer intercambio completo), cuando el stream del turno ya se cerró. El de eventos sigue abierto y llega a todas las pestañas.

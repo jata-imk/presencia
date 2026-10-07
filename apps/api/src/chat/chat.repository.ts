@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import { asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { chats, messages } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
+import { CHAT_CHANGED_CHANNEL, encodeChatChanged } from "../realtime/card-events.js";
 
 // Todo acceso a chats/messages vive aquí (contrato de modelo-de-datos.md:
 // el shape UIMessage persistido queda encapsulado en el repository).
@@ -15,7 +16,8 @@ export class ChatRepository {
   async createChat(tx: Tx, userId: string, title?: string): Promise<ChatRow> {
     const [chat] = await tx
       .insert(chats)
-      .values({ userId, ...(title ? { title } : {}) })
+      // Un título que se manda al crear es del creator: el automático no lo toca.
+      .values({ userId, ...(title ? { title, titleSource: "user" as const } : {}) })
       .returning();
     if (!chat) throw new Error("No se pudo crear el chat");
     return chat;
@@ -85,14 +87,44 @@ export class ChatRepository {
     await tx.delete(messages).where(eq(messages.id, messageId));
   }
 
+  /**
+   * El creator lo renombró: desde aquí el título es suyo (`user`) y el
+   * automático ya no lo toca, ni el que estuviera en camino (setAutoTitle).
+   */
   async renameChat(tx: Tx, chatId: string, title: string): Promise<ChatRow> {
     const [chat] = await tx
       .update(chats)
-      .set({ title, updatedAt: sql`now()` })
+      .set({ title, titleSource: "user", updatedAt: sql`now()` })
       .where(eq(chats.id, chatId))
       .returning();
     if (!chat) throw new Error("No se pudo renombrar el chat");
+    await this.notifyChanged(tx, chat);
     return chat;
+  }
+
+  /**
+   * F10.8: el título que propuso el modelo, SOLO si el chat sigue con el de
+   * nacimiento. La condición va en el mismo UPDATE, no en una lectura previa:
+   * si el creator lo renombra mientras el modelo pensaba, gana el creator.
+   * `undefined` si no se escribió (ya tenía título).
+   */
+  async setAutoTitle(tx: Tx, chatId: string, title: string): Promise<ChatRow | undefined> {
+    const [chat] = await tx
+      .update(chats)
+      .set({ title, titleSource: "auto", updatedAt: sql`now()` })
+      .where(and(eq(chats.id, chatId), eq(chats.titleSource, "default")))
+      .returning();
+    if (chat) await this.notifyChanged(tx, chat);
+    return chat;
+  }
+
+  /**
+   * NOTIFY transaccional (F8.6, F10.8): Postgres lo entrega solo si hay
+   * COMMIT, así que ninguna pestaña ve un título que no quedó guardado.
+   */
+  private async notifyChanged(tx: Tx, chat: ChatRow): Promise<void> {
+    const payload = encodeChatChanged({ userId: chat.userId, chatId: chat.id });
+    await tx.execute(sql`select pg_notify(${CHAT_CHANGED_CHANNEL}, ${payload})`);
   }
 
   // Archivar limpia el pin en el MISMO update (y el CHECK

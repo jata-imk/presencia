@@ -1,8 +1,18 @@
 import { Inject, Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import pg from "pg";
 import { CardsService } from "../cards/cards.service.js";
+import { ChatRepository } from "../chat/chat.repository.js";
+import { toChatSummary } from "../chat/chat-summary.js";
+import { DbService } from "../db/db.service.js";
 import { env } from "../env.js";
-import { CARD_CHANGED_CHANNEL, decodeCardChanged, type CardChanged } from "./card-events.js";
+import {
+  CARD_CHANGED_CHANNEL,
+  CHAT_CHANGED_CHANNEL,
+  decodeCardChanged,
+  decodeChatChanged,
+  type CardChanged,
+  type ChatChanged,
+} from "./card-events.js";
 import { StreamRegistry } from "./stream-registry.service.js";
 
 const RECONNECT_MIN_MS = 1_000;
@@ -20,7 +30,8 @@ const PROBE_MS = 60_000;
  * El lado LISTEN del puente de cards (F8.6, addendum de ADR-006). Escucha el
  * canal que llenan las escrituras de cards.repository.ts —las de la API y las
  * del worker, que corre en otro contenedor— y empuja la card a las conexiones
- * SSE de su dueño.
+ * SSE de su dueño. Desde F10.8 escucha también el de chats (el título), con
+ * la misma conexión y la misma cola.
  *
  * Una conexión DEDICADA y no una del pool: `LISTEN` vale mientras viva la
  * sesión, y el pool devuelve y reparte conexiones.
@@ -47,6 +58,8 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
   constructor(
     @Inject(StreamRegistry) private readonly registry: StreamRegistry,
     @Inject(CardsService) private readonly cards: CardsService,
+    @Inject(DbService) private readonly db: DbService,
+    @Inject(ChatRepository) private readonly chats: ChatRepository,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -80,6 +93,30 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
     return this.queue;
   }
 
+  /** Atiende una notificación de chats (F10.8). Público para los tests. */
+  handleChat(payload: string | undefined): Promise<void> {
+    const event = decodeChatChanged(payload);
+    if (!event) {
+      console.warn(
+        `[realtime] notificación ignorada en ${CHAT_CHANGED_CHANNEL}: ${String(payload)}`,
+      );
+      return this.queue;
+    }
+    this.queue = this.queue
+      .then(() => this.dispatchChat(event))
+      .catch((error: unknown) => {
+        console.error(`[realtime] no se pudo despachar el chat ${event.chatId}:`, error);
+      });
+    return this.queue;
+  }
+
+  private async dispatchChat({ userId, chatId }: ChatChanged): Promise<void> {
+    if (!this.registry.has(userId)) return;
+    // Con el RLS del usuario, y traducido igual que GET /api/chats.
+    const chat = await this.db.runWithTenant(userId, (tx) => this.chats.getChat(tx, chatId));
+    if (chat) this.registry.send(userId, "chat", toChatSummary(chat));
+  }
+
   private async dispatch({ userId, cardId }: CardChanged): Promise<void> {
     // Sin conexiones de ese usuario en este proceso no hay a quién avisar, y
     // leer la card sería un viaje a la base para nada.
@@ -101,6 +138,7 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
     });
     client.on("notification", (message) => {
       if (message.channel === CARD_CHANGED_CHANNEL) void this.handle(message.payload);
+      if (message.channel === CHAT_CHANGED_CHANNEL) void this.handleChat(message.payload);
     });
     client.on("error", (error) => {
       console.error("[realtime] se cayó la conexión del listener:", error.message);
@@ -111,9 +149,10 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
     try {
       await client.connect();
       await client.query(`LISTEN ${CARD_CHANGED_CHANNEL}`);
+      await client.query(`LISTEN ${CHAT_CHANGED_CHANNEL}`);
     } catch (error) {
       console.error(
-        "[realtime] no se pudo escuchar cambios de cards:",
+        "[realtime] no se pudo escuchar cambios de cards y chats:",
         error instanceof Error ? error.message : error,
       );
       this.scheduleReconnect(client);

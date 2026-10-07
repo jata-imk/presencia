@@ -18,6 +18,8 @@ import { CreditsService } from "../credits/credits.service.js";
 import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
 import { FoldersService } from "../folders/folders.service.js";
+import { ChatTitleService } from "./chat-title.service.js";
+import { toChatSummary } from "./chat-summary.js";
 import { ChatRepository, type MessageRow } from "./chat.repository.js";
 import {
   cardIdsIn,
@@ -44,19 +46,20 @@ export class ChatService {
     @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
     @Inject(CreditsService) private readonly creditsService: CreditsService,
     @Inject(FoldersService) private readonly foldersService: FoldersService,
+    @Inject(ChatTitleService) private readonly chatTitle: ChatTitleService,
   ) {}
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const chat = await this.repo.createChat(tx, userId, title);
-      return this.toSummary(chat);
+      return toChatSummary(chat);
     });
   }
 
   listChats(userId: string): Promise<ChatSummary[]> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const rows = await this.repo.listChats(tx);
-      return rows.map((chat) => this.toSummary(chat));
+      return rows.map((chat) => toChatSummary(chat));
     });
   }
 
@@ -74,14 +77,14 @@ export class ChatService {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const updated = await this.repo.renameChat(tx, chatId, title);
-      return this.toSummary(updated);
+      return toChatSummary(updated);
     });
   }
 
   listArchivedChats(userId: string): Promise<ChatSummary[]> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const rows = await this.repo.listArchivedChats(tx);
-      return rows.map((chat) => this.toSummary(chat));
+      return rows.map((chat) => toChatSummary(chat));
     });
   }
 
@@ -98,7 +101,7 @@ export class ChatService {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const updated = await this.repo.setArchived(tx, chatId, archived);
-      return this.toSummary(updated);
+      return toChatSummary(updated);
     });
   }
 
@@ -120,7 +123,7 @@ export class ChatService {
         throw new ConflictException("No puedes fijar un chat archivado. Desarchívalo primero.");
       }
       const updated = await this.repo.setPinned(tx, chatId, pinned);
-      return this.toSummary(updated);
+      return toChatSummary(updated);
     });
   }
 
@@ -134,7 +137,7 @@ export class ChatService {
       // (ADR-003). Ver FoldersService.assertOwnsFolder.
       if (folderId) await this.foldersService.assertOwnsFolder(tx, folderId);
       const updated = await this.repo.moveToFolder(tx, chatId, folderId);
-      return this.toSummary(updated);
+      return toChatSummary(updated);
     });
   }
 
@@ -423,6 +426,7 @@ export class ChatService {
             );
           }
 
+          let persisted = false;
           try {
             await this.dbService.runWithTenant(userId, async (tx) => {
               const saved = await this.repo.insertMessage(tx, {
@@ -449,6 +453,7 @@ export class ChatService {
                 referenceId: saved.id,
               });
             });
+            persisted = true;
           } catch (error) {
             console.error(
               `[chat] onEnd falló para chat ${chatId} (turno no abortado). ` +
@@ -477,31 +482,20 @@ export class ChatService {
               finishReason,
             },
           });
+
+          // F10.8: el título automático, sin esperarlo — el turno ya terminó.
+          // Decide solo si toca (primeras respuestas, título de nacimiento).
+          // Solo sobre una respuesta que quedó guardada y no terminó en error:
+          // titular (y cobrar) a partir de algo que no está en la conversación
+          // dejaría un título que nadie puede explicar.
+          if (persisted && finishReason !== "error") {
+            void this.chatTitle.maybeTitle(userId, chatId, [...history, responseMessage]);
+          }
         },
       })
       .catch((error: unknown) => {
         console.error("Error escribiendo el stream del chat:", error);
       });
-  }
-
-  private toSummary(chat: {
-    id: string;
-    title: string;
-    folderId: string | null;
-    archivedAt: Date | null;
-    pinnedAt: Date | null;
-    lastMessageAt: Date | null;
-    createdAt: Date;
-  }): ChatSummary {
-    return {
-      id: chat.id,
-      title: chat.title,
-      folderId: chat.folderId,
-      archivedAt: chat.archivedAt?.toISOString() ?? null,
-      pinnedAt: chat.pinnedAt?.toISOString() ?? null,
-      lastMessageAt: chat.lastMessageAt?.toISOString() ?? null,
-      createdAt: chat.createdAt.toISOString(),
-    };
   }
 
   // El id de fila (uuid) sustituye al id efímero del cliente al rehidratar.

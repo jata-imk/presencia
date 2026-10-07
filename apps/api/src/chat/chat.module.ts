@@ -9,10 +9,11 @@ import { CardRewriteService } from "./card-rewrite.service.js";
 import { ChatController } from "./chat.controller.js";
 import { ChatRepository } from "./chat.repository.js";
 import { ChatService } from "./chat.service.js";
+import { ChatTitleService } from "./chat-title.service.js";
 
 @Module({
   imports: [AiModule, CardsModule, BrandVoiceModule, CreditsModule, FoldersModule],
   controllers: [ChatController, CardRewriteController],
-  providers: [ChatService, ChatRepository, CardRewriteService],
+  providers: [ChatService, ChatRepository, CardRewriteService, ChatTitleService],
 })
 export class ChatModule {}

@@ -1101,6 +1101,27 @@ fue fin de semana, sugiere planificar siguiente semana. La
 relevancia contextual hace que se sienta inteligente, no
 spam.
 
+### El título del chat (F10.8)
+
+**Qué es:** El nombre de cada chat en Recientes y en la
+cabecera. Nace como "Nuevo chat" y, después de la primera
+respuesta, el modelo barato le pone uno de 2 a 6 palabras
+que diga de qué trata ("Promo 2x1 de marquesitas los
+martes").
+
+**Por qué después de la primera respuesta y no del primer
+mensaje:** Un "hola" o un "ayúdame con algo" da títulos
+pobres; con el primer intercambio el modelo ya sabe el
+tema. Si todavía no lo hay, lo vuelve a intentar en las
+respuestas siguientes, hasta la tercera.
+
+**Por qué una sola vez:** Un título que cambia solo
+confunde al buscar en el sidebar. Si el creator lo renombra,
+el suyo manda para siempre, aunque el automático estuviera
+en camino. El título aparece solo, sin recargar, en todas
+sus pestañas. Se cobra con la tarifa utility: ~1 unidad por
+chat (addendum de ADR-012).
+
 ### El indicador de canales en chats recientes
 
 **Qué es:** Los iconos pequeños al lado del título de cada

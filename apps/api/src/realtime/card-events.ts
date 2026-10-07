@@ -25,10 +25,36 @@ export function encodeCardChanged({ userId, cardId }: CardChanged): string {
   return `${userId}:${cardId}`;
 }
 
-/** `null` si el payload no es de este contrato — un NOTIFY a mano mal escrito no tumba el listener. */
+/** "<userId>:<id>", los dos uuid; `null` si no — un NOTIFY a mano mal escrito no tumba el listener. */
+function decodeIdPair(payload: string | undefined): [string, string] | null {
+  const [userId, id, extra] = (payload ?? "").split(":");
+  if (extra !== undefined || !userId || !id) return null;
+  if (!UUID.test(userId) || !UUID.test(id)) return null;
+  return [userId, id];
+}
+
+/** `null` si el payload no es de este contrato. */
 export function decodeCardChanged(payload: string | undefined): CardChanged | null {
-  const [userId, cardId, extra] = (payload ?? "").split(":");
-  if (extra !== undefined || !userId || !cardId) return null;
-  if (!UUID.test(userId) || !UUID.test(cardId)) return null;
-  return { userId, cardId };
+  const pair = decodeIdPair(payload);
+  return pair ? { userId: pair[0], cardId: pair[1] } : null;
+}
+
+// F10.8: el mismo puente para los chats. Hoy lo usa el título (el automático
+// y el que escribe el creator), para que el sidebar de todas sus pestañas lo
+// vea sin recargar. Mismo formato de payload, otro canal: un NOTIFY de cards
+// nunca se confunde con uno de chats.
+export const CHAT_CHANGED_CHANNEL = "chat_changed";
+
+export interface ChatChanged {
+  userId: string;
+  chatId: string;
+}
+
+export function encodeChatChanged({ userId, chatId }: ChatChanged): string {
+  return `${userId}:${chatId}`;
+}
+
+export function decodeChatChanged(payload: string | undefined): ChatChanged | null {
+  const pair = decodeIdPair(payload);
+  return pair ? { userId: pair[0], chatId: pair[1] } : null;
 }

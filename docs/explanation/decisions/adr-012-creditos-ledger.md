@@ -105,3 +105,11 @@ Desde F10.7 el esfuerzo de razonamiento se elige por modelo (`openai:gpt-6-luna@
 - **Las unidades no suben.** En la suite cultural del 2026-10-06, un turno con `gpt-6-luna@high` costó $0.0003 contra $0.0077 de `gpt-5.6-terra@medium`, con el que se fijaron las tarifas provisionales. Pensar es el 32% de la salida de Luna, y aun así queda ~25× por debajo. La recalibración completa sigue en "Backlog · Calibrar rate card con datos reales de consumo".
 - **Un solo armado del usage:** `chargeUsageOf()` (`credits/rate-card.ts`) convierte el usage del SDK en lo que cobra `charge()`, razonamiento incluido. Antes cada call site lo armaba a mano y cualquiera podía olvidar el campo nuevo.
 - **Sin dato de razonamiento** (proveedores que no lo reportan), se cobra la salida completa, como en v1.
+
+## Addendum (2026-10-07, F10.8 PR1) — `chat_title`: el título automático se cobra
+
+Decisión de Jose: el título automático del chat **se cobra** con la tarifa utility (`perThousandTokens.chat_title = UTILITY_RATE`, que ya existía en el rate card), y no lo absorbe el negocio.
+
+- **Una vez por chat:** la referencia del asiento es el chat (`reference_type = 'chat'`), así que el dedup del ledger impide un segundo cobro. Un título real ronda 330 tokens de entrada y 15 de salida: 1 unidad, el mínimo de `quoteChatTurn`.
+- **Solo si el título quedó escrito**, en la misma transacción que el `UPDATE`. Si el modelo dice que todavía no hay tema, o el creator renombró mientras tanto, no se cobra. La llamada sí queda en `ai_usage_events`: se pagó igual.
+- **Sin gate previo:** corre después de un turno que ya pasó por `assertQuotaOr402`, y cuesta 1 unidad.
