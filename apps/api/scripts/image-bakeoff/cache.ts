@@ -28,9 +28,10 @@ export interface CacheKeyInput {
   aspectRatio: ImageAspectRatio;
   variant: number;
   /**
-   * En una edición, la huella de la imagen de partida. La huella y no sus
-   * bytes: los bytes salen de recortarla con sharp, y otra versión de sharp
-   * los recodifica distinto aunque la imagen sea la misma.
+   * En una edición, la imagen de partida: su huella y el hash de sus bytes
+   * ORIGINALES (run.ts). No los del recorte, que otra versión de sharp
+   * recodifica distinto aunque la imagen sea la misma; y no solo la huella,
+   * porque una base regenerada con IMAGE_BAKEOFF_FRESH conserva la huella.
    */
   baseKey?: string;
 }

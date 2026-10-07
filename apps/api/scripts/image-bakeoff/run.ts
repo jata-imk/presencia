@@ -24,6 +24,7 @@
 // scripts/image-bakeoff/out/ (en .gitignore). El reporte sí, en
 // docs/reference/bakeoff-imagenes/.
 
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
@@ -137,16 +138,23 @@ async function correrModelo(
       });
       const etiqueta = `[${modelId}] ${p.id} v${String(variant)}`;
 
-      let salida: Salida;
+      let salida: Salida | null = null;
       let reusada: string | undefined;
       const cached = fresh ? null : await readCached(key);
-      if (cached) {
-        const { meta, data } = cached;
-        salida =
-          meta.status === "ok" && data && meta.mediaType
-            ? { ...meta, status: "ok", data, mediaType: meta.mediaType }
-            : { ...meta, status: "bloqueada" };
-        reusada = meta.generatedAt;
+      if (cached?.meta.status === "bloqueada") {
+        salida = { ...cached.meta, status: "bloqueada" };
+      } else if (cached?.data && cached.meta.mediaType) {
+        salida = {
+          ...cached.meta,
+          status: "ok",
+          data: cached.data,
+          mediaType: cached.meta.mediaType,
+        };
+      }
+      // Una ficha "ok" sin imagen o sin tipo (sembrada a mano, a medio
+      // escribir) no es un bloqueo: se genera de nuevo, como si no estuviera.
+      if (salida) {
+        reusada = cached!.meta.generatedAt;
       } else {
         const arranque = Date.now();
         try {
@@ -170,20 +178,6 @@ async function correrModelo(
             result.kind === "blocked"
               ? { status: "bloqueada", segundos, costUsd }
               : { status: "ok", data: result.data, mediaType: result.mediaType, segundos, costUsd };
-          await writeCached(
-            key,
-            {
-              model: modelId,
-              promptId: p.id,
-              variant,
-              status: salida.status,
-              mediaType: salida.status === "ok" ? salida.mediaType : undefined,
-              generatedAt: new Date().toISOString(),
-              segundos,
-              costUsd,
-            },
-            salida.status === "ok" ? salida.data : null,
-          );
         } catch (error) {
           const nota =
             error instanceof Error
@@ -199,6 +193,28 @@ async function correrModelo(
           });
           console.error(`${etiqueta}: error ${nota}`);
           continue;
+        }
+        // Fuera del try de la llamada: la imagen ya se pagó, y un disco lleno
+        // o un archivo bloqueado no deben convertirla en "error" y tirarla.
+        try {
+          await writeCached(
+            key,
+            {
+              model: modelId,
+              promptId: p.id,
+              variant,
+              status: salida.status,
+              mediaType: salida.status === "ok" ? salida.mediaType : undefined,
+              generatedAt: new Date().toISOString(),
+              segundos: salida.segundos,
+              costUsd: salida.costUsd,
+            },
+            salida.status === "ok" ? salida.data : null,
+          );
+        } catch (error) {
+          console.warn(
+            `${etiqueta}: no se guardó en el caché (${String(error)}); se volvería a pagar`,
+          );
         }
       }
 
@@ -219,7 +235,15 @@ async function correrModelo(
       // Lo que vería el creator: recortada a la proporción de la card,
       // como hace image-fit.ts al guardarla.
       const final = await fitToAspect(salida.data, p.aspectRatio);
-      if (!bases.has(p.id)) bases.set(p.id, { data: final, mediaType: salida.mediaType, key });
+      // La huella de la base para sus ediciones: la suya MÁS el contenido de la
+      // imagen (los bytes originales, no los del recorte, que dependen de la
+      // versión de sharp). Con IMAGE_BAKEOFF_FRESH la base se regenera bajo la
+      // misma huella; sin el contenido, la edición vieja saldría del caché
+      // junto a una base que no es la suya.
+      if (!bases.has(p.id)) {
+        const contenido = createHash("sha256").update(salida.data).digest("hex").slice(0, 16);
+        bases.set(p.id, { data: final, mediaType: salida.mediaType, key: `${key}:${contenido}` });
+      }
       const file = `${p.id}__${slug}__v${String(variant)}.${extension(salida.mediaType)}`;
       await writeFile(path.join(runDir, file), final);
       await writeFile(path.join(runDir, "originales", `${fecha}_${file}`), salida.data);

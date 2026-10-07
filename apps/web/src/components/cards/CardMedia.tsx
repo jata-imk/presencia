@@ -242,13 +242,19 @@ function otherGeneratorLabel(generator: number, count: number): string {
 }
 
 /**
- * F10.7: para qué es mejor un generador, como lo lee el creator ("Mejor para
- * personas y realismo"). Lo que midió el bake-off, nunca el modelo. Sin
- * fuerte medido, nada.
+ * F10.7: para qué es mejor un generador, en minúscula para ir dentro de una
+ * frase ("mejor para personas y realismo"). Lo que midió el bake-off, nunca
+ * el modelo. Sin fuerte medido, nada.
  */
-function strengthNote(strengths: (string | null)[], generator: number): string | null {
+function strengthPhrase(strengths: (string | null)[], generator: number): string | null {
   const strength = strengths[generator - 1];
-  return strength ? `Mejor para ${strength.charAt(0).toLowerCase()}${strength.slice(1)}` : null;
+  return strength ? `mejor para ${strength.charAt(0).toLowerCase()}${strength.slice(1)}` : null;
+}
+
+/** La misma frase sola, para el tooltip y la línea del menú: "Mejor para …". */
+function strengthNote(strengths: (string | null)[], generator: number): string | null {
+  const phrase = strengthPhrase(strengths, generator);
+  return phrase && `M${phrase.slice(1)}`;
 }
 
 /** El texto de un ítem "otro generador": la acción y, debajo, su fuerte. */
@@ -858,8 +864,8 @@ function ImageComposer({
   const promptId = useId();
   // Con un solo alterno, el botón no abre lista: su fuerte va en el tooltip
   // y en la nota de abajo. Con varios, cada opción de la lista lleva el suyo.
-  const alternateNote =
-    generation.generatorCount === 2 ? strengthNote(generation.generatorStrengths, 2) : null;
+  const alternatePhrase =
+    generation.generatorCount === 2 ? strengthPhrase(generation.generatorStrengths, 2) : null;
 
   return (
     <div className="flex w-full flex-col gap-2.5 text-left">
@@ -966,8 +972,8 @@ function ImageComposer({
         {/* El tooltip del botón no existe en una pantalla táctil: el fuerte
             del alterno también va aquí, donde se lee en el celular. */}
         {!generation.busyElsewhere &&
-          alternateNote &&
-          ` "Con otro generador" es ${alternateNote.charAt(0).toLowerCase()}${alternateNote.slice(1)}.`}
+          alternatePhrase &&
+          ` "Con otro generador" es ${alternatePhrase}.`}
       </p>
     </div>
   );
@@ -1027,7 +1033,7 @@ export function EmptyImageState({
 /**
  * La imagen elegida con todo lo de alrededor: el hueco de "generando" encima
  * cuando se está regenerando, el aviso si el último intento no salió, las
- * variantes y la franja de acciones. Compartido por el cuerpo visual y el de
+ * versiones y la franja de acciones. Compartido por el cuerpo visual y el de
  * texto, que solo difieren en dónde la ponen.
  */
 export function SelectedImage({
@@ -1049,7 +1055,7 @@ export function SelectedImage({
 }) {
   const generation = media?.generation;
   const job = generation?.job ?? null;
-  // Elegir una variante se ve al instante, sin esperar a la API (en dev, con
+  // Elegir una versión se ve al instante, sin esperar a la API (en dev, con
   // la base del otro lado de un túnel, la respuesta tarda segundos y el clic
   // parecía no hacer nada). Si la API la rechaza, vuelve a la que había.
   const [picked, setPicked] = useState<string | null>(null);

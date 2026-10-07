@@ -71,6 +71,9 @@ import {
 
 const REASON = "image_generation" as const;
 
+/** El tope más alto de imágenes de un trabajo: el carrusel más largo de las redes. */
+const MAX_BATCH_IMAGES = Math.max(...Object.values(NETWORK_MAX_IMAGES));
+
 /** La cola. La registra ImagesJobs (worker o WORKER_INLINE); la API solo encola. */
 export const IMAGE_QUEUE = "images.generate";
 
@@ -142,10 +145,9 @@ export class ImageGenerationService {
       editPercent: flatActionPercentOfQuota(REASON, tier),
       generatorCount: this.providers.generators.length,
       generatorStrengths: this.providers.strengths,
-      // "Generar las n que faltan": hasta el tope más alto de las redes.
-      batchPercents: Array.from(
-        { length: Math.max(...Object.values(NETWORK_MAX_IMAGES)) },
-        (_, i) => flatActionsPercentOfQuota(REASON, i + 1, tier),
+      // "Generar las n que faltan", redondeado una vez sobre el total.
+      batchPercents: Array.from({ length: MAX_BATCH_IMAGES }, (_, i) =>
+        flatActionsPercentOfQuota(REASON, i + 1, tier),
       ),
       // El mismo que usa `request` cuando el body no trae estilo.
       defaultStyle: imageStyleDef(voice?.imageStyle as ImageStyle | null).id,

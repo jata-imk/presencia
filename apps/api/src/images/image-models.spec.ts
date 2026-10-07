@@ -86,6 +86,12 @@ describe("generatorStrength", () => {
     expect(generatorStrength("openai:gpt-image-2")).toBe("Uso general");
     // Otro de la familia de OpenAI que no pasó por el bake-off no hereda el fuerte.
     expect(generatorStrength("openai:gpt-image-1.5")).toBeNull();
+    // Ni un hermano o la versión siguiente: el fuerte se mide, no se hereda.
+    expect(generatorStrength("openai:gpt-image-2-mini")).toBeNull();
+    expect(generatorStrength("openai:gpt-image-2.5")).toBeNull();
+    expect(generatorStrength("google:gemini-3.1-flash-lite-image")).toBeNull();
+    // El snapshot fechado del mismo modelo sí lo conserva.
+    expect(generatorStrength("openai:gpt-image-2-2026-04-21")).toBe("Uso general");
     expect(generatorStrength("openrouter:meta/muse-image")).toBeNull();
   });
 });
