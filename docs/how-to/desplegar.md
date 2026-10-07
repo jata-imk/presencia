@@ -100,12 +100,12 @@ BETTER_AUTH_SECRET=<openssl rand -base64 32>
 BETTER_AUTH_URL=https://presencia.josetejero.com
 WEB_URL=https://presencia.josetejero.com
 
-AI_MODEL=openai:gpt-6-luna@high
+AI_MODEL=openai:gpt-6-luna@high,google:gemini-3.8-flash@medium,anthropic:claude-sonnet-5-5
 AI_MODEL_CHAT=openai:gpt-6-luna@high,google:gemini-3.8-flash@medium,anthropic:claude-sonnet-5-5
 AI_MODEL_UTILITY=openai:gpt-6-luna@low,google:gemini-3.8-flash@low
 AI_MODEL_ADAPT=openai:gpt-6-luna@high,google:gemini-3.8-flash@medium
 AI_MODEL_TRENDS=google:gemini-3.8-flash,google:gemini-3.6-flash
-AI_MODEL_IMAGE=google:gemini-3.1-flash-image,openai:gpt-image-2
+AI_MODEL_IMAGE=openai:gpt-image-2,google:gemini-3.1-flash-image
 OPENAI_API_KEY=...
 GOOGLE_GENERATIVE_AI_API_KEY=...
 ANTHROPIC_API_KEY=...
@@ -119,9 +119,16 @@ UPLOAD_POST_API_KEY=...
 
 Cada modelo de una cadena (F10.7, ADR-004) necesita la key de su proveedor: un respaldo sin key no truena
 hasta el día que se cae el principal, así que `env.ts` la exige al arrancar. `AI_FALLBACK_SIMULATE` es
-solo de dev y en producción mata el arranque. `AI_MODEL_IMAGE_ALT` es obsoleta (F10.7): si sigue en el `.env`
-de prod, se suma al final de `AI_MODEL_IMAGE` con un aviso en el log. Conviene quitarla y poner ese
-modelo en la lista. Ojo: todo lo que esté en `AI_MODEL_IMAGE` es respaldo **y** opción de "Probar con otro
+solo de dev y en producción mata el arranque.
+
+Con `AI_MODEL_CHAT`, `AI_MODEL_UTILITY` y `AI_MODEL_ADAPT` puestas, ninguna tarea usa `AI_MODEL`: es la
+red de la que quede sin setear. Por eso lleva la misma cadena del chat, con respaldos; si fuera un modelo
+solo, una variable que falte caería en un modelo sin respaldo.
+
+Sobran en prod: `DEEPSEEK_API_KEY` (DeepSeek quedó fuera de las cadenas en F10.7), `OPENROUTER_BASE_URL`
+(solo para apuntar a otra URL) y las keys de cualquier proveedor que no esté en ninguna variable de modelo.
+`AI_MODEL_IMAGE_ALT` es obsoleta (F10.7): si sigue en el `.env` de prod, entra segunda en
+`AI_MODEL_IMAGE` con un aviso en el log. Hay que quitarla y poner ese modelo en la lista. Ojo: todo lo que esté en `AI_MODEL_IMAGE` es respaldo **y** opción de "Probar con otro
 generador" (Generador 2, 3…): no hay forma de tener un respaldo que el creator no pueda elegir.
 
 Tres cosas que se olvidan y muerden:

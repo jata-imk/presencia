@@ -74,3 +74,16 @@ Lo que cambió o se verificó al implementar los proveedores, con la spec de má
 - **Visto en la prueba del script:** Nano Banana 2, el de hoy, dibujó "NUTELLA" en un carrito de marquesitas aunque el prompt compuesto pide "sin logotipos". Es el mismo riesgo que descalificó a Flash Lite en F10. El bake-off lo mide en los cinco con un prompt dedicado (`tiendita-sin-logos`).
 
 Fuentes: [OpenRouter OpenAPI](https://openrouter.ai/openapi.json) (`createImages`) · [OpenRouter catálogo de imágenes](https://openrouter.ai/api/v1/images/models) · [AI SDK xAI](https://ai-sdk.dev/providers/ai-sdk-providers/xai) · [Artificial Analysis](https://artificialanalysis.ai/image/leaderboard/text-to-image).
+
+## Resultado del bake-off (2026-10-07)
+
+| Modelo               | Promedio a ciegas                   | Bloqueos | Costo por imagen (medido) | Latencia mediana |
+| -------------------- | ----------------------------------- | -------- | ------------------------- | ---------------- |
+| Nano Banana 2        | 4.15 (20 imágenes)                  | 0        | $0.095                    | 9 s              |
+| gpt-image-2 (medium) | 4.10 (20 imágenes)                  | 0        | $0.047                    | 33 s             |
+| Muse                 | 3.15 (20 imágenes)                  | 0        | $0.010                    | 19 s             |
+| Grok Imagine 2.0     | 2.92 (12, contando bloqueos como 1) | 3 de 22  | $0.040                    | 17 s             |
+| MAI-Image 2.6        | 1.83 (12, contando bloqueos como 1) | 12 de 22 | $0.037                    | 26 s             |
+
+- **Elegido:** `openai:gpt-image-2` primero y Nano Banana 2 después. La decisión y sus razones están en el addendum del 2026-10-07 de ADR-025; las calificaciones y las notas, en `bakeoff-imagenes/2026-10-07-*`.
+- **El ranking público no predijo nuestro caso.** Grok y MAI llegaban con buen Elo, pero Grok bloquea personas en el gym y en el agua, y MAI bloquea la palabra "Mérida" (filtro `DallEBlockList` de Azure).
