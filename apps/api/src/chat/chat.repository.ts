@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { chats, messages } from "../db/schema.js";
+import { chatSummaries, chats, messages } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 import { CHAT_CHANGED_CHANNEL, encodeChatChanged } from "../realtime/card-events.js";
 
@@ -10,6 +10,7 @@ import { CHAT_CHANGED_CHANNEL, encodeChatChanged } from "../realtime/card-events
 
 export type ChatRow = typeof chats.$inferSelect;
 export type MessageRow = typeof messages.$inferSelect;
+export type ChatSummaryRow = typeof chatSummaries.$inferSelect;
 
 @Injectable()
 export class ChatRepository {
@@ -81,6 +82,37 @@ export class ChatRepository {
       .update(chats)
       .set({ lastMessageAt: sql`now()`, updatedAt: sql`now()` })
       .where(eq(chats.id, chatId));
+  }
+
+  /** F10.8: el resumen del tramo viejo del chat, si ya se compactó. */
+  async getSummary(tx: Tx, chatId: string): Promise<ChatSummaryRow | undefined> {
+    const [row] = await tx.select().from(chatSummaries).where(eq(chatSummaries.chatId, chatId));
+    return row;
+  }
+
+  /**
+   * Guarda el resumen SOLO si avanza: si ya hay uno que cubre hasta un mensaje
+   * igual o posterior (otro job que corrió a la vez), no lo pisa con uno más
+   * corto. `false` si no se escribió; quien llama no cobra en ese caso.
+   */
+  async saveSummary(tx: Tx, row: Omit<ChatSummaryRow, "updatedAt">): Promise<boolean> {
+    const saved = await tx
+      .insert(chatSummaries)
+      .values(row)
+      .onConflictDoUpdate({
+        target: chatSummaries.chatId,
+        set: {
+          summary: row.summary,
+          throughMessageId: row.throughMessageId,
+          throughCreatedAt: row.throughCreatedAt,
+          cards: row.cards,
+          model: row.model,
+          updatedAt: sql`now()`,
+        },
+        setWhere: sql`${chatSummaries.throughCreatedAt} < excluded.through_created_at`,
+      })
+      .returning({ chatId: chatSummaries.chatId });
+    return saved.length > 0;
   }
 
   async deleteMessage(tx: Tx, messageId: string): Promise<void> {

@@ -3,6 +3,8 @@ import { BackupsJobs } from "../backups/backups.jobs.js";
 import { BackupsModule } from "../backups/backups.module.js";
 import { CardsJobs } from "../cards/cards.jobs.js";
 import { CardsModule } from "../cards/cards.module.js";
+import { ChatJobs } from "../chat/chat.jobs.js";
+import { ChatModule } from "../chat/chat.module.js";
 import { CreditsJobs } from "../credits/credits.jobs.js";
 import { CreditsModule } from "../credits/credits.module.js";
 import { ImagesJobs } from "../images/images.jobs.js";
@@ -26,7 +28,8 @@ import { JobsModule } from "./jobs.module.js";
     MetricsModule,
     TrendsModule,
     ImagesModule,
+    ChatModule,
   ],
-  providers: [CardsJobs, CreditsJobs, BackupsJobs, MetricsJobs, TrendsJobs, ImagesJobs],
+  providers: [CardsJobs, CreditsJobs, BackupsJobs, MetricsJobs, TrendsJobs, ImagesJobs, ChatJobs],
 })
 export class ScheduledJobsModule {}

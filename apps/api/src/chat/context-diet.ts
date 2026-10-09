@@ -37,7 +37,7 @@ function asCardToolOutputPart(part: UIMessage["parts"][number]): ToolOutputPart 
   return part as ToolOutputPart;
 }
 
-interface CompressedCardOutput {
+export interface CompressedCardOutput {
   cardId: string;
   network: CardToolOutput["network"];
   status: CardToolOutput["status"];
@@ -80,6 +80,27 @@ export function compressToolOutputsForModel(history: UIMessage[], keepFull = 3):
     });
     return changed ? { ...message, parts } : message;
   });
+}
+
+/**
+ * F10.8: las cards de un tramo del historial, ya resumidas como las deja la
+ * dieta. Es la lista que acompaña al resumen de la compactación: el LLM que
+ * resume no las toca, así "cámbiale el hook a esa" sigue encontrando su id.
+ * Una card que aparece dos veces (creada y luego modificada) queda una vez,
+ * con su última aparición.
+ */
+export function cardSummariesIn(history: UIMessage[]): CompressedCardOutput[] {
+  const byId = new Map<string, CompressedCardOutput>();
+  for (const message of history) {
+    for (const part of message.parts) {
+      const toolOutputPart = asCardToolOutputPart(part);
+      if (!toolOutputPart) continue;
+      const { cardId, network, status, content } = toolOutputPart.output;
+      byId.delete(cardId);
+      byId.set(cardId, { cardId, network, status, resumen: summarizeCardContent(content) });
+    }
+  }
+  return [...byId.values()];
 }
 
 /** Las cards que el historial menciona en outputs de tool, en orden. */

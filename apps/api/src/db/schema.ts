@@ -116,6 +116,10 @@ export const creditReason = pgEnum("credit_reason", [
   // F10.8: el título automático del chat. Por tokens, con la tarifa utility:
   // cuesta lo que ocupa leer el inicio de la conversación.
   "chat_title",
+  // F10.8: compactar el historial de un chat largo. Por tokens, con la tarifa
+  // utility; cada compactación es un asiento (referencia: el último mensaje
+  // que cubre).
+  "history_compaction",
   "refund",
   "adjustment",
 ]);
@@ -331,6 +335,29 @@ export const chats = pgTable(
     check("chats_not_pinned_and_archived", sql`${t.pinnedAt} IS NULL OR ${t.archivedAt} IS NULL`),
   ],
 );
+
+// F10.8: el resumen del tramo viejo de un chat largo. Lo que el modelo ve es
+// este resumen más los mensajes posteriores a `through_message_id`, completos
+// (chat/history-window.ts). Uno por chat: cada compactación lo reescribe
+// integrando el anterior. `cards` es la lista de publicaciones del tramo,
+// armada sin LLM (context-diet.ts), para que "esa card" siga teniendo id.
+export const chatSummaries = pgTable("chat_summaries", {
+  chatId: uuid("chat_id")
+    .primaryKey()
+    .references(() => chats.id, { onDelete: "cascade" }),
+  // Denormalizado a propósito: RLS sin join.
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  summary: text("summary").notNull(),
+  // Sin FK: los mensajes del tramo resumido nunca se borran (reintentar solo
+  // toca la última respuesta, que siempre queda fuera del tramo).
+  throughMessageId: uuid("through_message_id").notNull(),
+  throughCreatedAt: timestamp("through_created_at", { withTimezone: true }).notNull(),
+  cards: jsonb("cards").notNull().default([]),
+  model: text("model").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const messages = pgTable(
   "messages",

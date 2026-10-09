@@ -65,6 +65,13 @@ const envSchema = z
     // (503), para ver el respaldo en el navegador sin romper nada. Separados
     // por coma: "openai" o "openai,google".
     AI_FALLBACK_SIMULATE: z.string().optional(),
+    // F10.8: chats largos. A partir de cuántos tokens de entrada (el contexto
+    // del paso más grande del turno) se compacta el tramo viejo con el modelo
+    // utility: 40k ≈ 320 unidades ≈ 1% de la cuota Creator por mensaje.
+    CHAT_COMPACT_AT_TOKENS: z.coerce.number().int().min(1_000).default(40_000),
+    // Techo mecánico: lo más que viaja al modelo aunque el resumen no haya
+    // corrido. Estimado (~4 caracteres por token), no exacto.
+    CHAT_HISTORY_CAP_TOKENS: z.coerce.number().int().min(2_000).default(120_000),
     // Generación de imágenes (F10, ADR-025). Mismo criterio que
     // AI_MODEL_TRENDS: default propio (DEFAULT_IMAGE_MODEL_ID), nunca AI_MODEL,
     // porque un modelo de texto no dibuja.
@@ -216,6 +223,16 @@ const envSchema = z
 
     // El simulador de caídas (F10.7) es para probar la cadena en dev. En
     // producción, un proveedor fingido caído es una caída real del producto.
+    // F10.8: con el umbral en o arriba del techo, la compactación nunca se
+    // dispararía (el techo deja el contexto por debajo del umbral) y los
+    // chats largos perderían lo viejo detrás de la nota en vez de resumirlo.
+    if (value.CHAT_COMPACT_AT_TOKENS >= value.CHAT_HISTORY_CAP_TOKENS) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["CHAT_COMPACT_AT_TOKENS"],
+        message: "CHAT_COMPACT_AT_TOKENS tiene que ser menor que CHAT_HISTORY_CAP_TOKENS",
+      });
+    }
     if (value.AI_FALLBACK_SIMULATE) {
       if (value.NODE_ENV === "production") {
         ctx.addIssue({
