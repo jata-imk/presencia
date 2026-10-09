@@ -31,5 +31,6 @@ Formato: **Decisión** → **Razón** → **Descartado**.
 | [023](./adr-023-cache-de-tendencias.md)          | ~~Tendencias: caché compartida por nicho~~ (superado por 024) |
 | [024](./adr-024-tendencias-por-usuario.md)       | Tendencias por usuario, personalizables                       |
 | [025](./adr-025-generacion-de-imagenes.md)       | Imágenes: un adapter, dos generadores (Gemini + gpt-image)    |
+| [026](./adr-026-harness-propio.md)               | Harness de agente propio sobre el AI SDK (sin framework)      |
 
-Decisiones pendientes de cerrar: modelo default por acción (según suite de regresión cultural).
+Ya no hay decisiones pendientes en este índice: el modelo por acción se cerró en F10.7 con la suite cultural (addendum de ADR-004 y `docs/reference/modelos-2026-10.md`).

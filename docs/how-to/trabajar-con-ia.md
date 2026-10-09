@@ -4,7 +4,7 @@ Este repo está optimizado para desarrollo asistido por agentes (Claude Code). E
 
 ## Convenciones
 
-1. **`CLAUDE.md` es el índice.** Todo agente empieza ahí. Si agregas un área nueva de docs, actualiza su tabla.
+1. **`AGENTS.md` es el índice.** Todo agente empieza ahí (`CLAUDE.md` solo apunta a él, para que Claude Code, Codex, Cursor y Gemini CLI lean la misma fuente). Si agregas un área nueva de docs, actualiza su tabla.
 2. **Diátaxis decide dónde va cada doc:**
    - _Tutorial_ — aprender haciendo, paso a paso, para alguien nuevo.
    - _How-to_ — receta para lograr una tarea concreta (levantar entorno, deploy).
@@ -15,12 +15,12 @@ Este repo está optimizado para desarrollo asistido por agentes (Claude Code). E
 
 ## MCPs del proyecto
 
-| MCP           | Estado                                           | Uso                                                                                              |
-| ------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| Notion        | Conectado                                        | Roadmap F0–F13, backlog (Smart List: Someday), notas de producto                                 |
-| GitHub        | `gh` CLI instalado (falta `gh auth login --web`) | PRs, issues, CI. El MCP oficial de GitHub está en el backlog para el flujo conversacional de PRs |
-| Playwright    | Conectado                                        | Tests e2e y verificación visual                                                                  |
-| Claude Design | Conectado, global (`-s user`)                    | Ver sección "Claude Design" abajo                                                                |
+| MCP           | Estado                                       | Uso                                                                               |
+| ------------- | -------------------------------------------- | --------------------------------------------------------------------------------- |
+| Notion        | Conectado                                    | Roadmap F0–F13, backlog (Smart List: Someday), notas de producto                  |
+| GitHub        | `gh` CLI con sesión, y MCP oficial de GitHub | PRs, issues y CI (`gh pr create`, `gh pr checks --watch`, `gh pr merge --squash`) |
+| Playwright    | Conectado                                    | Tests e2e y verificación visual                                                   |
+| Claude Design | Conectado, global (`-s user`)                | Ver sección "Claude Design" abajo                                                 |
 
 ## Claude Design
 
