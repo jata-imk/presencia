@@ -7,9 +7,13 @@ import { textOf } from "./history-compaction.js";
 /** Hasta qué respuesta del asistente se intenta titular. */
 export const TITLE_ATTEMPTS = 3;
 
-// Holgado para "máximo 7 palabras, un poco más si hace falta"; el sidebar
-// trunca con elipsis y la cabecera lo muestra completo.
+// Holgado para "máximo 7 palabras, un poco más si hace falta". Es el tope de
+// lo que se guarda; donde no cabe (sidebar, cabecera en móvil) la UI lo trunca
+// con elipsis.
 const MAX_TITLE_CHARS = 80;
+/** Una palabra de enlace al final, que solo queda ahí si el corte partió la frase. */
+const TRAILING_CONNECTOR =
+  /\s+(?:de|del|la|las|el|los|en|para|con|por|y|o|a|al|un|una|sobre|sin|que)$/iu;
 /** Cuánto de cada mensaje lee el modelo: el inicio basta para el tema. */
 const MAX_CHARS_PER_MESSAGE = 600;
 /** Lo que responde el modelo cuando todavía no hay tema. */
@@ -19,7 +23,7 @@ export const TITLE_SYSTEM = `Titulas conversaciones de Presencia, un asistente q
 
 Lee el inicio de la conversación y escribe un título en español mexicano que diga de qué trata:
 - Trata de usar un máximo de 7 palabras, pero no te limites si hace falta un poco más para que se entienda. Escríbelo como lo pondría el propio creator en su lista de chats.
-- Concreto: nunca un título vacío como "Nueva conversación".
+- Concreto: nunca uno que no diga nada, como "Nueva conversación".
 - Sin comillas, sin emojis y sin punto final.
 - Si todavía no hay un tema claro (solo un saludo o una pregunta vaga), responde exactamente ${NO_TOPIC}.
 
@@ -63,8 +67,23 @@ export function cleanTitle(raw: string): string | null {
     .toUpperCase();
   if (!title || bare === "VACIO") return null;
   if (title.length > MAX_TITLE_CHARS) {
-    const cut = title.slice(0, MAX_TITLE_CHARS);
-    title = cut.slice(0, cut.lastIndexOf(" ") > 20 ? cut.lastIndexOf(" ") : MAX_TITLE_CHARS).trim();
+    // Por puntos de código, no por unidades UTF-16: un emoji partido a la
+    // mitad dejaría un surrogate suelto en la base.
+    const chars = Array.from(title);
+    const cut = chars.slice(0, MAX_TITLE_CHARS).join("");
+    const space = cut.lastIndexOf(" ");
+    // Si el corte cae justo al final de una palabra, la palabra se queda.
+    const endsOnWord = chars[MAX_TITLE_CHARS] === " ";
+    title = (endsOnWord || space <= 20 ? cut : cut.slice(0, space)).trim();
+    // Lo que el corte deja colgando: "…de la nueva sucursal de", "…en Mérida:".
+    let previous;
+    do {
+      previous = title;
+      title = title
+        .replace(TRAILING_CONNECTOR, "")
+        .replace(/[.:;,!¡¿?]+$/u, "")
+        .trim();
+    } while (title !== previous);
   }
   return title.charAt(0).toUpperCase() + title.slice(1);
 }
