@@ -14,7 +14,12 @@
 # La topología está en ADR-020.
 services:
   postgres:
-    image: postgres:17-alpine
+    # F10.8: Postgres 17 Alpine con pgvector (docker/postgres/Dockerfile), que
+    # publica release.yml con un tag inmutable. Alpine como la imagen oficial
+    # de antes: el volumen de datos sirve tal cual, sin reindexar. El tag lo
+    # dictan los ARG del Dockerfile (CI exige que coincida). POSTGRES_IMAGE
+    # fija otra versión sin tocar este archivo.
+    image: ${POSTGRES_IMAGE:-ghcr.io/jata-imk/presencia-postgres:pg17.10-pgvector0.8.7}
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-presencia}
@@ -28,7 +33,13 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-presencia} -d ${POSTGRES_DB:-presencia}"]
+      # Por TCP (-h): durante el initdb el entrypoint levanta un servidor
+      # temporal solo por socket, y sin -h ya respondería "listo".
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-presencia} -d ${POSTGRES_DB:-presencia}",
+        ]
       interval: 5s
       timeout: 3s
       retries: 10

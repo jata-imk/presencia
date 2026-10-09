@@ -119,3 +119,60 @@ jobs:
           else
             echo "::notice::${short} ya no es la punta de main (${head::7}): publicado solo sha-${short}, latest no se mueve."
           fi
+
+  # F10.8: la imagen de Postgres (Alpine + pgvector, docker/postgres). Job
+  # aparte del de la app: si su build falla (un clone de pgvector caído), la
+  # app igual se publica y `latest` se mueve.
+  #
+  # El tag sale de los ARG del Dockerfile y es INMUTABLE: si ya existe en GHCR
+  # no se vuelve a publicar. Así un deploy normal de la app (`pull` + `up -d`,
+  # que también baja postgres) nunca ve una base "nueva" ni recrea el
+  # contenedor de prod, y el tag anterior sigue ahí para volver. Subir una
+  # versión es un tag nuevo, y CI exige que docker-compose.yml lo use.
+  postgres-image:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Tag
+        id: tag
+        run: |
+          pg=$(sed -n 's/^ARG PG_VERSION=//p' docker/postgres/Dockerfile)
+          vec=$(sed -n 's/^ARG PGVECTOR_VERSION=//p' docker/postgres/Dockerfile)
+          echo "tag=${IMAGE}-postgres:pg${pg}-pgvector${vec}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Already published?
+        id: exists
+        run: |
+          if docker manifest inspect "${{ steps.tag.outputs.tag }}" > /dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${{ steps.tag.outputs.tag }} ya existe: no se republica."
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.exists.outputs.found == 'false'
+
+      - uses: docker/build-push-action@v6
+        if: steps.exists.outputs.found == 'false'
+        with:
+          context: docker/postgres
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.tag.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=presencia-postgres
+          cache-to: type=gha,mode=max,scope=presencia-postgres
