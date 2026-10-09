@@ -8,24 +8,24 @@ V1: web app (React) + bot de Telegram, 5 módulos (Chats, Calendario, Ritmo, Ana
 
 ## Mapa de documentación (Diátaxis)
 
-| Dónde                         | Qué hay                                                                                 |
-| ----------------------------- | --------------------------------------------------------------------------------------- |
-| `docs/explanation/product/`   | Lore docs: overview (leer primero), chat, calendario, ritmo, configuración/voz de marca |
-| `docs/explanation/decisions/` | ADRs 001–024 — fuente de verdad de arquitectura                                         |
-| `docs/reference/`             | Contratos: modelo de datos + RLS, infraestructura, design tokens, (futuro) API          |
-| `docs/how-to/`                | Recetas operativas: entorno, desplegar, trabajar con IA, (futuro) backups               |
-| `docs/tutorials/`             | Vacío hasta que exista código que recorrer                                              |
+| Dónde                         | Qué hay                                                                                                                     |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `docs/explanation/product/`   | Lore docs: overview (leer primero), chat, calendario, ritmo, configuración/voz de marca                                     |
+| `docs/explanation/decisions/` | ADRs 001–026 — fuente de verdad de arquitectura (índice en su `README.md`)                                                  |
+| `docs/reference/`             | Contratos: modelo de datos + RLS, infraestructura, design tokens, panorama de modelos, suite cultural, bake-off de imágenes |
+| `docs/how-to/`                | Recetas operativas: entorno, desplegar (incluye backups), ver el gasto en modelos, trabajar con IA                          |
+| `docs/tutorials/`             | Todavía no existe: se crea cuando haya un recorrido que valga la pena escribir                                              |
 
 La gestión de proyecto (roadmap F0–F13) vive en Notion (página "Presencia"). La verdad técnica vive en este repo.
 
 ## Stack (ver ADRs para el porqué)
 
 - **Monorepo:** pnpm workspaces + Turborepo. `apps/web` (React + Vite + TS), `apps/api` (NestJS), `packages/shared` (schemas Zod).
-- **Datos:** Postgres, multi-tenant por `user_id` + RLS (ADR-003). Jobs con pg-boss (ADR-008).
-- **IA:** Vercel AI SDK multi-proveedor — Gemini/OpenAI/MiniMax (ADR-004). Cards por tool call con schema Zod por arquetipo (ADR-005). Streaming por SSE (ADR-006).
+- **Datos:** Postgres, multi-tenant por `user_id` + RLS (ADR-003), con pgvector para la memoria entre chats. Jobs con pg-boss (ADR-008).
+- **IA:** Vercel AI SDK multi-proveedor (ADR-004): la cadena configurada hoy es OpenAI, Google y Anthropic, con un respaldo por tarea en el `.env`; el registro también conecta DeepSeek, xAI, MiniMax y OpenRouter (`ai/provider-registry.ts`). Imágenes detrás de su propio adapter (ADR-025). Embeddings de un solo modelo, sin respaldo (addendum F10.8 de ADR-004). Cards por tool call con schema Zod por arquetipo (ADR-005). Streaming por SSE (ADR-006). **Harness propio sobre el AI SDK** (ADR-026, regla dura #8).
 - **Auth:** Better Auth, UI propia (ADR-007).
-- **Publicación:** PostFast detrás de interfaz `PublishingProvider` (ADR-009). Telegram con grammY detrás de adapter de canal (ADR-010).
-- **Infra:** Docker Compose (app/worker/postgres) detrás del nginx que administra CloudPanel, sin Caddy; VPS OVH + Cloudflare R2 (ADR-011, ADR-020). Dev/prod parity: un solo `docker-compose.yml` para los dos stacks del VPS — lo que cambia es el `.env` y el profile.
+- **Publicación:** PostFast y Upload-Post detrás de la interfaz `PublishingProvider` (ADR-009 y su addendum de F7.5). Telegram (planeado para F11, sin código todavía): grammY detrás de un adapter de canal (ADR-010).
+- **Infra:** Docker Compose (app/worker/postgres) detrás del nginx que administra CloudPanel, sin Caddy; VPS OVH + Cloudflare R2 (ADR-011, ADR-020). Postgres corre con imagen propia (Alpine + pgvector, tag inmutable; addendum de ADR-020). Dev/prod parity: un solo `docker-compose.yml` para los dos stacks del VPS — lo que cambia es el `.env` y el profile.
 
 ## Reglas duras (no negociables)
 
@@ -36,6 +36,11 @@ La gestión de proyecto (roadmap F0–F13) vive en Notion (página "Presencia").
 5. **Una sola fuente de verdad por concepto:** voz de marca, conversación canónica, ledger. Los canales (web/Telegram) son adapters sobre el mismo store.
 6. **YAGNI:** nada de infra "por si acaso". La lista de lo que NO va en V1 está en el overview §8 — respetarla.
 7. **Cambio de arquitectura ⇒ actualizar su ADR** en el mismo PR.
+8. **Harness propio sobre el AI SDK (ADR-026).** El loop de agente, las tools, el streaming y los proveedores son del AI SDK; el contexto, la memoria, la compactación, el cobro y el tracing son nuestros. No se adopta un framework de agentes (Mastra, LangGraph, OpenAI Agents SDK…) sin un ADR que reemplace al 026. Antes de construir una pieza de harness, se estudia cómo la resolvieron ellos (y papers si los hay) y se cita en el ADR o addendum.
+
+## Cómo arma el chat su contexto
+
+Guardar ≠ recordar ≠ mandar al modelo: `messages` guarda la conversación completa (lo que ve la UI), y lo que viaja al modelo en cada turno lo arma `apps/api/src/chat/` (prompt de sistema con la Voz de marca, resumen de lo viejo, recientes, cards vivas y dieta de tools). El detalle vive en ADR-006 y sus addenda, no aquí; cualquier cambio en esa cadena pasa por la regla dura #8.
 
 ## Convenciones
 
