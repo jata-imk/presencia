@@ -91,13 +91,12 @@ describe("MemoryService", { timeout: 60_000 }, () => {
   });
 
   /** Un chat con un intercambio; devuelve el chat y la respuesta. */
-  async function chatCon(owner: string, pregunta: string, respuesta: string) {
+  async function chatCon(owner: string, pregunta: string, respuesta: string, base = Date.now()) {
     return dbService.runWithTenant(owner, async (tx) => {
       const [chat] = await tx
         .insert(chats)
         .values({ userId: owner, title: pregunta.slice(0, 30) })
         .returning({ id: chats.id });
-      const base = Date.now();
       const [, reply] = await tx
         .insert(messages)
         .values([
@@ -153,13 +152,21 @@ describe("MemoryService", { timeout: 60_000 }, () => {
   });
 
   it("busca en los OTROS chats, por significado, y descarta lo que no se parece", async () => {
-    const viejo = await chatCon(userId, "¿Qué hashtags uso?", "Usa #SantaAnaMerida.");
+    const haceTresMeses = Date.now() - 90 * 24 * 3600 * 1000;
+    const viejo = await chatCon(
+      userId,
+      "¿Qué hashtags uso?",
+      "Usa #SantaAnaMerida.",
+      haceTresMeses,
+    );
     await service.index({ userId, ...viejo });
     const actual = await chatCon(userId, "Hola de nuevo", "¿En qué te ayudo?");
 
     const hashtags = await service.search(userId, actual.chatId, "los hashtag que me dijiste");
     expect(hashtags.resultados).toHaveLength(1);
     expect(hashtags.resultados[0]!.fragmento).toContain("#SantaAnaMerida");
+    // La fecha es la de la conversación, no la de cuando se indexó.
+    expect(hashtags.resultados[0]!.fecha).toBe(new Date(haceTresMeses + 1_000).toISOString());
 
     // Nada que ver con lo guardado: la similitud no pasa el umbral.
     const nada = await service.search(userId, actual.chatId, "receta de lasaña");

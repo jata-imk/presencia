@@ -320,4 +320,39 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
     // La card del primer tramo sigue en la lista.
     expect(row?.cards).toHaveLength(1);
   });
+
+  it("si el último mensaje del resumen ya no existe, sigue desde su fecha y no desde cero", async () => {
+    const { chatId, ids } = await chatLargo(12);
+    await crear("Resumen uno", []).compact({ userId, chatId });
+    await dbService.runWithTenant(userId, async (tx) => {
+      await tx.delete(messages).where(eq(messages.id, ids[13]!));
+      const base = Date.now();
+      await tx.insert(messages).values(
+        Array.from({ length: 8 }, (_, i) => [
+          {
+            chatId,
+            userId,
+            role: "user" as const,
+            parts: [{ type: "text", text: `Nueva ${String(i)}` }],
+            createdAt: new Date(base + i * 2_000),
+          },
+          {
+            chatId,
+            userId,
+            role: "assistant" as const,
+            parts: [{ type: "text", text: "Va" }],
+            createdAt: new Date(base + i * 2_000 + 1_000),
+          },
+        ]).flat(),
+      );
+    });
+    const prompts: string[] = [];
+    await crear("Resumen dos", prompts).compact({ userId, chatId });
+    // Integra el anterior y no vuelve a mandar lo que ya cubría.
+    expect(prompts[0]).toContain("Resumen uno");
+    expect(prompts[0]).not.toContain("Pregunta 0");
+    // Y se guarda: empezar de cero no habría llegado más lejos que el anterior.
+    const row = await resumenDe(chatId);
+    expect(row?.summary).toBe("Resumen dos");
+  });
 });

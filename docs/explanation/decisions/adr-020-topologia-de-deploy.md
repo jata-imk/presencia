@@ -66,7 +66,7 @@ La memoria entre chats (F10.8) necesita `pgvector`, y `postgres:17-alpine` no lo
 - **Tag inmutable, publicado una vez:** `presencia-postgres:pg17.10-pgvector0.8.7`, derivado de los `ARG` del Dockerfile (la única fuente).
   - Lo publica un job aparte de `release.yml` (`postgres-image`), **solo si el tag todavía no existe en GHCR**.
   - Así, un deploy normal de la app, que también hace `pull` de postgres, nunca ve una base "nueva" ni recrea el contenedor, y el tag anterior siempre queda para volver.
-  - Si el build de Postgres falla, la app igual se publica.
+  - La app se publica **después** (`publish` tiene `needs: postgres-image`). Si el build de Postgres falla, la app no se publica y `latest` no se mueve, porque el `docker-compose.yml` de ese commit pediría un tag que no existe y el `pull` del deploy fallaría. Se arregla re-corriendo el workflow. (Corregido en el review de cierre de F10.8: antes corrían en paralelo y la app se publicaba igual.)
   - CI exige que el default de `docker-compose.yml` sea el tag que dictan los `ARG`.
   - `POSTGRES_IMAGE` fija otra imagen sin tocar el compose.
 - **Healthcheck por TCP** (`pg_isready -h 127.0.0.1`): durante el initdb, el entrypoint levanta un servidor temporal solo por socket, y sin `-h` ya respondería "listo".

@@ -26,6 +26,9 @@ describe("cleanTitle", () => {
     );
     expect(cleanTitle("«Menú   de temporada»")).toBe("Menú de temporada");
     expect(cleanTitle("posts de la nutrióloga")).toBe("Posts de la nutrióloga");
+    // Sin el signo de cierre, el de apertura tampoco se queda.
+    expect(cleanTitle("¿Qué publicar el lunes?")).toBe("Qué publicar el lunes");
+    expect(cleanTitle("¡Lanzamiento de temporada!")).toBe("Lanzamiento de temporada");
   });
 
   it("VACÍO (con o sin acento) o nada es que todavía no hay tema", () => {
