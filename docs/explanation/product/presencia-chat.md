@@ -1105,7 +1105,8 @@ spam.
 
 **Qué es:** El nombre de cada chat en Recientes y en la
 cabecera. Nace como "Nuevo chat" y, después de la primera
-respuesta, el modelo barato le pone uno de 2 a 6 palabras
+respuesta, el modelo barato le pone uno de máximo 7
+palabras (un poco más si hace falta para que se entienda)
 que diga de qué trata ("Promo 2x1 de marquesitas los
 martes").
 

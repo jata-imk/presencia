@@ -40,9 +40,9 @@ describe("cleanTitle", () => {
   it("se queda con la primera línea y corta en palabra si es muy largo", () => {
     expect(cleanTitle("Calendario de octubre\nAquí va el porqué")).toBe("Calendario de octubre");
     const largo = cleanTitle(
-      "Estrategia completa de contenido para la apertura de la nueva sucursal en Mérida norte",
+      "Estrategia completa de contenido para la apertura de la nueva sucursal en Mérida norte y sus alrededores",
     )!;
-    expect(largo.length).toBeLessThanOrEqual(60);
+    expect(largo.length).toBeLessThanOrEqual(80);
     expect(largo.endsWith(" ")).toBe(false);
   });
 });

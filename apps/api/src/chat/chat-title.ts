@@ -7,7 +7,9 @@ import { textOf } from "./history-compaction.js";
 /** Hasta qué respuesta del asistente se intenta titular. */
 export const TITLE_ATTEMPTS = 3;
 
-const MAX_TITLE_CHARS = 60;
+// Holgado para "máximo 7 palabras, un poco más si hace falta"; el sidebar
+// trunca con elipsis y la cabecera lo muestra completo.
+const MAX_TITLE_CHARS = 80;
 /** Cuánto de cada mensaje lee el modelo: el inicio basta para el tema. */
 const MAX_CHARS_PER_MESSAGE = 600;
 /** Lo que responde el modelo cuando todavía no hay tema. */
@@ -16,8 +18,8 @@ const NO_TOPIC = "VACÍO";
 export const TITLE_SYSTEM = `Titulas conversaciones de Presencia, un asistente que ayuda a creators mexicanos con sus redes sociales.
 
 Lee el inicio de la conversación y escribe un título en español mexicano que diga de qué trata:
-- De 2 a 6 palabras, como lo escribiría el propio creator en su lista de chats.
-- Concreto: el tema o la tarea ("Promo de marquesitas para el martes"), no frases genéricas como "Ayuda con redes" o "Nueva conversación".
+- Trata de usar un máximo de 7 palabras, pero no te limites si hace falta un poco más para que se entienda. Escríbelo como lo pondría el propio creator en su lista de chats.
+- Concreto: nunca un título vacío como "Nueva conversación".
 - Sin comillas, sin emojis y sin punto final.
 - Si todavía no hay un tema claro (solo un saludo o una pregunta vaga), responde exactamente ${NO_TOPIC}.
 
