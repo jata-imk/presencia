@@ -53,6 +53,8 @@ import { buildSystemPrompt } from "./system-prompt.js";
 // detecta (steps.length === MAX_AGENT_STEPS + finishReason "tool-calls") y
 // lo loguea — el turno se persiste igual, truncado, sin bloquear al usuario.
 const MAX_AGENT_STEPS = 5;
+/** Cuánto espera la traza de un turno cortado a que termine la tool en curso. */
+const ABORTED_TRACE_GRACE_MS = 3_000;
 
 @Injectable()
 export class ChatService {
@@ -406,6 +408,11 @@ export class ChatService {
     // proveedor/modelo distinto del que de verdad corrió (F4.5). "chat" es
     // la tarea que este pipeline siempre ejecuta (routing por tarea, F4.5).
     const resolved = this.aiService.resolveForTask("chat");
+    trace.watchModel(() =>
+      typeof resolved.model === "object"
+        ? { provider: resolved.model.provider, modelId: resolved.model.modelId }
+        : null,
+    );
     const startedAt = Date.now();
 
     // F10.8: lo que el modelo ve de un chat largo. El tramo viejo ya resumido
@@ -457,11 +464,16 @@ export class ChatService {
       onStepStart: (event) => trace.stepStarted(event),
       onStepFinish: (step) => trace.stepFinished(step),
       experimental_onToolCallFinish: (event) => trace.toolFinished(event),
-      // Un turno cortado no llega a onEnd (ni se cobra), pero su traza sí
-      // se guarda: el paso que quedó a medias, como `aborted`.
+      // Un turno cortado no se cobra, pero su traza sí se guarda: el paso que
+      // quedó a medias, como `aborted`. Se escribe en onEnd (que corre igual,
+      // ver abajo); el temporizador es el seguro por si no llegara. La espera
+      // deja entrar a la tool que todavía estaba corriendo al cortar.
       onAbort: () => {
         trace.close("aborted");
-        void this.aiUsage.registrarTraza(userId, chatId, trace);
+        setTimeout(
+          () => void this.aiUsage.registrarTraza(userId, chatId, trace),
+          ABORTED_TRACE_GRACE_MS,
+        );
       },
     });
 
@@ -474,10 +486,15 @@ export class ChatService {
         originalMessages: history,
         onError: (error) => {
           console.error("Error en el stream del chat:", error);
+          trace.failed(error);
           return "Algo salió mal generando la respuesta. Inténtalo de nuevo.";
         },
         onEnd: async ({ responseMessage, isAborted, finishReason }) => {
-          if (isAborted) return;
+          if (isAborted) {
+            trace.close("aborted");
+            void this.aiUsage.registrarTraza(userId, chatId, trace);
+            return;
+          }
 
           // Se lee una sola vez, antes de las dos transacciones de abajo: si
           // esto falla, ni el mensaje ni el cobro se persisten. Es lo que pasa
@@ -495,12 +512,12 @@ export class ChatService {
               `[chat] No se pudo leer el usage del turno de chat ${chatId}; ni el mensaje ni el cobro se persisten:`,
               error,
             );
-            trace.close("error", error);
+            trace.close(abortController.signal.aborted ? "aborted" : "error", error);
             void this.aiUsage.registrarTraza(userId, chatId, trace);
             return;
           }
+          // El error ya lo vio onError (trace.failed); aquí solo se cierra el paso.
           if (finishReason === "error") trace.close("error");
-          void this.aiUsage.registrarTraza(userId, chatId, trace);
 
           if (steps.length >= MAX_AGENT_STEPS && finishReason === "tool-calls") {
             console.warn(
@@ -551,23 +568,27 @@ export class ChatService {
           // Fuera de la transacción del mensaje, y AiUsageService nunca lanza:
           // un fallo al registrar usage no puede costar el mensaje ni el cobro,
           // que ya se persistieron arriba.
-          await this.aiUsage.registrar({
-            userId,
-            chatId,
-            task: "chat",
-            modelo: resolved,
-            usage,
-            stepsCount: steps.length,
-            arranque: startedAt,
-            runId: trace.runId,
-            providerRaw: {
-              steps: steps.map((step) => ({
-                usage: step.usage,
-                providerMetadata: step.providerMetadata,
-              })),
-              finishReason,
+          await this.aiUsage.registrar(
+            {
+              userId,
+              chatId,
+              task: "chat",
+              modelo: resolved,
+              usage,
+              stepsCount: steps.length,
+              arranque: startedAt,
+              runId: trace.runId,
+              providerRaw: {
+                steps: steps.map((step) => ({
+                  usage: step.usage,
+                  providerMetadata: step.providerMetadata,
+                })),
+                finishReason,
+              },
+              // La traza, en la misma transacción que la fila de uso.
             },
-          });
+            trace,
+          );
 
           // F10.8: el título automático, sin esperarlo — el turno ya terminó.
           // Decide solo si toca (primeras respuestas, título de nacimiento).

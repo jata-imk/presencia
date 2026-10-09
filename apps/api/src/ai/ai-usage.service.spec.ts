@@ -259,6 +259,31 @@ describe("AiUsageService.registrarTraza (F10.8.1)", () => {
     expect(insertRunSteps).toHaveBeenCalledTimes(1);
   });
 
+  it("con la traza, registrar la escribe en la misma transacción y una sola vez", async () => {
+    const { RunTrace } = await import("./run-trace.js");
+    const insertRunSteps = vi.fn();
+    const insertEvent = vi.fn();
+    const tenant = vi.fn((_userId: string, fn: (tx: never) => unknown) => fn({} as never));
+    const aiUsage = await servicio(tenant as never, insertEvent, insertRunSteps);
+    const trace = new RunTrace("run-11");
+    const registro = {
+      userId: "u1",
+      chatId: "c1",
+      task: "chat" as const,
+      modelo: { provider: "openai", modelName: "luna" },
+      usage: USAGE,
+      stepsCount: 1,
+      arranque: Date.now(),
+      runId: "run-11",
+      providerRaw: {},
+    };
+    await aiUsage.registrar(registro, trace);
+    await aiUsage.registrarTraza("u1", "c1", trace);
+    expect(tenant).toHaveBeenCalledTimes(1);
+    expect(insertRunSteps).toHaveBeenCalledTimes(1);
+    expect(insertEvent).toHaveBeenCalledTimes(1);
+  });
+
   it("un fallo al escribir la traza no se propaga", async () => {
     const { RunTrace } = await import("./run-trace.js");
     const error = vi.spyOn(console, "error").mockImplementation(() => {});

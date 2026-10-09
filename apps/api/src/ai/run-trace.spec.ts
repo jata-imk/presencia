@@ -98,6 +98,21 @@ describe("RunTrace", () => {
     expect(trace.steps[0]).toMatchObject({ status: "error" });
   });
 
+  it("al cerrar un paso a medias pregunta quién corre ahora (cadena de respaldo) y usa el último error", () => {
+    const trace = new RunTrace("run-5");
+    let actual = { provider: "openai.responses", modelId: "gpt-6-luna" };
+    trace.watchModel(() => actual);
+    trace.stepStarted({ stepNumber: 0, ...actual }, T0);
+    actual = { provider: "google.generative-ai", modelId: "gemini-3.8-flash" }; // cayó el principal
+    trace.failed(new Error("503 del proveedor"));
+    trace.close("error", undefined, T0 + 2_000);
+    expect(trace.steps[0]).toMatchObject({
+      name: "google:gemini-3.8-flash",
+      status: "error",
+      error: "503 del proveedor",
+    });
+  });
+
   it("errorText nunca guarda el objeto entero", () => {
     expect(errorText(new Error("se cayó"))).toBe("se cayó");
     expect(errorText({ code: 503 })).toBe("[object Object]");

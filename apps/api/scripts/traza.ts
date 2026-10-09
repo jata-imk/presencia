@@ -80,9 +80,10 @@ async function imprimirTurno(client: pg.Client, runId: string): Promise<void> {
   ).rows;
   const [chat] = (
     await client.query<{ title: string }>(
-      `select c.title from messages m join chats c on c.id = m.chat_id where m.run_id = $1
+      // Por las dos tablas con índice en run_id (messages no lo tiene).
+      `select c.title from ai_run_steps s join chats c on c.id = s.chat_id where s.run_id = $1
        union all
-       select c.title from ai_run_steps s join chats c on c.id = s.chat_id where s.run_id = $1
+       select c.title from ai_usage_events u join chats c on c.id = u.chat_id where u.run_id = $1
        limit 1`,
       [runId],
     )
@@ -112,7 +113,7 @@ async function imprimirTurno(client: pg.Client, runId: string): Promise<void> {
 
   const turno = usos.filter((u) => u.task_kind === "chat");
   const derivados = usos.filter((u) => u.task_kind !== "chat");
-  if (turno.length === 0 && pasos.some((p) => p.status !== "ok")) {
+  if (turno.length === 0 && pasos.length > 0) {
     console.log("  sin cobro: el turno no terminó (cortado o con error)");
   }
   for (const u of turno) {

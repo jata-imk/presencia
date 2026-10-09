@@ -51,7 +51,12 @@ const MIN_MESSAGES_TO_COMPACT = 8;
 export interface CompactionJob {
   userId: string;
   chatId: string;
-  /** F10.8.1: el turno que la disparó, para su traza. */
+  /**
+   * F10.8.1: el turno que la encoló, para su traza. Con `singletonKey` por
+   * chat, si otro turno la pide mientras espera, se queda la del primero: la
+   * compactación se atribuye al turno que la disparó, no al último que la
+   * habría pedido.
+   */
   runId?: string;
 }
 

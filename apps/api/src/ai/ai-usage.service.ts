@@ -60,11 +60,18 @@ export class AiUsageService {
     @Inject(AiUsageRepository) private readonly repo: AiUsageRepository,
   ) {}
 
-  async registrar(registro: RegistroDeUso): Promise<void> {
+  /**
+   * `trace` (F10.8.1): la traza del turno, en la misma transacción que su fila
+   * de uso: un turno terminado no paga un viaje extra a la base por ella.
+   */
+  async registrar(registro: RegistroDeUso, trace?: RunTrace): Promise<void> {
     const { userId, task, modelo, usage } = registro;
     try {
-      await this.dbService.runWithTenant(userId, (tx) =>
-        this.repo.insertEvent(tx, {
+      await this.dbService.runWithTenant(userId, async (tx) => {
+        if (trace?.claim()) {
+          await this.repo.insertRunSteps(tx, stepRows(trace, userId, registro.chatId ?? null));
+        }
+        await this.repo.insertEvent(tx, {
           userId,
           chatId: registro.chatId ?? null,
           taskKind: task,
@@ -86,32 +93,34 @@ export class AiUsageService {
             modelo.attempts && modelo.attempts.length > 0
               ? withAttempts(registro.providerRaw, modelo.attempts)
               : registro.providerRaw,
-        }),
-      );
+        });
+      });
     } catch (error) {
       console.error(`[ai] No se pudo registrar el usage de ${task} para ${userId}:`, error);
     }
   }
 
   /**
-   * F10.8.1: guarda la traza de un turno (ai_run_steps), una sola vez aunque
-   * se pida dos (`RunTrace.claim`). Mismo contrato que `registrar`: nunca
-   * lanza, porque una traza perdida no puede costar el mensaje que ya se
-   * produjo.
+   * F10.8.1: guarda la traza de un turno que NO terminó (cortado, o sin
+   * usage que registrar); la de un turno terminado viaja con `registrar`.
+   * Una sola vez aunque se pida dos (`RunTrace.claim`). Nunca lanza: una
+   * traza perdida no puede costar nada al creator.
    */
   async registrarTraza(userId: string, chatId: string | null, trace: RunTrace): Promise<void> {
     if (!trace.claim()) return;
     try {
       await this.dbService.runWithTenant(userId, (tx) =>
-        this.repo.insertRunSteps(
-          tx,
-          trace.steps.map((step) => ({ ...step, runId: trace.runId, userId, chatId })),
-        ),
+        this.repo.insertRunSteps(tx, stepRows(trace, userId, chatId)),
       );
     } catch (error) {
       console.error(`[ai] No se pudo guardar la traza ${trace.runId} de ${userId}:`, error);
     }
   }
+}
+
+/** Los pasos de una traza como filas de ai_run_steps. */
+function stepRows(trace: RunTrace, userId: string, chatId: string | null) {
+  return trace.steps.map((step) => ({ ...step, runId: trace.runId, userId, chatId }));
 }
 
 /** Los intentos fallidos junto al crudo, sin aplanar un crudo que no es objeto. */

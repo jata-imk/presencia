@@ -70,8 +70,24 @@ export class RunTrace {
   /** El paso de modelo que empezó y todavía no termina. */
   private open: { stepIndex: number; name: string; startedAt: number } | null = null;
   private claimed = false;
+  /** El último error del stream, para el paso que se cierre con `error`. */
+  private lastError: unknown;
+  /**
+   * Quién corre AHORA. Con la cadena de respaldo, el modelo que se lee al
+   * empezar un paso es el principal (todavía no se sabe si va a caer); al
+   * cerrar un paso a medias se vuelve a preguntar, y ya es el que respondió.
+   */
+  private currentModel: (() => { provider: string; modelId: string } | null) | null = null;
 
   constructor(readonly runId: string) {}
+
+  watchModel(current: () => { provider: string; modelId: string } | null): void {
+    this.currentModel = current;
+  }
+
+  failed(error: unknown): void {
+    this.lastError = error;
+  }
 
   stepStarted(event: StepStart, now = Date.now()): void {
     this.open = {
@@ -113,15 +129,20 @@ export class RunTrace {
 
   /**
    * Cierra el paso que quedó a medias: `aborted` si el creator cortó el turno,
-   * `error` si el stream falló. Sin paso abierto (el corte cayó entre pasos) no
-   * agrega nada.
+   * `error` si el stream falló (con el último error que vio, si no le pasan
+   * otro). Sin paso abierto (el corte cayó entre pasos) no agrega nada.
    */
-  close(status: Exclude<RunStepStatus, "ok">, error?: unknown, now = Date.now()): void {
+  close(
+    status: Exclude<RunStepStatus, "ok">,
+    error: unknown = this.lastError,
+    now = Date.now(),
+  ): void {
     if (!this.open) return;
+    const model = this.currentModel?.();
     this.steps.push({
       stepIndex: this.open.stepIndex,
       kind: "model",
-      name: this.open.name,
+      name: model ? modelName(model.provider, model.modelId) : this.open.name,
       status,
       startedAt: new Date(this.open.startedAt),
       durationMs: now - this.open.startedAt,
