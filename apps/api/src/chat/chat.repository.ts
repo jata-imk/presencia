@@ -70,6 +70,8 @@ export class ChatRepository {
       userId: string;
       role: "user" | "assistant";
       parts: unknown;
+      /** F10.8.1: el turno que produjo la respuesta. */
+      runId?: string | null;
     },
   ): Promise<MessageRow> {
     const [message] = await tx.insert(messages).values(input).returning();

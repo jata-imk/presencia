@@ -43,6 +43,8 @@ export interface MemoryIndexJob {
   chatId: string;
   /** La respuesta del intercambio (assistant). */
   messageId: string;
+  /** F10.8.1: el turno que la produjo, para su traza. */
+  runId?: string;
 }
 
 @Injectable()
@@ -58,8 +60,13 @@ export class MemoryService {
   ) {}
 
   /** Al cerrar un turno guardado. Nunca lanza (`enqueue` tampoco). */
-  async enqueueIndex(userId: string, chatId: string, messageId: string): Promise<void> {
-    const job: MemoryIndexJob = { userId, chatId, messageId };
+  async enqueueIndex(
+    userId: string,
+    chatId: string,
+    messageId: string,
+    runId?: string,
+  ): Promise<void> {
+    const job: MemoryIndexJob = { userId, chatId, messageId, runId };
     await this.boss.enqueue(MEMORY_INDEX_QUEUE, job, {
       singletonKey: messageId,
       expireInSeconds: MEMORY_INDEX_EXPIRE_SECONDS,
@@ -70,7 +77,7 @@ export class MemoryService {
    * El handler del job. Idempotente: si el intercambio ya tiene fragmento, o
    * la respuesta ya no existe (se reintentó), no hace nada.
    */
-  async index({ userId, chatId, messageId }: MemoryIndexJob): Promise<void> {
+  async index({ userId, chatId, messageId, runId }: MemoryIndexJob): Promise<void> {
     const { exchange, done } = await this.dbService.runWithTenant(userId, async (tx) => ({
       exchange: await this.repo.findExchange(tx, chatId, messageId),
       done: await this.repo.hasMemoryChunk(tx, messageId),
@@ -83,7 +90,7 @@ export class MemoryService {
     );
     if (!content) return;
 
-    const vector = await this.embed(userId, chatId, content, "document");
+    const vector = await this.embed(userId, chatId, content, "document", runId);
     try {
       await this.dbService.runWithTenant(userId, (tx) =>
         this.repo.insertMemoryChunk(tx, {
@@ -108,9 +115,14 @@ export class MemoryService {
    * usuario. Nunca lanza: una memoria que no respondió deja al chat seguir
    * sin ella, no tumba el turno.
    */
-  async search(userId: string, chatId: string, consulta: string): Promise<MemorySearchOutput> {
+  async search(
+    userId: string,
+    chatId: string,
+    consulta: string,
+    runId?: string,
+  ): Promise<MemorySearchOutput> {
     try {
-      const vector = await this.embed(userId, chatId, consulta, "query");
+      const vector = await this.embed(userId, chatId, consulta, "query", runId);
       const rows = await this.dbService.runWithTenant(userId, (tx) =>
         this.repo.searchMemory(tx, {
           chatId,
@@ -140,6 +152,7 @@ export class MemoryService {
     chatId: string,
     value: string,
     role: "document" | "query",
+    runId?: string,
   ): Promise<number[]> {
     const { provider, model } = parseModelId(this.modelId);
     const arranque = Date.now();
@@ -159,6 +172,7 @@ export class MemoryService {
       usage: { inputTokens: tokens, outputTokens: 0, totalTokens: tokens },
       stepsCount: 1,
       arranque,
+      runId,
       providerRaw: {
         usage: result.usage ?? null,
         estimado: !Number.isFinite(result.usage?.tokens),

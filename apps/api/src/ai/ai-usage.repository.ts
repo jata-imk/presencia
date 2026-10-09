@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { aiUsageEvents } from "../db/schema.js";
+import { aiRunSteps, aiUsageEvents } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 import type { AiTaskKind } from "./provider-registry.js";
 
@@ -31,7 +31,11 @@ export interface InsertAiUsageEventInput {
   // Crudo del proveedor (usage + providerMetadata por step, finishReason).
   // Nunca se normaliza aquí — esa lectura es trabajo de F5.
   providerRaw: unknown;
+  // F10.8.1: el turno de chat al que pertenece; `null` si no nace de uno.
+  runId: string | null;
 }
+
+export type InsertRunStepInput = typeof aiRunSteps.$inferInsert;
 
 @Injectable()
 export class AiUsageRepository {
@@ -39,5 +43,11 @@ export class AiUsageRepository {
     const [event] = await tx.insert(aiUsageEvents).values(input).returning();
     if (!event) throw new Error("No se pudo registrar el evento de usage");
     return event;
+  }
+
+  /** F10.8.1: los pasos de un turno, de una vez (append-only, como los eventos). */
+  async insertRunSteps(tx: Tx, steps: InsertRunStepInput[]): Promise<void> {
+    if (steps.length === 0) return;
+    await tx.insert(aiRunSteps).values(steps);
   }
 }

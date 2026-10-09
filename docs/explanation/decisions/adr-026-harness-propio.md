@@ -39,6 +39,18 @@ Un harness es todo lo que rodea al modelo para que haga trabajo real. En nuestro
 - **ContextBuilder** con nombre propio: "almacenamiento ≠ memoria ≠ contexto".
 - **Umbral de compactación por costo, no por ventana:** Mastra comprime a los 30k tokens; nosotros a los 40k (ADR-006, addendum F10.8). Claude Code y Codex compactan cerca del 60–90% de la ventana porque son agentes de código con mucho estado vivo, que no es nuestro caso.
 
+## Tracing (F10.8.1 PR3)
+
+Cada turno de chat tiene un `runId`. Se registra en tres lugares:
+
+- **`ai_run_steps`** (nueva): un renglón por paso de modelo y por tool, con tiempo, tokens y caché.
+- **`messages.run_id`**: la respuesta que produjo el turno.
+- **`ai_usage_events.run_id`**: el turno mismo y todo lo que dispara (búsqueda de memoria, título, compactación, indexado). Los jobs reciben el `runId` en su payload.
+
+Se captura con los callbacks del AI SDK (`onStepStart`, `onStepFinish`, `experimental_onToolCallFinish`, `onAbort`), sin OpenTelemetry. Los pasos se juntan en memoria (`ai/run-trace.ts`) y se escriben juntos al final, una sola vez. Es el modelo Trace → Span del OpenAI Agents SDK, reducido a lo que necesitamos: responder "¿qué paso tardó?" y "¿cuánto salió de caché?". Se lee con `pnpm --filter @presencia/api traza`.
+
+Un turno cortado por el creator no se cobra ni deja fila de uso (hueco conocido desde F4.5), pero ahora sí deja traza: así se ve cuánto tardó antes del corte.
+
 ## Cuándo reevaluar
 
 Este ADR se reemplaza (no se edita) si aparece alguno de estos casos:
