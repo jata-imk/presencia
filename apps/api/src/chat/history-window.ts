@@ -17,11 +17,23 @@ import type { CompressedCardOutput, LiveCard } from "./context-diet.js";
 //
 // La UI y lo que se persiste nunca pasan por aquí: siguen viendo todo.
 
-/** Mensajes que se quedan completos, sin resumir, al compactar. */
-export const KEEP_RECENT_MESSAGES = 10;
+/**
+ * Cuánto de lo reciente se queda completo, sin resumir, al compactar
+ * (F10.8.1). Por tokens y no por mensajes: diez mensajes pueden ser 1k tokens
+ * ("ok, va") o 15k (tres carruseles), y lo que importa es cuánto viaja.
+ */
+export const KEEP_RECENT_TOKENS = 12_000;
+
+/** Lo mínimo que se queda completo aunque pese más: dos intercambios. */
+export const MIN_KEEP_MESSAGES = 4;
 
 /** Prefijo de los mensajes que arma Presencia (no están en la base). */
 const SYNTHETIC = "presencia-";
+
+/** El resumen y la nota del techo: los arma Presencia, no están en la base. */
+export function isSyntheticMessage(message: UIMessage): boolean {
+  return message.id.startsWith(SYNTHETIC);
+}
 
 export interface HistorySummary {
   summary: string;
@@ -31,13 +43,22 @@ export interface HistorySummary {
 }
 
 /**
- * Cuántos mensajes del principio de `pending` se compactan, dejando los
- * últimos `keep` completos. El corte se mueve hacia atrás hasta que el primer
+ * Cuántos mensajes del principio de `pending` se compactan. Se conservan
+ * completos los más recientes que quepan en `keepTokens` (nunca menos de
+ * `MIN_KEEP_MESSAGES`), y el corte se mueve hacia atrás hasta que el primer
  * mensaje conservado sea del creator: el tramo resumido termina en una
  * respuesta, y lo que queda empieza con una pregunta, sin partir un turno.
  */
-export function compactionCut(pending: UIMessage[], keep = KEEP_RECENT_MESSAGES): number {
-  let cut = Math.max(pending.length - keep, 0);
+export function compactionCut(pending: UIMessage[], keepTokens = KEEP_RECENT_TOKENS): number {
+  let kept = 0;
+  let budget = keepTokens;
+  while (kept < pending.length) {
+    const cost = estimateTokens([pending[pending.length - 1 - kept]!]);
+    if (kept >= MIN_KEEP_MESSAGES && cost > budget) break;
+    budget -= cost;
+    kept++;
+  }
+  let cut = pending.length - kept;
   while (cut > 0 && pending[cut]?.role !== "user") cut--;
   return cut;
 }
@@ -98,11 +119,13 @@ export function applySummary(
   return [...syntheticPair("resumen", text), ...history.slice(through + 1)];
 }
 
-/** Mensajes posteriores al tramo que ya cubre el resumen (todos, si no hay). */
-export function pendingAfterSummary(history: UIMessage[], summary: HistorySummary | null): number {
-  if (!summary) return history.length;
-  const through = history.findIndex((m) => m.id === summary.throughMessageId);
-  return history.length - (through + 1);
+/** Tokens de lo que el resumen todavía no cubre (todo, si no hay resumen). */
+export function pendingTokensAfterSummary(
+  history: UIMessage[],
+  summary: HistorySummary | null,
+): number {
+  const through = summary ? history.findIndex((m) => m.id === summary.throughMessageId) : -1;
+  return estimateTokens(history.slice(through + 1));
 }
 
 /**
@@ -135,7 +158,7 @@ export function estimateTokens(messages: UIMessage[]): number {
 export function capHistory(messages: UIMessage[], capTokens: number): UIMessage[] {
   if (estimateTokens(messages) <= capTokens) return messages;
   let pinned = 0;
-  while (pinned < messages.length && messages[pinned]!.id.startsWith(SYNTHETIC)) pinned++;
+  while (pinned < messages.length && isSyntheticMessage(messages[pinned]!)) pinned++;
   const head = messages.slice(0, pinned);
   const rest = messages.slice(pinned);
   let budget = capTokens - estimateTokens(head);

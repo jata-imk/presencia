@@ -1,11 +1,13 @@
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import {
-  KEEP_RECENT_MESSAGES,
+  KEEP_RECENT_TOKENS,
+  MIN_KEEP_MESSAGES,
   applySummary,
   capHistory,
   compactionCut,
   estimateTokens,
+  pendingTokensAfterSummary,
 } from "./history-window.js";
 
 // La ventana del historial de un chat largo (F10.8): qué parte se resume, cómo
@@ -26,22 +28,44 @@ function conversacion(n: number, texto?: (i: number) => string): UIMessage[] {
 }
 
 describe("compactionCut", () => {
-  it("deja los últimos mensajes completos y no parte un turno", () => {
-    const chat = conversacion(10); // 20 mensajes
+  const grande = () => "x".repeat(4_000); // ~1k tokens por mensaje
+
+  it("conserva lo reciente que cabe en el presupuesto, sin partir un turno", () => {
+    const chat = conversacion(10, grande); // 20 mensajes de ~1k
     const cut = compactionCut(chat);
-    expect(cut).toBe(20 - KEEP_RECENT_MESSAGES);
+    // Caben 11 (~11k); el corte cae en una respuesta y retrocede al creator.
+    expect(cut).toBe(8);
     expect(chat[cut]!.role).toBe("user");
+    expect(estimateTokens(chat.slice(cut))).toBeLessThanOrEqual(KEEP_RECENT_TOKENS + 1_100);
   });
 
-  it("si el corte cae en una respuesta, retrocede hasta el mensaje del creator", () => {
-    const chat = [...conversacion(6), msg("u6", "user")]; // 13: el corte natural (3) cae en a1
-    const cut = compactionCut(chat);
-    expect(chat[cut]!.role).toBe("user");
-    expect(cut).toBe(2);
+  it("con mensajes cortos conserva más mensajes; con cards pesadas, menos", () => {
+    const cortos = conversacion(20); // 40 mensajes diminutos
+    expect(compactionCut(cortos, 300)).toBeLessThan(40 - 10);
+    expect(compactionCut(conversacion(10, grande))).toBeGreaterThan(20 - 13);
+  });
+
+  it("nunca conserva menos de dos intercambios, aunque pesen más que el presupuesto", () => {
+    const chat = conversacion(5, () => "x".repeat(60_000)); // ~15k cada uno
+    expect(compactionCut(chat)).toBe(10 - MIN_KEEP_MESSAGES);
   });
 
   it("con pocos mensajes no compacta nada", () => {
     expect(compactionCut(conversacion(3))).toBe(0);
+  });
+});
+
+describe("pendingTokensAfterSummary", () => {
+  it("mide lo que el resumen todavía no cubre", () => {
+    const chat = conversacion(4);
+    const todo = pendingTokensAfterSummary(chat, null);
+    const despues = pendingTokensAfterSummary(chat, {
+      summary: "",
+      throughMessageId: "a1",
+      cards: [],
+    });
+    expect(todo).toBe(estimateTokens(chat));
+    expect(despues).toBe(estimateTokens(chat.slice(4)));
   });
 });
 

@@ -40,7 +40,7 @@ La gestión de proyecto (roadmap F0–F13) vive en Notion (página "Presencia").
 
 ## Cómo arma el chat su contexto
 
-Guardar ≠ recordar ≠ mandar al modelo: `messages` guarda la conversación completa (lo que ve la UI), y lo que viaja al modelo en cada turno lo arma `apps/api/src/chat/` (prompt de sistema con la Voz de marca, resumen de lo viejo, recientes, cards vivas y dieta de tools). El detalle vive en ADR-006 y sus addenda, no aquí; cualquier cambio en esa cadena pasa por la regla dura #8.
+Guardar ≠ recordar ≠ mandar al modelo: `messages` guarda la conversación completa (lo que ve la UI), y lo que viaja al modelo en cada turno lo arma `apps/api/src/chat/context-builder.ts` (resumen de lo viejo, recientes, cards vivas, dieta de tools y techo), con el prompt de sistema y la Voz de marca de `system-prompt.ts`. El detalle vive en ADR-006 y sus addenda, no aquí; cualquier cambio en esa cadena pasa por la regla dura #8.
 
 ## Convenciones
 

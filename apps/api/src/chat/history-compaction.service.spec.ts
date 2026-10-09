@@ -167,6 +167,13 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
     await dbService.onModuleDestroy();
   });
 
+  /**
+   * Relleno para que cada mensaje pese ~1.1k tokens: lo reciente se conserva
+   * por tokens (KEEP_RECENT_TOKENS), y con mensajes diminutos cabría el chat
+   * entero.
+   */
+  const RELLENO = ` ${"x".repeat(4_400)}`;
+
   /** Un chat con n intercambios, con una card en el primero; mensajes a 1 s de distancia. */
   async function chatLargo(n: number): Promise<{ chatId: string; ids: string[] }> {
     return dbService.runWithTenant(userId, async (tx) => {
@@ -178,7 +185,7 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
           chatId,
           userId,
           role: "user" as const,
-          parts: [{ type: "text", text: `Pregunta ${String(i)} sobre mis marquesitas` }],
+          parts: [{ type: "text", text: `Pregunta ${String(i)} sobre mis marquesitas${RELLENO}` }],
           createdAt: new Date(base + i * 2_000),
         },
         {
@@ -186,7 +193,7 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
           userId,
           role: "assistant" as const,
           parts: [
-            { type: "text", text: `Respuesta ${String(i)}` },
+            { type: "text", text: `Respuesta ${String(i)}${RELLENO}` },
             ...(i === 0
               ? [
                   {
@@ -226,7 +233,7 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
     );
 
   it("resume el tramo viejo, deja los últimos 10 completos, lista las cards y cobra una vez", async () => {
-    const { chatId, ids } = await chatLargo(12); // 24 mensajes → resume 14
+    const { chatId, ids } = await chatLargo(12); // 24 mensajes de ~1.1k → se quedan los últimos 10 (~11k), resume 14
     const prompts: string[] = [];
     await crear("- Vende marquesitas en Santa Ana.", prompts).compact({ userId, chatId });
 
@@ -240,7 +247,7 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
       }),
     ]);
     expect(prompts[0]).toContain("Pregunta 0");
-    expect(prompts[0]).not.toContain("Pregunta 7"); // ya es parte de los 10 que se quedan
+    expect(prompts[0]).not.toContain("Pregunta 7"); // ya es parte de lo reciente que se queda
     expect(await cobros()).toHaveLength(1);
     const usos = await dbService.runWithTenant(userId, (tx) =>
       tx
@@ -278,10 +285,10 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
         enqueue: (_q: string, data: unknown) => (encolados.push(data), Promise.resolve(true)),
       } as never,
     );
-    await service.maybeEnqueue(userId, "c", 1_000, 50); // contexto chico
-    await service.maybeEnqueue(userId, "c", 90_000, 12); // pocos mensajes sin resumir
+    await service.maybeEnqueue(userId, "c", 1_000, 50_000); // contexto chico
+    await service.maybeEnqueue(userId, "c", 90_000, 12_000); // poco sin resumir (cabe en lo reciente)
     expect(encolados).toHaveLength(0);
-    await service.maybeEnqueue(userId, "c", 90_000, 30);
+    await service.maybeEnqueue(userId, "c", 90_000, 30_000);
     expect(encolados).toEqual([{ userId, chatId: "c" }]);
   });
 
@@ -297,14 +304,14 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
             chatId,
             userId,
             role: "user" as const,
-            parts: [{ type: "text", text: `Nueva ${String(i)}` }],
+            parts: [{ type: "text", text: `Nueva ${String(i)}${RELLENO}` }],
             createdAt: new Date(base + i * 2_000),
           },
           {
             chatId,
             userId,
             role: "assistant" as const,
-            parts: [{ type: "text", text: "Va" }],
+            parts: [{ type: "text", text: `Va${RELLENO}` }],
             createdAt: new Date(base + i * 2_000 + 1_000),
           },
         ]).flat(),
@@ -333,14 +340,14 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
             chatId,
             userId,
             role: "user" as const,
-            parts: [{ type: "text", text: `Nueva ${String(i)}` }],
+            parts: [{ type: "text", text: `Nueva ${String(i)}${RELLENO}` }],
             createdAt: new Date(base + i * 2_000),
           },
           {
             chatId,
             userId,
             role: "assistant" as const,
-            parts: [{ type: "text", text: "Va" }],
+            parts: [{ type: "text", text: `Va${RELLENO}` }],
             createdAt: new Date(base + i * 2_000 + 1_000),
           },
         ]).flat(),
