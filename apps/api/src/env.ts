@@ -4,6 +4,9 @@ import { imageGeneratorIds } from "./images/image-models.js";
 import {
   DEFAULT_IMAGE_MODEL_ID,
   DEFAULT_MODEL_ID,
+  DEFAULT_EMBEDDING_MODEL_ID,
+  EMBEDDING_DIMENSIONS,
+  EMBEDDING_PROVIDERS,
   DEFAULT_TRENDS_MODEL_ID,
   MODEL_TIER_ENV_VARS,
   parseModelChain,
@@ -61,6 +64,9 @@ const envSchema = z
     // Google, el job falla con un motivo escrito en vez de producir tendencias
     // sin fuente.
     AI_MODEL_TRENDS: z.string().optional(),
+    // F10.8: el modelo de embeddings de la memoria entre chats. Sin setear,
+    // DEFAULT_EMBEDDING_MODEL_ID. Cambiarlo obliga a re-indexar la memoria.
+    AI_MODEL_EMBEDDING: z.string().optional(),
     // Solo dev (F10.7): proveedores que la cadena de respaldo finge caídos
     // (503), para ver el respaldo en el navegador sin romper nada. Separados
     // por coma: "openai" o "openai,google".
@@ -221,8 +227,27 @@ const envSchema = z
       onlyProvider: SEARCH_PROVIDER,
     });
 
-    // El simulador de caídas (F10.7) es para probar la cadena en dev. En
-    // producción, un proveedor fingido caído es una caída real del producto.
+    // F10.8: la memoria entre chats. Un solo modelo, sin cadena ni `@esfuerzo`
+    // (DEFAULT_EMBEDDING_MODEL_ID explica por qué), y con su key al boot: sin
+    // ella, cada turno encolaría un indexado que truena en silencio.
+    const embedding = value.AI_MODEL_EMBEDDING ?? DEFAULT_EMBEDDING_MODEL_ID;
+    validateModelEnv("AI_MODEL_EMBEDDING", embedding, { single: true });
+    const embeddingProvider = embedding.split(":")[0] ?? "";
+    if (!(EMBEDDING_PROVIDERS as readonly string[]).includes(embeddingProvider)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["AI_MODEL_EMBEDDING"],
+        message: `AI_MODEL_EMBEDDING solo acepta modelos de ${EMBEDDING_PROVIDERS.join(" u ")}: son los que dan vectores de ${String(EMBEDDING_DIMENSIONS)} dimensiones`,
+      });
+    }
+    if (embedding.includes("@")) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["AI_MODEL_EMBEDDING"],
+        message: "AI_MODEL_EMBEDDING no acepta @esfuerzo: un modelo de embeddings no razona",
+      });
+    }
+
     // F10.8: con el umbral en o arriba del techo, la compactación nunca se
     // dispararía (el techo deja el contexto por debajo del umbral) y los
     // chats largos perderían lo viejo detrás de la nota en vez de resumirlo.
@@ -233,6 +258,9 @@ const envSchema = z
         message: "CHAT_COMPACT_AT_TOKENS tiene que ser menor que CHAT_HISTORY_CAP_TOKENS",
       });
     }
+
+    // El simulador de caídas (F10.7) es para probar la cadena en dev. En
+    // producción, un proveedor fingido caído es una caída real del producto.
     if (value.AI_FALLBACK_SIMULATE) {
       if (value.NODE_ENV === "production") {
         ctx.addIssue({

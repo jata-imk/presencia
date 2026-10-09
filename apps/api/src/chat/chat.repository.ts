@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { chatSummaries, chats, messages } from "../db/schema.js";
+import { and, asc, cosineDistance, desc, eq, isNotNull, isNull, lt, ne, sql } from "drizzle-orm";
+import { chatSummaries, chats, memoryChunks, messages } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 import { CHAT_CHANGED_CHANNEL, encodeChatChanged } from "../realtime/card-events.js";
 
@@ -113,6 +113,82 @@ export class ChatRepository {
       })
       .returning({ chatId: chatSummaries.chatId });
     return saved.length > 0;
+  }
+
+  /** F10.8: ¿ese intercambio ya tiene su fragmento de memoria? */
+  /**
+   * F10.8: una respuesta y el mensaje que la precede en su chat, el
+   * intercambio que indexa la memoria, sin leer el chat entero. null si la
+   * respuesta ya no existe (se regeneró o se borró el chat).
+   */
+  async findExchange(
+    tx: Tx,
+    chatId: string,
+    messageId: string,
+  ): Promise<{ reply: MessageRow; previous: MessageRow | undefined } | null> {
+    const [reply] = await tx
+      .select()
+      .from(messages)
+      .where(and(eq(messages.id, messageId), eq(messages.chatId, chatId)));
+    if (!reply) return null;
+    const [previous] = await tx
+      .select()
+      .from(messages)
+      .where(and(eq(messages.chatId, chatId), lt(messages.createdAt, reply.createdAt)))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    return { reply, previous };
+  }
+
+  async hasMemoryChunk(tx: Tx, messageId: string): Promise<boolean> {
+    const [row] = await tx
+      .select({ id: memoryChunks.id })
+      .from(memoryChunks)
+      .where(eq(memoryChunks.messageId, messageId));
+    return Boolean(row);
+  }
+
+  /** F10.8: guarda un fragmento; uno solo por respuesta (índice único). */
+  async insertMemoryChunk(
+    tx: Tx,
+    row: Omit<typeof memoryChunks.$inferInsert, "id" | "createdAt">,
+  ): Promise<void> {
+    await tx.insert(memoryChunks).values(row).onConflictDoNothing();
+  }
+
+  /**
+   * F10.8: los fragmentos más parecidos a `embedding` en los OTROS chats del
+   * usuario (RLS), del modelo vigente. Con `hnsw.iterative_scan`: el índice
+   * es global y el filtro por usuario y chat se aplica después, así que sin
+   * esto podría devolver menos resultados de los que hay (pgvector ≥ 0.8).
+   */
+  async searchMemory(
+    tx: Tx,
+    input: { chatId: string; model: string; embedding: number[]; limit: number },
+  ): Promise<{ content: string; chatTitle: string; createdAt: Date; similarity: number }[]> {
+    await tx.execute(sql`set local hnsw.iterative_scan = relaxed_order`);
+    const distance = cosineDistance(memoryChunks.embedding, input.embedding);
+    const rows = await tx
+      .select({
+        content: memoryChunks.content,
+        chatTitle: chats.title,
+        createdAt: memoryChunks.createdAt,
+        distance,
+      })
+      .from(memoryChunks)
+      .innerJoin(chats, eq(chats.id, memoryChunks.chatId))
+      .where(and(ne(memoryChunks.chatId, input.chatId), eq(memoryChunks.model, input.model)))
+      .orderBy(distance)
+      .limit(input.limit);
+    // relaxed_order puede devolverlos casi en orden: se ordena aquí de nuevo.
+    return rows
+      .map((r) => ({
+        content: r.content,
+        chatTitle: r.chatTitle,
+        createdAt: r.createdAt,
+        similarity: 1 - Number(r.distance),
+      }))
+      .sort((a, b) => b.similarity - a.similarity);
   }
 
   async deleteMessage(tx: Tx, messageId: string): Promise<void> {

@@ -15,6 +15,7 @@
     "bakeoff:imagenes": "tsx --env-file=../../.env scripts/image-bakeoff/run.ts",
     "estilos:imagenes": "tsx --env-file=../../.env scripts/image-bakeoff/estilos.ts",
     "gasto": "tsx --env-file=../../.env scripts/gasto.ts",
+    "memoria:reindexar": "tsx --env-file=../../.env scripts/memoria-reindexar.ts",
     "start": "node dist/main.js",
     "worker": "node dist/worker.js",
     "db:generate": "drizzle-kit generate",

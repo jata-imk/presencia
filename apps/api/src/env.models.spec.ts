@@ -22,6 +22,7 @@ const TOUCHED = [
   "AI_MODEL",
   "AI_MODEL_CHAT",
   "AI_MODEL_TRENDS",
+  "AI_MODEL_EMBEDDING",
   "AI_MODEL_IMAGE",
   "AI_MODEL_IMAGE_ALT",
   "IMAGE_PROVIDER",
@@ -126,5 +127,29 @@ describe("env: esfuerzo de razonamiento en los modelos", () => {
     await expect(
       loadEnv({ IMAGE_PROVIDER: "real", AI_MODEL_IMAGE_ALT: "openai:gpt-image-2@low" }),
     ).rejects.toThrow(/AI_MODEL_IMAGE_ALT no acepta .{0,2}@low/);
+  });
+});
+
+describe("AI_MODEL_EMBEDDING (F10.8)", () => {
+  it("sin setear usa el de Google; OpenAI también sirve", async () => {
+    const { env } = await loadEnv({});
+    expect(env.AI_MODEL_EMBEDDING).toBeUndefined();
+    const conOpenAi = await loadEnv({ AI_MODEL_EMBEDDING: "openai:text-embedding-3-large" });
+    expect(conOpenAi.env.AI_MODEL_EMBEDDING).toBe("openai:text-embedding-3-large");
+  });
+
+  it("un proveedor que no da vectores de 1536 es error de arranque", async () => {
+    await expect(loadEnv({ AI_MODEL_EMBEDDING: "anthropic:claude-sonnet-5-5" })).rejects.toThrow(
+      /solo acepta modelos de google u openai/,
+    );
+  });
+
+  it("sin cadena ni @esfuerzo: los vectores de dos modelos no se comparan", async () => {
+    await expect(
+      loadEnv({ AI_MODEL_EMBEDDING: "google:gemini-embedding-001,openai:text-embedding-3-large" }),
+    ).rejects.toThrow(/AI_MODEL_EMBEDDING/);
+    await expect(
+      loadEnv({ AI_MODEL_EMBEDDING: "google:gemini-embedding-001@low" }),
+    ).rejects.toThrow(/AI_MODEL_EMBEDDING/);
   });
 });

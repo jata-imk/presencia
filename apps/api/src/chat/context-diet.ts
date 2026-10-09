@@ -1,5 +1,11 @@
 import type { UIMessage } from "ai";
-import { CARD_ARCHETYPE_TOOLS, summarizeCardContent, type CardToolOutput } from "@presencia/shared";
+import {
+  CARD_ARCHETYPE_TOOLS,
+  MEMORY_TOOL_NAME,
+  summarizeCardContent,
+  type CardToolOutput,
+  type MemorySearchOutput,
+} from "@presencia/shared";
 
 // Discriminante explícito: solo las 3 tools de card (ADR-005), nunca "toda
 // tool cuyo output tenga un campo content". F5-F7 ya tienen tareas futuras
@@ -146,6 +152,43 @@ export function withLiveCards(
         ...toolOutputPart,
         output: { ...toolOutputPart.output, content: current.content, status: current.status },
       };
+    });
+    return changed ? { ...message, parts } : message;
+  });
+}
+
+/** Cuánto de cada recuerdo sigue viajando después del turno que lo buscó. */
+const MEMORY_FRAGMENT_CHARS_AFTER_TURN = 300;
+
+const MEMORY_TOOL_TYPE = `tool-${MEMORY_TOOL_NAME}`;
+
+/**
+ * F10.8: el output de `buscar_en_memoria` son hasta 5 intercambios de otros
+ * chats (~20k caracteres). Sirven en el turno que los buscó; después, lo que
+ * importaba ya quedó en la respuesta, y arrastrarlos completos los cobraría
+ * en cada turno siguiente. El historial que llega aquí son turnos cerrados
+ * (los pasos del turno en curso los lleva el SDK), así que se recortan todos.
+ * Misma forma del output, con cada fragmento acortado. Puro, como el resto.
+ */
+export function trimMemoryOutputsForModel(history: UIMessage[]): UIMessage[] {
+  return history.map((message) => {
+    let changed = false;
+    const parts = message.parts.map((part) => {
+      const candidate = part as { type?: unknown; state?: unknown; output?: unknown };
+      if (candidate.type !== MEMORY_TOOL_TYPE || candidate.state !== "output-available") {
+        return part;
+      }
+      const output = candidate.output as Partial<MemorySearchOutput> | undefined;
+      if (!Array.isArray(output?.resultados)) return part;
+      changed = true;
+      const resultados = output.resultados.map((hit) => ({
+        ...hit,
+        fragmento:
+          hit.fragmento.length > MEMORY_FRAGMENT_CHARS_AFTER_TURN
+            ? `${hit.fragmento.slice(0, MEMORY_FRAGMENT_CHARS_AFTER_TURN)}…`
+            : hit.fragmento,
+      }));
+      return { ...part, output: { ...output, resultados } } as typeof part;
     });
     return changed ? { ...message, parts } : message;
   });

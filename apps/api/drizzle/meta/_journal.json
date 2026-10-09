@@ -337,6 +337,13 @@
       "when": 1791506123479,
       "tag": "0047_resumen_de_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791512658888,
+      "tag": "0048_memoria_entre_chats",
+      "breakpoints": true
     }
   ]
 }

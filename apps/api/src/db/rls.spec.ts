@@ -7,6 +7,7 @@ import {
   chatSummaries,
   chats,
   folders,
+  memoryChunks,
   messages,
   cadenceTargets,
   postMetrics,
@@ -19,6 +20,7 @@ import {
 // Import solo de tipo: el módulo real se carga en beforeAll, después de
 // poblar process.env (env.ts valida el entorno en el import).
 import type { DbService as DbServiceType } from "./db.service.js";
+import { EMBEDDING_DIMENSIONS } from "../ai/provider-registry.js";
 
 // DoD de F2: el aislamiento cross-tenant se prueba contra la base real,
 // conectando como presencia_app (APP_DATABASE_URL) — con el rol owner,
@@ -870,6 +872,66 @@ describe("RLS tenant_isolation", () => {
         tx.select().from(chatSummaries).where(eq(chatSummaries.chatId, chatA)),
       );
       expect(row?.summary).toBe("- Vende marquesitas en Santa Ana.");
+    });
+  });
+
+  // F10.8: la memoria entre chats. Cada fila es un intercambio en texto plano
+  // más su embedding; la búsqueda por similitud no filtra por user_id a mano,
+  // confía en la policy.
+  describe("memory_chunks", () => {
+    const vector = () => Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) => (i === 0 ? 1 : 0));
+
+    beforeAll(async () => {
+      await dbService.runWithTenant(userA, async (tx) => {
+        const [msg] = await tx
+          .select({ id: messages.id })
+          .from(messages)
+          .where(eq(messages.chatId, chatA));
+        if (!msg) throw new Error("Falta el mensaje de prueba");
+        await tx.insert(memoryChunks).values({
+          userId: userA,
+          chatId: chatA,
+          messageId: msg.id,
+          content: "Creator: abro a las 7 en Santa Ana",
+          embedding: vector(),
+          model: "openai:mock",
+        });
+      });
+    }, 15_000);
+
+    it("el dueño ve su memoria", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userA, (tx) => tx.select().from(memoryChunks));
+      expect(rows.map((r) => r.chatId)).toContain(chatA);
+    });
+
+    it("otro tenant no la encuentra ni por similitud", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userB, (tx) =>
+        tx
+          .select({ id: memoryChunks.id })
+          .from(memoryChunks)
+          .orderBy(sql`${memoryChunks.embedding} <=> ${JSON.stringify(vector())}::vector`)
+          .limit(5),
+      );
+      expect(rows).toHaveLength(0);
+    });
+
+    it("otro tenant no puede guardar memoria a nombre ajeno", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx.insert(memoryChunks).values({
+            userId: userA,
+            chatId: chatA,
+            messageId: randomUUID(),
+            content: "intruso",
+            embedding: vector(),
+            model: "openai:mock",
+          }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(error).toBeInstanceOf(Error);
     });
   });
 });

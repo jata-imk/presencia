@@ -7,20 +7,29 @@ import {
   HistoryCompactionService,
   type CompactionJob,
 } from "./history-compaction.service.js";
+import {
+  MEMORY_INDEX_EXPIRE_SECONDS,
+  MEMORY_INDEX_QUEUE,
+  MemoryService,
+  type MemoryIndexJob,
+} from "./memory.service.js";
 
 /**
- * El consumidor de la cola de compactación (F10.8). La lógica vive entera en
- * HistoryCompactionService; esto solo la registra.
+ * Los consumidores de las colas del chat (F10.8): la compactación y el
+ * indexado de la memoria. La lógica vive en HistoryCompactionService y
+ * MemoryService; esto solo las registra.
  *
- * `retryLimit` implícito en 0, como el resto de las colas: si falla, el turno
- * siguiente que pase del umbral la vuelve a encolar, y mientras tanto el techo
- * mecánico (history-window.ts) acota lo que viaja al modelo.
+ * `retryLimit` implícito en 0, como el resto de las colas. Una compactación
+ * que falla se vuelve a encolar en el siguiente turno que pase del umbral, y
+ * mientras tanto el techo mecánico (history-window.ts) acota lo que viaja al
+ * modelo.
  */
 @Injectable()
 export class ChatJobs implements OnApplicationBootstrap {
   constructor(
     @Inject(BossService) private readonly boss: BossService,
     @Inject(HistoryCompactionService) private readonly compaction: HistoryCompactionService,
+    @Inject(MemoryService) private readonly memory: MemoryService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -31,9 +40,19 @@ export class ChatJobs implements OnApplicationBootstrap {
         expireInSeconds: COMPACTION_EXPIRE_SECONDS,
         handler: (data) => this.compaction.compact(data),
       });
+      // Sin reintentos, como el resto: un intercambio que no se indexó solo
+      // falta en la memoria, y `memoria:reindexar` lo recupera.
+      await this.boss.registerOnDemand<MemoryIndexJob>({
+        queue: MEMORY_INDEX_QUEUE,
+        expireInSeconds: MEMORY_INDEX_EXPIRE_SECONDS,
+        handler: (data) => this.memory.index(data),
+      });
     } catch (error) {
       if (enProcesoWorker()) throw error;
-      console.error(`[jobs] ${COMPACTION_QUEUE} no quedó escuchando; la API sigue sin él:`, error);
+      console.error(
+        `[jobs] ${COMPACTION_QUEUE}/${MEMORY_INDEX_QUEUE} no quedaron escuchando; la API sigue sin ellas:`,
+        error,
+      );
     }
   }
 }

@@ -13,11 +13,12 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  vector,
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { MODOS_ESTRATEGIA } from "@presencia/shared";
-import { AI_TASK_KINDS } from "../ai/provider-registry.js";
+import { AI_TASK_KINDS, EMBEDDING_DIMENSIONS } from "../ai/provider-registry.js";
 
 // Implementa docs/reference/modelo-de-datos.md (aprobado 2026-07-18).
 // RLS (enable/force, policies, roles) vive en la migración custom
@@ -358,6 +359,46 @@ export const chatSummaries = pgTable("chat_summaries", {
   model: text("model").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// F10.8: la memoria entre chats. Un fragmento por intercambio (el mensaje del
+// creator y la respuesta), con su embedding de documento. El chat busca aquí
+// con la tool `buscar_en_memoria` (chat/memory.service.ts), excluyendo la
+// conversación actual. Borrar el chat o el mensaje borra su memoria (cascade);
+// archivarlo no.
+//
+// `message_id` es la RESPUESTA del intercambio, y único: indexar dos veces el
+// mismo (un job que pg-boss entregó dos veces) no duplica. Reintentar una
+// respuesta borra el mensaje viejo y, con él, su fragmento.
+//
+// `model` por fila: los vectores de dos modelos no son comparables, y la
+// búsqueda solo mira los del modelo vigente. Cambiar de modelo es re-indexar.
+export const memoryChunks = pgTable(
+  "memory_chunks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Denormalizado a propósito: RLS sin join.
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    chatId: uuid("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    // Cambiar las dimensiones es una migración (y reindexar), no solo la constante.
+    embedding: vector("embedding", { dimensions: EMBEDDING_DIMENSIONS }).notNull(),
+    model: text("model").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("memory_chunks_message").on(t.messageId),
+    index("memory_chunks_user").on(t.userId),
+    // Coseno, el mismo operador (<=>) que usa la búsqueda.
+    index("memory_chunks_embedding").using("hnsw", t.embedding.op("vector_cosine_ops")),
+  ],
+);
 
 export const messages = pgTable(
   "messages",
