@@ -51,6 +51,8 @@ const MIN_MESSAGES_TO_COMPACT = 8;
 export interface CompactionJob {
   userId: string;
   chatId: string;
+  /** F10.8.1: el turno que la disparó, para su traza. */
+  runId?: string;
 }
 
 @Injectable()
@@ -77,10 +79,11 @@ export class HistoryCompactionService {
     chatId: string,
     contextTokens: number,
     pendingMessages: number,
+    runId?: string,
   ): Promise<void> {
     if (contextTokens < env.CHAT_COMPACT_AT_TOKENS) return;
     if (pendingMessages < KEEP_RECENT_MESSAGES + MIN_MESSAGES_TO_COMPACT) return;
-    const job: CompactionJob = { userId, chatId };
+    const job: CompactionJob = { userId, chatId, runId };
     await this.boss.enqueue(COMPACTION_QUEUE, job, {
       singletonKey: chatId,
       expireInSeconds: COMPACTION_EXPIRE_SECONDS,
@@ -91,7 +94,7 @@ export class HistoryCompactionService {
    * El handler del job. Idempotente: relee el chat y el resumen, y si el tramo
    * pendiente es corto (otro job ya lo resumió) no hace nada.
    */
-  async compact({ userId, chatId }: CompactionJob): Promise<void> {
+  async compact({ userId, chatId, runId }: CompactionJob): Promise<void> {
     const { rows, previous } = await this.dbService.runWithTenant(userId, async (tx) => ({
       rows: await this.repo.listMessages(tx, chatId),
       previous: await this.repo.getSummary(tx, chatId),
@@ -170,6 +173,7 @@ export class HistoryCompactionService {
       usage: respuesta.usage,
       stepsCount: 1,
       arranque,
+      runId,
       providerRaw: {
         usage: respuesta.usage,
         finishReason: respuesta.finishReason,

@@ -344,6 +344,13 @@
       "when": 1791512658888,
       "tag": "0048_memoria_entre_chats",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1791529550084,
+      "tag": "0049_trazas_de_turno",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  aiRunSteps,
   aiUsageEvents,
   brandVoices,
   chatSummaries,
@@ -932,6 +933,51 @@ describe("RLS tenant_isolation", () => {
           (e: unknown) => e,
         );
       expect(error).toBeInstanceOf(Error);
+    });
+  });
+
+  // F10.8.1: la traza de un turno. Append-only como ai_usage_events: los
+  // pasos de un turno no se reescriben.
+  describe("ai_run_steps", () => {
+    const runId = randomUUID();
+
+    beforeAll(async () => {
+      await dbService.runWithTenant(userA, (tx) =>
+        tx.insert(aiRunSteps).values({
+          runId,
+          userId: userA,
+          chatId: chatA,
+          stepIndex: 0,
+          kind: "model",
+          name: "openai:mock",
+          status: "ok",
+          startedAt: new Date(),
+          durationMs: 900,
+        }),
+      );
+    }, 15_000);
+
+    it("el dueño ve su traza; otro tenant no", { timeout: 15_000 }, async () => {
+      const mia = await dbService.runWithTenant(userA, (tx) =>
+        tx.select().from(aiRunSteps).where(eq(aiRunSteps.runId, runId)),
+      );
+      const ajena = await dbService.runWithTenant(userB, (tx) =>
+        tx.select().from(aiRunSteps).where(eq(aiRunSteps.runId, runId)),
+      );
+      expect(mia).toHaveLength(1);
+      expect(ajena).toHaveLength(0);
+    });
+
+    it("nadie la edita, ni el dueño (append-only)", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userA, (tx) =>
+          tx.update(aiRunSteps).set({ durationMs: 1 }).where(eq(aiRunSteps.runId, runId)),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(String((error as Error).cause)).toMatch(/permission denied/);
     });
   });
 });

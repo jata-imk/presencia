@@ -15,7 +15,11 @@ const USAGE = {
   outputTokenDetails: { textTokens: 40, reasoningTokens: undefined },
 } as LanguageModelUsage;
 
-async function servicio(runWithTenant: DbService["runWithTenant"], insertEvent = vi.fn()) {
+async function servicio(
+  runWithTenant: DbService["runWithTenant"],
+  insertEvent = vi.fn(),
+  insertRunSteps = vi.fn(),
+) {
   // Import dinámico: el servicio arrastra DbService, y env.ts valida el
   // entorno al importarse.
   try {
@@ -25,7 +29,7 @@ async function servicio(runWithTenant: DbService["runWithTenant"], insertEvent =
   }
   const { AiUsageService } = await import("./ai-usage.service.js");
   const db = { runWithTenant } as unknown as DbService;
-  const repo = { insertEvent } as unknown as AiUsageRepository;
+  const repo = { insertEvent, insertRunSteps } as unknown as AiUsageRepository;
   return new AiUsageService(db, repo);
 }
 
@@ -59,8 +63,26 @@ describe("AiUsageService.registrar", () => {
         stepsCount: 2,
         searchQueries: 4,
         providerRaw: { crudo: true },
+        runId: null,
       }),
     );
+  });
+
+  it("liga la fila a su turno (F10.8.1)", async () => {
+    const insertEvent = vi.fn();
+    const aiUsage = await servicio((_userId, fn) => fn({} as never), insertEvent);
+    await aiUsage.registrar({
+      userId: "u1",
+      chatId: "c1",
+      task: "chat_title",
+      modelo: { provider: "openai", modelName: "luna" },
+      usage: USAGE,
+      stepsCount: 1,
+      arranque: Date.now(),
+      runId: "run-1",
+      providerRaw: {},
+    });
+    expect(insertEvent.mock.calls[0]?.[1]).toMatchObject({ runId: "run-1", chatId: "c1" });
   });
 
   it("con un respaldo, registra el que corrió, de cuál cayó y por qué (F10.7)", async () => {
@@ -199,6 +221,49 @@ describe("AiUsageService.registrar", () => {
         providerRaw: {},
       }),
     ).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+});
+
+describe("AiUsageService.registrarTraza (F10.8.1)", () => {
+  it("guarda cada paso con su turno, usuario y chat", async () => {
+    const { RunTrace } = await import("./run-trace.js");
+    const insertRunSteps = vi.fn();
+    const aiUsage = await servicio((_userId, fn) => fn({} as never), vi.fn(), insertRunSteps);
+    const trace = new RunTrace("run-9");
+    trace.stepStarted({ stepNumber: 0, provider: "openai.responses", modelId: "luna" }, 1_000);
+    trace.close("aborted", undefined, 3_000);
+
+    await aiUsage.registrarTraza("u1", "c1", trace);
+
+    expect(insertRunSteps).toHaveBeenCalledWith({}, [
+      expect.objectContaining({
+        runId: "run-9",
+        userId: "u1",
+        chatId: "c1",
+        kind: "model",
+        status: "aborted",
+        durationMs: 2_000,
+      }),
+    ]);
+  });
+
+  it("se guarda una sola vez aunque el turno cortado la pida dos (onAbort y onEnd)", async () => {
+    const { RunTrace } = await import("./run-trace.js");
+    const insertRunSteps = vi.fn();
+    const aiUsage = await servicio((_userId, fn) => fn({} as never), vi.fn(), insertRunSteps);
+    const trace = new RunTrace("run-10");
+    await aiUsage.registrarTraza("u1", "c1", trace);
+    await aiUsage.registrarTraza("u1", "c1", trace);
+    expect(insertRunSteps).toHaveBeenCalledTimes(1);
+  });
+
+  it("un fallo al escribir la traza no se propaga", async () => {
+    const { RunTrace } = await import("./run-trace.js");
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const aiUsage = await servicio(() => Promise.reject(new Error("se cayó la base")));
+    await expect(aiUsage.registrarTraza("u1", null, new RunTrace("r"))).resolves.toBeUndefined();
     expect(error).toHaveBeenCalled();
     error.mockRestore();
   });

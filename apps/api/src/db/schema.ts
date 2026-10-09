@@ -90,6 +90,9 @@ export const socialAccountStatus = pgEnum("social_account_status", [
 // Fuente única de verdad: AI_TASK_KINDS (provider-registry.ts, F4.5). El
 // call site declara su tarea; MODEL_BY_TASK la mapea a un tier de modelo.
 export const aiTaskKind = pgEnum("ai_task_kind", AI_TASK_KINDS);
+// F10.8.1: la traza de un turno (ai_run_steps).
+export const aiRunStepKind = pgEnum("ai_run_step_kind", ["model", "tool"]);
+export const aiRunStepStatus = pgEnum("ai_run_step_status", ["ok", "error", "aborted"]);
 
 export const creditReason = pgEnum("credit_reason", [
   "monthly_grant",
@@ -415,6 +418,9 @@ export const messages = pgTable(
     // Shape UIMessage del AI SDK, persistido tal cual (append-only).
     parts: jsonb("parts").notNull(),
     channel: channel("channel").notNull().default("web"),
+    // F10.8.1: el turno que produjo esta respuesta (ai_run_steps,
+    // ai_usage_events). Solo en las del asistente; null en las anteriores.
+    runId: uuid("run_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("messages_by_chat").on(t.chatId, t.createdAt)],
@@ -891,9 +897,49 @@ export const aiUsageEvents = pgTable(
     // Crudo del proveedor: usage + providerMetadata por step, finishReason.
     // Ver runAgentTurn (chat.service.ts) — nunca se normaliza aquí.
     providerRaw: jsonb("provider_raw").notNull(),
+    // F10.8.1: el turno de chat al que pertenece la llamada: el turno mismo,
+    // la búsqueda de memoria dentro de él y los jobs que dispara (título,
+    // compactación, indexado). null en lo que no nace de un turno.
+    runId: uuid("run_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("usage_by_user").on(t.userId, t.createdAt)],
+  (t) => [index("usage_by_user").on(t.userId, t.createdAt), index("usage_by_run").on(t.runId)],
+);
+
+// F10.8.1: la traza de un turno de chat, un renglón por paso de modelo y por
+// tool (ADR-026: el tracing es pieza del harness propio). Responde "¿qué paso
+// tardó?" y "¿cuánto salió de caché?" sin escarbar `provider_raw`.
+//
+// Sin input ni output de las tools: es contenido del creator y ya vive en
+// `messages.parts`. Append-only, como ai_usage_events. Un turno abortado
+// también deja su traza (status "aborted"), aunque no se cobre.
+export const aiRunSteps = pgTable(
+  "ai_run_steps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    chatId: uuid("chat_id").references(() => chats.id, { onDelete: "cascade" }),
+    stepIndex: smallint("step_index").notNull(),
+    kind: aiRunStepKind("kind").notNull(),
+    /** `proveedor:modelo` que corrió, o el nombre de la tool. */
+    name: text("name").notNull(),
+    status: aiRunStepStatus("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    durationMs: integer("duration_ms").notNull(),
+    // Solo en los pasos de modelo.
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    cachedInputTokens: integer("cached_input_tokens"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("run_steps_by_run").on(t.runId),
+    index("run_steps_by_user").on(t.userId, t.createdAt),
+  ],
 );
 
 // F8.7: métricas de una publicación, un snapshot por bucket de tiempo.

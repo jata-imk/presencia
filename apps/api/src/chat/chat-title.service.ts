@@ -42,9 +42,15 @@ export class ChatTitleService {
    * Titula el chat si toca. Nunca lanza: un título que no salió no puede
    * costarle nada al turno, que ya terminó.
    *
-   * `conversation` es el historial con la respuesta que acaba de llegar.
+   * `conversation` es el historial con la respuesta que acaba de llegar, y
+   * `runId` el turno que la produjo (F10.8.1: la traza liga el título a él).
    */
-  async maybeTitle(userId: string, chatId: string, conversation: UIMessage[]): Promise<void> {
+  async maybeTitle(
+    userId: string,
+    chatId: string,
+    conversation: UIMessage[],
+    runId?: string,
+  ): Promise<void> {
     try {
       if (assistantTurns(conversation) > TITLE_ATTEMPTS) return;
       const chat = await this.dbService.runWithTenant(userId, (tx) =>
@@ -92,6 +98,7 @@ export class ChatTitleService {
         usage: respuesta.usage,
         stepsCount: 1,
         arranque,
+        runId,
         providerRaw: {
           usage: respuesta.usage,
           finishReason: respuesta.finishReason,

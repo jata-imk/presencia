@@ -7,6 +7,16 @@ pnpm --filter @presencia/api gasto -- --dias 30
 
 Imprime el gasto en dólares por día, origen, modelo y tarea, y un total por modelo.
 
+## Ver un turno paso a paso (F10.8.1)
+
+```bash
+pnpm --filter @presencia/api traza <runId>          # un turno
+pnpm --filter @presencia/api traza <chatId>         # sus últimos 5 turnos
+pnpm --filter @presencia/api traza <chatId> -- --turnos 20
+```
+
+Imprime cada paso del modelo (cuánto esperó, tokens y **qué porcentaje salió de caché**), cada tool que llamó con su tiempo, el total del turno con su costo y lo que el turno disparó después (título, compactación, indexado de memoria). Un turno cortado aparece con su paso `ABORTED` y "sin cobro". El `runId` de una respuesta está en `messages.run_id`; los turnos anteriores a F10.8.1 no tienen traza.
+
 ## De dónde salen los números
 
 - **La app:** `ai_usage_events` de la base del `.env`. En tu máquina es la de dev; corrido en el VPS, la de prod. Cubre el chat, adaptar, las tendencias (con sus búsquedas de grounding) y las imágenes.

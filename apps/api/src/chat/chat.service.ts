@@ -16,6 +16,7 @@ import {
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import { AiUsageService } from "../ai/ai-usage.service.js";
+import { RunTrace } from "../ai/run-trace.js";
 import { AiService } from "../ai/ai.service.js";
 import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
 import { CardsRepository } from "../cards/cards.repository.js";
@@ -368,6 +369,10 @@ export class ChatService {
     // asigna siempre, incluso si el turno termina creando una sola card —
     // inocuo, esa card simplemente no tiene hermanas con el mismo groupId.
     const groupId = randomUUID();
+    // F10.8.1: la traza del turno (ADR-026). Su id liga la respuesta, los
+    // pasos del modelo y las tools, y lo que el turno dispara (título,
+    // compactación, memoria) en ai_usage_events.
+    const trace = new RunTrace(randomUUID());
     const tools = {
       ...buildPublicationCardTools({
         userId,
@@ -386,7 +391,7 @@ export class ChatService {
           "hablaron sobre un tema. Úsala cuando se refiera a algo de otra conversación " +
           "que no está en esta. Devuelve fragmentos con el título del chat y la fecha.",
         inputSchema: memorySearchInputSchema,
-        execute: ({ consulta }) => this.memory.search(userId, chatId, consulta),
+        execute: ({ consulta }) => this.memory.search(userId, chatId, consulta, trace.runId),
       }),
     };
 
@@ -449,6 +454,15 @@ export class ChatService {
       tools,
       stopWhen: stepCountIs(MAX_AGENT_STEPS),
       abortSignal: abortController.signal,
+      onStepStart: (event) => trace.stepStarted(event),
+      onStepFinish: (step) => trace.stepFinished(step),
+      experimental_onToolCallFinish: (event) => trace.toolFinished(event),
+      // Un turno cortado no llega a onEnd (ni se cobra), pero su traza sí
+      // se guarda: el paso que quedó a medias, como `aborted`.
+      onAbort: () => {
+        trace.close("aborted");
+        void this.aiUsage.registrarTraza(userId, chatId, trace);
+      },
     });
 
     // Desde ai 7.0.1xx devuelve una promesa que se cumple al cerrar el stream.
@@ -466,12 +480,12 @@ export class ChatService {
           if (isAborted) return;
 
           // Se lee una sola vez, antes de las dos transacciones de abajo: si
-          // esto falla, ni el mensaje ni el cobro se persisten — mismo hueco
-          // conocido que ya existía para ai_usage_events (turno abortado no
-          // llega aquí), extendido a créditos porque ahora comparten
-          // transacción con el mensaje. En un turno abortado tampoco se llega
-          // aquí — los tokens de esa llamada quedan sin medir y sin cobrar
-          // (hueco conocido, ver PR feat/f45-usage-telemetry).
+          // esto falla, ni el mensaje ni el cobro se persisten. Es lo que pasa
+          // cuando el creator corta el turno: `isAborted` llega en false y
+          // `totalUsage` rechaza con AbortError. Los tokens de ese turno quedan
+          // sin cobrar y sin fila en ai_usage_events (hueco conocido, ver PR
+          // feat/f45-usage-telemetry); desde F10.8.1 sí queda su traza, con
+          // el paso cortado como `aborted`.
           let usage: Awaited<typeof result.totalUsage>;
           let steps: Awaited<typeof result.steps>;
           try {
@@ -481,8 +495,12 @@ export class ChatService {
               `[chat] No se pudo leer el usage del turno de chat ${chatId}; ni el mensaje ni el cobro se persisten:`,
               error,
             );
+            trace.close("error", error);
+            void this.aiUsage.registrarTraza(userId, chatId, trace);
             return;
           }
+          if (finishReason === "error") trace.close("error");
+          void this.aiUsage.registrarTraza(userId, chatId, trace);
 
           if (steps.length >= MAX_AGENT_STEPS && finishReason === "tool-calls") {
             console.warn(
@@ -500,6 +518,7 @@ export class ChatService {
                 userId,
                 role: "assistant",
                 parts: responseMessage.parts,
+                runId: trace.runId,
               });
               await this.repo.touchChat(tx, chatId);
               if (createdCardIds.length > 0) {
@@ -540,6 +559,7 @@ export class ChatService {
             usage,
             stepsCount: steps.length,
             arranque: startedAt,
+            runId: trace.runId,
             providerRaw: {
               steps: steps.map((step) => ({
                 usage: step.usage,
@@ -555,7 +575,12 @@ export class ChatService {
           // titular (y cobrar) a partir de algo que no está en la conversación
           // dejaría un título que nadie puede explicar.
           if (savedId && finishReason !== "error") {
-            void this.chatTitle.maybeTitle(userId, chatId, [...history, responseMessage]);
+            void this.chatTitle.maybeTitle(
+              userId,
+              chatId,
+              [...history, responseMessage],
+              trace.runId,
+            );
             // F10.8: si el contexto de este turno ya pesa, se resume el tramo
             // viejo en segundo plano para que el siguiente viaje más ligero.
             // La respuesta de este turno también cuenta como pendiente.
@@ -564,9 +589,10 @@ export class ChatService {
               chatId,
               contextTokensOf(steps),
               pendingAfterSummary(history, summary) + 1,
+              trace.runId,
             );
             // F10.8: el intercambio entra a la memoria entre chats.
-            void this.memory.enqueueIndex(userId, chatId, savedId);
+            void this.memory.enqueueIndex(userId, chatId, savedId, trace.runId);
           }
         },
       })

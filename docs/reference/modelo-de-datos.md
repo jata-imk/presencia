@@ -182,6 +182,13 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 ### Telemetría de IA
 
+**`ai_run_steps`** (F10.8.1, migración `0049`, ADR-026) — la traza de un turno de chat: un renglón por paso de modelo y por tool. Columnas: `run_id`, `user_id` (RLS), `chat_id`, `step_index` (las tools comparten el índice del paso que las pidió), `kind` (`model`/`tool`), `name` (`proveedor:modelo` que corrió o nombre de la tool), `status` (`ok`/`error`/`aborted`), `started_at`, `duration_ms`, tokens de entrada/salida/caché (solo `model`), `error` (texto corto) y `created_at`.
+
+- Sin input ni output de las tools: es contenido del creator y vive en `messages.parts`.
+- Append-only (`REVOKE UPDATE, DELETE` a `presencia_app`, como `ai_usage_events`). Se escribe una sola vez al final del turno (`AiUsageService.registrarTraza`, que nunca lanza).
+- Un turno cortado por el creator **sí** deja traza (el paso a medias como `aborted`), aunque no tenga fila en `ai_usage_events` ni se cobre.
+- `messages.run_id` liga cada respuesta del asistente con su traza. Para leerla: `pnpm --filter @presencia/api traza <runId|chatId>` (`docs/how-to/ver-el-gasto-en-modelos.md`).
+
 **`ai_usage_events`** — usage crudo por turno (F4.5, addendum ADR-004/ADR-006). Append-only, más estricto que `credit_ledger`: el rol `presencia_app` no tiene permiso de `UPDATE`/`DELETE` sobre la tabla (migración `0006_rls_ai_usage_events`, `REVOKE` explícito) — el motor garantiza el append-only, no solo la convención.
 
 | Columna                          | Tipo               | Nota                                                                                                                                                                                                                                                                               |
@@ -199,6 +206,7 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 | `images_count`                   | smallint, nullable | imágenes que produjo la llamada (F10, migración `0038`). El generador cobra por imagen, no por token (ADR-025). `null` = la llamada no dibuja; `0` = debía dibujar y el proveedor no devolvió nada (bloqueo)                                                                       |
 | `fallback_from`                  | text, nullable     | el principal que se pidió cuando respondió un respaldo de la cadena (F10.7, migración `0045`, ADR-004). `provider`/`model` son siempre el que corrió. `null` = respondió el principal. Los intentos fallidos van en `provider_raw.attempts`                                        |
 | `provider_raw`                   | jsonb              | crudo del proveedor: `{ steps: [{usage, providerMetadata}], finishReason }` — nunca normalizado aquí                                                                                                                                                                               |
+| `run_id`                         | uuid, nullable     | el turno de chat al que pertenece la llamada (F10.8.1, migración `0049`): el turno, la búsqueda de memoria dentro de él y los jobs que dispara (título, compactación, indexado). `null` en lo que no nace de un turno                                                              |
 | `created_at`                     | timestamptz        |                                                                                                                                                                                                                                                                                    |
 
 - **Se guarda el crudo, no una unidad derivada** (misma razón que `credit_ledger` guarda `delta` y no un saldo): la normalización a créditos facturables vive en `credits/rate-card.ts` (`quoteChatTurn`, F5), como una capa aparte que lee este crudo — nunca al revés. Si aquí solo se guardara el número normalizado, se perdería para siempre la capacidad de re-analizar el costo real cuando cambien las tarifas del proveedor.

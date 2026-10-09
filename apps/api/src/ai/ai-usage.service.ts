@@ -4,6 +4,7 @@ import { DbService } from "../db/db.service.js";
 import { AiUsageRepository } from "./ai-usage.repository.js";
 import type { ResolvedModel } from "./ai.service.js";
 import type { AiTaskKind } from "./provider-registry.js";
+import type { RunTrace } from "./run-trace.js";
 
 /** Lo que cada llamador sabe de su llamada. El resto lo arma `registrar`. */
 export interface RegistroDeUso {
@@ -37,6 +38,12 @@ export interface RegistroDeUso {
   imagesCount?: number | null;
   /** Crudo del proveedor, sin normalizar. */
   providerRaw: unknown;
+  /**
+   * F10.8.1: el turno de chat al que pertenece la llamada (el turno, la
+   * búsqueda de memoria dentro de él, o un job que disparó). Sin él, la fila
+   * queda suelta, como todo lo que no nace de un turno.
+   */
+  runId?: string | null;
 }
 
 // El único punto por el que una llamada al modelo deja su fila en
@@ -72,6 +79,7 @@ export class AiUsageService {
           searchQueries: registro.searchQueries ?? null,
           imagesCount: registro.imagesCount ?? null,
           fallbackFrom: modelo.fallbackFrom ?? null,
+          runId: registro.runId ?? null,
           // Los intentos que fallaron viajan con el crudo: son el porqué del
           // respaldo, y solo importan cuando se investiga uno.
           providerRaw:
@@ -82,6 +90,26 @@ export class AiUsageService {
       );
     } catch (error) {
       console.error(`[ai] No se pudo registrar el usage de ${task} para ${userId}:`, error);
+    }
+  }
+
+  /**
+   * F10.8.1: guarda la traza de un turno (ai_run_steps), una sola vez aunque
+   * se pida dos (`RunTrace.claim`). Mismo contrato que `registrar`: nunca
+   * lanza, porque una traza perdida no puede costar el mensaje que ya se
+   * produjo.
+   */
+  async registrarTraza(userId: string, chatId: string | null, trace: RunTrace): Promise<void> {
+    if (!trace.claim()) return;
+    try {
+      await this.dbService.runWithTenant(userId, (tx) =>
+        this.repo.insertRunSteps(
+          tx,
+          trace.steps.map((step) => ({ ...step, runId: trace.runId, userId, chatId })),
+        ),
+      );
+    } catch (error) {
+      console.error(`[ai] No se pudo guardar la traza ${trace.runId} de ${userId}:`, error);
     }
   }
 }
