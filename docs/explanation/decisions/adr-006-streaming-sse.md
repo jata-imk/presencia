@@ -110,7 +110,7 @@ El backlog de "compactación real" (HIGH desde F4.5) se cierra así:
   - **Las cards del tramo no las resume el LLM:** van como lista determinista (`cardSummariesIn`, de la dieta), con su id. Así "cámbiale el hook a esa" sigue encontrando su card.
 - **Cuándo se compacta:** al cerrar un turno guardado cuyo contexto pasó de `CHAT_COMPACT_AT_TOKENS` (40k). El contexto es la entrada del **paso más grande**, no la suma: un turno con tools hace varias llamadas.
   - Se encola el job `chat.compact`, con `singletonKey = chatId`. El handler es idempotente: relee todo, y si el tramo pendiente es corto no hace nada.
-  - Resume con el modelo utility todo menos los últimos 10 mensajes. El corte nunca parte un turno: lo que queda empieza con un mensaje del creator.
+  - Resume con el modelo utility todo menos lo más reciente (los últimos 10 mensajes; desde F10.8.1, ~12k tokens: ver el addendum siguiente). El corte nunca parte un turno: lo que queda empieza con un mensaje del creator.
 - **Techo mecánico:** si aun así lo que viaja pasa de `CHAT_HISTORY_CAP_TOKENS` (120k estimados, ~4 caracteres por token), se mandan solo los mensajes más recientes que caben, con una nota. Esto pasa si el resumen falló o todavía no corre. No usa LLM: es el seguro del hueco de seguridad.
 - **Verificado contra Luna con razonamiento** (umbral bajado a 2k en dev):
   - después de 7 turnos el job resumió los 4 primeros mensajes;
@@ -120,6 +120,15 @@ El backlog de "compactación real" (HIGH desde F4.5) se cierra así:
   - **La lista de cards del resumen se refresca en cada turno** con su estado y contenido de hoy, y las borradas salen. Esas cards ya no están en ningún output de tool, así que `withLiveCards` no las alcanzaba.
   - **El techo se mide sobre lo que de verdad viaja,** después de la dieta, y del razonamiento solo cuenta el texto, no su contenido cifrado (varios KB por mensaje). Antes recortaba de más.
   - **Un tramo enorme se resume por partes** (`MAX_TRAMO_CHARS`, ~50k tokens por llamada). El primer resumen de un chat que ya era larguísimo no se manda entero.
-  - **Mínimo de 8 mensajes para resumir,** y no se encola si el resumen no tiene al menos 18 mensajes pendientes. Si lo reciente pesa solo, resumir de a poco no achica el contexto y cobraría cada par de turnos.
+  - **Mínimo de 8 mensajes para resumir,** y no se encola si el resumen no tiene al menos 18 mensajes pendientes (reemplazado en F10.8.1 por un mínimo en tokens: ver el addendum siguiente). Si lo reciente pesa solo, resumir de a poco no achica el contexto y cobraría cada par de turnos.
   - **`env.ts` exige `CHAT_COMPACT_AT_TOKENS` < `CHAT_HISTORY_CAP_TOKENS`:** al revés, la compactación no se dispararía nunca.
-- **Fuera de alcance:** se sigue reenviando el reasoning de los mensajes recientes. Es lo que exige OpenAI, y queda acotado a los últimos 10 mensajes.
+- **Fuera de alcance:** se sigue reenviando el reasoning de los mensajes recientes. Es lo que exige OpenAI, y queda acotado a lo reciente que se conserva.
+
+**Addendum (F10.8.1 PR4, 2026-10-09) — ContextBuilder y lo reciente por tokens.**
+
+- **Un solo lugar arma lo que ve el modelo:** `chat/context-builder.ts` (`assembleContext`, puro). `runAgentTurn` solo carga los datos y lo llama. El orden no cambia: resumen → cards vivas → dieta (cards viejas y recuerdos de memoria cortos) → techo.
+- **Las cards vivas se leen de una vez** (`cardIdsForContext`: las de la lista del resumen y las de la ventana). Antes eran dos lecturas seguidas por turno.
+- **Lo reciente se conserva por tokens, no por mensajes:** `KEEP_RECENT_TOKENS` = 12k estimados, con piso de 2 intercambios (`MIN_KEEP_MESSAGES` = 4). Diez mensajes podían ser 1k tokens ("ok, va") o 15k (tres carruseles); lo que importa es cuánto viaja. Mismo rango que las referencias (OpenCode conserva 40k; Codex, los mensajes recientes del usuario hasta un presupuesto).
+- **El mínimo para resumir también va en tokens:** el tramo tiene que pesar ≥6k (`MIN_TRAMO_TOKENS`) y tener al menos 2 intercambios. Reemplaza a "8 mensajes / 18 pendientes". El encolado y el job aplican **la misma regla** (`compactableCut`): si no coincidieran, un chat cuyo tramo reciente pesa solo encolaría en cada turno un job que no hace nada.
+- **Se mide sobre lo guardado**, con los outputs de tools completos, no sobre lo que viaja tras la dieta: es una cota alta (conserva un poco menos y compacta un poco antes), del lado seguro.
+- **El umbral de 40k se queda.** Con caché (Luna cobra el input cacheado al 10% del normal, y nuestra tarifa a 2 de 8 unidades), el costo de un chat largo sube con el contexto promedio: con 40k el diente de sierra va de ~12k a 40k; con 700k, un mensaje cerca del tope costaría 6–19% de la cuota mensual. Además, la calidad cae con contextos largos (Chroma, _context rot_). Mastra comprime a los 30k.

@@ -31,21 +31,10 @@ import { toChatSummary, toUIMessage } from "./chat-summary.js";
 import { contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
-import {
-  applySummary,
-  capHistory,
-  pendingAfterSummary,
-  type HistorySummary,
-} from "./history-window.js";
+import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
+import { assembleContext, cardIdsForContext } from "./context-builder.js";
 import { ChatRepository, type ChatSummaryRow } from "./chat.repository.js";
-import {
-  cardIdsIn,
-  compressToolOutputsForModel,
-  trimMemoryOutputsForModel,
-  withLiveCards,
-  type CompressedCardOutput,
-  type LiveCard,
-} from "./context-diet.js";
+import { type CompressedCardOutput, type LiveCard } from "./context-diet.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
@@ -232,17 +221,10 @@ export class ChatService {
   }
 
   /**
-   * El contenido y estado de hoy de las cards del historial. Si falla, el
-   * turno sigue con la foto del historial: peor contexto, no un chat caído.
+   * El contenido y estado de hoy de las cards, por id. `null` si la lectura
+   * falló (no es lo mismo que "no existen"): el turno sigue con la foto del
+   * historial, peor contexto pero no un chat caído.
    */
-  private async loadLiveCards(
-    userId: string,
-    history: UIMessage[],
-  ): Promise<Map<string, LiveCard>> {
-    return (await this.loadLiveCardsByIds(userId, cardIdsIn(history))) ?? new Map();
-  }
-
-  /** Lo mismo por ids; `null` si la lectura falló (no es lo mismo que "no existen"). */
   private async loadLiveCardsByIds(
     userId: string,
     ids: string[],
@@ -415,27 +397,19 @@ export class ChatService {
     );
     const startedAt = Date.now();
 
-    // F10.8: lo que el modelo ve de un chat largo. El tramo viejo ya resumido
-    // se sustituye por su resumen (mensajes ENTEROS, nunca partes: la regla
-    // del reasoning item de abajo), con las cards de su lista como son hoy.
-    // El techo se mide sobre lo que de verdad viaja, ya con la dieta: si aun
-    // así se pasa, van solo los mensajes más recientes. `history` no se toca:
-    // la UI y lo que se persiste siguen siendo la conversación completa.
-    const summaryLive = summary
-      ? await this.loadLiveCardsByIds(
-          userId,
-          summary.cards.map((card) => card.cardId),
-        )
-      : null;
-    const windowed = applySummary(history, summary, summaryLive);
-    const modelHistory = capHistory(
-      trimMemoryOutputsForModel(
-        compressToolOutputsForModel(
-          withLiveCards(windowed, await this.loadLiveCards(userId, windowed)),
-        ),
-      ),
+    // Lo que el modelo ve (F10.8.1, context-builder.ts): el resumen en lugar
+    // del tramo viejo (mensajes ENTEROS, nunca partes: la regla del reasoning
+    // item de abajo), las cards como son hoy, la dieta y el techo. Las cards
+    // del resumen y las de la ventana se leen de una sola vez. `history` no
+    // se toca: la UI y lo que se persiste siguen siendo la conversación
+    // completa.
+    const context = assembleContext(
+      history,
+      summary,
+      await this.loadLiveCardsByIds(userId, cardIdsForContext(history, summary)),
       env.CHAT_HISTORY_CAP_TOKENS,
     );
+    const modelHistory = context.messages;
 
     const result = streamText({
       model: resolved.model,
@@ -609,7 +583,7 @@ export class ChatService {
               userId,
               chatId,
               contextTokensOf(steps),
-              pendingAfterSummary(history, summary) + 1,
+              [...pendingAfterSummary(history, summary), responseMessage],
               trace.runId,
             );
             // F10.8: el intercambio entra a la memoria entre chats.
