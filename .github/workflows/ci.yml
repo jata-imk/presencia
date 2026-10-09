@@ -29,15 +29,33 @@ jobs:
 
       - name: Start Postgres
         run: |
-          docker run -d --name postgres -p 5432:5432             -e POSTGRES_USER=presencia -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=presencia             presencia-postgres:ci
+          docker run -d --name postgres -p 5432:5432 \
+            -e POSTGRES_USER=presencia -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=presencia \
+            presencia-postgres:ci
           # Por TCP: durante el initdb el entrypoint levanta un servidor
           # temporal solo por socket, y sin -h ya respondería "listo".
+          ready=false
           for i in $(seq 1 30); do
-            docker exec postgres pg_isready -h 127.0.0.1 -U presencia && break
+            if docker exec postgres pg_isready -h 127.0.0.1 -U presencia; then ready=true; break; fi
             sleep 2
           done
+          if [ "$ready" != true ]; then docker logs postgres; exit 1; fi
           # pgvector instalado y cargable: lo que la imagen promete.
-          docker exec postgres psql -U presencia -d presencia -v ON_ERROR_STOP=1             -c "CREATE EXTENSION vector; SELECT extversion FROM pg_extension WHERE extname = 'vector'; DROP EXTENSION vector;"
+          docker exec postgres psql -U presencia -d presencia -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION vector; SELECT extversion FROM pg_extension WHERE extname = 'vector'; DROP EXTENSION vector;"
+
+      # El tag de la imagen de Postgres sale de los ARG del Dockerfile
+      # (release.yml lo calcula igual). Si alguien sube una versión ahí y no
+      # en el default de docker-compose.yml, el VPS seguiría con la vieja.
+      - name: Postgres image tag in sync
+        run: |
+          pg=$(sed -n 's/^ARG PG_VERSION=//p' docker/postgres/Dockerfile)
+          vec=$(sed -n 's/^ARG PGVECTOR_VERSION=//p' docker/postgres/Dockerfile)
+          tag="presencia-postgres:pg${pg}-pgvector${vec}"
+          grep -q "$tag" docker-compose.yml || {
+            echo "::error::docker-compose.yml no usa $tag (los ARG de docker/postgres/Dockerfile)"
+            exit 1
+          }
 
       - uses: pnpm/action-setup@v4
 

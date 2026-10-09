@@ -62,7 +62,14 @@ CI y se publica en **GHCR**; el VPS solo hace `pull`. Un único host hospeda dos
 
 La memoria entre chats (F10.8) necesita `pgvector`, y `postgres:17-alpine` no lo trae.
 
-- **Imagen propia:** `docker/postgres/Dockerfile` arma `postgres:17-alpine` con pgvector 0.8.7 compilado (`with_llvm=no`, `OPTFLAGS=""` para no atar el binario al procesador del runner). release.yml la publica como `ghcr.io/jata-imk/presencia-postgres:pg17-pgvector0.8.7`, y `docker-compose.yml` la usa por default (`POSTGRES_IMAGE` fija otra).
+- **Imagen propia:** `docker/postgres/Dockerfile` arma `postgres:17.10-alpine` con pgvector 0.8.7 compilado (`with_llvm=no`, `OPTFLAGS=""` para no atar el binario al procesador del runner). La versión menor de Postgres queda fija: actualizarla es una decisión, no algo que llegue con el siguiente merge.
+- **Tag inmutable, publicado una vez:** `presencia-postgres:pg17.10-pgvector0.8.7`, derivado de los `ARG` del Dockerfile (la única fuente).
+  - Lo publica un job aparte de `release.yml` (`postgres-image`), **solo si el tag todavía no existe en GHCR**.
+  - Así, un deploy normal de la app, que también hace `pull` de postgres, nunca ve una base "nueva" ni recrea el contenedor, y el tag anterior siempre queda para volver.
+  - Si el build de Postgres falla, la app igual se publica.
+  - CI exige que el default de `docker-compose.yml` sea el tag que dictan los `ARG`.
+  - `POSTGRES_IMAGE` fija otra imagen sin tocar el compose.
+- **Healthcheck por TCP** (`pg_isready -h 127.0.0.1`): durante el initdb, el entrypoint levanta un servidor temporal solo por socket, y sin `-h` ya respondería "listo".
 - **Por qué no la oficial `pgvector/pgvector`:** solo existe sobre Debian. Pasar los datos de Alpine (musl) a Debian (glibc) cambia las collations, y con ellas el orden de los índices de texto, así que habría que reindexar prod con respaldo y ventana de mantenimiento. Sobre la misma Alpine, el directorio de datos sirve tal cual: el cambio es recrear el contenedor.
 - **CI** deja de usar un service container para Postgres: construye esta imagen, la arranca y comprueba que `CREATE EXTENSION vector` carga, antes de correr las migraciones y los tests contra ella. La máquina de Jose no tiene Docker, así que CI es el único lugar donde la imagen se ejercita antes del VPS.
 - **Orden de despliegue:** primero la imagen, en dev y luego en prod (`docs/how-to/desplegar.md`, "Postgres con pgvector"). La migración que crea la extensión llega en el PR siguiente: mientras nadie la use, la imagen nueva no cambia nada.

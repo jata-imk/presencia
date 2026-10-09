@@ -267,7 +267,13 @@ APP_IMAGE=ghcr.io/jata-imk/presencia:sha-3accbd5
 
 ## Postgres con pgvector (una vez, F10.8)
 
-Desde F10.8, Postgres corre con la imagen propia `ghcr.io/jata-imk/presencia-postgres:pg17-pgvector0.8.7` (Alpine + pgvector, addendum de ADR-020) en vez de `postgres:17-alpine`. Es la misma Alpine, así que el volumen de datos sirve tal cual: no hay que reindexar ni restaurar. Primero en **dev** y, ya probado, en **prod**. En cada stack, desde su carpeta y con su `-p`:
+Desde F10.8, Postgres corre con la imagen propia `ghcr.io/jata-imk/presencia-postgres:pg17.10-pgvector0.8.7` (Alpine + pgvector, addendum de ADR-020) en vez de `postgres:17-alpine`. Es Alpine, como antes, así que el volumen de datos sirve tal cual: no hay que reindexar ni restaurar.
+
+- **La publica `release.yml` en su primer release después del merge:** hay que esperar a que ese workflow termine en verde.
+- **El tag es inmutable:** nunca se republica. Por eso un deploy normal de la app, que también hace `pull` de postgres, no recrea la base.
+- **Subir Postgres o pgvector es un tag nuevo,** en los `ARG` de `docker/postgres/Dockerfile` y en el default de `docker-compose.yml`; CI exige que coincidan. Se despliega con estos mismos pasos.
+
+Primero en **dev** y, ya probado, en **prod**. En cada stack, desde su carpeta y con su `-p`:
 
 1. **Respaldo antes de tocar nada:**
    ```bash
@@ -277,15 +283,21 @@ Desde F10.8, Postgres corre con la imagen propia `ghcr.io/jata-imk/presencia-pos
    ```bash
    sudo curl -fsSLO https://raw.githubusercontent.com/jata-imk/presencia/main/docker-compose.yml
    ```
-3. **Bajar la imagen y recrear SOLO Postgres** (unos segundos sin base; la app y el worker reconectan solos):
+3. **Bajar la imagen y recrear Postgres** (unos segundos sin base):
    ```bash
    sudo docker compose -p presencia-prod pull postgres
    sudo docker compose -p presencia-prod up -d postgres
    ```
    Si el pull falla con `denied`, el paquete `presencia-postgres` nació privado en GHCR. Se cambia una vez a público en Package settings, como el de la app.
-4. **Verificar que la extensión está disponible.** Tiene que decir 0.8.7; la crea después una migración:
+4. **Reiniciar app y worker** (solo en prod, que es donde corren). Recrear la base corta sus conexiones a la mitad, incluidos el LISTEN del stream de eventos y los locks de pg-boss. Los dos reconectan solos, pero reiniciarlos deja todo en un estado conocido, sin depender de que cada reconexión salga bien:
    ```bash
-   sudo docker compose -p presencia-prod exec postgres psql -U presencia -d presencia      -c "SELECT name, default_version FROM pg_available_extensions WHERE name = 'vector'"
+   sudo docker compose -p presencia-prod --profile app up -d --force-recreate app worker
+   ```
+5. **Verificar.** El primer comando tiene que mostrar `vector | 0.8.7` (la extensión la crea después una migración); el segundo, la app viva:
+   ```bash
+   sudo docker compose -p presencia-prod exec postgres psql -U presencia -d presencia \
+     -c "SELECT name, default_version FROM pg_available_extensions WHERE name = 'vector'"
+   curl -s https://presencia.josetejero.com/api/health
    ```
 
 ## Verificar
