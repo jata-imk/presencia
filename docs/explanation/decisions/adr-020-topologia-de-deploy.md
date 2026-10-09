@@ -57,3 +57,12 @@ CI y se publica en **GHCR**; el VPS solo hace `pull`. Un único host hospeda dos
 
 **Contexto:** decidido el 2026-09-10 al planear F8.5, el primer despliegue real. El VPS es OVH
 (4 vCores / 8 GB, Debian 12 + CloudPanel), no el Contabo que describía el design doc original.
+
+## Addendum (2026-10-08, F10.8 PR3) — Postgres con pgvector, sobre la misma Alpine
+
+La memoria entre chats (F10.8) necesita `pgvector`, y `postgres:17-alpine` no lo trae.
+
+- **Imagen propia:** `docker/postgres/Dockerfile` arma `postgres:17-alpine` con pgvector 0.8.7 compilado (`with_llvm=no`, `OPTFLAGS=""` para no atar el binario al procesador del runner). release.yml la publica como `ghcr.io/jata-imk/presencia-postgres:pg17-pgvector0.8.7`, y `docker-compose.yml` la usa por default (`POSTGRES_IMAGE` fija otra).
+- **Por qué no la oficial `pgvector/pgvector`:** solo existe sobre Debian. Pasar los datos de Alpine (musl) a Debian (glibc) cambia las collations, y con ellas el orden de los índices de texto, así que habría que reindexar prod con respaldo y ventana de mantenimiento. Sobre la misma Alpine, el directorio de datos sirve tal cual: el cambio es recrear el contenedor.
+- **CI** deja de usar un service container para Postgres: construye esta imagen, la arranca y comprueba que `CREATE EXTENSION vector` carga, antes de correr las migraciones y los tests contra ella. La máquina de Jose no tiene Docker, así que CI es el único lugar donde la imagen se ejercita antes del VPS.
+- **Orden de despliegue:** primero la imagen, en dev y luego en prod (`docs/how-to/desplegar.md`, "Postgres con pgvector"). La migración que crea la extensión llega en el PR siguiente: mientras nadie la use, la imagen nueva no cambia nada.

@@ -8,23 +8,36 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: presencia
-          POSTGRES_PASSWORD: ci
-          POSTGRES_DB: presencia
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U presencia"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
+    # Sin `services:` para Postgres (F10.8): los tests corren contra NUESTRA
+    # imagen (Alpine + pgvector, docker/postgres/Dockerfile), que un service
+    # container no puede construir. Se construye y se arranca en los pasos de
+    # abajo, y así cada PR prueba también que compila y que la extensión carga.
     steps:
       - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build Postgres image
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/postgres
+          platforms: linux/amd64
+          load: true
+          tags: presencia-postgres:ci
+          cache-from: type=gha,scope=presencia-postgres
+          cache-to: type=gha,mode=max,scope=presencia-postgres
+
+      - name: Start Postgres
+        run: |
+          docker run -d --name postgres -p 5432:5432             -e POSTGRES_USER=presencia -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=presencia             presencia-postgres:ci
+          # Por TCP: durante el initdb el entrypoint levanta un servidor
+          # temporal solo por socket, y sin -h ya respondería "listo".
+          for i in $(seq 1 30); do
+            docker exec postgres pg_isready -h 127.0.0.1 -U presencia && break
+            sleep 2
+          done
+          # pgvector instalado y cargable: lo que la imagen promete.
+          docker exec postgres psql -U presencia -d presencia -v ON_ERROR_STOP=1             -c "CREATE EXTENSION vector; SELECT extversion FROM pg_extension WHERE extname = 'vector'; DROP EXTENSION vector;"
 
       - uses: pnpm/action-setup@v4
 
@@ -62,8 +75,6 @@ jobs:
       # Con buildx y la caché de GitHub Actions (mismo scope que release.yml):
       # el build de release reutiliza estas capas en vez de repetir el
       # pnpm install y el build de turbo.
-      - uses: docker/setup-buildx-action@v3
-
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:

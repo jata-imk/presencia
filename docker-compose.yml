@@ -14,7 +14,11 @@
 # La topología está en ADR-020.
 services:
   postgres:
-    image: postgres:17-alpine
+    # F10.8: Postgres 17 Alpine con pgvector (docker/postgres/Dockerfile), que
+    # publica release.yml. Mismo Alpine que la imagen oficial de antes: el
+    # volumen de datos sirve tal cual, sin reindexar. POSTGRES_IMAGE fija otra
+    # versión sin tocar este archivo.
+    image: ${POSTGRES_IMAGE:-ghcr.io/jata-imk/presencia-postgres:pg17-pgvector0.8.7}
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-presencia}

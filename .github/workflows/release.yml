@@ -92,6 +92,22 @@ jobs:
           cache-from: type=gha,scope=presencia-image
           cache-to: type=gha,mode=max,scope=presencia-image
 
+      # F10.8: la imagen de Postgres (Alpine + pgvector). Tag por versión, no
+      # por commit: es la misma mientras no cambie docker/postgres/Dockerfile,
+      # y con la caché de CI cada release la reconstruye en segundos. El VPS la
+      # baja con `docker compose pull postgres` (POSTGRES_IMAGE en el .env).
+      - uses: docker/build-push-action@v6
+        with:
+          context: docker/postgres
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}-postgres:pg17-pgvector0.8.7
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
+          cache-from: type=gha,scope=presencia-postgres
+          cache-to: type=gha,mode=max,scope=presencia-postgres
+
       # `latest` = la punta de main, y solo si su CI pasó. Se decide AL FINAL,
       # con la imagen ya publicada, porque decidirlo antes del build dejaba una
       # carrera: el commit A era la punta al empezar, durante su build entraba
