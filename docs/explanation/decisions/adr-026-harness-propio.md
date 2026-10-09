@@ -4,21 +4,21 @@
 
 Un harness es todo lo que rodea al modelo para que haga trabajo real. En nuestro caso, la línea queda así:
 
-| Pieza                                     | Quién la pone | Dónde                                                                          |
-| ----------------------------------------- | ------------- | ------------------------------------------------------------------------------ |
-| Loop de agente (modelo → tool → modelo)   | AI SDK        | `streamText` + `stopWhen` en `chat/chat.service.ts`                            |
-| Tool calling y validación de input        | AI SDK        | `tool()` con schemas Zod (ADR-005)                                             |
-| Streaming al navegador                    | AI SDK        | `pipeUIMessageStreamToResponse` (ADR-006)                                      |
-| Abstracción de proveedores                | AI SDK        | `createProviderRegistry` (ADR-004)                                             |
-| Respaldo entre proveedores, timeouts      | **Nuestro**   | `ai/fallback.ts` (ADR-004, addendum F10.7)                                     |
-| Qué ve el modelo en cada turno (contexto) | **Nuestro**   | `history-window.ts`, `context-diet.ts` (ADR-006)                               |
-| Compactación de chats largos              | **Nuestro**   | `chat_summaries`, job `chat.compact` (ADR-006, addendum F10.8)                 |
-| Memoria entre chats                       | **Nuestro**   | `memory_chunks` + pgvector, tool `buscar_en_memoria` (ADR-004, addendum F10.8) |
-| Memoria estructurada del usuario          | **Nuestro**   | Voz de marca (`presencia-configuracion-voz-de-marca.md`)                       |
-| Sesiones y persistencia                   | **Nuestro**   | `chats`, `messages` con RLS (ADR-003)                                          |
-| Cobro por uso                             | **Nuestro**   | Ledger de créditos (ADR-012)                                                   |
-| Telemetría de gasto                       | **Nuestro**   | `ai_usage_events`                                                              |
-| Trabajo en segundo plano                  | **Nuestro**   | pg-boss (ADR-008)                                                              |
+| Pieza                                     | Quién la pone | Dónde                                                                                |
+| ----------------------------------------- | ------------- | ------------------------------------------------------------------------------------ |
+| Loop de agente (modelo → tool → modelo)   | AI SDK        | `streamText` + `stopWhen` en `chat/chat.service.ts`                                  |
+| Tool calling y validación de input        | AI SDK        | `tool()` con schemas Zod (ADR-005)                                                   |
+| Streaming al navegador                    | AI SDK        | `pipeUIMessageStreamToResponse` (ADR-006)                                            |
+| Abstracción de proveedores                | AI SDK        | `createProviderRegistry` (ADR-004)                                                   |
+| Respaldo entre proveedores, timeouts      | **Nuestro**   | `ai/fallback.ts` (ADR-004, addendum F10.7)                                           |
+| Qué ve el modelo en cada turno (contexto) | **Nuestro**   | `history-window.ts`, `context-diet.ts` (ADR-006)                                     |
+| Compactación de chats largos              | **Nuestro**   | `chat_summaries`, job `chat.compact` (ADR-006, addendum F10.8)                       |
+| Memoria entre chats                       | **Nuestro**   | `memory_chunks` + pgvector, tool `buscar_en_memoria` (ADR-004, addendum F10.8)       |
+| Memoria estructurada del usuario          | **Nuestro**   | Voz de marca ([doc de producto](../product/presencia-configuracion-voz-de-marca.md)) |
+| Sesiones y persistencia                   | **Nuestro**   | `chats`, `messages` con RLS (ADR-003)                                                |
+| Cobro por uso                             | **Nuestro**   | Ledger de créditos (ADR-012)                                                         |
+| Telemetría de gasto                       | **Nuestro**   | `ai_usage_events` (ADR-004, addenda F4.5 y F9.8)                                     |
+| Trabajo en segundo plano                  | **Nuestro**   | pg-boss (ADR-008)                                                                    |
 
 ## Razón
 

@@ -22,9 +22,9 @@ La gestión de proyecto (roadmap F0–F13) vive en Notion (página "Presencia").
 
 - **Monorepo:** pnpm workspaces + Turborepo. `apps/web` (React + Vite + TS), `apps/api` (NestJS), `packages/shared` (schemas Zod).
 - **Datos:** Postgres, multi-tenant por `user_id` + RLS (ADR-003), con pgvector para la memoria entre chats. Jobs con pg-boss (ADR-008).
-- **IA:** Vercel AI SDK multi-proveedor (ADR-004): OpenAI, Google y Anthropic, con una cadena de respaldo por tarea configurada en el `.env`. Imágenes detrás de su propio adapter (ADR-025). Embeddings de un solo modelo, sin respaldo (addendum F10.8 de ADR-004). Cards por tool call con schema Zod por arquetipo (ADR-005). Streaming por SSE (ADR-006). **Harness propio sobre el AI SDK** (ADR-026, regla dura #8).
+- **IA:** Vercel AI SDK multi-proveedor (ADR-004): la cadena configurada hoy es OpenAI, Google y Anthropic, con un respaldo por tarea en el `.env`; el registro también conecta DeepSeek, xAI, MiniMax y OpenRouter (`ai/provider-registry.ts`). Imágenes detrás de su propio adapter (ADR-025). Embeddings de un solo modelo, sin respaldo (addendum F10.8 de ADR-004). Cards por tool call con schema Zod por arquetipo (ADR-005). Streaming por SSE (ADR-006). **Harness propio sobre el AI SDK** (ADR-026, regla dura #8).
 - **Auth:** Better Auth, UI propia (ADR-007).
-- **Publicación:** PostFast y Upload-Post detrás de la interfaz `PublishingProvider` (ADR-009 y su addendum de F7.5). Telegram con grammY detrás de adapter de canal (ADR-010).
+- **Publicación:** PostFast y Upload-Post detrás de la interfaz `PublishingProvider` (ADR-009 y su addendum de F7.5). Telegram (planeado para F11, sin código todavía): grammY detrás de un adapter de canal (ADR-010).
 - **Infra:** Docker Compose (app/worker/postgres) detrás del nginx que administra CloudPanel, sin Caddy; VPS OVH + Cloudflare R2 (ADR-011, ADR-020). Postgres corre con imagen propia (Alpine + pgvector, tag inmutable; addendum de ADR-020). Dev/prod parity: un solo `docker-compose.yml` para los dos stacks del VPS — lo que cambia es el `.env` y el profile.
 
 ## Reglas duras (no negociables)
@@ -40,7 +40,7 @@ La gestión de proyecto (roadmap F0–F13) vive en Notion (página "Presencia").
 
 ## Cómo arma el chat su contexto
 
-Guardar ≠ recordar ≠ mandar al modelo. `messages` guarda la conversación completa y es lo que ve la UI. Lo que viaja al modelo en cada turno lo arma el código de `apps/api/src/chat/`: el resumen de lo viejo (`chat_summaries`), los mensajes recientes completos, las cards con su estado de hoy, la dieta de tools viejas y un techo de seguridad (ADR-006 y sus addenda). La memoria entre chats no se inyecta: el modelo la pide con la tool `buscar_en_memoria`. Cualquier cambio en esa cadena pasa por la regla dura #8.
+Guardar ≠ recordar ≠ mandar al modelo: `messages` guarda la conversación completa (lo que ve la UI), y lo que viaja al modelo en cada turno lo arma `apps/api/src/chat/` (prompt de sistema con la Voz de marca, resumen de lo viejo, recientes, cards vivas y dieta de tools). El detalle vive en ADR-006 y sus addenda, no aquí; cualquier cambio en esa cadena pasa por la regla dura #8.
 
 ## Convenciones
 

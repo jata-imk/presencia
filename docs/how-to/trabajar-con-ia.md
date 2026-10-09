@@ -1,6 +1,6 @@
 # Cómo trabajar con IA en este repo
 
-Este repo está optimizado para desarrollo asistido por agentes (Claude Code). El "RAG" del proyecto es deliberadamente simple: documentación bien estructurada (Diátaxis) + búsqueda léxica nativa del agente. Sin vector DB hasta que la doc lo pida.
+Este repo está optimizado para desarrollo asistido por agentes (Claude Code, Codex, Cursor, Gemini CLI: todos leen `AGENTS.md`). El "RAG" **de la documentación** es deliberadamente simple: docs bien estructuradas (Diátaxis) + búsqueda léxica nativa del agente, sin índice vectorial para los docs. (El producto sí usa pgvector, para la memoria entre chats del creator; eso es otra cosa, ver ADR-004 addendum F10.8.)
 
 ## Convenciones
 
@@ -28,10 +28,10 @@ Cada módulo de producto (Chat, Voz de marca, Onboarding, Calendario, Ritmo, ...
 
 **Requiere `/design consent` una vez por sesión/máquina** — el agente no puede otorgarlo, hay que correrlo a mano antes de que las llamadas al MCP funcionen.
 
-**Política de reconciliación (decidida 2026-08-09, ver tarea F13 en Notion):** cada módulo hace su pase de Claude Design (tokens + componentes + gaps de campos) **en su propio PR**, cuando ese módulo se construye — no antes (el diseño puede ir adelantado a la fase, como pasa hoy con partes de Chat) ni en un batch al final. Si un módulo ya se construyó con UI cruda (Chat F3, Voz de marca F4 al momento de escribir esto), la reconciliación es un PR chico aparte. Cada tarea F5–F12 en Notion trae ya su nota de qué proyecto de Claude Design le corresponde revisar, o si ese módulo directamente no tiene diseño todavía (Analíticas, Biblioteca) y hay que pedírselo a Jose antes de construir su UI.
+**Política de reconciliación (decidida 2026-08-09, ver tarea F13 en Notion):** cada módulo hace su pase de Claude Design (tokens + componentes + gaps de campos) **en su propio PR**, cuando ese módulo se construye — no antes (el diseño puede ir adelantado a la fase, como pasa hoy con partes de Chat) ni en un batch al final. Si un módulo se construyó con UI cruda, la reconciliación es un PR chico aparte. Cada tarea de fase en Notion trae su nota de qué proyecto de Claude Design le corresponde revisar, o si el módulo todavía no tiene diseño (Analíticas, Biblioteca) y hay que pedírselo a Jose antes de construir su UI.
 
 Los archivos son formato `.dc.html` (HTML entity-escaped, con lógica embebida en `<script type="text/x-dc">`) — léelos completos antes de resumir; algunos superan el límite de tokens de una sola respuesta del MCP y se cachean localmente para leer en chunks con el tool `Read`.
 
-## Suite de regresión cultural (desde F3)
+## Suite de regresión cultural
 
-~10 prompts en registro mexicano "de barrio" versionados en el repo, corridos contra cada proveedor de IA (ADR-004). El moat cultural se valida por proveedor, no se asume.
+Prompts en registro mexicano "de barrio" versionados en `apps/api/scripts/cultural-suite/`, corridos contra cada modelo candidato (ADR-004): `pnpm --filter @presencia/api suite:cultural` (registro y calidad) y `suite:voz-prohibida` (palabras que la Voz de marca prohíbe). Los reportes viven en `docs/reference/suite-cultural/`. El moat cultural se valida por modelo, no se asume: un modelo entra a la cadena del chat solo si pasa la suite (así se eligió Luna en F10.7).
