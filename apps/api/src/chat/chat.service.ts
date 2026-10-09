@@ -31,11 +31,7 @@ import { toChatSummary, toUIMessage } from "./chat-summary.js";
 import { contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
-import {
-  estimateTokens,
-  pendingTokensAfterSummary,
-  type HistorySummary,
-} from "./history-window.js";
+import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
 import { assembleContext, cardIdsForContext } from "./context-builder.js";
 import { ChatRepository, type ChatSummaryRow } from "./chat.repository.js";
 import { type CompressedCardOutput, type LiveCard } from "./context-diet.js";
@@ -587,7 +583,7 @@ export class ChatService {
               userId,
               chatId,
               contextTokensOf(steps),
-              pendingTokensAfterSummary(history, summary) + estimateTokens([responseMessage]),
+              [...pendingAfterSummary(history, summary), responseMessage],
               trace.runId,
             );
             // F10.8: el intercambio entra a la memoria entre chats.

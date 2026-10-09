@@ -43,14 +43,13 @@ function conCard(id: string, cardId: string): UIMessage {
 }
 
 describe("assembleContext", () => {
-  it("sin resumen ni techo, viaja todo y lo más viejo visible es el primer mensaje", () => {
+  it("sin resumen ni techo, viaja todo", () => {
     const chat = conversacion(3);
     const context = assembleContext(chat, null, new Map(), 120_000);
     expect(context.messages.map((m) => m.id)).toEqual(chat.map((m) => m.id));
-    expect(context.oldestVisibleMessageId).toBe("u0");
   });
 
-  it("con resumen, lo más viejo visible es lo primero después del tramo resumido", () => {
+  it("con resumen, viaja el resumen y después lo que no cubre", () => {
     const chat = conversacion(6);
     const context = assembleContext(
       chat,
@@ -59,14 +58,13 @@ describe("assembleContext", () => {
       120_000,
     );
     expect(context.messages[0]!.id.startsWith("presencia-")).toBe(true);
-    expect(context.oldestVisibleMessageId).toBe("u3");
+    expect(context.messages.find((m) => !m.id.startsWith("presencia-"))!.id).toBe("u3");
   });
 
-  it("con el techo, lo más viejo visible es lo primero que cupo después de la nota", () => {
+  it("con el techo, viaja la nota y lo más reciente que cupo", () => {
     const chat = conversacion(10, () => "x".repeat(4_000));
     const context = assembleContext(chat, null, new Map(), 3_000);
     const reales = context.messages.filter((m) => !m.id.startsWith("presencia-"));
-    expect(context.oldestVisibleMessageId).toBe(reales[0]!.id);
     expect(reales.length).toBeLessThan(chat.length);
   });
 

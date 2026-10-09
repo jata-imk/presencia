@@ -119,13 +119,37 @@ export function applySummary(
   return [...syntheticPair("resumen", text), ...history.slice(through + 1)];
 }
 
-/** Tokens de lo que el resumen todavía no cubre (todo, si no hay resumen). */
-export function pendingTokensAfterSummary(
+/** Lo que el resumen todavía no cubre (todo, si no hay resumen). */
+export function pendingAfterSummary(
   history: UIMessage[],
   summary: HistorySummary | null,
-): number {
+): UIMessage[] {
   const through = summary ? history.findIndex((m) => m.id === summary.throughMessageId) : -1;
-  return estimateTokens(history.slice(through + 1));
+  return history.slice(through + 1);
+}
+
+/**
+ * Menos que esto en el tramo no vale la llamada: se espera a que haya más.
+ * Resumir un tramo chico no achica el contexto y cobraría cada par de
+ * turnos. Y al menos dos intercambios, para que haya algo que resumir.
+ */
+export const MIN_TRAMO_TOKENS = 6_000;
+export const MIN_TRAMO_MESSAGES = 4;
+
+/**
+ * Cuántos mensajes de `pending` se resumirían, o 0 si el tramo no vale la
+ * llamada. Una sola regla para el encolado (al cerrar el turno) y para el job:
+ * si no coincidieran, se encolaría en cada turno un job que no hace nada.
+ *
+ * Se mide sobre lo guardado (outputs de tools completos), no sobre lo que
+ * viaja después de la dieta: es una cota alta, que conserva un poco menos de
+ * lo reciente y compacta un poco antes. Del lado seguro.
+ */
+export function compactableCut(pending: UIMessage[]): number {
+  const cut = compactionCut(pending);
+  if (cut < MIN_TRAMO_MESSAGES || estimateTokens(pending.slice(0, cut)) < MIN_TRAMO_TOKENS)
+    return 0;
+  return cut;
 }
 
 /**

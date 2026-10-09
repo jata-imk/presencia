@@ -285,10 +285,17 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
         enqueue: (_q: string, data: unknown) => (encolados.push(data), Promise.resolve(true)),
       } as never,
     );
-    await service.maybeEnqueue(userId, "c", 1_000, 50_000); // contexto chico
-    await service.maybeEnqueue(userId, "c", 90_000, 12_000); // poco sin resumir (cabe en lo reciente)
+    // Mensajes de ~1.1k tokens, como los de chatLargo.
+    const pendientes = (n: number): UIMessage[] =>
+      Array.from({ length: n }, (_, i) => ({
+        id: `m${String(i)}`,
+        role: i % 2 === 0 ? ("user" as const) : ("assistant" as const),
+        parts: [{ type: "text" as const, text: `Mensaje ${String(i)}${RELLENO}` }],
+      }));
+    await service.maybeEnqueue(userId, "c", 1_000, pendientes(30)); // contexto chico
+    await service.maybeEnqueue(userId, "c", 90_000, pendientes(10)); // todo cabe en lo reciente
     expect(encolados).toHaveLength(0);
-    await service.maybeEnqueue(userId, "c", 90_000, 30_000);
+    await service.maybeEnqueue(userId, "c", 90_000, pendientes(30));
     expect(encolados).toEqual([{ userId, chatId: "c" }]);
   });
 

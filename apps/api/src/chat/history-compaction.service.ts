@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { generateText } from "ai";
+import { generateText, type UIMessage } from "ai";
 import { AiService } from "../ai/ai.service.js";
 import { AiUsageService } from "../ai/ai-usage.service.js";
 import { CreditsService } from "../credits/credits.service.js";
@@ -17,7 +17,7 @@ import {
   summaryPrompt,
   transcriptForSummary,
 } from "./history-compaction.js";
-import { KEEP_RECENT_TOKENS, compactionCut, estimateTokens } from "./history-window.js";
+import { compactableCut } from "./history-window.js";
 
 // Compactación del historial de un chat largo (F10.8).
 //
@@ -35,15 +35,6 @@ const TASK_KIND = "history_compaction" as const;
 
 export const COMPACTION_QUEUE = "chat.compact";
 export const COMPACTION_EXPIRE_SECONDS = 5 * 60;
-
-/**
- * Menos que esto en el tramo no vale la llamada: se espera a que haya más.
- * En tokens (F10.8.1), como lo que se conserva: resumir un tramo chico no
- * achica el contexto y cobraría cada par de turnos. Y al menos dos
- * intercambios, para que haya algo que resumir.
- */
-const MIN_TRAMO_TOKENS = 6_000;
-const MIN_TRAMO_MESSAGES = 4;
 
 /**
  * Lo que viaja en el job. Declarado como tipo y usado al encolar, no armado
@@ -74,9 +65,10 @@ export class HistoryCompactionService {
 
   /**
    * Al cerrar un turno: encola la compactación si el contexto pasó del umbral
-   * y hay tramo suficiente (`pendingTokens`: lo que el resumen todavía no
-   * cubre, en tokens estimados). Sin esto último, un chat cuyos mensajes recientes pesan solos
-   * encolaría un job inútil en cada turno. Nunca lanza (`enqueue` tampoco):
+   * y hay tramo que valga resumir en `pending` (lo que el resumen todavía no
+   * cubre), con la misma regla que aplica el job (`compactableCut`). Sin esto
+   * último, un chat cuyos mensajes recientes pesan solos encolaría un job
+   * inútil en cada turno. Nunca lanza (`enqueue` tampoco):
    * el turno ya terminó. La cola acota a un job esperando por chat; el handler
    * es idempotente por su cuenta.
    */
@@ -84,11 +76,11 @@ export class HistoryCompactionService {
     userId: string,
     chatId: string,
     contextTokens: number,
-    pendingTokens: number,
+    pending: UIMessage[],
     runId?: string,
   ): Promise<void> {
     if (contextTokens < env.CHAT_COMPACT_AT_TOKENS) return;
-    if (pendingTokens < KEEP_RECENT_TOKENS + MIN_TRAMO_TOKENS) return;
+    if (compactableCut(pending) === 0) return;
     const job: CompactionJob = { userId, chatId, runId };
     await this.boss.enqueue(COMPACTION_QUEUE, job, {
       singletonKey: chatId,
@@ -124,9 +116,8 @@ export class HistoryCompactionService {
     }
     const base = previous;
     const pending = history.slice(after + 1);
-    const cut = compactionCut(pending);
-    if (cut < MIN_TRAMO_MESSAGES || estimateTokens(pending.slice(0, cut)) < MIN_TRAMO_TOKENS)
-      return;
+    const cut = compactableCut(pending);
+    if (cut === 0) return;
     // Con tope: un chat larguísimo se resume por tramos, un turno a la vez.
     const tramo = boundedTramo(pending.slice(0, cut));
     const last = tramo[tramo.length - 1]!;

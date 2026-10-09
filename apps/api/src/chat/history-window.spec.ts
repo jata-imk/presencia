@@ -7,7 +7,8 @@ import {
   capHistory,
   compactionCut,
   estimateTokens,
-  pendingTokensAfterSummary,
+  compactableCut,
+  pendingAfterSummary,
 } from "./history-window.js";
 
 // La ventana del historial de un chat largo (F10.8): qué parte se resume, cómo
@@ -55,17 +56,29 @@ describe("compactionCut", () => {
   });
 });
 
-describe("pendingTokensAfterSummary", () => {
-  it("mide lo que el resumen todavía no cubre", () => {
+describe("pendingAfterSummary", () => {
+  it("es lo que el resumen todavía no cubre", () => {
     const chat = conversacion(4);
-    const todo = pendingTokensAfterSummary(chat, null);
-    const despues = pendingTokensAfterSummary(chat, {
-      summary: "",
-      throughMessageId: "a1",
-      cards: [],
-    });
-    expect(todo).toBe(estimateTokens(chat));
-    expect(despues).toBe(estimateTokens(chat.slice(4)));
+    expect(pendingAfterSummary(chat, null)).toEqual(chat);
+    const despues = pendingAfterSummary(chat, { summary: "", throughMessageId: "a1", cards: [] });
+    expect(despues.map((m) => m.id)).toEqual(["u2", "a2", "u3", "a3"]);
+  });
+});
+
+describe("compactableCut", () => {
+  it("con tramo suficiente, es el mismo corte que compactionCut", () => {
+    const chat = conversacion(15, () => "x".repeat(4_000));
+    expect(compactableCut(chat)).toBe(compactionCut(chat));
+    expect(compactableCut(chat)).toBeGreaterThan(0);
+  });
+
+  it("si lo reciente pesa solo y el tramo viejo es chico, no hay nada que valga resumir", () => {
+    // 4 mensajes viejos cortos y 2 intercambios con carruseles de ~8k.
+    const pesados = conversacion(2, () => "x".repeat(32_000)).map((m) => ({
+      ...m,
+      id: `n${m.id}`,
+    }));
+    expect(compactableCut([...conversacion(2), ...pesados])).toBe(0);
   });
 });
 
