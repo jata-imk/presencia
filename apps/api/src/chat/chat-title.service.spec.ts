@@ -40,10 +40,19 @@ describe("cleanTitle", () => {
   it("se queda con la primera línea y corta en palabra si es muy largo", () => {
     expect(cleanTitle("Calendario de octubre\nAquí va el porqué")).toBe("Calendario de octubre");
     const largo = cleanTitle(
-      "Estrategia completa de contenido para la apertura de la nueva sucursal en Mérida norte",
+      "Estrategia completa de contenido para la apertura de la nueva sucursal en Mérida norte y sus alrededores",
     )!;
-    expect(largo.length).toBeLessThanOrEqual(60);
-    expect(largo.endsWith(" ")).toBe(false);
+    expect(largo.length).toBeLessThanOrEqual(80);
+    // Corta en palabra y no deja el enlace colgando ("…en Mérida norte y").
+    expect(largo).toBe(
+      "Estrategia completa de contenido para la apertura de la nueva sucursal en Mérida",
+    );
+    expect(
+      cleanTitle(
+        "Plan de contenido mensual para la cafetería del centro histórico, con promociones de",
+      ),
+    ).toBe("Plan de contenido mensual para la cafetería del centro histórico");
+    expect(cleanTitle(`${"a".repeat(78)}😀😀 fin`)).not.toMatch(/[\uD800-\uDBFF]$/);
   });
 });
 
