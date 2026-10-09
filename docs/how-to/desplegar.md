@@ -300,6 +300,18 @@ Primero en **dev** y, ya probado, en **prod**. En cada stack, desde su carpeta y
    curl -s https://presencia.josetejero.com/api/health
    ```
 
+## Memoria entre chats: indexar lo que ya existía (una vez, F10.8)
+
+La migración `0048` crea `memory_chunks` vacía. Desde el deploy, cada respuesta nueva se indexa sola (job `memory.index`), pero los chats que ya existían no. Para que la memoria los encuentre, Jose corre el script una vez **desde su máquina**, como las migraciones: con el túnel al 5435 y la base y las keys de prod en las variables de la shell, que ganan sobre el `.env`:
+
+```bash
+pnpm --filter @presencia/api memoria:reindexar
+```
+
+- Imprime cuántos intercambios indexó por usuario. Es idempotente: correrlo otra vez solo indexa lo que falte. Sirve también si el worker estuvo caído y se quedaron respuestas sin indexar.
+- Cuesta centavos: ~500 tokens por intercambio a $0.15/M.
+- Si se cambia `AI_MODEL_EMBEDDING`, se corre con `-- --modelo-nuevo`: borra los vectores del modelo anterior y los arma de nuevo.
+
 ## Verificar
 
 ```bash

@@ -57,6 +57,13 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
     outputPerM: 10,
     source: "platform.claude.com/docs/en/about-claude/pricing, 2026-10-06",
   },
+  // F10.8: la memoria entre chats. Solo entrada; el SDK no reporta sus tokens
+  // y se estiman por caracteres (chat/memory.ts).
+  "google:gemini-embedding-001": {
+    inputPerM: 0.15,
+    outputPerM: 0,
+    source: "ai.google.dev/gemini-api/docs/pricing, 2026-10-08",
+  },
   "google:gemini-3.1-flash-image": {
     inputPerM: 0.5,
     // ~1,120 tokens por imagen 1K = $0.067.

@@ -1,6 +1,6 @@
 import type { LanguageModelUsage } from "ai";
 import { creditReason, planTier } from "../db/schema.js";
-import type { AiTaskKind, ImageTaskKind } from "../ai/provider-registry.js";
+import type { AiTaskKind, ImageTaskKind, MemoryTaskKind } from "../ai/provider-registry.js";
 
 // F5 (ADR-012 addendum, 2026-08-09): la unidad normalizada del ledger.
 // Nunca tokens directos (no expresan el costo de una imagen), nunca
@@ -25,7 +25,7 @@ export type CreditReason = (typeof creditReason.enumValues)[number];
  */
 export type TokenBilledTaskKind = Exclude<
   AiTaskKind,
-  "trends_search" | "trends_structure" | ImageTaskKind
+  "trends_search" | "trends_structure" | ImageTaskKind | MemoryTaskKind
 >;
 
 export interface TokenRate {

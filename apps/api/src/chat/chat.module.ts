@@ -12,6 +12,7 @@ import { ChatRepository } from "./chat.repository.js";
 import { ChatService } from "./chat.service.js";
 import { ChatTitleService } from "./chat-title.service.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
+import { MemoryService } from "./memory.service.js";
 
 @Module({
   imports: [AiModule, CardsModule, BrandVoiceModule, CreditsModule, FoldersModule, JobsModule],
@@ -22,8 +23,9 @@ import { HistoryCompactionService } from "./history-compaction.service.js";
     CardRewriteService,
     ChatTitleService,
     HistoryCompactionService,
+    MemoryService,
   ],
   // ChatJobs vive en ScheduledJobsModule, con la lista completa de colas.
-  exports: [HistoryCompactionService],
+  exports: [HistoryCompactionService, MemoryService],
 })
 export class ChatModule {}

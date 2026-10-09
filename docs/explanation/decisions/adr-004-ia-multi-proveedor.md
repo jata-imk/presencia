@@ -100,3 +100,21 @@ El enum `ai_task_kind` (`chat`, `chat_title`, `history_compaction`, `post_adapt`
 - **`supportedUrls` con respaldos.** Con más de un eslabón, la cadena no deja pasar ninguna URL cruda: el SDK las descarga y manda los bytes. Si no, decidía lo que acepta el principal, y un respaldo que no acepta esa URL respondía 400 justo durante la caída.
 - **El error de un respaldo conserva lo que pasó antes**, igual que en la cadena de imagen.
 - **Deuda anotada:** la cadena de texto y la de imagen comparten reglas, errores y helpers (`ai/fallback.ts`), pero cada una tiene su propio loop. La de texto fija el modelo a mitad del turno y lee el stream; la de imagen tiene presupuesto total. Unirlos en un loop genérico se dejó para cuando haya un tercer consumidor (video). Mientras tanto, un cambio de regla va en `isFallbackError` y aplica a los dos.
+
+**Addendum (F10.8 PR4, 2026-10-08) — embeddings para la memoria entre chats.**
+
+- **Un solo modelo, sin cadena.** `AI_MODEL_EMBEDDING` acepta un único modelo, sin `@esfuerzo` (`env.ts` lo valida con `single: true`). Los vectores de dos modelos no se pueden comparar: un respaldo escribiría vectores que la búsqueda nunca encontraría, o al revés. Si el proveedor se cae, el intercambio no se indexa y `pnpm memoria:reindexar` lo recupera después; la búsqueda devuelve vacío y el chat sigue sin memoria (nunca tumba el turno).
+- **El modelo: `google:gemini-embedding-001` a 1536 dimensiones** (`DEFAULT_EMBEDDING_MODEL_ID`, `EMBEDDING_DIMENSIONS`). Jose pidió "el que tenga más calidad y se mantenga mejor a futuro". Prueba difícil en español (16 temas del mismo puesto de marquesitas, 12 búsquedas indirectas), primer resultado correcto:
+
+  | Modelo                          | Acierta 1º |
+  | ------------------------------- | ---------- |
+  | `google:gemini-embedding-001`   | 12/12      |
+  | `openai:text-embedding-3-large` | 12/12      |
+  | `google:gemini-embedding-2`     | 10/12      |
+  | `openai:text-embedding-3-small` | 9/12       |
+
+  Gemini empata con el large a menor precio ($0.15/M) y le gana a su sucesor en esta prueba. 1536 queda por debajo del límite de 2000 dimensiones del índice HNSW de pgvector. Con Google se manda `taskType` (`RETRIEVAL_DOCUMENT` al indexar, `RETRIEVAL_QUERY` al buscar): el mismo texto produce vectores distintos según el papel, y emparejarlos mejora la búsqueda.
+
+- **Tokens estimados.** El SDK no reporta el usage de los embeddings de Google: `ai_usage_events` guarda ~4 caracteres por token y `provider_raw.estimado = true`. Alcanza para la telemetría (`pnpm gasto`); un creator muy activo gasta ~$0.07 al mes.
+- **No se cobra.** Un intercambio son ~500 tokens: menos de una unidad del ledger. `memory_index` y `memory_search` están en `AI_TASK_KINDS` para el registro, pero fuera de `RoutedTaskKind` (no pasan por `resolveForTask`) y de la tarifa por tokens.
+- **Umbral de similitud `MIN_SIMILARITY = 0.62`** (`chat/memory.ts`). La búsqueda siempre devuelve "los 5 más cercanos", aunque nada se parezca. Calibrado sobre los chats de dev: lo relacionado sacó 0.72–0.78; lo que no tenía nada que ver nunca pasó de 0.58. **Cambiar de modelo obliga a recalibrar** y a reindexar: cada fila guarda su `model`, la búsqueda filtra por el vigente y `memoria:reindexar -- --modelo-nuevo` borra los vectores del modelo anterior y arma la memoria de nuevo.

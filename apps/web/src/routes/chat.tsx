@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, isStaticToolUIPart } from "ai";
+import { DefaultChatTransport } from "ai";
 import { ArrowDown } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
@@ -14,7 +14,7 @@ import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
 import { ConfirmDeleteModal } from "../components/ui/ConfirmDeleteModal.js";
 import { fetchCardVersions } from "../lib/cards-api.js";
 import { parseQuotaExhaustedError } from "../lib/chat-error.js";
-import type { ChatUIMessage } from "../lib/chat-types.js";
+import { isCardToolPart, type ChatUIMessage } from "../lib/chat-types.js";
 import { useQuota } from "../lib/use-quota.js";
 import { useCardsStore } from "../stores/cards-store.js";
 import { useChatsStore } from "../stores/chats-store.js";
@@ -243,7 +243,7 @@ function ChatView({
     const ids =
       last?.role === "assistant"
         ? last.parts.flatMap((p) =>
-            isStaticToolUIPart(p) && p.state === "output-available" ? [p.output.cardId] : [],
+            isCardToolPart(p) && p.state === "output-available" ? [p.output.cardId] : [],
           )
         : [];
     const byId = useCardsStore.getState().byId;

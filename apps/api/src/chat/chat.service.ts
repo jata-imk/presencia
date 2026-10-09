@@ -5,8 +5,14 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from "ai";
-import type { BrandVoiceForPrompt, CardContent, ChatSummary } from "@presencia/shared";
+import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage } from "ai";
+import {
+  MEMORY_TOOL_NAME,
+  memorySearchInputSchema,
+  type BrandVoiceForPrompt,
+  type CardContent,
+  type ChatSummary,
+} from "@presencia/shared";
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
 import { AiUsageService } from "../ai/ai-usage.service.js";
@@ -23,6 +29,7 @@ import { ChatTitleService } from "./chat-title.service.js";
 import { toChatSummary, toUIMessage } from "./chat-summary.js";
 import { contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
+import { MemoryService } from "./memory.service.js";
 import {
   applySummary,
   capHistory,
@@ -33,6 +40,7 @@ import { ChatRepository, type ChatSummaryRow } from "./chat.repository.js";
 import {
   cardIdsIn,
   compressToolOutputsForModel,
+  trimMemoryOutputsForModel,
   withLiveCards,
   type CompressedCardOutput,
   type LiveCard,
@@ -58,6 +66,7 @@ export class ChatService {
     @Inject(FoldersService) private readonly foldersService: FoldersService,
     @Inject(ChatTitleService) private readonly chatTitle: ChatTitleService,
     @Inject(HistoryCompactionService) private readonly compaction: HistoryCompactionService,
+    @Inject(MemoryService) private readonly memory: MemoryService,
   ) {}
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
@@ -359,14 +368,27 @@ export class ChatService {
     // asigna siempre, incluso si el turno termina creando una sola card —
     // inocuo, esa card simplemente no tiene hermanas con el mismo groupId.
     const groupId = randomUUID();
-    const tools = buildPublicationCardTools({
-      userId,
-      chatId,
-      dbService: this.dbService,
-      cardsRepository: this.cardsRepo,
-      createdCardIds,
-      groupId,
-    });
+    const tools = {
+      ...buildPublicationCardTools({
+        userId,
+        chatId,
+        dbService: this.dbService,
+        cardsRepository: this.cardsRepo,
+        createdCardIds,
+        groupId,
+      }),
+      // F10.8: la memoria entre chats. El modelo la llama cuando el creator
+      // alude a otra conversación (system-prompt.ts dice cuándo); busca en
+      // sus OTROS chats. Nunca lanza: sin memoria, el turno sigue igual.
+      [MEMORY_TOOL_NAME]: tool({
+        description:
+          "Busca en las conversaciones anteriores del creator (otros chats) lo que " +
+          "hablaron sobre un tema. Úsala cuando se refiera a algo de otra conversación " +
+          "que no está en esta. Devuelve fragmentos con el título del chat y la fecha.",
+        inputSchema: memorySearchInputSchema,
+        execute: ({ consulta }) => this.memory.search(userId, chatId, consulta),
+      }),
+    };
 
     // Voz de marca del usuario (F4): null durante el onboarding, para
     // cuentas viejas sin voz configurada, o si la carga falló — ver
@@ -395,8 +417,10 @@ export class ChatService {
       : null;
     const windowed = applySummary(history, summary, summaryLive);
     const modelHistory = capHistory(
-      compressToolOutputsForModel(
-        withLiveCards(windowed, await this.loadLiveCards(userId, windowed)),
+      trimMemoryOutputsForModel(
+        compressToolOutputsForModel(
+          withLiveCards(windowed, await this.loadLiveCards(userId, windowed)),
+        ),
       ),
       env.CHAT_HISTORY_CAP_TOKENS,
     );
@@ -467,9 +491,10 @@ export class ChatService {
             );
           }
 
-          let persisted = false;
+          // El id de la respuesta guardada; null si no se guardó.
+          let savedId: string | null = null;
           try {
-            await this.dbService.runWithTenant(userId, async (tx) => {
+            savedId = await this.dbService.runWithTenant(userId, async (tx) => {
               const saved = await this.repo.insertMessage(tx, {
                 chatId,
                 userId,
@@ -493,8 +518,8 @@ export class ChatService {
                 referenceType: "message",
                 referenceId: saved.id,
               });
+              return saved.id;
             });
-            persisted = true;
           } catch (error) {
             console.error(
               `[chat] onEnd falló para chat ${chatId} (turno no abortado). ` +
@@ -529,7 +554,7 @@ export class ChatService {
           // Solo sobre una respuesta que quedó guardada y no terminó en error:
           // titular (y cobrar) a partir de algo que no está en la conversación
           // dejaría un título que nadie puede explicar.
-          if (persisted && finishReason !== "error") {
+          if (savedId && finishReason !== "error") {
             void this.chatTitle.maybeTitle(userId, chatId, [...history, responseMessage]);
             // F10.8: si el contexto de este turno ya pesa, se resume el tramo
             // viejo en segundo plano para que el siguiente viaje más ligero.
@@ -540,6 +565,8 @@ export class ChatService {
               contextTokensOf(steps),
               pendingAfterSummary(history, summary) + 1,
             );
+            // F10.8: el intercambio entra a la memoria entre chats.
+            void this.memory.enqueueIndex(userId, chatId, savedId);
           }
         },
       })

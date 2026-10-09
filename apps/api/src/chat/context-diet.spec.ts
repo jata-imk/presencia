@@ -1,7 +1,12 @@
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
-import { cardIdsIn, compressToolOutputsForModel, withLiveCards } from "./context-diet.js";
+import {
+  cardIdsIn,
+  compressToolOutputsForModel,
+  trimMemoryOutputsForModel,
+  withLiveCards,
+} from "./context-diet.js";
 
 function textPart(text: string) {
   return { type: "text" as const, text };
@@ -236,5 +241,40 @@ describe("withLiveCards (F10.5)", () => {
     const compressed = compressToolOutputsForModel(withLiveCards(many, live));
     const output = (compressed[0]!.parts[0] as { output: { resumen: string } }).output;
     expect(output.resumen).toContain("vieja editada");
+  });
+});
+
+describe("trimMemoryOutputsForModel (F10.8)", () => {
+  const largo = "Creator: ".concat("marquesitas ".repeat(100));
+  const memoria = (fragmento: string) => ({
+    type: "tool-buscar_en_memoria",
+    toolCallId: "m1",
+    state: "output-available",
+    input: { consulta: "la promo" },
+    output: { resultados: [{ fragmento, chat: "Promo 2x1", fecha: "2026-10-07T00:00:00.000Z" }] },
+  });
+
+  it("después de su turno, cada recuerdo viaja recortado y con la misma forma", () => {
+    const history = [
+      { id: "a", role: "assistant", parts: [memoria(largo), textPart("Quedamos en 2x1.")] },
+    ] as unknown as UIMessage[];
+    const [message] = trimMemoryOutputsForModel(history);
+    const output = (
+      message!.parts[0] as { output: { resultados: { fragmento: string; chat: string }[] } }
+    ).output;
+    expect(output.resultados[0]!.fragmento.length).toBeLessThanOrEqual(301);
+    expect(output.resultados[0]!.chat).toBe("Promo 2x1");
+    // Inmutable: el historial original (el que ve la UI) no cambia.
+    expect(
+      (history[0]!.parts[0] as { output: { resultados: { fragmento: string }[] } }).output
+        .resultados[0]!.fragmento,
+    ).toBe(largo);
+  });
+
+  it("un recuerdo corto o un mensaje sin memoria pasan igual", () => {
+    const history = [
+      { id: "a", role: "assistant", parts: [textPart("hola")] },
+    ] as unknown as UIMessage[];
+    expect(trimMemoryOutputsForModel(history)[0]).toBe(history[0]);
   });
 });

@@ -1,7 +1,12 @@
-import { Copy, Layers, RefreshCw } from "lucide-react";
-import { isStaticToolUIPart } from "ai";
+import { Copy, History, Layers, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { CardToolPart, ChatUIMessage } from "../../lib/chat-types.js";
+import {
+  isCardToolPart,
+  isMemoryToolPart,
+  type CardToolPart,
+  type ChatUIMessage,
+  type MemoryToolPart,
+} from "../../lib/chat-types.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
 import { useMediaQuery } from "../../lib/use-media-query.js";
 import { useCardSelectionStore, useSelectedIds } from "../../stores/card-selection-store.js";
@@ -45,6 +50,7 @@ export function AssistantMessage({
 
   const blocks: Block[] = [];
   const toolParts: CardToolPart[] = [];
+  const memoryParts: MemoryToolPart[] = [];
   message.parts.forEach((part, i) => {
     const isLastPart = isLast && i === message.parts.length - 1;
     if (part.type === "text") {
@@ -56,7 +62,11 @@ export function AssistantMessage({
       });
       return;
     }
-    if (isStaticToolUIPart(part)) {
+    if (isMemoryToolPart(part)) {
+      memoryParts.push(part);
+      return;
+    }
+    if (isCardToolPart(part)) {
       toolParts.push(part);
       const prev = blocks.at(-1);
       if (prev?.kind === "cards") prev.parts.push(part);
@@ -83,6 +93,7 @@ export function AssistantMessage({
 
   return (
     <div className="group/msg flex flex-col gap-3">
+      <MemoryNote parts={memoryParts} streaming={streaming} />
       <Steps parts={toolParts} streaming={streaming} />
       {blocks.map((block) =>
         block.kind === "text" ? (
@@ -268,5 +279,36 @@ function ActionButton({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * F10.8: la búsqueda en la memoria entre chats, en una línea discreta. El
+ * creator ve que Presencia recordó algo de otra conversación (y de cuál),
+ * en vez de que el dato aparezca sin explicación.
+ */
+function MemoryNote({ parts, streaming }: { parts: MemoryToolPart[]; streaming: boolean }) {
+  if (parts.length === 0) return null;
+  const done = parts.filter((p) => p.state === "output-available");
+  // Una búsqueda que falló (input inválido, output-error) ya terminó: no se
+  // queda en "Buscando…" mientras el modelo sigue escribiendo.
+  const pending = parts.some((p) => p.state === "input-streaming" || p.state === "input-available");
+  const hits = done.flatMap((p) => p.output.resultados);
+  const chats = [...new Set(hits.map((h) => h.chat))];
+  const label =
+    pending && streaming
+      ? "Buscando en tus chats anteriores…"
+      : done.length === 0
+        ? "No pude buscar en tus chats anteriores"
+        : chats.length === 0
+          ? "Busqué en tus chats anteriores, sin coincidencias"
+          : chats.length === 1
+            ? `Recordé lo que hablamos en «${chats[0]!}»`
+            : `Recordé lo que hablamos en ${String(chats.length)} chats anteriores`;
+  return (
+    <div className="flex items-center gap-1.5 text-[13px] text-fg-muted">
+      <History size={14} strokeWidth={1.75} aria-hidden />
+      <span className="min-w-0 truncate">{label}</span>
+    </div>
   );
 }

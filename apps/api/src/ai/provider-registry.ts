@@ -108,11 +108,22 @@ export const AI_TASK_KINDS = [
   // cobra aparte, y juntarlas escondería justo esa diferencia.
   "image_generate",
   "image_edit",
+  // F10.8: la memoria entre chats. Indexar cada intercambio (un embedding de
+  // documento) y buscar (uno de consulta). Separadas: el indexado corre en
+  // cada turno y la búsqueda solo cuando el chat la pide.
+  "memory_index",
+  "memory_search",
 ] as const;
 export type AiTaskKind = (typeof AI_TASK_KINDS)[number];
 
 /** Las tareas que producen imágenes: no se enrutan por tier ni se cobran por tokens. */
 export type ImageTaskKind = "image_generate" | "image_edit";
+
+/**
+ * F10.8: las de la memoria. Tampoco se enrutan por tier: piden un modelo de
+ * embeddings (AI_MODEL_EMBEDDING), no uno de texto.
+ */
+export type MemoryTaskKind = "memory_index" | "memory_search";
 
 /**
  * Las tareas que se enrutan por tier.
@@ -123,7 +134,7 @@ export type ImageTaskKind = "image_generate" | "image_edit";
  * abierta una llamada a `resolveForTask("trends_search")` que devuelve un
  * modelo sin búsqueda; excluida del tipo, esa llamada no compila.
  */
-export type RoutedTaskKind = Exclude<AiTaskKind, "trends_search" | ImageTaskKind>;
+export type RoutedTaskKind = Exclude<AiTaskKind, "trends_search" | ImageTaskKind | MemoryTaskKind>;
 
 // Tiers de modelo (F4.5, addendum ADR-004): AI_MODEL_CHAT es el moat
 // cultural, no se abarata. AI_MODEL_UTILITY es modelo chico (titulares,
@@ -189,6 +200,28 @@ export const DEFAULT_TRENDS_MODEL_ID = "google:gemini-3.6-flash";
  * resolver algo que truena en la primera generación.
  */
 export const DEFAULT_IMAGE_MODEL_ID = "google:gemini-3.1-flash-image";
+
+/**
+ * El modelo de embeddings de la memoria entre chats (F10.8), elegido con una
+ * prueba de búsquedas en español sobre temas parecidos del mismo negocio
+ * (12/12, empatado con text-embedding-3-large y más nuevo; ADR-004).
+ *
+ * SIN cadena de respaldo, a propósito: los vectores de dos modelos no se
+ * pueden comparar, así que "caer al siguiente" mezclaría memorias que nunca
+ * se encontrarían. Cambiar de modelo es re-indexar (`memoria:reindexar`).
+ */
+export const DEFAULT_EMBEDDING_MODEL_ID = "google:gemini-embedding-001";
+
+/** Cuántas dimensiones guarda la memoria (≤ 2000: el tope del índice HNSW de pgvector). */
+export const EMBEDDING_DIMENSIONS = 1536;
+
+/**
+ * Los proveedores cuyos embeddings sabemos pedir a EMBEDDING_DIMENSIONS
+ * (`embeddingOptions` en chat/memory.ts). Otro proveedor no tiene modelos de
+ * embeddings o devuelve otro tamaño, y la columna `vector(1536)` lo rechazaría
+ * en cada indexado: env.ts lo rechaza al boot.
+ */
+export const EMBEDDING_PROVIDERS = ["google", "openai"] as const;
 
 export type EnvSource = Record<string, string | undefined>;
 export type ModelResolver = (modelId?: string) => LanguageModel;
@@ -335,6 +368,20 @@ export function createModelResolver(source: EnvSource, defaultModelId: string): 
     assertConfigured(id);
     const model = registry.languageModel(id as `${string}:${string}`);
     return reasoning ? withReasoning(model, reasoning) : model;
+  };
+}
+
+/**
+ * F10.8: los modelos de embeddings de la memoria. Mismo inventario y mismas
+ * keys que el texto y las imágenes. Sin cadena: ver DEFAULT_EMBEDDING_MODEL_ID.
+ */
+export function createEmbeddingModelResolver(
+  source: EnvSource,
+): (modelId: string) => ReturnType<ReturnType<typeof createProviderRegistry>["embeddingModel"]> {
+  const { registry, assertConfigured } = buildRegistry(source);
+  return (modelId: string) => {
+    assertConfigured(modelId);
+    return registry.embeddingModel(modelId as `${string}:${string}`);
   };
 }
 

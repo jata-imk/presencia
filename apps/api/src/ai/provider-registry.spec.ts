@@ -181,7 +181,13 @@ describe("createImageModelResolver", () => {
 });
 
 describe("MODEL_BY_TASK", () => {
-  const SIN_TIER: readonly AiTaskKind[] = ["trends_search", "image_generate", "image_edit"];
+  const SIN_TIER: readonly AiTaskKind[] = [
+    "trends_search",
+    "image_generate",
+    "image_edit",
+    "memory_index",
+    "memory_search",
+  ];
 
   it("cubre toda tarea de AI_TASK_KINDS menos las que piden una capacidad", () => {
     const enrutadas = AI_TASK_KINDS.filter(

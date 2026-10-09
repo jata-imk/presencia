@@ -8,6 +8,7 @@ export * from "./credits.js";
 export * from "./folders.js";
 export * from "./image-styles.js";
 export * from "./images.js";
+export * from "./memory.js";
 export * from "./post-text.js";
 export * from "./profile.js";
 export * from "./publication.js";
