@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   aiUsageEvents,
   brandVoices,
+  chatSummaries,
   chats,
   folders,
   messages,
@@ -820,6 +821,55 @@ describe("RLS tenant_isolation", () => {
         }),
       );
       await expect(segunda).rejects.toThrow();
+    });
+  });
+
+  // F10.8: el resumen del tramo viejo de un chat largo. Es la conversación
+  // condensada —negocio, precios, lo pactado— y la escribe un job, no un
+  // request, así que su aislamiento depende solo de la policy.
+  describe("chat_summaries", () => {
+    beforeAll(async () => {
+      await dbService.runWithTenant(userA, (tx) =>
+        tx.insert(chatSummaries).values({
+          chatId: chatA,
+          userId: userA,
+          summary: "- Vende marquesitas en Santa Ana.",
+          throughMessageId: randomUUID(),
+          throughCreatedAt: new Date(),
+          model: "openai:mock",
+        }),
+      );
+    }, 15_000);
+
+    it("el dueño ve el resumen de su chat", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userA, (tx) => tx.select().from(chatSummaries));
+      expect(rows.map((r) => r.chatId)).toContain(chatA);
+    });
+
+    it("otro tenant no lee resúmenes ajenos", { timeout: 15_000 }, async () => {
+      const rows = await dbService.runWithTenant(userB, (tx) => tx.select().from(chatSummaries));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("otro tenant no puede escribir a nombre ajeno", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx
+            .update(chatSummaries)
+            .set({ summary: "intruso" })
+            .where(eq(chatSummaries.chatId, chatA))
+            .returning(),
+        )
+        .then(
+          (rows) => (rows.length === 0 ? null : new Error("escribió")),
+          (e: unknown) => e,
+        );
+      // Bajo RLS el UPDATE ajeno no ve la fila: no toca nada.
+      expect(error).toBeNull();
+      const [row] = await dbService.runWithTenant(userA, (tx) =>
+        tx.select().from(chatSummaries).where(eq(chatSummaries.chatId, chatA)),
+      );
+      expect(row?.summary).toBe("- Vende marquesitas en Santa Ana.");
     });
   });
 });

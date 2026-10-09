@@ -17,14 +17,24 @@ import { buildPublicationCardTools } from "../cards/publication-card.tools.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
+import { env } from "../env.js";
 import { FoldersService } from "../folders/folders.service.js";
 import { ChatTitleService } from "./chat-title.service.js";
-import { toChatSummary } from "./chat-summary.js";
-import { ChatRepository, type MessageRow } from "./chat.repository.js";
+import { toChatSummary, toUIMessage } from "./chat-summary.js";
+import { contextTokensOf } from "./history-compaction.js";
+import { HistoryCompactionService } from "./history-compaction.service.js";
+import {
+  applySummary,
+  capHistory,
+  pendingAfterSummary,
+  type HistorySummary,
+} from "./history-window.js";
+import { ChatRepository, type ChatSummaryRow } from "./chat.repository.js";
 import {
   cardIdsIn,
   compressToolOutputsForModel,
   withLiveCards,
+  type CompressedCardOutput,
   type LiveCard,
 } from "./context-diet.js";
 import { buildSystemPrompt } from "./system-prompt.js";
@@ -47,6 +57,7 @@ export class ChatService {
     @Inject(CreditsService) private readonly creditsService: CreditsService,
     @Inject(FoldersService) private readonly foldersService: FoldersService,
     @Inject(ChatTitleService) private readonly chatTitle: ChatTitleService,
+    @Inject(HistoryCompactionService) private readonly compaction: HistoryCompactionService,
   ) {}
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
@@ -68,7 +79,7 @@ export class ChatService {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const rows = await this.repo.listMessages(tx, chatId);
-      return rows.map((row) => this.toUIMessage(row));
+      return rows.map((row) => toUIMessage(row));
     });
   }
 
@@ -179,7 +190,7 @@ export class ChatService {
     // tokens del proveedor — nunca deja un mensaje user huérfano sin respuesta.
     await this.assertQuotaForTurn(userId);
     const voicePromise = this.loadVoiceForPrompt(userId);
-    const history = await this.dbService.runWithTenant(userId, async (tx) => {
+    const { history, summary } = await this.dbService.runWithTenant(userId, async (tx) => {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const previous = await this.repo.listMessages(tx, chatId);
@@ -190,10 +201,13 @@ export class ChatService {
         parts: userMessage.parts,
       });
       await this.repo.touchChat(tx, chatId);
-      return [...previous, saved].map((row) => this.toUIMessage(row));
+      return {
+        history: [...previous, saved].map((row) => toUIMessage(row)),
+        summary: await this.repo.getSummary(tx, chatId),
+      };
     });
 
-    await this.runAgentTurn(userId, chatId, history, res, voicePromise);
+    await this.runAgentTurn(userId, chatId, history, toHistorySummary(summary), res, voicePromise);
   }
 
   // El 402 lo arma CreditsService, que es donde vive la traducción de
@@ -213,7 +227,14 @@ export class ChatService {
     userId: string,
     history: UIMessage[],
   ): Promise<Map<string, LiveCard>> {
-    const ids = cardIdsIn(history);
+    return (await this.loadLiveCardsByIds(userId, cardIdsIn(history))) ?? new Map();
+  }
+
+  /** Lo mismo por ids; `null` si la lectura falló (no es lo mismo que "no existen"). */
+  private async loadLiveCardsByIds(
+    userId: string,
+    ids: string[],
+  ): Promise<Map<string, LiveCard> | null> {
     if (ids.length === 0) return new Map();
     try {
       const rows = await this.dbService.runWithTenant(userId, (tx) =>
@@ -224,7 +245,7 @@ export class ChatService {
       );
     } catch (error) {
       console.error("[chat] No se pudo leer el contenido vivo de las cards:", error);
-      return new Map();
+      return null;
     }
   }
 
@@ -271,7 +292,7 @@ export class ChatService {
   ): Promise<void> {
     await this.assertQuotaForTurn(userId);
     const voicePromise = this.loadVoiceForPrompt(userId);
-    const history = await this.dbService.runWithTenant(userId, async (tx) => {
+    const { history, summary } = await this.dbService.runWithTenant(userId, async (tx) => {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const all = await this.repo.listMessages(tx, chatId);
@@ -301,10 +322,13 @@ export class ChatService {
         await this.cardsRepo.deleteCardsByMessageId(tx, staleReply.id);
         await this.repo.deleteMessage(tx, staleReply.id);
       }
-      return all.slice(0, targetIndex + 1).map((row) => this.toUIMessage(row));
+      return {
+        history: all.slice(0, targetIndex + 1).map((row) => toUIMessage(row)),
+        summary: await this.repo.getSummary(tx, chatId),
+      };
     });
 
-    await this.runAgentTurn(userId, chatId, history, res, voicePromise);
+    await this.runAgentTurn(userId, chatId, history, toHistorySummary(summary), res, voicePromise);
   }
 
   // Pipeline compartido por streamChat y regenerateChat: streamText + tools
@@ -314,6 +338,7 @@ export class ChatService {
     userId: string,
     chatId: string,
     history: UIMessage[],
+    summary: HistorySummary | null,
     res: ServerResponse,
     voicePromise: Promise<BrandVoiceForPrompt | null>,
   ): Promise<void> {
@@ -356,6 +381,26 @@ export class ChatService {
     const resolved = this.aiService.resolveForTask("chat");
     const startedAt = Date.now();
 
+    // F10.8: lo que el modelo ve de un chat largo. El tramo viejo ya resumido
+    // se sustituye por su resumen (mensajes ENTEROS, nunca partes: la regla
+    // del reasoning item de abajo), con las cards de su lista como son hoy.
+    // El techo se mide sobre lo que de verdad viaja, ya con la dieta: si aun
+    // así se pasa, van solo los mensajes más recientes. `history` no se toca:
+    // la UI y lo que se persiste siguen siendo la conversación completa.
+    const summaryLive = summary
+      ? await this.loadLiveCardsByIds(
+          userId,
+          summary.cards.map((card) => card.cardId),
+        )
+      : null;
+    const windowed = applySummary(history, summary, summaryLive);
+    const modelHistory = capHistory(
+      compressToolOutputsForModel(
+        withLiveCards(windowed, await this.loadLiveCards(userId, windowed)),
+      ),
+      env.CHAT_HISTORY_CAP_TOKENS,
+    );
+
     const result = streamText({
       model: resolved.model,
       system: buildSystemPrompt(voice),
@@ -376,11 +421,7 @@ export class ChatService {
       // pueda recortar del lado del cliente sin cambiar de API mode.
       // F10.5: con el contenido VIVO de cada card (editada, restaurada,
       // cambiada por la IA), no el que quedó congelado en messages.parts.
-      messages: await convertToModelMessages(
-        compressToolOutputsForModel(
-          withLiveCards(history, await this.loadLiveCards(userId, history)),
-        ),
-      ),
+      messages: await convertToModelMessages(modelHistory),
       tools,
       stopWhen: stepCountIs(MAX_AGENT_STEPS),
       abortSignal: abortController.signal,
@@ -490,6 +531,15 @@ export class ChatService {
           // dejaría un título que nadie puede explicar.
           if (persisted && finishReason !== "error") {
             void this.chatTitle.maybeTitle(userId, chatId, [...history, responseMessage]);
+            // F10.8: si el contexto de este turno ya pesa, se resume el tramo
+            // viejo en segundo plano para que el siguiente viaje más ligero.
+            // La respuesta de este turno también cuenta como pendiente.
+            void this.compaction.maybeEnqueue(
+              userId,
+              chatId,
+              contextTokensOf(steps),
+              pendingAfterSummary(history, summary) + 1,
+            );
           }
         },
       })
@@ -497,13 +547,14 @@ export class ChatService {
         console.error("Error escribiendo el stream del chat:", error);
       });
   }
+}
 
-  // El id de fila (uuid) sustituye al id efímero del cliente al rehidratar.
-  private toUIMessage(row: MessageRow): UIMessage {
-    return {
-      id: row.id,
-      role: row.role as UIMessage["role"],
-      parts: row.parts as UIMessage["parts"],
-    };
-  }
+/** La fila de `chat_summaries` como la usa la ventana del historial. */
+function toHistorySummary(row: ChatSummaryRow | undefined): HistorySummary | null {
+  if (!row) return null;
+  return {
+    summary: row.summary,
+    throughMessageId: row.throughMessageId,
+    cards: row.cards as CompressedCardOutput[],
+  };
 }

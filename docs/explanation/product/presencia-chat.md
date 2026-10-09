@@ -1122,6 +1122,23 @@ en camino. El título aparece solo, sin recargar, en todas
 sus pestañas. Se cobra con la tarifa utility: ~1 unidad por
 chat (addendum de ADR-012).
 
+### Los chats largos (F10.8)
+
+**Qué pasa:** Cuando una conversación crece mucho, Presencia
+resume en segundo plano la parte vieja y, desde ahí, el
+modelo lee ese resumen más los últimos mensajes completos.
+El creator sigue viendo toda la conversación: lo que cambia
+es lo que viaja al modelo.
+
+**Por qué:** Cada mensaje cobra por todo lo que el modelo
+lee. Sin resumen, un chat de cien turnos gastaría ~3% de la
+cuota Creator por mensaje y acabaría reventando el turno.
+El resumen conserva lo que importa (negocio, precios,
+promociones, tono pedido, lo pactado) y las publicaciones
+ya creadas, para que "cámbiale el hook a esa" siga
+funcionando. Resumir se cobra con la tarifa utility: unas
+cuantas unidades, que se recuperan en los turnos siguientes.
+
 ### El indicador de canales en chats recientes
 
 **Qué es:** Los iconos pequeños al lado del título de cada

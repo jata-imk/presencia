@@ -330,6 +330,13 @@
       "when": 1791357544127,
       "tag": "0046_titulo_automatico",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791506123479,
+      "tag": "0047_resumen_de_chat",
+      "breakpoints": true
     }
   ]
 }

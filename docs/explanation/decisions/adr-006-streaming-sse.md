@@ -99,3 +99,27 @@ La nota provisional de arriba se resolvió así:
 - **Quién notifica:** el título automático (`ChatRepository.setAutoTitle`) y el renombre (`renameChat`), en la misma transacción que la escritura. Así, otra pestaña o el celular ven el nombre nuevo sin recargar. Los demás cambios del chat (fijar, archivar, mover) no notifican todavía: el contrato del evento es el **título**. Como el evento trae la fila completa, la web la acomoda según `archivedAt` (si se archivó en otra pestaña, sale de Recientes). Los demás cambios se suman cuando otro canal (Telegram, F11) los necesite.
 - **Al revalidar** (reconexión, `resync`, la pestaña vuelve a ser visible), la web pide de nuevo la lista de chats, además de las cards, si ya la tenía cargada.
 - **Por qué el stream de eventos y no el stream del turno:** el título se genera después de que la respuesta terminó (necesita el primer intercambio completo), cuando el stream del turno ya se cerró. El de eventos sigue abierto y llega a todas las pestañas.
+
+## Addendum (2026-10-08, F10.8 PR2) — compactación del historial
+
+El backlog de "compactación real" (HIGH desde F4.5) se cierra así:
+
+- **Qué ve el modelo** (`chat/history-window.ts`, puro): el resumen del tramo viejo (`chat_summaries`) como un intercambio sintético (creator → "Entendido…") y, después, los mensajes posteriores **completos**.
+  - **Mensajes enteros, nunca partes:** la regla del reasoning item de arriba sigue intacta. Lo que se conserva viaja tal cual, y lo resumido se va entero.
+  - **Los roles siguen alternando.** El prompt de sistema no cambia de un turno a otro, así que su caché sigue sirviendo.
+  - **Las cards del tramo no las resume el LLM:** van como lista determinista (`cardSummariesIn`, de la dieta), con su id. Así "cámbiale el hook a esa" sigue encontrando su card.
+- **Cuándo se compacta:** al cerrar un turno guardado cuyo contexto pasó de `CHAT_COMPACT_AT_TOKENS` (40k). El contexto es la entrada del **paso más grande**, no la suma: un turno con tools hace varias llamadas.
+  - Se encola el job `chat.compact`, con `singletonKey = chatId`. El handler es idempotente: relee todo, y si el tramo pendiente es corto no hace nada.
+  - Resume con el modelo utility todo menos los últimos 10 mensajes. El corte nunca parte un turno: lo que queda empieza con un mensaje del creator.
+- **Techo mecánico:** si aun así lo que viaja pasa de `CHAT_HISTORY_CAP_TOKENS` (120k estimados, ~4 caracteres por token), se mandan solo los mensajes más recientes que caben, con una nota. Esto pasa si el resumen falló o todavía no corre. No usa LLM: es el seguro del hueco de seguridad.
+- **Verificado contra Luna con razonamiento** (umbral bajado a 2k en dev):
+  - después de 7 turnos el job resumió los 4 primeros mensajes;
+  - el turno siguiente respondió bien sobre datos que solo estaban en el tramo resumido (horario, promo, "sin emojis"), sin el 400 de reasoning items;
+  - la UI siguió mostrando la conversación completa.
+- **Ajustes del review del PR:**
+  - **La lista de cards del resumen se refresca en cada turno** con su estado y contenido de hoy, y las borradas salen. Esas cards ya no están en ningún output de tool, así que `withLiveCards` no las alcanzaba.
+  - **El techo se mide sobre lo que de verdad viaja,** después de la dieta, y del razonamiento solo cuenta el texto, no su contenido cifrado (varios KB por mensaje). Antes recortaba de más.
+  - **Un tramo enorme se resume por partes** (`MAX_TRAMO_CHARS`, ~50k tokens por llamada). El primer resumen de un chat que ya era larguísimo no se manda entero.
+  - **Mínimo de 8 mensajes para resumir,** y no se encola si el resumen no tiene al menos 18 mensajes pendientes. Si lo reciente pesa solo, resumir de a poco no achica el contexto y cobraría cada par de turnos.
+  - **`env.ts` exige `CHAT_COMPACT_AT_TOKENS` < `CHAT_HISTORY_CAP_TOKENS`:** al revés, la compactación no se dispararía nunca.
+- **Fuera de alcance:** se sigue reenviando el reasoning de los mensajes recientes. Es lo que exige OpenAI, y queda acotado a los últimos 10 mensajes.

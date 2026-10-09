@@ -113,3 +113,12 @@ Decisión de Jose: el título automático del chat **se cobra** con la tarifa ut
 - **Una vez por chat:** la referencia del asiento es el chat (`reference_type = 'chat'`), así que el dedup del ledger impide un segundo cobro. Un título real ronda 330 tokens de entrada y 15 de salida: 1 unidad, el mínimo de `quoteChatTurn`.
 - **Solo si el título quedó escrito**, en la misma transacción que el `UPDATE`. Si el modelo dice que todavía no hay tema, o el creator renombró mientras tanto, no se cobra. La llamada sí queda en `ai_usage_events`: se pagó igual.
 - **Sin gate previo:** corre después de un turno que ya pasó por `assertQuotaOr402`, y cuesta 1 unidad.
+
+## Addendum (2026-10-08, F10.8 PR2) — `history_compaction`: compactar se cobra
+
+Decisión de Jose: compactar el historial **se cobra** con la tarifa utility (`perThousandTokens.history_compaction`, ya en el rate card). Las condiciones:
+
+- **Un asiento por compactación.** La referencia es el último mensaje que cubre el resumen (`reference_type = 'message'`), así que dos jobs del mismo tramo no cobran dos veces.
+- **Solo si el resumen quedó guardado y avanzó,** en la misma transacción que el resumen.
+
+Medido en dev: ~750 tokens de entrada y ~310 de salida, 4 unidades. Se paga sola: cada turno siguiente manda el resumen en vez del tramo completo, y en un chat largo (40k+ tokens de contexto, ~320 unidades por mensaje) el ahorro por turno es varias veces su costo.
