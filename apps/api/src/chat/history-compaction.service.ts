@@ -99,15 +99,21 @@ export class HistoryCompactionService {
     const history = rows.map(toUIMessage);
 
     // Lo que el resumen anterior todavía no cubre. Si su último mensaje ya no
-    // está (no debería pasar: el tramo resumido no se borra), se resume todo de
-    // nuevo sin él, y queda en el log para investigarlo.
-    const after = previous ? history.findIndex((m) => m.id === previous.throughMessageId) : -1;
+    // está (no debería pasar: el tramo resumido no se borra), se sigue desde
+    // su fecha, con el mismo resumen como base, y queda en el log. Empezar de
+    // cero no serviría: saveSummary solo guarda un resumen que llega más lejos
+    // que el anterior, y el primer tramo casi nunca llega, así que cada turno
+    // pagaría un resumen que se tira.
+    let after = previous ? history.findIndex((m) => m.id === previous.throughMessageId) : -1;
     if (previous && after === -1) {
       console.warn(
-        `[chat] El resumen del chat ${chatId} apunta a un mensaje que ya no existe (${previous.throughMessageId}); se resume desde el principio.`,
+        `[chat] El resumen del chat ${chatId} apunta a un mensaje que ya no existe (${previous.throughMessageId}); se sigue desde su fecha.`,
       );
+      while (after + 1 < rows.length && rows[after + 1]!.createdAt <= previous.throughCreatedAt) {
+        after++;
+      }
     }
-    const base = after === -1 ? null : previous;
+    const base = previous;
     const pending = history.slice(after + 1);
     const cut = compactionCut(pending);
     if (cut < MIN_MESSAGES_TO_COMPACT) return;

@@ -28,8 +28,11 @@ const STALE_MS = 50_000;
  * Cerrar sesión desmonta el shell y el cleanup cierra el stream.
  *
  * F10.8: el mismo stream trae los chats cuyo título cambió (el automático, o
- * un renombre en otra pestaña). Al revalidar se vuelven a pedir también las
- * listas de chats que ya estaban cargadas.
+ * un renombre en otra pestaña). Cuando el stream se cortó (reconexión o
+ * `resync`) se vuelven a pedir también las listas de chats que ya estaban
+ * cargadas. Al volver a la pestaña, solo las cards: con la pestaña oculta el
+ * stream sigue abierto y los eventos de chat llegan, y si la laptop se durmió
+ * el watchdog reconecta, que ya revalida todo.
  */
 export function LiveCards(): null {
   const apply = useCardsStore((s) => s.apply);
@@ -42,12 +45,12 @@ export function LiveCards(): null {
   useEffect(() => {
     // Las listas de chats solo si ya se cargaron: no adelanta la carga del
     // sidebar ni la de Archivados.
-    const revalidate = () => {
+    const revalidate = (withChats: boolean) => {
       const { chats, archivedChats } = useChatsStore.getState();
       return Promise.all([
         revalidateCards(),
-        chats ? refreshChats() : Promise.resolve(),
-        archivedChats ? refreshArchived() : Promise.resolve(),
+        withChats && chats ? refreshChats() : Promise.resolve(),
+        withChats && archivedChats ? refreshArchived() : Promise.resolve(),
       ]);
     };
     let source: EventSource | null = null;
@@ -65,17 +68,21 @@ export function LiveCards(): null {
     // pedido nuevo, y lo perdido en ese corte se quedaría sin recuperar.
     let inFlight = false;
     let pending = false;
-    const revalidateOnce = () => {
+    let pendingWithChats = false;
+    const revalidateOnce = (withChats = true) => {
       if (inFlight) {
         pending = true;
+        pendingWithChats ||= withChats;
         return;
       }
       inFlight = true;
-      void revalidate().finally(() => {
+      void revalidate(withChats).finally(() => {
         inFlight = false;
         if (pending && !disposed) {
+          const next = pendingWithChats;
           pending = false;
-          revalidateOnce();
+          pendingWithChats = false;
+          revalidateOnce(next);
         }
       });
     };
@@ -149,7 +156,7 @@ export function LiveCards(): null {
     }, 10_000);
 
     const onVisibility = () => {
-      if (document.visibilityState === "visible") revalidateOnce();
+      if (document.visibilityState === "visible") revalidateOnce(false);
     };
 
     open();

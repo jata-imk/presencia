@@ -115,7 +115,6 @@ export class ChatRepository {
     return saved.length > 0;
   }
 
-  /** F10.8: ¿ese intercambio ya tiene su fragmento de memoria? */
   /**
    * F10.8: una respuesta y el mensaje que la precede en su chat, el
    * intercambio que indexa la memoria, sin leer el chat entero. null si la
@@ -140,6 +139,7 @@ export class ChatRepository {
     return { reply, previous };
   }
 
+  /** F10.8: ¿ese intercambio ya tiene su fragmento de memoria? */
   async hasMemoryChunk(tx: Tx, messageId: string): Promise<boolean> {
     const [row] = await tx
       .select({ id: memoryChunks.id })
@@ -172,11 +172,14 @@ export class ChatRepository {
       .select({
         content: memoryChunks.content,
         chatTitle: chats.title,
-        createdAt: memoryChunks.createdAt,
+        // La fecha de la conversación, no la del indexado: `memoria:reindexar`
+        // indexa hoy intercambios de hace meses.
+        createdAt: messages.createdAt,
         distance,
       })
       .from(memoryChunks)
       .innerJoin(chats, eq(chats.id, memoryChunks.chatId))
+      .innerJoin(messages, eq(messages.id, memoryChunks.messageId))
       .where(and(ne(memoryChunks.chatId, input.chatId), eq(memoryChunks.model, input.model)))
       .orderBy(distance)
       .limit(input.limit);

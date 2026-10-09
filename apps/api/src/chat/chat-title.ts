@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { textOf } from "./history-compaction.js";
 
 // Lo puro del título automático (F10.8): qué lee el modelo y cómo se limpia lo
 // que responde. Aparte del servicio para probarlo sin levantar env ni base.
@@ -21,14 +22,6 @@ Lee el inicio de la conversación y escribe un título en español mexicano que 
 - Si todavía no hay un tema claro (solo un saludo o una pregunta vaga), responde exactamente ${NO_TOPIC}.
 
 Responde solo con el título.`;
-
-function textOf(message: UIMessage): string {
-  return message.parts
-    .flatMap((part) => (part.type === "text" ? [part.text] : []))
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 /** Las respuestas del asistente en la conversación (cuenta la que acaba de llegar). */
 export function assistantTurns(conversation: UIMessage[]): number {
@@ -59,6 +52,8 @@ export function cleanTitle(raw: string): string | null {
   let title = (raw.split("\n").find((line) => line.trim()) ?? "").trim();
   title = title.replace(/^["'“”«»`*]+|["'“”«»`*]+$/g, "").trim();
   title = title.replace(/[.:;,!¡¿?]+$/u, "").trim();
+  // Sin el cierre, la apertura queda coja: "¿Qué publicar el lunes".
+  title = title.replace(/^[¡¿]+/u, "").trim();
   title = title.replace(/\s+/g, " ");
   const bare = title
     .normalize("NFD")

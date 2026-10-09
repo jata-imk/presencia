@@ -41,6 +41,10 @@ env:
 
 jobs:
   publish:
+    # Después de la imagen de Postgres: el docker-compose.yml de este commit ya
+    # apunta a su tag, y mover `latest` sin él dejaría un deploy cuyo `pull`
+    # falla. Casi siempre el tag ya existe y ese job tarda segundos.
+    needs: postgres-image
     # workflow_run se dispara también cuando CI falla, y también por los CI de
     # los PRs cuya rama base es main: filtrar las dos cosas acá.
     if: >-
@@ -120,9 +124,11 @@ jobs:
             echo "::notice::${short} ya no es la punta de main (${head::7}): publicado solo sha-${short}, latest no se mueve."
           fi
 
-  # F10.8: la imagen de Postgres (Alpine + pgvector, docker/postgres). Job
-  # aparte del de la app: si su build falla (un clone de pgvector caído), la
-  # app igual se publica y `latest` se mueve.
+  # F10.8: la imagen de Postgres (Alpine + pgvector, docker/postgres). Corre
+  # ANTES que la app (`publish` la necesita): si su build falla (un clone de
+  # pgvector caído), la app no se publica y `latest` no se mueve, porque el
+  # docker-compose.yml de ese commit pediría un tag que no existe. Se arregla
+  # re-corriendo el workflow.
   #
   # El tag sale de los ARG del Dockerfile y es INMUTABLE: si ya existe en GHCR
   # no se vuelve a publicar. Así un deploy normal de la app (`pull` + `up -d`,

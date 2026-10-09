@@ -19,7 +19,8 @@ Conserva todo lo que el asistente necesitaría para seguir ayudando sin pregunta
 
 No conserves saludos, rodeos ni explicaciones que ya no sirven. Escribe en español mexicano, en tercera persona ("El creator vende…"), en viñetas cortas agrupadas por tema, en no más de 500 palabras. Si te dan un resumen anterior, intégralo: el resultado reemplaza a los dos.`;
 
-function textOf(message: UIMessage): string {
+/** El texto visible de un mensaje, en una línea (sin tools ni razonamiento). También lo usa el título. */
+export function textOf(message: UIMessage): string {
   return message.parts
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
     .join(" ")
