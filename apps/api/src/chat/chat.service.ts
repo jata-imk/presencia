@@ -357,6 +357,17 @@ export class ChatService {
     // pasos del modelo y las tools, y lo que el turno dispara (título,
     // compactación, memoria) en ai_usage_events.
     const trace = new RunTrace(randomUUID());
+    // Un turno cortado no se cobra, pero su traza sí se guarda, con el paso a
+    // medias como `aborted`. Con espera: la tool que corría al cortar todavía
+    // puede terminar y entrar. Lo piden onAbort y onEnd (que corre igual,
+    // fallando al leer el usage); `claim` hace que se escriba una vez.
+    const guardarTrazaCortada = () => {
+      trace.close("aborted");
+      setTimeout(
+        () => void this.aiUsage.registrarTraza(userId, chatId, trace),
+        ABORTED_TRACE_GRACE_MS,
+      );
+    };
 
     // Lo que el modelo ve (F10.8.1, context-builder.ts): el resumen en lugar
     // del tramo viejo (mensajes ENTEROS, nunca partes: la regla del reasoning
@@ -443,17 +454,8 @@ export class ChatService {
       onStepStart: (event) => trace.stepStarted(event),
       onStepFinish: (step) => trace.stepFinished(step),
       experimental_onToolCallFinish: (event) => trace.toolFinished(event),
-      // Un turno cortado no se cobra, pero su traza sí se guarda: el paso que
-      // quedó a medias, como `aborted`. Se escribe en onEnd (que corre igual,
-      // ver abajo); el temporizador es el seguro por si no llegara. La espera
-      // deja entrar a la tool que todavía estaba corriendo al cortar.
-      onAbort: () => {
-        trace.close("aborted");
-        setTimeout(
-          () => void this.aiUsage.registrarTraza(userId, chatId, trace),
-          ABORTED_TRACE_GRACE_MS,
-        );
-      },
+      // Ver guardarTrazaCortada, arriba.
+      onAbort: guardarTrazaCortada,
     });
 
     // Desde ai 7.0.1xx devuelve una promesa que se cumple al cerrar el stream.
@@ -470,8 +472,7 @@ export class ChatService {
         },
         onEnd: async ({ responseMessage, isAborted, finishReason }) => {
           if (isAborted) {
-            trace.close("aborted");
-            void this.aiUsage.registrarTraza(userId, chatId, trace);
+            guardarTrazaCortada();
             return;
           }
 
@@ -491,8 +492,12 @@ export class ChatService {
               `[chat] No se pudo leer el usage del turno de chat ${chatId}; ni el mensaje ni el cobro se persisten:`,
               error,
             );
-            trace.close(abortController.signal.aborted ? "aborted" : "error", error);
-            void this.aiUsage.registrarTraza(userId, chatId, trace);
+            if (abortController.signal.aborted) {
+              guardarTrazaCortada();
+            } else {
+              trace.close("error", error);
+              void this.aiUsage.registrarTraza(userId, chatId, trace);
+            }
             return;
           }
           // El error ya lo vio onError (trace.failed); aquí solo se cierra el paso.
@@ -605,8 +610,15 @@ export class ChatService {
 /** La fila de `chat_summaries` como la usa la ventana del historial. */
 function toHistorySummary(row: ChatSummaryRow | undefined): HistorySummary | null {
   if (!row) return null;
+  const blocks = blocksOf(row);
+  // Sin un solo bloque válido no hay resumen que mandar: mejor el historial
+  // completo (el techo lo acota) que un resumen vacío en lugar del tramo viejo.
+  if (blocks.length === 0) {
+    console.warn(`[chat] El resumen del chat ${row.chatId} no tiene bloques válidos; se ignora.`);
+    return null;
+  }
   return {
-    blocks: blocksOf(row),
+    blocks,
     throughMessageId: row.throughMessageId,
     cards: row.cards as CompressedCardOutput[],
   };

@@ -473,6 +473,27 @@ describe("blocksOf y blockHeading (F10.8.1)", () => {
     expect(blocksOf({ ...fila, blocks: [], summary: null })).toEqual([]);
   });
 
+  it("si la app vieja actualizó la fila después de los bloques, su resumen entra como bloque más", () => {
+    const bloque = {
+      summary: "- Abre a las 7.",
+      throughMessageId: "m-1",
+      throughCreatedAt: "2026-10-07T18:00:00.000Z",
+      model: "x",
+      createdAt: "x",
+    };
+    // La app vieja movió el corte a m-9 y escribió solo summary.
+    const conViejo = blocksOf({ ...fila, blocks: [bloque], summary: "- Ahora abre a las 8." });
+    expect(conViejo.map((b) => b.summary)).toEqual(["- Abre a las 7.", "- Ahora abre a las 8."]);
+    // La app nueva deja en summary el texto de su último bloque, con el mismo corte: no se duplica.
+    const alDia = blocksOf({
+      ...fila,
+      throughMessageId: "m-1",
+      blocks: [bloque],
+      summary: "- Abre a las 7.",
+    });
+    expect(alDia).toHaveLength(1);
+  });
+
   it("el encabezado lleva la fecha si la hay, y nunca dice Invalid Date", () => {
     expect(blockHeading(0, { throughCreatedAt: "2026-10-09T18:00:00.000Z" })).toBe(
       "Parte 1 (hasta el 9 de octubre)",

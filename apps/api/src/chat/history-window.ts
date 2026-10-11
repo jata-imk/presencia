@@ -1,7 +1,7 @@
 import type { UIMessage } from "ai";
 import { summarizeCardContent } from "@presencia/shared";
 import type { CompressedCardOutput, LiveCard } from "./context-diet.js";
-import { blockHeading } from "./history-compaction.js";
+import { renderBlocks } from "./history-compaction.js";
 import { estimateTextTokens } from "./text-tokens.js";
 
 // Lo que el modelo ve de un chat largo (F10.8). Puro: nada de base ni de red.
@@ -122,9 +122,7 @@ export function applySummary(
   // la lista, así que el texto de los bloques viejos no cambia y su prefijo
   // sigue en la caché del proveedor. La fecha ayuda a ubicar "lo de la otra
   // semana" y a saber qué dato es el más reciente.
-  const partes = summary.blocks
-    .map((block, i) => `${blockHeading(i, block)}:\n${block.summary}`)
-    .join("\n\n");
+  const partes = renderBlocks(summary.blocks);
   const text = `[Contexto: resumen de la parte anterior de esta conversación, que ya no ves completa. Va por partes, en orden; si una parte posterior cambia algo, vale la posterior.]\n\n${partes}${cards}`;
   return [...syntheticPair("resumen", text), ...history.slice(through + 1)];
 }

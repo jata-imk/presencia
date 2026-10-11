@@ -107,7 +107,11 @@ export class RunTrace {
       status: event.finishReason === "error" ? "error" : "ok",
       startedAt: new Date(startedAt),
       // Lo que esperó al modelo, sin las tools del paso (van en su renglón).
-      durationMs: Math.round(event.performance.responseTimeMs),
+      // Sin el dato (un proveedor que no lo reporte), 0 y no NaN: NaN no entra
+      // a una columna integer y tumbaría la escritura de toda la traza.
+      durationMs: Number.isFinite(event.performance?.responseTimeMs)
+        ? Math.round(event.performance.responseTimeMs)
+        : 0,
       inputTokens: event.usage.inputTokens ?? null,
       outputTokens: event.usage.outputTokens ?? null,
       cachedInputTokens: event.usage.inputTokenDetails?.cacheReadTokens ?? null,
