@@ -47,7 +47,8 @@ describe("assembleContext", () => {
     const chat = conversacion(3);
     const context = assembleContext(chat, null, new Map(), 120_000);
     expect(context.messages.map((m) => m.id)).toEqual(chat.map((m) => m.id));
-    expect(context.oldestVisibleMessageId).toBe("u0");
+    // Nada escondido: la memoria no tiene qué buscar en este chat.
+    expect(context.oldestVisibleMessageId).toBeNull();
   });
 
   it("con resumen, viaja el resumen y después lo que no cubre", () => {

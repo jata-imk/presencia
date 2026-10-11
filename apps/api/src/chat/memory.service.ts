@@ -113,8 +113,9 @@ export class MemoryService {
   /**
    * La tool: los recuerdos más parecidos a `consulta` en los otros chats del
    * usuario y, desde F10.8.1, en la parte de este chat anterior a
-   * `visibleFromMessageId` (la que el modelo ya solo ve resumida). Nunca lanza: una memoria que no respondió deja al chat seguir
-   * sin ella, no tumba el turno.
+   * `visibleFromMessageId` (la que el modelo ya solo ve resumida; `null` si
+   * la ve completa). Nunca lanza: una memoria que no respondió deja al chat
+   * seguir sin ella, no tumba el turno.
    */
   async search(
     userId: string,

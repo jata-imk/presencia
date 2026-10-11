@@ -1147,8 +1147,9 @@ conversación ("hazme otro como el de las marquesitas", "lo
 que te conté de mi horario"), Presencia busca en sus chats
 anteriores y responde con eso. Arriba de la respuesta queda
 una nota discreta: "Recordé lo que hablamos en «Promo 2x1»"
-(o "en 3 chats anteriores"), o "Busqué en tus chats
-anteriores, sin coincidencias" si no encontró nada.
+(o "en 3 chats anteriores"), o "Busqué en lo que hemos
+hablado, sin coincidencias" si no encontró nada (la búsqueda
+también cubre la parte vieja de este chat, F10.8.1).
 
 **Por qué:** Sin memoria, cada chat nuevo empieza de cero y
 el creator repite su negocio, sus precios y su promo cada

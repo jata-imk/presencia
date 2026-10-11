@@ -216,9 +216,15 @@ export class ChatRepository {
           input.visibleFromMessageId
             ? or(
                 ne(memoryChunks.chatId, input.chatId),
-                lt(
-                  messages.createdAt,
-                  sql`(select ${messages.createdAt} from ${messages} where ${messages.id} = ${input.visibleFromMessageId})`,
+                // Del chat actual, lo anterior a la frontera. La subconsulta va
+                // acotada al mismo chat: un id ajeno o que ya no existe da NULL
+                // y el chat actual queda fuera, como antes.
+                and(
+                  eq(memoryChunks.chatId, input.chatId),
+                  lt(
+                    messages.createdAt,
+                    sql`(select m.created_at from messages m where m.id = ${input.visibleFromMessageId} and m.chat_id = ${input.chatId})`,
+                  ),
                 ),
               )
             : ne(memoryChunks.chatId, input.chatId),

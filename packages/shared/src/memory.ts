@@ -2,9 +2,9 @@ import { z } from "zod";
 
 // Memoria entre chats (F10.8): la tool con la que el chat busca en las
 // conversaciones anteriores del creator, y desde F10.8.1 también en la parte
-// vieja de la conversación actual que ya solo ve resumida. Vive aquí porque la usan los dos
-// lados: la API la declara y la web reconoce su part para no pintarla como
-// una card de publicación.
+// vieja de la conversación actual que ya solo ve resumida. Vive aquí porque la
+// usan los dos lados: la API la declara y la web reconoce su part para no
+// pintarla como una card de publicación.
 
 export const MEMORY_TOOL_NAME = "buscar_en_memoria";
 
@@ -24,8 +24,9 @@ export interface MemoryHit {
   /**
    * F10.8.1: el recuerdo es de esta misma conversación, de la parte que el
    * modelo ya no ve completa (quedó resumida). Si no, es de otro chat.
+   * Opcional: los resultados guardados antes de F10.8.1 no lo traen.
    */
-  mismoChat: boolean;
+  mismoChat?: boolean;
 }
 
 export interface MemorySearchOutput {

@@ -302,11 +302,11 @@ function MemoryNote({ parts, streaming }: { parts: MemoryToolPart[]; streaming: 
     otros.length === 1 ? `en «${otros[0]!}»` : `en ${String(otros.length)} chats anteriores`;
   const label =
     pending && streaming
-      ? "Buscando en tus chats anteriores…"
+      ? "Buscando en lo que hemos hablado…"
       : done.length === 0
-        ? "No pude buscar en tus chats anteriores"
+        ? "No pude buscar en lo que hemos hablado"
         : hits.length === 0
-          ? "Busqué en tus chats anteriores, sin coincidencias"
+          ? "Busqué en lo que hemos hablado, sin coincidencias"
           : aqui
             ? `Recordé lo que hablamos antes en este chat${otros.length > 0 ? ` y ${enOtros}` : ""}`
             : `Recordé lo que hablamos ${enOtros}`;
