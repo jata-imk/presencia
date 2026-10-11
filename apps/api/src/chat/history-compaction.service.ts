@@ -14,6 +14,7 @@ import {
   CONSOLIDATE_AT_TOKENS,
   CONSOLIDATE_SYSTEM,
   SUMMARY_SYSTEM,
+  blocksOf,
   blocksTokens,
   boundedTramo,
   consolidatePrompt,
@@ -28,9 +29,14 @@ import { compactableCut } from "./history-window.js";
 //
 // Al cerrar un turno, si su contexto pasó de CHAT_COMPACT_AT_TOKENS, se encola
 // un job (`chat.compact`). El job resume con el modelo utility el tramo viejo
-// —todo menos los últimos mensajes— integrando el resumen anterior, y lo
-// guarda en `chat_summaries`. Desde el turno siguiente, el modelo ve ese
-// resumen más lo reciente completo (history-window.ts).
+// —todo menos lo reciente— y AGREGA ese resumen como un bloque nuevo en
+// `chat_summaries` (F10.8.1: los bloques anteriores van de referencia, no se
+// reescriben). Desde el turno siguiente, el modelo ve los bloques más lo
+// reciente completo (history-window.ts).
+//
+// Si dos jobs del mismo chat se cruzan (no debería: `singletonKey` por chat),
+// el que pierde en `saveSummary` pagó sus llamadas sin asiento; queda en
+// ai_usage_events.
 //
 // En un job y no dentro del turno: el creator ya tiene su respuesta, y resumir
 // tarda segundos. Se cobra con la tarifa utility (decisión de Jose), y la
@@ -129,7 +135,7 @@ export class HistoryCompactionService {
     const lastRow = rows.find((row) => row.id === last.id)!;
 
     const modelo = this.ai.resolveForTask(TASK_KIND);
-    const anteriores = (base?.blocks ?? []) as SummaryBlock[];
+    const anteriores = base ? blocksOf(base) : [];
     const arranque = Date.now();
     // Solo lo nuevo de este tramo: los bloques anteriores van de referencia y
     // no se reescriben (F10.8.1).
@@ -157,26 +163,35 @@ export class HistoryCompactionService {
 
     // Si los bloques ya pesan demasiado, se funden en uno. Es la única vez que
     // el prefijo de resúmenes cambia entero; se cobra junto con el resumen.
-    if (blocksTokens(blocks) > CONSOLIDATE_AT_TOKENS) {
+    // Con un solo bloque no hay nada que fundir (sería pagar por reescribirlo).
+    // Si la consolidación falla, se guardan los bloques sin consolidar: el
+    // resumen ya está pagado, y se reintenta en la siguiente compactación.
+    if (blocks.length >= 2 && blocksTokens(blocks) > CONSOLIDATE_AT_TOKENS) {
       const arranqueConsolidacion = Date.now();
-      const consolidacion = await generateText({
-        model: modelo.model,
-        system: CONSOLIDATE_SYSTEM,
-        prompt: consolidatePrompt(blocks),
-      });
-      await this.registrar(
-        userId,
-        chatId,
-        modelo,
-        consolidacion,
-        arranqueConsolidacion,
-        runId,
-        true,
-      );
-      const juntos = consolidacion.text.trim();
-      if (juntos) {
-        blocks = [{ ...blocks[blocks.length - 1]!, summary: juntos }];
+      try {
+        const consolidacion = await generateText({
+          model: modelo.model,
+          system: CONSOLIDATE_SYSTEM,
+          prompt: consolidatePrompt(blocks),
+        });
+        await this.registrar(
+          userId,
+          chatId,
+          modelo,
+          consolidacion,
+          arranqueConsolidacion,
+          runId,
+          true,
+        );
+        // Se pagó aunque no devuelva texto: entra al asiento igual.
         cobro = sumarCobro(cobro, chargeUsageOf(consolidacion.usage));
+        const juntos = consolidacion.text.trim();
+        if (juntos) blocks = [{ ...blocks[blocks.length - 1]!, summary: juntos }];
+      } catch (error) {
+        console.error(
+          `[chat] No se pudieron consolidar los bloques del chat ${chatId}; se guardan sin consolidar:`,
+          error,
+        );
       }
     }
 
@@ -190,6 +205,7 @@ export class HistoryCompactionService {
         throughCreatedAt: lastRow.createdAt,
         cards,
         model: modelo.id,
+        summary: null,
       });
       // Otro job ya guardó uno que llega igual o más lejos: este no cuenta.
       if (!saved) return;

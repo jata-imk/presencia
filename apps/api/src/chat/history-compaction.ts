@@ -1,5 +1,7 @@
 import type { UIMessage } from "ai";
+import { z } from "zod";
 import { cardSummariesIn, type CompressedCardOutput } from "./context-diet.js";
+import { estimateTextTokens } from "./text-tokens.js";
 
 // Lo puro de la compactación del historial (F10.8; bloques desde F10.8.1): qué
 // lee el modelo que resume y cómo se juntan las cards. Aparte del servicio para probarlo sin
@@ -32,7 +34,57 @@ export const CONSOLIDATE_AT_TOKENS = 6_000;
 
 /** Tokens aproximados de los bloques (~4 caracteres por token). */
 export function blocksTokens(blocks: Pick<SummaryBlock, "summary">[]): number {
-  return Math.ceil(blocks.reduce((total, block) => total + block.summary.length, 0) / 4);
+  return estimateTextTokens(blocks.reduce((total, block) => total + block.summary.length, 0));
+}
+
+/** "Parte 2 (hasta el 9 de octubre)", en la hora de Mérida; sin fecha si no la trae. */
+export function blockHeading(index: number, block: { throughCreatedAt?: string | null }): string {
+  const fecha = block.throughCreatedAt ? new Date(block.throughCreatedAt) : null;
+  const hasta =
+    fecha && !Number.isNaN(fecha.getTime())
+      ? ` (hasta el ${fecha.toLocaleDateString("es-MX", { timeZone: "America/Merida", day: "numeric", month: "long" })})`
+      : "";
+  return `Parte ${String(index + 1)}${hasta}`;
+}
+
+const blockSchema = z.object({
+  summary: z.string().min(1),
+  throughMessageId: z.string(),
+  throughCreatedAt: z.string(),
+  model: z.string(),
+  createdAt: z.string(),
+});
+
+/**
+ * Los bloques de una fila de `chat_summaries`, validados: es jsonb, y un
+ * bloque mal formado se descarta en vez de llegar al prompt. Si la fila no
+ * tiene bloques pero sí el `summary` viejo (lo escribió la app anterior
+ * durante el deploy de F10.8.1), ese texto es el bloque 1.
+ */
+export function blocksOf(row: {
+  blocks: unknown;
+  summary?: string | null;
+  throughMessageId: string;
+  throughCreatedAt: Date;
+  model: string;
+  updatedAt: Date;
+}): SummaryBlock[] {
+  const blocks = Array.isArray(row.blocks)
+    ? row.blocks.flatMap((block) => {
+        const parsed = blockSchema.safeParse(block);
+        return parsed.success ? [parsed.data] : [];
+      })
+    : [];
+  if (blocks.length > 0 || !row.summary) return blocks;
+  return [
+    {
+      summary: row.summary,
+      throughMessageId: row.throughMessageId,
+      throughCreatedAt: row.throughCreatedAt.toISOString(),
+      model: row.model,
+      createdAt: row.updatedAt.toISOString(),
+    },
+  ];
 }
 
 export const SUMMARY_SYSTEM = `Resumes conversaciones entre un creator mexicano y Presencia, su asistente de contenido para redes sociales. Tu resumen sustituye a una parte vieja de la conversación: el asistente ya no la verá completa, solo los resúmenes.
@@ -84,16 +136,21 @@ export function transcriptForSummary(messages: UIMessage[]): string {
     .join("\n\n");
 }
 
+/** Las partes con su encabezado y en orden: así se sabe cuál dato es el más reciente. */
+function partes(blocks: Pick<SummaryBlock, "summary" | "throughCreatedAt">[]): string {
+  return blocks.map((block, i) => `${blockHeading(i, block)}:\n${block.summary}`).join("\n\n");
+}
+
 export function summaryPrompt(previous: SummaryBlock[], transcript: string): string {
   const anteriores =
     previous.length > 0
-      ? `Resúmenes anteriores (solo de referencia, no los repitas):\n${previous.map((b) => b.summary).join("\n\n")}\n\n`
+      ? `Resúmenes anteriores (solo de referencia, no los repitas; si dos dicen distinto, vale el más reciente):\n${partes(previous)}\n\n`
       : "";
   return `${anteriores}Conversación a resumir:\n${transcript}`;
 }
 
 export function consolidatePrompt(blocks: SummaryBlock[]): string {
-  return blocks.map((block, i) => `Parte ${String(i + 1)}:\n${block.summary}`).join("\n\n");
+  return partes(blocks);
 }
 
 /** Las cards del resumen anterior más las del tramo nuevo; la más reciente gana. */

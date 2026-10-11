@@ -1,6 +1,8 @@
 import type { UIMessage } from "ai";
 import { summarizeCardContent } from "@presencia/shared";
 import type { CompressedCardOutput, LiveCard } from "./context-diet.js";
+import { blockHeading } from "./history-compaction.js";
+import { estimateTextTokens } from "./text-tokens.js";
 
 // Lo que el modelo ve de un chat largo (F10.8). Puro: nada de base ni de red.
 //
@@ -37,7 +39,7 @@ export function isSyntheticMessage(message: UIMessage): boolean {
 
 export interface HistorySummary {
   /** Los bloques del resumen, en orden (F10.8.1). */
-  blocks: { summary: string; throughCreatedAt: string }[];
+  blocks: { summary: string; throughCreatedAt?: string }[];
   /** El último mensaje que cubre el resumen; los posteriores viajan completos. */
   throughMessageId: string;
   cards: CompressedCardOutput[];
@@ -62,15 +64,6 @@ export function compactionCut(pending: UIMessage[], keepTokens = KEEP_RECENT_TOK
   let cut = pending.length - kept;
   while (cut > 0 && pending[cut]?.role !== "user") cut--;
   return cut;
-}
-
-/** "8 de octubre", en la hora de Mérida (fija en UTC-6). */
-function fechaCorta(iso: string): string {
-  return new Date(iso).toLocaleDateString("es-MX", {
-    timeZone: "America/Merida",
-    day: "numeric",
-    month: "long",
-  });
 }
 
 function cardLine(card: CompressedCardOutput): string {
@@ -130,10 +123,7 @@ export function applySummary(
   // sigue en la caché del proveedor. La fecha ayuda a ubicar "lo de la otra
   // semana" y a saber qué dato es el más reciente.
   const partes = summary.blocks
-    .map(
-      (block, i) =>
-        `Parte ${String(i + 1)} (hasta el ${fechaCorta(block.throughCreatedAt)}):\n${block.summary}`,
-    )
+    .map((block, i) => `${blockHeading(i, block)}:\n${block.summary}`)
     .join("\n\n");
   const text = `[Contexto: resumen de la parte anterior de esta conversación, que ya no ves completa. Va por partes, en orden; si una parte posterior cambia algo, vale la posterior.]\n\n${partes}${cards}`;
   return [...syntheticPair("resumen", text), ...history.slice(through + 1)];
@@ -190,7 +180,7 @@ export function estimateTokens(messages: UIMessage[]): number {
       ),
     0,
   );
-  return Math.ceil(chars / 4);
+  return estimateTextTokens(chars);
 }
 
 /**

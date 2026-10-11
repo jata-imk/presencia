@@ -361,6 +361,11 @@ export const chatSummaries = pgTable("chat_summaries", {
   // SummaryBlock[] (chat/history-compaction.ts), en orden. El `through_*` de
   // abajo es el del último bloque.
   blocks: jsonb("blocks").notNull().default([]),
+  // Obsoleta desde F10.8.1 (expand/contract): el resumen vive en `blocks`.
+  // Opcional para que la app nueva no la escriba, y se lee solo como respaldo
+  // de una fila que la app vieja haya escrito durante el deploy. Se borra en
+  // un release posterior, cuando ya no corre código que la use.
+  summary: text("summary"),
   // Sin FK: los mensajes del tramo resumido nunca se borran (reintentar solo
   // toca la última respuesta, que siempre queda fuera del tramo).
   throughMessageId: uuid("through_message_id").notNull(),

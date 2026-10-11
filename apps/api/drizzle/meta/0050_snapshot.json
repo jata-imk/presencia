@@ -1,5 +1,5 @@
 {
-  "id": "d57e2da1-bafe-441e-91ce-e8013cd1ba56",
+  "id": "8e9a03ed-c9c2-4c6f-a7a3-8b366a3b7434",
   "prevId": "91325113-b218-41f6-9811-b6f54f7d67fa",
   "version": "7",
   "dialect": "postgresql",
@@ -1113,7 +1113,7 @@
           "name": "summary",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "through_message_id": {
           "name": "through_message_id",
