@@ -121,10 +121,10 @@ export class ChatController {
     const trigger = chatStreamBodySchema.safeParse(body ?? {});
     if (!trigger.success) throw new BadRequestException("La solicitud no es válida.");
 
-    // El último mensaje del body SIEMPRE es el user al que hay que
-    // responder — para un turno normal o para un regenerate, useChat lo
-    // manda igual (regenerate() ya recortó del lado del cliente cualquier
-    // respuesta assistant vieja antes de reenviar). No hay un campo
+    // El body trae UN solo mensaje: el user al que hay que responder, para un
+    // turno normal o para un regenerate (desde F10.8.1 la web ya no manda el
+    // historial: lib/chat-transport.ts; regenerate() recorta la respuesta
+    // vieja antes de mandar). El historial sale de la base. No hay un campo
     // `messageId` separado que el protocolo real envíe.
     const userMessage = await this.parseLastUserMessage(body);
 
