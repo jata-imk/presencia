@@ -46,9 +46,11 @@ export function Composer({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Pasarse del tope no corta el texto (un `maxLength` recortaría en silencio
-  // lo pegado): se avisa con el contador y no se deja enviar.
-  const tooLong = value.length > MAX_MESSAGE_CHARS;
-  const hasText = value.trim().length > 0;
+  // lo pegado): se avisa con el contador y no se deja enviar. Se mide lo que de
+  // verdad se manda: el envío recorta los bordes.
+  const length = value.trim().length;
+  const tooLong = length > MAX_MESSAGE_CHARS;
+  const hasText = length > 0;
   const canSend = hasText && !tooLong;
 
   useImperativeHandle(inputRef, () => textareaRef.current as HTMLTextAreaElement, []);
@@ -121,14 +123,14 @@ export function Composer({
             ))}
           </div>
           <div className="flex-1" />
-          {value.length >= COUNTER_FROM && (
+          {length >= COUNTER_FROM && (
             <span
               aria-live="polite"
               className={`mr-2 text-xs tabular-nums ${tooLong ? "text-error" : "text-fg-muted"}`}
             >
               {tooLong
-                ? `Te pasas por ${excess(value.length - MAX_MESSAGE_CHARS)}`
-                : `${value.length.toLocaleString("es-MX")} / ${MAX_MESSAGE_CHARS.toLocaleString("es-MX")}`}
+                ? `Te pasas por ${excess(length - MAX_MESSAGE_CHARS)}`
+                : `${length.toLocaleString("es-MX")} / ${MAX_MESSAGE_CHARS.toLocaleString("es-MX")}`}
             </span>
           )}
           {busy ? (

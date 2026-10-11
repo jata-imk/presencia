@@ -3,14 +3,14 @@ import { MAX_MESSAGE_CHARS } from "@presencia/shared";
 import { safeValidateUIMessages, type UIMessage } from "ai";
 import { z } from "zod";
 
-const messageIdSchema = z.uuid();
+const uuidSchema = z.uuid();
 
 /**
  * El mensaje del creator al que hay que responder: el último del body. El
  * resto del historial se reconstruye desde la DB (fuente de verdad única).
  *
- * Su id lo genera la web (uuid, F10.8.2) y es el mismo con el que se guarda:
- * así un "Regenerar" justo después del turno encuentra la fila sin recargar.
+ * Solo texto: el chat no adjunta nada todavía, y una parte de otro tipo
+ * esquivaría el tope (que se mide en caracteres de texto).
  */
 export async function parseLastUserMessage(body: unknown): Promise<UIMessage> {
   const messages = (body as { messages?: unknown })?.messages;
@@ -19,7 +19,12 @@ export async function parseLastUserMessage(body: unknown): Promise<UIMessage> {
   }
   const validated = await safeValidateUIMessages({ messages: [messages.at(-1)] });
   const message = validated.success ? validated.data[0] : undefined;
-  if (!message || message.role !== "user" || !messageIdSchema.safeParse(message.id).success) {
+  if (
+    !message ||
+    message.role !== "user" ||
+    message.parts.length === 0 ||
+    message.parts.some((part) => part.type !== "text")
+  ) {
     throw new BadRequestException("El mensaje no es válido.");
   }
   if (textLengthOf(message) > MAX_MESSAGE_CHARS) {
@@ -28,6 +33,18 @@ export async function parseLastUserMessage(body: unknown): Promise<UIMessage> {
     );
   }
   return message;
+}
+
+/**
+ * El id con el que se guarda el mensaje: el de la web, que desde F10.8.2 es
+ * un uuid. Así web y base nombran igual al mensaje, y "Regenerar" lo
+ * encuentra sin recargar. `undefined` (la base genera uno, como antes) si no
+ * es uuid: una pestaña abierta con el bundle anterior al deploy todavía manda
+ * el id corto del SDK, y rechazarlo la dejaría sin poder escribir hasta
+ * recargar. Se puede quitar un release después de F10.8.2.
+ */
+export function storableMessageId(message: UIMessage): string | undefined {
+  return uuidSchema.safeParse(message.id).success ? message.id : undefined;
 }
 
 function textLengthOf(message: UIMessage): number {

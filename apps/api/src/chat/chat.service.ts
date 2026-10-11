@@ -36,6 +36,7 @@ import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
 import { assembleContext, cardIdsForContext } from "./context-builder.js";
 import { ChatRepository, type ChatSummaryRow } from "./chat.repository.js";
 import { type CompressedCardOutput, type LiveCard } from "./context-diet.js";
+import { storableMessageId } from "./last-user-message.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
@@ -200,7 +201,7 @@ export class ChatService {
         // Con el id del cliente (F10.8.2): web y base nombran igual al mensaje,
         // y "Regenerar" lo encuentra sin recargar la página.
         const saved = await this.repo.insertMessage(tx, {
-          id: userMessage.id,
+          id: storableMessageId(userMessage),
           chatId,
           userId,
           role: "user",
