@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatUIMessage } from "./chat-types.js";
-import { turnNotices, type LiveTurnState } from "./turn-status.js";
+import { replyContent, turnNotices, type LiveTurnState } from "./turn-status.js";
 
 // Qué turnos llevan card de estado (F10.8.2). Puro.
 
@@ -38,13 +38,13 @@ describe("turnNotices", () => {
     const notices = turnNotices(chat, QUIETO);
     expect(notices.get("u0")).toEqual({
       status: "stopped",
-      partial: true,
+      content: "text",
       hasReply: true,
       actionable: false,
     });
     expect(notices.get("u1")).toEqual({
       status: "failed",
-      partial: false,
+      content: "none",
       hasReply: true,
       actionable: true,
     });
@@ -71,7 +71,7 @@ describe("turnNotices", () => {
     const chat = [msg("u0", "user")];
     expect(turnNotices(chat, live([["u0", "stopped"]])).get("u0")).toEqual({
       status: "stopped",
-      partial: false,
+      content: "none",
       hasReply: false,
       actionable: true,
     });
@@ -81,7 +81,7 @@ describe("turnNotices", () => {
     const chat = [msg("u0", "user"), msg("a0", "assistant", "Aquí va un")];
     expect(turnNotices(chat, live([["u0", "stopped"]])).get("u0")).toMatchObject({
       status: "stopped",
-      partial: true,
+      content: "text",
     });
   });
 
@@ -96,5 +96,55 @@ describe("turnNotices", () => {
     const notices = turnNotices(chat, live([["u0", "stopped"]]));
     expect(notices.get("u0")).toMatchObject({ status: "stopped", actionable: false });
     expect(notices.has("u1")).toBe(false);
+  });
+});
+
+// Lo que la respuesta muestra decide el copy del estado (F10.8.3): una con
+// cards y sin texto no "se detuvo antes de responder".
+describe("replyContent", () => {
+  const conPartes = (parts: unknown[]) =>
+    ({ id: "a", role: "assistant", parts }) as unknown as ChatUIMessage;
+
+  it("nada si solo trae marcas de paso, razonamiento o texto en blanco", () => {
+    expect(
+      replyContent(
+        conPartes([
+          { type: "step-start" },
+          { type: "reasoning", text: "…" },
+          { type: "text", text: " " },
+        ]),
+      ),
+    ).toBe("none");
+  });
+
+  it("tools si trae cards o memoria sin texto, aunque estén a medias", () => {
+    expect(
+      replyContent(
+        conPartes([
+          { type: "tool-crear_borrador_visual", toolCallId: "t", state: "input-streaming" },
+        ]),
+      ),
+    ).toBe("tools");
+    expect(
+      replyContent(
+        conPartes([{ type: "tool-buscar_en_memoria", toolCallId: "m", state: "output-available" }]),
+      ),
+    ).toBe("tools");
+  });
+
+  it("texto en cuanto hay algo escrito", () => {
+    expect(replyContent(msg("a0", "assistant", "Aquí va"))).toBe("text");
+  });
+
+  it("en un turno: las cards sin texto cuentan como algo en pantalla", () => {
+    const chat = [
+      msg("u0", "user"),
+      conPartes([
+        { type: "tool-crear_borrador_visual", toolCallId: "t", state: "output-available" },
+      ]),
+    ];
+    expect(turnNotices(chat, live([["u0", "stopped"]])).get("u0")).toMatchObject({
+      content: "tools",
+    });
   });
 });
