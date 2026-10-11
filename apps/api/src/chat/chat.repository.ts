@@ -104,7 +104,7 @@ export class ChatRepository {
       .onConflictDoUpdate({
         target: chatSummaries.chatId,
         set: {
-          summary: row.summary,
+          blocks: row.blocks,
           throughMessageId: row.throughMessageId,
           throughCreatedAt: row.throughCreatedAt,
           cards: row.cards,

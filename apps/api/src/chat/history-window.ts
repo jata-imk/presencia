@@ -36,7 +36,8 @@ export function isSyntheticMessage(message: UIMessage): boolean {
 }
 
 export interface HistorySummary {
-  summary: string;
+  /** Los bloques del resumen, en orden (F10.8.1). */
+  blocks: { summary: string; throughCreatedAt: string }[];
   /** El último mensaje que cubre el resumen; los posteriores viajan completos. */
   throughMessageId: string;
   cards: CompressedCardOutput[];
@@ -61,6 +62,15 @@ export function compactionCut(pending: UIMessage[], keepTokens = KEEP_RECENT_TOK
   let cut = pending.length - kept;
   while (cut > 0 && pending[cut]?.role !== "user") cut--;
   return cut;
+}
+
+/** "8 de octubre", en la hora de Mérida (fija en UTC-6). */
+function fechaCorta(iso: string): string {
+  return new Date(iso).toLocaleDateString("es-MX", {
+    timeZone: "America/Merida",
+    day: "numeric",
+    month: "long",
+  });
 }
 
 function cardLine(card: CompressedCardOutput): string {
@@ -115,7 +125,17 @@ export function applySummary(
     current.length > 0
       ? `\n\nPublicaciones que ya se crearon en esta conversación (usa su id si el creator se refiere a una):\n${current.map(cardLine).join("\n")}`
       : "";
-  const text = `[Contexto: resumen de la parte anterior de esta conversación, que ya no ves completa.]\n\n${summary.summary}${cards}`;
+  // Los bloques en orden y las cards al final: un bloque nuevo entra antes de
+  // la lista, así que el texto de los bloques viejos no cambia y su prefijo
+  // sigue en la caché del proveedor. La fecha ayuda a ubicar "lo de la otra
+  // semana" y a saber qué dato es el más reciente.
+  const partes = summary.blocks
+    .map(
+      (block, i) =>
+        `Parte ${String(i + 1)} (hasta el ${fechaCorta(block.throughCreatedAt)}):\n${block.summary}`,
+    )
+    .join("\n\n");
+  const text = `[Contexto: resumen de la parte anterior de esta conversación, que ya no ves completa. Va por partes, en orden; si una parte posterior cambia algo, vale la posterior.]\n\n${partes}${cards}`;
   return [...syntheticPair("resumen", text), ...history.slice(through + 1)];
 }
 

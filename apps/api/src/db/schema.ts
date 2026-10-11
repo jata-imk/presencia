@@ -342,9 +342,14 @@ export const chats = pgTable(
 
 // F10.8: el resumen del tramo viejo de un chat largo. Lo que el modelo ve es
 // este resumen más los mensajes posteriores a `through_message_id`, completos
-// (chat/history-window.ts). Uno por chat: cada compactación lo reescribe
-// integrando el anterior. `cards` es la lista de publicaciones del tramo,
-// armada sin LLM (context-diet.ts), para que "esa card" siga teniendo id.
+// (chat/history-window.ts). Uno por chat. `cards` es la lista de publicaciones
+// del tramo, armada sin LLM (context-diet.ts), para que "esa card" siga
+// teniendo id.
+//
+// F10.8.1: el resumen son `blocks`, uno por compactación, que se AGREGAN en
+// vez de reescribirse (no se resumen resúmenes, y la caché del prefijo de los
+// bloques viejos sobrevive). Solo cuando los bloques pesan demasiado se
+// consolidan en uno (`SummaryBlock`, chat/history-compaction.ts).
 export const chatSummaries = pgTable("chat_summaries", {
   chatId: uuid("chat_id")
     .primaryKey()
@@ -353,7 +358,9 @@ export const chatSummaries = pgTable("chat_summaries", {
   userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  summary: text("summary").notNull(),
+  // SummaryBlock[] (chat/history-compaction.ts), en orden. El `through_*` de
+  // abajo es el del último bloque.
+  blocks: jsonb("blocks").notNull().default([]),
   // Sin FK: los mensajes del tramo resumido nunca se borran (reintentar solo
   // toca la última respuesta, que siempre queda fuera del tramo).
   throughMessageId: uuid("through_message_id").notNull(),

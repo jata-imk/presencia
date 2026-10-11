@@ -3,7 +3,7 @@ import { generateText, type UIMessage } from "ai";
 import { AiService } from "../ai/ai.service.js";
 import { AiUsageService } from "../ai/ai-usage.service.js";
 import { CreditsService } from "../credits/credits.service.js";
-import { chargeUsageOf } from "../credits/rate-card.js";
+import { chargeUsageOf, type ChatTurnUsage } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
 import { env } from "../env.js";
 import { BossService } from "../jobs/boss.service.js";
@@ -11,11 +11,16 @@ import { ChatRepository } from "./chat.repository.js";
 import { toUIMessage } from "./chat-summary.js";
 import { cardSummariesIn, type CompressedCardOutput } from "./context-diet.js";
 import {
+  CONSOLIDATE_AT_TOKENS,
+  CONSOLIDATE_SYSTEM,
   SUMMARY_SYSTEM,
+  blocksTokens,
   boundedTramo,
+  consolidatePrompt,
   mergeCards,
   summaryPrompt,
   transcriptForSummary,
+  type SummaryBlock,
 } from "./history-compaction.js";
 import { compactableCut } from "./history-window.js";
 
@@ -124,46 +129,94 @@ export class HistoryCompactionService {
     const lastRow = rows.find((row) => row.id === last.id)!;
 
     const modelo = this.ai.resolveForTask(TASK_KIND);
+    const anteriores = (base?.blocks ?? []) as SummaryBlock[];
     const arranque = Date.now();
+    // Solo lo nuevo de este tramo: los bloques anteriores van de referencia y
+    // no se reescriben (F10.8.1).
     const respuesta = await generateText({
       model: modelo.model,
       system: SUMMARY_SYSTEM,
-      prompt: summaryPrompt(base?.summary ?? null, transcriptForSummary(tramo)),
+      prompt: summaryPrompt(anteriores, transcriptForSummary(tramo)),
     });
+    await this.registrar(userId, chatId, modelo, respuesta, arranque, runId, false);
     const summary = respuesta.text.trim();
+    if (!summary) return;
 
-    if (summary) {
-      const cards = mergeCards(
-        (base?.cards ?? []) as CompressedCardOutput[],
-        cardSummariesIn(tramo),
-      );
-      await this.dbService.runWithTenant(userId, async (tx) => {
-        const saved = await this.repo.saveSummary(tx, {
-          chatId,
-          userId,
-          summary,
-          throughMessageId: last.id,
-          throughCreatedAt: lastRow.createdAt,
-          cards,
-          model: modelo.id,
-        });
-        // Otro job ya guardó uno que llega igual o más lejos: este no cuenta.
-        if (!saved) return;
-        // En la MISMA transacción que el resumen que cobra. Cada compactación
-        // es un asiento: la referencia es el último mensaje que cubre.
-        await this.credits.charge(tx, {
-          userId,
-          usage: chargeUsageOf(respuesta.usage),
-          taskKind: TASK_KIND,
-          reason: "history_compaction",
-          referenceType: "message",
-          referenceId: last.id,
-        });
+    const ahora = new Date().toISOString();
+    let blocks: SummaryBlock[] = [
+      ...anteriores,
+      {
+        summary,
+        throughMessageId: last.id,
+        throughCreatedAt: lastRow.createdAt.toISOString(),
+        model: modelo.id,
+        createdAt: ahora,
+      },
+    ];
+    let cobro = chargeUsageOf(respuesta.usage);
+
+    // Si los bloques ya pesan demasiado, se funden en uno. Es la única vez que
+    // el prefijo de resúmenes cambia entero; se cobra junto con el resumen.
+    if (blocksTokens(blocks) > CONSOLIDATE_AT_TOKENS) {
+      const arranqueConsolidacion = Date.now();
+      const consolidacion = await generateText({
+        model: modelo.model,
+        system: CONSOLIDATE_SYSTEM,
+        prompt: consolidatePrompt(blocks),
       });
+      await this.registrar(
+        userId,
+        chatId,
+        modelo,
+        consolidacion,
+        arranqueConsolidacion,
+        runId,
+        true,
+      );
+      const juntos = consolidacion.text.trim();
+      if (juntos) {
+        blocks = [{ ...blocks[blocks.length - 1]!, summary: juntos }];
+        cobro = sumarCobro(cobro, chargeUsageOf(consolidacion.usage));
+      }
     }
 
-    // Siempre que hubo llamada: los tokens se pagaron aunque no se guardara.
-    await this.aiUsage.registrar({
+    const cards = mergeCards((base?.cards ?? []) as CompressedCardOutput[], cardSummariesIn(tramo));
+    await this.dbService.runWithTenant(userId, async (tx) => {
+      const saved = await this.repo.saveSummary(tx, {
+        chatId,
+        userId,
+        blocks,
+        throughMessageId: last.id,
+        throughCreatedAt: lastRow.createdAt,
+        cards,
+        model: modelo.id,
+      });
+      // Otro job ya guardó uno que llega igual o más lejos: este no cuenta.
+      if (!saved) return;
+      // En la MISMA transacción que el resumen que cobra. Cada compactación
+      // es un asiento: la referencia es el último mensaje que cubre.
+      await this.credits.charge(tx, {
+        userId,
+        usage: cobro,
+        taskKind: TASK_KIND,
+        reason: "history_compaction",
+        referenceType: "message",
+        referenceId: last.id,
+      });
+    });
+  }
+
+  /** Cada llamada deja su fila de uso, aunque el resumen no se guarde: los tokens se pagaron. */
+  private registrar(
+    userId: string,
+    chatId: string,
+    modelo: ReturnType<AiService["resolveForTask"]>,
+    respuesta: Awaited<ReturnType<typeof generateText>>,
+    arranque: number,
+    runId: string | undefined,
+    consolidacion: boolean,
+  ): Promise<void> {
+    return this.aiUsage.registrar({
       userId,
       chatId,
       task: TASK_KIND,
@@ -176,7 +229,24 @@ export class HistoryCompactionService {
         usage: respuesta.usage,
         finishReason: respuesta.finishReason,
         providerMetadata: respuesta.providerMetadata,
+        ...(consolidacion ? { consolidacion: true } : {}),
       },
     });
   }
+}
+
+/** Dos llamadas, un asiento: se suman sus tokens. */
+function sumarCobro(a: ChatTurnUsage, b: ChatTurnUsage): ChatTurnUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cachedInputTokens:
+      a.cachedInputTokens === null && b.cachedInputTokens === null
+        ? null
+        : (a.cachedInputTokens ?? 0) + (b.cachedInputTokens ?? 0),
+    reasoningTokens:
+      a.reasoningTokens == null && b.reasoningTokens == null
+        ? null
+        : (a.reasoningTokens ?? 0) + (b.reasoningTokens ?? 0),
+  };
 }

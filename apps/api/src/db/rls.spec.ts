@@ -836,7 +836,7 @@ describe("RLS tenant_isolation", () => {
         tx.insert(chatSummaries).values({
           chatId: chatA,
           userId: userA,
-          summary: "- Vende marquesitas en Santa Ana.",
+          blocks: [{ summary: "- Vende marquesitas en Santa Ana." }],
           throughMessageId: randomUUID(),
           throughCreatedAt: new Date(),
           model: "openai:mock",
@@ -859,7 +859,7 @@ describe("RLS tenant_isolation", () => {
         .runWithTenant(userB, (tx) =>
           tx
             .update(chatSummaries)
-            .set({ summary: "intruso" })
+            .set({ blocks: [{ summary: "intruso" }] })
             .where(eq(chatSummaries.chatId, chatA))
             .returning(),
         )
@@ -872,7 +872,7 @@ describe("RLS tenant_isolation", () => {
       const [row] = await dbService.runWithTenant(userA, (tx) =>
         tx.select().from(chatSummaries).where(eq(chatSummaries.chatId, chatA)),
       );
-      expect(row?.summary).toBe("- Vende marquesitas en Santa Ana.");
+      expect(row?.blocks).toEqual([{ summary: "- Vende marquesitas en Santa Ana." }]);
     });
   });
 

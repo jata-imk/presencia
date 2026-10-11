@@ -53,7 +53,11 @@ describe("assembleContext", () => {
     const chat = conversacion(6);
     const context = assembleContext(
       chat,
-      { summary: "- Vende marquesitas.", throughMessageId: "a2", cards: [] },
+      {
+        blocks: [{ summary: "- Vende marquesitas.", throughCreatedAt: "2026-10-07T18:00:00.000Z" }],
+        throughMessageId: "a2",
+        cards: [],
+      },
       new Map(),
       120_000,
     );
@@ -87,7 +91,7 @@ describe("cardIdsForContext", () => {
       conCard("a1", "c-1"),
     ];
     const ids = cardIdsForContext(chat, {
-      summary: "",
+      blocks: [{ summary: "", throughCreatedAt: "2026-10-07T18:00:00.000Z" }],
       throughMessageId: "a0",
       cards: [
         { cardId: "c-viejo", network: "instagram", status: "draft", resumen: "" },

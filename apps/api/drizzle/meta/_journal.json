@@ -351,6 +351,20 @@
       "when": 1791529550084,
       "tag": "0049_trazas_de_turno",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1791680794163,
+      "tag": "0050_resumen_por_bloques",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1791680803265,
+      "tag": "0051_quitar_resumen_viejo",
+      "breakpoints": true
     }
   ]
 }

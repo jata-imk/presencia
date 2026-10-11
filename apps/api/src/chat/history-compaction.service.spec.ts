@@ -219,6 +219,8 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
     });
   }
 
+  const resumenes = (row: { blocks: unknown } | undefined) =>
+    ((row?.blocks ?? []) as { summary: string }[]).map((block) => block.summary);
   const resumenDe = (chatId: string) =>
     dbService.runWithTenant(userId, async (tx) => {
       const [row] = await tx.select().from(chatSummaries).where(eq(chatSummaries.chatId, chatId));
@@ -238,7 +240,7 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
     await crear("- Vende marquesitas en Santa Ana.", prompts).compact({ userId, chatId });
 
     const row = await resumenDe(chatId);
-    expect(row?.summary).toBe("- Vende marquesitas en Santa Ana.");
+    expect(resumenes(row)).toEqual(["- Vende marquesitas en Santa Ana."]);
     expect(row?.throughMessageId).toBe(ids[13]);
     expect(row?.cards).toEqual([
       expect.objectContaining({
@@ -299,7 +301,7 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
     expect(encolados).toEqual([{ userId, chatId: "c" }]);
   });
 
-  it("la siguiente compactación integra el resumen anterior y avanza el corte", async () => {
+  it("la siguiente compactación agrega un bloque sin reescribir el anterior, y avanza el corte", async () => {
     const { chatId, ids } = await chatLargo(12);
     await crear("Resumen uno", []).compact({ userId, chatId });
     // El chat sigue: 8 intercambios más.
@@ -326,10 +328,12 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
     });
     const prompts: string[] = [];
     await crear("Resumen dos", prompts).compact({ userId, chatId });
+    // El bloque anterior va de referencia (para no repetirlo), no para reescribirlo.
+    expect(prompts[0]).toContain("Resúmenes anteriores");
     expect(prompts[0]).toContain("Resumen uno");
     expect(prompts[0]).not.toContain("Pregunta 0"); // ya estaba en el resumen anterior
     const row = await resumenDe(chatId);
-    expect(row?.summary).toBe("Resumen dos");
+    expect(resumenes(row)).toEqual(["Resumen uno", "Resumen dos"]);
     expect(row?.throughMessageId).not.toBe(ids[13]);
     // La card del primer tramo sigue en la lista.
     expect(row?.cards).toHaveLength(1);
@@ -367,6 +371,23 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
     expect(prompts[0]).not.toContain("Pregunta 0");
     // Y se guarda: empezar de cero no habría llegado más lejos que el anterior.
     const row = await resumenDe(chatId);
-    expect(row?.summary).toBe("Resumen dos");
+    expect(resumenes(row)).toEqual(["Resumen uno", "Resumen dos"]);
+  });
+
+  it("cuando los bloques pesan demasiado, los consolida en uno y cobra una sola vez", async () => {
+    const { chatId } = await chatLargo(12);
+    const antes = (await cobros()).length;
+    const prompts: string[] = [];
+    // Un resumen de ~7.5k tokens: con él, los bloques ya pasan del tope.
+    await crear("z".repeat(30_000), prompts).compact({ userId, chatId });
+    expect(prompts).toHaveLength(2); // el resumen y la consolidación
+    expect(prompts[1]).toContain("Parte 1:");
+    const row = await resumenDe(chatId);
+    expect(resumenes(row)).toHaveLength(1);
+    expect((await cobros()).length).toBe(antes + 1);
+    const usos = await dbService.runWithTenant(userId, (tx) =>
+      tx.select().from(aiUsageEvents).where(eq(aiUsageEvents.chatId, chatId)),
+    );
+    expect(usos).toHaveLength(2);
   });
 });
