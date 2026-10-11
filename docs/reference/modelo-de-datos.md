@@ -68,15 +68,17 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 **`messages`** — la conversación canónica multi-canal.
 
-| Columna      | Tipo        | Nota                                                                                       |
-| ------------ | ----------- | ------------------------------------------------------------------------------------------ |
-| `id`         | uuid PK     |                                                                                            |
-| `chat_id`    | uuid FK     |                                                                                            |
-| `user_id`    | uuid FK     | denormalizado a propósito — RLS sin join                                                   |
-| `role`       | enum        | `user`, `assistant`, `system`, `tool`                                                      |
-| `parts`      | jsonb       | formato de mensaje del AI SDK (texto, tool calls, tool results) — compatible con `useChat` |
-| `channel`    | enum        | `web`, `telegram`, `whatsapp` — por dónde entró/salió                                      |
-| `created_at` | timestamptz |                                                                                            |
+| Columna      | Tipo        | Nota                                                                                                                                    |
+| ------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`         | uuid PK     | desde F10.8.2, el mismo que tiene la web (el del cliente, o el del stream para la respuesta)                                            |
+| `chat_id`    | uuid FK     |                                                                                                                                         |
+| `user_id`    | uuid FK     | denormalizado a propósito — RLS sin join                                                                                                |
+| `role`       | enum        | `user`, `assistant`, `system`, `tool`                                                                                                   |
+| `parts`      | jsonb       | formato de mensaje del AI SDK (texto, tool calls, tool results) — compatible con `useChat`                                              |
+| `channel`    | enum        | `web`, `telegram`, `whatsapp` — por dónde entró/salió                                                                                   |
+| `run_id`     | uuid        | F10.8.1: el turno que produjo la respuesta (`ai_run_steps`); null en las del creator                                                    |
+| `status`     | enum        | F10.8.2 (`0051`): `complete`, `stopped`, `failed` — una respuesta cortada o fallida se guarda con lo que alcanzó a escribirse (ADR-006) |
+| `created_at` | timestamptz |                                                                                                                                         |
 
 **`chat_summaries`** (F10.8, migración `0047`): el resumen del tramo viejo de un chat largo, uno por chat. Lo que el modelo ve es este resumen más los mensajes posteriores a `through_message_id`, completos (`chat/history-window.ts`); la UI y `messages` no cambian.
 
@@ -212,7 +214,7 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 - **Se guarda el crudo, no una unidad derivada** (misma razón que `credit_ledger` guarda `delta` y no un saldo): la normalización a créditos facturables vive en `credits/rate-card.ts` (`quoteChatTurn`, F5), como una capa aparte que lee este crudo — nunca al revés. Si aquí solo se guardara el número normalizado, se perdería para siempre la capacidad de re-analizar el costo real cuando cambien las tarifas del proveedor.
 - Un fallo al insertar el evento nunca tumba la tarea del usuario: toda fila pasa por `AiUsageService.registrar()` (F9.8), que corre en su propia transacción y nunca lanza. En el chat se llama dentro de `onEnd`, después de persistir el mensaje assistant.
-- **Hueco conocido:** en un turno abortado (`isAborted`) no se registra usage — `onEnd` retorna temprano y las promesas de `streamText` pueden no resolver. Los tokens quemados por "detener generación" (ADR-006) quedan sin medir hasta que se revisite.
+- **Hueco conocido:** en un turno abortado (`isAborted`) no se registra usage — `onEnd` retorna temprano y las promesas de `streamText` pueden no resolver. Los tokens quemados por "detener generación" (ADR-006) quedan sin medir hasta que se revisite. Desde F10.8.2 la respuesta cortada sí se guarda en `messages` (`status = stopped`), sin cobro.
 - Índice `usage_by_user` sobre `(user_id, created_at)` — mismo shape que `ledger_balance`, responde "¿cuánto gastó X este mes y en qué modelos?" sin abrir el dashboard de ningún proveedor.
 
 ### Métricas de publicación

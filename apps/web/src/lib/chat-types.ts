@@ -1,6 +1,7 @@
 import { isStaticToolUIPart, type ToolUIPart, type UIMessage } from "ai";
 import {
   CARD_ARCHETYPE_TOOLS,
+  type ChatMessageMetadata,
   MEMORY_TOOL_NAME,
   type CardArchetypeToolName,
   type CardToolOutput,
@@ -21,7 +22,12 @@ export type MemoryUITools = {
   [MEMORY_TOOL_NAME]: { input: MemorySearchInput; output: MemorySearchOutput };
 };
 
-export type ChatUIMessage = UIMessage<never, never, CardArchetypeUITools & MemoryUITools>;
+// F10.8.2: `metadata.status` marca una respuesta que se cortó o falló.
+export type ChatUIMessage = UIMessage<
+  ChatMessageMetadata,
+  never,
+  CardArchetypeUITools & MemoryUITools
+>;
 export type CardToolPart = ToolUIPart<CardArchetypeUITools>;
 export type MemoryToolPart = ToolUIPart<MemoryUITools>;
 

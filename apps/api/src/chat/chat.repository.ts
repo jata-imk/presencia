@@ -12,6 +12,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import type { MessageStatus } from "@presencia/shared";
 import { chatSummaries, chats, memoryChunks, messages } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 import { CHAT_CHANGED_CHANNEL, encodeChatChanged } from "../realtime/card-events.js";
@@ -89,6 +90,8 @@ export class ChatRepository {
       parts: unknown;
       /** F10.8.1: el turno que produjo la respuesta. */
       runId?: string | null;
+      /** F10.8.2: cómo terminó la respuesta. Default `complete`. */
+      status?: MessageStatus;
     },
   ): Promise<MessageRow> {
     const [message] = await tx.insert(messages).values(input).returning();

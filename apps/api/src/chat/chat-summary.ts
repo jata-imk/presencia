@@ -1,5 +1,5 @@
 import type { UIMessage } from "ai";
-import type { ChatSummary } from "@presencia/shared";
+import type { ChatMessageMetadata, ChatSummary, MessageStatus } from "@presencia/shared";
 import type { ChatRow, MessageRow } from "./chat.repository.js";
 
 /**
@@ -26,9 +26,19 @@ export function toChatSummary(chat: ChatRow): ChatSummary {
  * compactación (F10.8): las dos tienen que ver los mismos mensajes.
  */
 export function toUIMessage(row: MessageRow): UIMessage {
-  return {
+  const message: UIMessage = {
     id: row.id,
     role: row.role as UIMessage["role"],
     parts: row.parts as UIMessage["parts"],
   };
+  // F10.8.2: solo si la respuesta no terminó completa (la card de estado).
+  if (row.status !== "complete") {
+    message.metadata = { status: row.status } satisfies ChatMessageMetadata;
+  }
+  return message;
+}
+
+/** El estado de una respuesta guardada (F10.8.2); `complete` si no trae. */
+export function statusOf(message: UIMessage): MessageStatus {
+  return (message.metadata as ChatMessageMetadata | undefined)?.status ?? "complete";
 }

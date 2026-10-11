@@ -17,7 +17,7 @@ import {
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { MODOS_ESTRATEGIA } from "@presencia/shared";
+import { MESSAGE_STATUSES, MODOS_ESTRATEGIA } from "@presencia/shared";
 import { AI_TASK_KINDS, EMBEDDING_DIMENSIONS } from "../ai/provider-registry.js";
 
 // Implementa docs/reference/modelo-de-datos.md (aprobado 2026-07-18).
@@ -35,6 +35,8 @@ export const voiceRegister = pgEnum("voice_register", [
 ]);
 
 export const messageRole = pgEnum("message_role", ["user", "assistant", "system", "tool"]);
+// F10.8.2: cómo terminó una respuesta (MESSAGE_STATUSES, en shared).
+export const messageStatus = pgEnum("message_status", MESSAGE_STATUSES);
 
 export const channel = pgEnum("channel", ["web", "telegram", "whatsapp"]);
 
@@ -433,6 +435,10 @@ export const messages = pgTable(
     // F10.8.1: el turno que produjo esta respuesta (ai_run_steps,
     // ai_usage_events). Solo en las del asistente; null en las anteriores.
     runId: uuid("run_id"),
+    // F10.8.2: una respuesta que se cortó o falló se guarda igual, con lo que
+    // alcanzó a escribirse, y la UI muestra su card de estado. Los mensajes
+    // del creator siempre quedan en `complete`.
+    status: messageStatus("status").notNull().default("complete"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("messages_by_chat").on(t.chatId, t.createdAt)],
