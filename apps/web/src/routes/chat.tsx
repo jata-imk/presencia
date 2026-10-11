@@ -1,7 +1,6 @@
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
 import { ArrowDown } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { Composer } from "../components/chat/Composer.js";
 import { PublicationPanel } from "../components/panel/PublicationPanel.js";
@@ -10,6 +9,7 @@ import { AssistantMessage } from "../components/chat/AssistantMessage.js";
 import { MessageUser } from "../components/chat/MessageUser.js";
 import { TypingDots } from "../components/chat/TypingDots.js";
 import { QuotaBanner } from "../components/QuotaBanner.js";
+import { chatTransport } from "../lib/chat-transport.js";
 import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
 import { ConfirmDeleteModal } from "../components/ui/ConfirmDeleteModal.js";
 import { fetchCardVersions } from "../lib/cards-api.js";
@@ -62,19 +62,13 @@ function ChatView({
   initialMessages: ChatUIMessage[];
 }) {
   const [input, setInput] = useState("");
+  const transport = useMemo(() => chatTransport(chatId), [chatId]);
   const { messages, sendMessage, regenerate, stop, status, error } = useChat<ChatUIMessage>({
     id: chatId,
     messages: initialMessages,
-    transport: new DefaultChatTransport({
-      api: `/api/chats/${chatId}/stream`,
-      // Solo el último mensaje: el servidor reconstruye el historial desde la
-      // base (fuente de verdad única) y nunca leyó el resto. Mandarlo entero
-      // hacía crecer cada request con el chat, y uno largo (cards, razonamiento)
-      // pasaba el límite de 100 kB de express.json() con un 413.
-      prepareSendMessagesRequest: ({ messages, trigger, messageId }) => ({
-        body: { trigger, messageId, messages: messages.slice(-1) },
-      }),
-    }),
+    // Solo el último mensaje viaja al servidor (lib/chat-transport.ts). Uno
+    // por chat: useChat se queda con el primero que recibe.
+    transport,
   });
   const busy = status === "submitted" || status === "streaming";
   // Auto-scroll (F10.6.2): el chat sigue a la respuesta SOLO si estabas en
