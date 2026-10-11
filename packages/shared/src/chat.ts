@@ -49,6 +49,23 @@ export const chatStreamBodySchema = z.object({
 export type ChatStreamBody = z.infer<typeof chatStreamBodySchema>;
 
 /**
+ * Cómo terminó una respuesta del asistente (F10.8.2). `stopped`: el stream se
+ * cortó (Detener, cerrar la pestaña, la red); el servidor no distingue entre
+ * esos. `failed`: el proveedor o el turno fallaron. Lo que alcanzó a
+ * escribirse se guarda en los dos casos.
+ */
+export const MESSAGE_STATUSES = ["complete", "stopped", "failed"] as const;
+export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
+
+/**
+ * La metadata de un mensaje del chat como llega a la web (UIMessage.metadata).
+ * `status` solo viene si la respuesta no terminó completa.
+ */
+export interface ChatMessageMetadata {
+  status?: Exclude<MessageStatus, "complete">;
+}
+
+/**
  * Tope de un mensaje del creator, en caracteres (F10.8.2). Lo aplican el
  * composer (que no deja pasarlo) y el servidor (413 si llega más). ~12k
  * tokens: cabe un artículo pegado para resumir, no un libro. El límite del

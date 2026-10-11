@@ -13,13 +13,15 @@ import {
   pendingAfterSummary,
   type HistorySummary,
 } from "./history-window.js";
+import { markUnansweredTurns } from "./unanswered-turns.js";
 
 // Lo que el modelo ve en cada turno (F10.8.1, ADR-026: "guardar ≠ recordar ≠
 // mandar al modelo"). Puro: recibe el historial completo, el resumen y las
 // cards como son hoy, y arma la ventana. La UI y lo que se persiste nunca
 // pasan por aquí. El orden importa:
 //
-// 1. El resumen sustituye al tramo viejo (history-window.ts).
+// 1. El resumen sustituye al tramo viejo (history-window.ts), y los turnos que
+//    se quedaron sin respuesta completa van marcados (unanswered-turns.ts).
 // 2. Las cards se describen como son HOY, no como quedaron en messages.parts.
 // 3. Dieta: las cards viejas y los recuerdos de turnos pasados viajan cortos
 //    (context-diet.ts).
@@ -57,7 +59,9 @@ export function assembleContext(
   live: ReadonlyMap<string, LiveCard> | null,
   capTokens: number,
 ): ModelContext {
-  const windowed = applySummary(history, summary, live);
+  // Después del resumen: un turno sin respuesta que ya quedó resumido no se
+  // marca, y la marca no puede quedar pegada al acuse sintético del resumen.
+  const windowed = markUnansweredTurns(applySummary(history, summary, live));
   const messages = capHistory(
     trimMemoryOutputsForModel(
       compressToolOutputsForModel(withLiveCards(windowed, live ?? new Map())),

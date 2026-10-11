@@ -155,6 +155,27 @@ export class CardsRepository {
   }
 
   /**
+   * F10.8.2: borra los borradores de un turno cortado que terminaron de
+   * crearse después del corte. El creator nunca los vio (su tool quedó a
+   * medias en la respuesta guardada) y no tienen mensaje: sin esto quedaban
+   * huérfanos. Solo borradores sin mensaje, por si acaso.
+   */
+  async deleteUnlinkedDrafts(tx: Tx, cardIds: string[]): Promise<void> {
+    if (cardIds.length === 0) return;
+    const deleted = await tx
+      .delete(publicationCards)
+      .where(
+        and(
+          inArray(publicationCards.id, cardIds),
+          isNull(publicationCards.messageId),
+          eq(publicationCards.status, "draft"),
+        ),
+      )
+      .returning({ id: publicationCards.id, userId: publicationCards.userId });
+    await notifyChanged(tx, deleted);
+  }
+
+  /**
    * Suelta las cards de un chat que se va a borrar (F8.6). El FK haría lo
    * mismo con ON DELETE SET NULL, pero en silencio: sin este paso, otra
    * pestaña seguiría mostrando esas cards colgadas de un chat que ya no

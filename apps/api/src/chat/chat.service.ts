@@ -12,6 +12,7 @@ import {
   type BrandVoiceForPrompt,
   type CardContent,
   type ChatSummary,
+  type MessageStatus,
 } from "@presencia/shared";
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
@@ -23,7 +24,7 @@ import { CardsRepository } from "../cards/cards.repository.js";
 import { buildPublicationCardTools } from "../cards/publication-card.tools.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
-import { DbService } from "../db/db.service.js";
+import { DbService, type Tx } from "../db/db.service.js";
 import { isUniqueViolation } from "../db/pg-error.js";
 import { env } from "../env.js";
 import { FoldersService } from "../folders/folders.service.js";
@@ -36,6 +37,7 @@ import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
 import { assembleContext, cardIdsForContext } from "./context-builder.js";
 import { ChatRepository, type ChatSummaryRow } from "./chat.repository.js";
 import { type CompressedCardOutput, type LiveCard } from "./context-diet.js";
+import { sanitizeInterruptedParts } from "./interrupted-turn.js";
 import { storableMessageId } from "./last-user-message.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 
@@ -46,6 +48,12 @@ import { buildSystemPrompt } from "./system-prompt.js";
 const MAX_AGENT_STEPS = 5;
 /** Cuánto espera la traza de un turno cortado a que termine la tool en curso. */
 const ABORTED_TRACE_GRACE_MS = 3_000;
+/**
+ * Cuánto espera un turno a que se termine de guardar el anterior del mismo
+ * chat (F10.8.2). Guardar uno cortado tarda milisegundos; el tope es para no
+ * colgar un turno si otro sigue respondiendo en otra pestaña.
+ */
+const TURN_WAIT_MS = 10_000;
 
 @Injectable()
 export class ChatService {
@@ -62,6 +70,42 @@ export class ChatService {
     @Inject(HistoryCompactionService) private readonly compaction: HistoryCompactionService,
     @Inject(MemoryService) private readonly memory: MemoryService,
   ) {}
+
+  /**
+   * Los turnos que todavía se están guardando, por chat (F10.8.2). Un turno
+   * cortado se guarda en `onEnd`, DESPUÉS de que el cliente ya cerró la
+   * conexión: un "Reintentar" inmediato podía leer el historial antes y dejar
+   * la respuesta cortada guardada después de la nueva. En memoria porque el
+   * chat corre en una sola instancia (el contenedor `app`, ADR-020); con
+   * varias, esto tendría que ir a la base.
+   */
+  private readonly turnsInFlight = new Map<
+    string,
+    { done: Promise<void>; closed: () => boolean }
+  >();
+
+  /** Espera a que termine de guardarse el turno en curso del chat, con tope. */
+  private async afterTurnInFlight(chatId: string): Promise<void> {
+    // Solo si su conexión ya cerró (se cortó, o terminó y se está guardando):
+    // uno que sigue respondiendo en otra pestaña no frena a este.
+    const turn = this.turnsInFlight.get(chatId);
+    if (!turn?.closed()) return;
+    await Promise.race([turn.done, new Promise((resolve) => setTimeout(resolve, TURN_WAIT_MS))]);
+  }
+
+  /** Registra un turno del chat; la función que devuelve lo da por terminado. */
+  private trackTurn(chatId: string, res: ServerResponse): () => void {
+    let release!: () => void;
+    const done = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entry = { done, closed: () => res.destroyed || res.writableFinished };
+    this.turnsInFlight.set(chatId, entry);
+    return () => {
+      release();
+      if (this.turnsInFlight.get(chatId) === entry) this.turnsInFlight.delete(chatId);
+    };
+  }
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
     return this.dbService.runWithTenant(userId, async (tx) => {
@@ -193,35 +237,52 @@ export class ChatService {
     // tokens del proveedor — nunca deja un mensaje user huérfano sin respuesta.
     await this.assertQuotaForTurn(userId);
     const voicePromise = this.loadVoiceForPrompt(userId);
-    const { history, summary } = await this.dbService
-      .runWithTenant(userId, async (tx) => {
-        const chat = await this.repo.getChat(tx, chatId);
-        if (!chat) throw new NotFoundException("Ese chat no existe.");
-        const previous = await this.repo.listMessages(tx, chatId);
-        // Con el id del cliente (F10.8.2): web y base nombran igual al mensaje,
-        // y "Regenerar" lo encuentra sin recargar la página.
-        const saved = await this.repo.insertMessage(tx, {
-          id: storableMessageId(userMessage),
-          chatId,
-          userId,
-          role: "user",
-          parts: userMessage.parts,
+    await this.afterTurnInFlight(chatId);
+    // Desde aquí, no desde el pipe: un corte mientras se arma el turno también
+    // se tiene que esperar.
+    const release = this.trackTurn(chatId, res);
+    try {
+      const { history, summary } = await this.dbService
+        .runWithTenant(userId, async (tx) => {
+          const chat = await this.repo.getChat(tx, chatId);
+          if (!chat) throw new NotFoundException("Ese chat no existe.");
+          const previous = await this.repo.listMessages(tx, chatId);
+          // Con el id del cliente (F10.8.2): web y base nombran igual al mensaje,
+          // y "Regenerar" lo encuentra sin recargar la página.
+          const saved = await this.repo.insertMessage(tx, {
+            id: storableMessageId(userMessage),
+            chatId,
+            userId,
+            role: "user",
+            parts: userMessage.parts,
+          });
+          await this.repo.touchChat(tx, chatId);
+          return {
+            history: [...previous, saved].map((row) => toUIMessage(row)),
+            summary: await this.repo.getSummary(tx, chatId),
+          };
+        })
+        .catch((error: unknown) => {
+          // Un reenvío del mismo mensaje (doble clic, reintento de red).
+          if (isUniqueViolation(error, "messages_pkey")) {
+            throw new ConflictException("Ese mensaje ya se envió.");
+          }
+          throw error;
         });
-        await this.repo.touchChat(tx, chatId);
-        return {
-          history: [...previous, saved].map((row) => toUIMessage(row)),
-          summary: await this.repo.getSummary(tx, chatId),
-        };
-      })
-      .catch((error: unknown) => {
-        // Un reenvío del mismo mensaje (doble clic, reintento de red).
-        if (isUniqueViolation(error, "messages_pkey")) {
-          throw new ConflictException("Ese mensaje ya se envió.");
-        }
-        throw error;
-      });
 
-    await this.runAgentTurn(userId, chatId, history, toHistorySummary(summary), res, voicePromise);
+      await this.runAgentTurn(
+        userId,
+        chatId,
+        history,
+        toHistorySummary(summary),
+        res,
+        voicePromise,
+        release,
+      );
+    } catch (error) {
+      release();
+      throw error;
+    }
   }
 
   // El 402 lo arma CreditsService, que es donde vive la traducción de
@@ -299,43 +360,60 @@ export class ChatService {
   ): Promise<void> {
     await this.assertQuotaForTurn(userId);
     const voicePromise = this.loadVoiceForPrompt(userId);
-    const { history, summary } = await this.dbService.runWithTenant(userId, async (tx) => {
-      const chat = await this.repo.getChat(tx, chatId);
-      if (!chat) throw new NotFoundException("Ese chat no existe.");
-      const all = await this.repo.listMessages(tx, chatId);
-      const targetIndex = all.findIndex((m) => m.id === userMessageId);
-      const target = targetIndex === -1 ? undefined : all[targetIndex];
-      const staleReply = targetIndex === -1 ? undefined : all[targetIndex + 1];
-      // Solo se reintenta el último turno: el mensaje user tiene que ser
-      // el último de la conversación (turno que falló antes de generar
-      // respuesta — el botón "Reintentar" de un error) o el penúltimo,
-      // seguido exactamente por la respuesta assistant a regenerar — sin
-      // este chequeo se podría borrar un mensaje intermedio dejando un
-      // hueco (dos turnos user seguidos) sin tocar los turnos posteriores.
-      const isLast = targetIndex === all.length - 1;
-      const isSecondToLastWithReply =
-        targetIndex === all.length - 2 && staleReply?.role === "assistant";
-      if (!target || target.role !== "user" || !(isLast || isSecondToLastWithReply)) {
-        throw new NotFoundException("Ese mensaje no se puede reintentar.");
-      }
-      if (staleReply && (await this.cardsRepo.hasSentCards(tx, staleReply.id))) {
-        throw new ConflictException(
-          "Esta respuesta tiene publicaciones programadas o publicadas. Cancela la programación antes de regenerarla.",
-        );
-      }
-      if (staleReply) {
-        // Cards antes que mensaje: el FK message_id es "set null", no
-        // cascade — sin este orden quedarían huérfanas en vez de borradas.
-        await this.cardsRepo.deleteCardsByMessageId(tx, staleReply.id);
-        await this.repo.deleteMessage(tx, staleReply.id);
-      }
-      return {
-        history: all.slice(0, targetIndex + 1).map((row) => toUIMessage(row)),
-        summary: await this.repo.getSummary(tx, chatId),
-      };
-    });
+    // "Detener" y luego "Reintentar" de inmediato: la respuesta cortada tiene
+    // que estar guardada antes de leer qué se reintenta.
+    await this.afterTurnInFlight(chatId);
+    const release = this.trackTurn(chatId, res);
+    try {
+      const { history, summary } = await this.dbService.runWithTenant(userId, async (tx) => {
+        const chat = await this.repo.getChat(tx, chatId);
+        if (!chat) throw new NotFoundException("Ese chat no existe.");
+        const all = await this.repo.listMessages(tx, chatId);
+        const targetIndex = all.findIndex((m) => m.id === userMessageId);
+        const target = targetIndex === -1 ? undefined : all[targetIndex];
+        const staleReply = targetIndex === -1 ? undefined : all[targetIndex + 1];
+        // Solo se reintenta el último turno: el mensaje user tiene que ser
+        // el último de la conversación (turno que falló antes de generar
+        // respuesta — el botón "Reintentar" de un error) o el penúltimo,
+        // seguido exactamente por la respuesta assistant a regenerar — sin
+        // este chequeo se podría borrar un mensaje intermedio dejando un
+        // hueco (dos turnos user seguidos) sin tocar los turnos posteriores.
+        const isLast = targetIndex === all.length - 1;
+        const isSecondToLastWithReply =
+          targetIndex === all.length - 2 && staleReply?.role === "assistant";
+        if (!target || target.role !== "user" || !(isLast || isSecondToLastWithReply)) {
+          throw new NotFoundException("Ese mensaje no se puede reintentar.");
+        }
+        if (staleReply && (await this.cardsRepo.hasSentCards(tx, staleReply.id))) {
+          throw new ConflictException(
+            "Esta respuesta tiene publicaciones programadas o publicadas. Cancela la programación antes de regenerarla.",
+          );
+        }
+        if (staleReply) {
+          // Cards antes que mensaje: el FK message_id es "set null", no
+          // cascade — sin este orden quedarían huérfanas en vez de borradas.
+          await this.cardsRepo.deleteCardsByMessageId(tx, staleReply.id);
+          await this.repo.deleteMessage(tx, staleReply.id);
+        }
+        return {
+          history: all.slice(0, targetIndex + 1).map((row) => toUIMessage(row)),
+          summary: await this.repo.getSummary(tx, chatId),
+        };
+      });
 
-    await this.runAgentTurn(userId, chatId, history, toHistorySummary(summary), res, voicePromise);
+      await this.runAgentTurn(
+        userId,
+        chatId,
+        history,
+        toHistorySummary(summary),
+        res,
+        voicePromise,
+        release,
+      );
+    } catch (error) {
+      release();
+      throw error;
+    }
   }
 
   // Pipeline compartido por streamChat y regenerateChat: streamText + tools
@@ -348,11 +426,16 @@ export class ChatService {
     summary: HistorySummary | null,
     res: ServerResponse,
     voicePromise: Promise<BrandVoiceForPrompt | null>,
+    /** Da por terminado el turno (turnsInFlight): al final de onEnd. */
+    release: () => void,
   ): Promise<void> {
     const abortController = new AbortController();
     res.on("close", () => {
       if (!res.writableFinished) abortController.abort();
     });
+    // El creator pudo cortar mientras se guardaba su mensaje: el "close" ya
+    // pasó y no se repite. Sin esto, el turno corría completo para nadie.
+    if (res.destroyed) abortController.abort();
 
     // Ids de las cards creadas durante este turno (closure compartido con la
     // tool): onEnd las vincula al mensaje assistant una vez que existe.
@@ -471,7 +554,25 @@ export class ChatService {
       onAbort: guardarTrazaCortada,
     });
 
-    // Desde ai 7.0.1xx devuelve una promesa que se cumple al cerrar el stream.
+    // Una respuesta cortada o que falló sin usage (F10.8.2): se guarda lo que
+    // alcanzó a escribirse, con su estado y sin cobro (no hay usage, ADR-012),
+    // ni título, memoria o compactación. Una tool que corría al cortar todavía
+    // puede terminar y crear su card después: el creator nunca la vio (en lo
+    // guardado su tool quedó a medias), así que al vencer la misma gracia de
+    // la traza se borra en vez de quedar huérfana.
+    const saveInterrupted = async (responseMessage: UIMessage, status: "stopped" | "failed") => {
+      // Las que existen ahora; las que lleguen después son las tardías.
+      const linked = createdCardIds.slice();
+      await this.persistReply(userId, chatId, responseMessage, status, trace.runId, linked);
+      setTimeout(
+        () => void this.dropLateCards(userId, chatId, createdCardIds.slice(linked.length)),
+        ABORTED_TRACE_GRACE_MS,
+      );
+    };
+
+    // Promesa que se cumple cuando el stream deja de escribir. Al cortar, eso
+    // pasa ANTES de onEnd (que corre desde el cancel del stream): por eso el
+    // turno se da por terminado al final de onEnd, no aquí.
     // No se espera: los headers ya salieron, así que un rechazo no tiene a
     // quién responderle (el filtro de Nest intentaría mandar un 500 encima).
     // Solo se registra; el usuario ya recibió el error por `onError`.
@@ -487,140 +588,197 @@ export class ChatService {
           return "Algo salió mal generando la respuesta. Inténtalo de nuevo.";
         },
         onEnd: async ({ responseMessage, isAborted, finishReason }) => {
-          if (isAborted) {
-            guardarTrazaCortada();
-            return;
-          }
-
-          // Se lee una sola vez, antes de las dos transacciones de abajo: si
-          // esto falla, ni el mensaje ni el cobro se persisten. Es lo que pasa
-          // cuando el creator corta el turno: `isAborted` llega en false y
-          // `totalUsage` rechaza con AbortError. Los tokens de ese turno quedan
-          // sin cobrar y sin fila en ai_usage_events (hueco conocido, ver PR
-          // feat/f45-usage-telemetry); desde F10.8.1 sí queda su traza, con
-          // el paso cortado como `aborted`.
-          let usage: Awaited<typeof result.totalUsage>;
-          let steps: Awaited<typeof result.steps>;
           try {
-            [usage, steps] = await Promise.all([result.totalUsage, result.steps]);
-          } catch (error) {
-            console.error(
-              `[chat] No se pudo leer el usage del turno de chat ${chatId}; ni el mensaje ni el cobro se persisten:`,
-              error,
-            );
-            if (abortController.signal.aborted) {
+            if (isAborted) {
               guardarTrazaCortada();
-            } else {
-              trace.close("error", error);
-              void this.aiUsage.registrarTraza(userId, chatId, trace);
+              await saveInterrupted(responseMessage, "stopped");
+              return;
             }
-            return;
-          }
-          // El error ya lo vio onError (trace.failed); aquí solo se cierra el paso.
-          if (finishReason === "error") trace.close("error");
 
-          if (steps.length >= MAX_AGENT_STEPS && finishReason === "tool-calls") {
-            console.warn(
-              `[chat] Turno truncado por el límite de ${MAX_AGENT_STEPS} steps ` +
-                `(chat ${chatId}): el modelo aún quería llamar otra tool.`,
-            );
-          }
-
-          // El id de la respuesta guardada; null si no se guardó.
-          let savedId: string | null = null;
-          try {
-            savedId = await this.dbService.runWithTenant(userId, async (tx) => {
-              const saved = await this.repo.insertMessage(tx, {
-                id: responseMessage.id,
-                chatId,
-                userId,
-                role: "assistant",
-                parts: responseMessage.parts,
-                runId: trace.runId,
-              });
-              await this.repo.touchChat(tx, chatId);
-              if (createdCardIds.length > 0) {
-                await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
+            // Se lee una sola vez, antes de guardar. Si esto falla, no hay
+            // cobro: es lo que pasa cuando el creator corta
+            // el turno (`isAborted` llega en false y `totalUsage` rechaza con
+            // AbortError). Los tokens de ese turno quedan sin cobrar y sin fila
+            // en ai_usage_events (hueco conocido, ver PR
+            // feat/f45-usage-telemetry); desde F10.8.1 queda su traza, con el
+            // paso cortado como `aborted`, y desde F10.8.2 la respuesta, con lo
+            // que alcanzó a escribirse y su estado.
+            let usage: Awaited<typeof result.totalUsage>;
+            let steps: Awaited<typeof result.steps>;
+            try {
+              [usage, steps] = await Promise.all([result.totalUsage, result.steps]);
+            } catch (error) {
+              const stopped = abortController.signal.aborted;
+              if (stopped) {
+                guardarTrazaCortada();
+              } else {
+                console.error(
+                  `[chat] No se pudo leer el usage del turno de chat ${chatId}:`,
+                  error,
+                );
+                trace.close("error", error);
+                void this.aiUsage.registrarTraza(userId, chatId, trace);
               }
+              await saveInterrupted(responseMessage, stopped ? "stopped" : "failed");
+              return;
+            }
+            // El error ya lo vio onError (trace.failed); aquí solo se cierra el paso.
+            if (finishReason === "error") trace.close("error");
+
+            if (steps.length >= MAX_AGENT_STEPS && finishReason === "tool-calls") {
+              console.warn(
+                `[chat] Turno truncado por el límite de ${MAX_AGENT_STEPS} steps ` +
+                  `(chat ${chatId}): el modelo aún quería llamar otra tool.`,
+              );
+            }
+
+            // Un error a media respuesta con usage legible: se guarda lo que
+            // alcanzó a escribirse como `failed` (F10.8.2) y se cobra, como antes.
+            const failed = finishReason === "error";
+            // El id de la respuesta guardada; null si no se guardó.
+            const savedId = await this.persistReply(
+              userId,
+              chatId,
+              responseMessage,
+              failed ? "failed" : "complete",
+              trace.runId,
+              createdCardIds,
               // Cobro real con el usage real del turno, en la MISMA
               // transacción que el mensaje que cobra (modelo-de-datos.md: "o
               // se cobra y se produce, o ninguna de las dos"). charge() puede
               // dejar saldo negativo a propósito — el gate de arriba es lo
               // que evita que esto sea frecuente, no esto.
-              await this.creditsService.charge(tx, {
+              (tx, messageId) =>
+                this.creditsService.charge(tx, {
+                  userId,
+                  usage: chargeUsageOf(usage),
+                  taskKind: "chat",
+                  reason: "chat_message",
+                  referenceType: "message",
+                  referenceId: messageId,
+                }),
+            );
+
+            // Fuera de la transacción del mensaje, y AiUsageService nunca lanza:
+            // un fallo al registrar usage no puede costar el mensaje ni el cobro,
+            // que ya se persistieron arriba.
+            await this.aiUsage.registrar(
+              {
                 userId,
-                usage: chargeUsageOf(usage),
-                taskKind: "chat",
-                reason: "chat_message",
-                referenceType: "message",
-                referenceId: saved.id,
-              });
-              return saved.id;
-            });
-          } catch (error) {
-            console.error(
-              `[chat] onEnd falló para chat ${chatId} (turno no abortado). ` +
-                `Cards de este turno posiblemente huérfanas: ` +
-                `${createdCardIds.length > 0 ? createdCardIds.join(", ") : "ninguna"}.`,
-              error,
-            );
-          }
-
-          // Fuera de la transacción del mensaje, y AiUsageService nunca lanza:
-          // un fallo al registrar usage no puede costar el mensaje ni el cobro,
-          // que ya se persistieron arriba.
-          await this.aiUsage.registrar(
-            {
-              userId,
-              chatId,
-              task: "chat",
-              modelo: resolved,
-              usage,
-              stepsCount: steps.length,
-              arranque: startedAt,
-              runId: trace.runId,
-              providerRaw: {
-                steps: steps.map((step) => ({
-                  usage: step.usage,
-                  providerMetadata: step.providerMetadata,
-                })),
-                finishReason,
+                chatId,
+                task: "chat",
+                modelo: resolved,
+                usage,
+                stepsCount: steps.length,
+                arranque: startedAt,
+                runId: trace.runId,
+                providerRaw: {
+                  steps: steps.map((step) => ({
+                    usage: step.usage,
+                    providerMetadata: step.providerMetadata,
+                  })),
+                  finishReason,
+                },
+                // La traza, en la misma transacción que la fila de uso.
               },
-              // La traza, en la misma transacción que la fila de uso.
-            },
-            trace,
-          );
+              trace,
+            );
 
-          // F10.8: el título automático, sin esperarlo — el turno ya terminó.
-          // Decide solo si toca (primeras respuestas, título de nacimiento).
-          // Solo sobre una respuesta que quedó guardada y no terminó en error:
-          // titular (y cobrar) a partir de algo que no está en la conversación
-          // dejaría un título que nadie puede explicar.
-          if (savedId && finishReason !== "error") {
-            void this.chatTitle.maybeTitle(
-              userId,
-              chatId,
-              [...history, responseMessage],
-              trace.runId,
-            );
-            // F10.8: si el contexto de este turno ya pesa, se resume el tramo
-            // viejo en segundo plano para que el siguiente viaje más ligero.
-            // La respuesta de este turno también cuenta como pendiente.
-            void this.compaction.maybeEnqueue(
-              userId,
-              chatId,
-              contextTokensOf(steps),
-              [...pendingAfterSummary(history, summary), responseMessage],
-              trace.runId,
-            );
-            // F10.8: el intercambio entra a la memoria entre chats.
-            void this.memory.enqueueIndex(userId, chatId, savedId, trace.runId);
+            // F10.8: el título automático, sin esperarlo — el turno ya terminó.
+            // Decide solo si toca (primeras respuestas, título de nacimiento).
+            // Solo sobre una respuesta que quedó guardada y no terminó en error:
+            // titular (y cobrar) a partir de algo que no está en la conversación
+            // dejaría un título que nadie puede explicar.
+            if (savedId && !failed) {
+              void this.chatTitle.maybeTitle(
+                userId,
+                chatId,
+                [...history, responseMessage],
+                trace.runId,
+              );
+              // F10.8: si el contexto de este turno ya pesa, se resume el tramo
+              // viejo en segundo plano para que el siguiente viaje más ligero.
+              // La respuesta de este turno también cuenta como pendiente.
+              void this.compaction.maybeEnqueue(
+                userId,
+                chatId,
+                contextTokensOf(steps),
+                [...pendingAfterSummary(history, summary), responseMessage],
+                trace.runId,
+              );
+              // F10.8: el intercambio entra a la memoria entre chats.
+              void this.memory.enqueueIndex(userId, chatId, savedId, trace.runId);
+            }
+          } finally {
+            release();
           }
         },
       })
       .catch((error: unknown) => {
         console.error("Error escribiendo el stream del chat:", error);
+        // No con .finally: al cortar, el pipe se cumple ANTES de que onEnd
+        // guarde la respuesta (corre desde el cancel del stream), y soltaría
+        // el turno antes de tiempo. Solo si el pipe truena.
+        release();
       });
+  }
+
+  /**
+   * Guarda la respuesta del turno con su estado (F10.8.2) y le liga las cards
+   * que el turno creó, en una transacción; `charge` cobra en esa misma. Si no
+   * terminó completa, lo guardado pasa por `sanitizeInterruptedParts`:
+   * vuelve a viajar al modelo. Devuelve el id guardado, o null si falló (se
+   * registra; nunca lanza, corre en onEnd).
+   */
+  private async persistReply(
+    userId: string,
+    chatId: string,
+    responseMessage: UIMessage,
+    status: MessageStatus,
+    runId: string,
+    createdCardIds: string[],
+    charge?: (tx: Tx, messageId: string) => Promise<unknown>,
+  ): Promise<string | null> {
+    try {
+      return await this.dbService.runWithTenant(userId, async (tx) => {
+        const saved = await this.repo.insertMessage(tx, {
+          id: responseMessage.id,
+          chatId,
+          userId,
+          role: "assistant",
+          parts:
+            status === "complete"
+              ? responseMessage.parts
+              : sanitizeInterruptedParts(responseMessage.parts),
+          runId,
+          status,
+        });
+        await this.repo.touchChat(tx, chatId);
+        await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
+        await charge?.(tx, saved.id);
+        return saved.id;
+      });
+    } catch (error) {
+      console.error(
+        `[chat] No se pudo guardar la respuesta (${status}) del chat ${chatId}. ` +
+          `Cards de este turno posiblemente huérfanas: ` +
+          `${createdCardIds.length > 0 ? createdCardIds.join(", ") : "ninguna"}.`,
+        error,
+      );
+      return null;
+    }
+  }
+
+  /** Ver saveInterrupted en runAgentTurn. Nunca lanza: corre en un timer. */
+  private async dropLateCards(userId: string, chatId: string, cardIds: string[]): Promise<void> {
+    if (cardIds.length === 0) return;
+    try {
+      await this.dbService.runWithTenant(userId, (tx) =>
+        this.cardsRepo.deleteUnlinkedDrafts(tx, cardIds),
+      );
+    } catch (error) {
+      console.error(`[chat] No se pudieron borrar las cards tardías del chat ${chatId}:`, error);
+    }
   }
 }
 
