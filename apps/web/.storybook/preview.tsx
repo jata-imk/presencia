@@ -1,5 +1,11 @@
+import type { PublicationCardDto } from "@presencia/shared";
 import type { Decorator, Preview } from "@storybook/react-vite";
+import { useCardsStore } from "../src/stores/cards-store.js";
 import "../src/styles/app.css";
+import { installMockApi } from "./mock-api.js";
+
+// Las pocas rutas de /api/* que piden los componentes conectados (ADR-027).
+installMockApi();
 
 type Tema = "light" | "dark" | "ambos";
 
@@ -47,6 +53,13 @@ const viewport = (
 
 const preview: Preview = {
   decorators: [withTema],
+  // Las cards vivas de la historia (`parameters.cards`), en el store normalizado
+  // que leen CompactCard y AssistantMessage. Antes de pintar, no durante: un
+  // setState en el render avisaría que se actualiza otro componente.
+  beforeEach: ({ parameters }) => {
+    const cards = (parameters.cards ?? []) as PublicationCardDto[];
+    useCardsStore.setState({ byId: Object.fromEntries(cards.map((c) => [c.id, c])) });
+  },
   globalTypes: {
     tema: {
       description: "Tema de la interfaz",

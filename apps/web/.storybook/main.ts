@@ -7,8 +7,9 @@ const config: StorybookConfig = {
   framework: "@storybook/react-vite",
   stories: ["../src/**/*.stories.tsx"],
   addons: ["@storybook/addon-a11y"],
-  // BrandMark y otros usan /assets/… de public/.
-  staticDirs: ["../public"],
+  // BrandMark y otros usan /assets/… de public/. Las imágenes de las cards
+  // (/api/assets/<id>/content) salen de los fixtures: no hay backend.
+  staticDirs: ["../public", { from: "../src/stories/fixtures/assets", to: "/api/assets" }],
   core: { disableTelemetry: true },
 };
 
