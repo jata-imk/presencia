@@ -1047,8 +1047,10 @@ hasta el momento. El usuario puede pedir continuar o
 seguir conversando con eso.
 
 > **Implementado en F10.8.2.** Lo escrito se queda, también
-> al recargar, con una línea discreta al pie: "Respuesta
-> detenida · Reintentar". Si se detuvo antes de la primera
+> al recargar, con una pastilla discreta al pie: "Respuesta
+> detenida" y Reintentar. En un turno viejo, la pastilla dice
+> qué pasó, sin botones: "Se detuvo antes de responder",
+> "Respuesta detenida" o "Sin respuesta" (F10.8.3). Si se detuvo antes de la primera
 > palabra, en el lugar de la respuesta queda una card: "Se
 > detuvo la respuesta antes de empezar." con Reintentar. Sin
 > ella, el chat parecía colgado. Detener no cobra. El copy no

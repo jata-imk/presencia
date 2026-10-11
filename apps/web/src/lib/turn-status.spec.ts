@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatUIMessage } from "./chat-types.js";
-import { turnNotices, type LiveTurnState } from "./turn-status.js";
+import { isEmptyReply, turnNotices, type LiveTurnState } from "./turn-status.js";
 
 // Qué turnos llevan card de estado (F10.8.2). Puro.
 
@@ -96,5 +96,30 @@ describe("turnNotices", () => {
     const notices = turnNotices(chat, live([["u0", "stopped"]]));
     expect(notices.get("u0")).toMatchObject({ status: "stopped", actionable: false });
     expect(notices.has("u1")).toBe(false);
+  });
+});
+
+describe("isEmptyReply", () => {
+  it("vacía si solo trae marcas de paso, razonamiento o texto en blanco", () => {
+    const vacia = {
+      id: "a0",
+      role: "assistant",
+      parts: [
+        { type: "step-start" },
+        { type: "reasoning", text: "…" },
+        { type: "text", text: " " },
+      ],
+    } as ChatUIMessage;
+    expect(isEmptyReply(vacia)).toBe(true);
+  });
+
+  it("no vacía con texto o con una tool, aunque esté a medias", () => {
+    expect(isEmptyReply(msg("a0", "assistant", "Aquí va"))).toBe(false);
+    const conTool = {
+      id: "a1",
+      role: "assistant",
+      parts: [{ type: "tool-crear_borrador_visual", toolCallId: "t", state: "input-streaming" }],
+    } as unknown as ChatUIMessage;
+    expect(isEmptyReply(conTool)).toBe(false);
   });
 });

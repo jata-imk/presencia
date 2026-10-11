@@ -5,8 +5,10 @@ import type { TurnNotice } from "../../lib/turn-status.js";
 // presencia-chat.md "IA falló"): va donde iría la respuesta, nunca un modal.
 // Tres formas:
 //
-// - Turno viejo: una línea discreta, sin acciones (solo el último se reintenta).
-// - Se detuvo con texto: lo escrito se queda y la línea va al pie, con
+// - Turno viejo: una pastilla discreta, sin acciones (solo el último se
+//   reintenta). Desde F10.8.3 dice qué pasó: "Se detuvo antes de responder",
+//   "Respuesta detenida" (con texto) o "Sin respuesta".
+// - Se detuvo con texto: lo escrito se queda y la pastilla va al pie, con
 //   Reintentar. Es la respuesta, interrumpida: no un error.
 // - Sin texto (se detuvo antes de empezar, o falló): una card sutil con la
 //   salida explícita, porque sin ella el chat parece colgado.
@@ -35,20 +37,25 @@ export function TurnStatusCard({
   const stopped = notice.status === "stopped";
 
   if (!notice.actionable || (stopped && notice.partial)) {
+    // Una pastilla (F10.8.3): el texto gris suelto parecía un residuo de la
+    // interfaz, no un estado. El copy dice qué pasó en cada caso: "detenida"
+    // sola sugería un texto cortado arriba aunque no hubiera ninguno.
+    const label = !stopped
+      ? "Sin respuesta"
+      : notice.partial
+        ? "Respuesta detenida"
+        : "Se detuvo antes de responder";
     return (
-      <div className="flex items-center gap-1.5 text-[13px] text-fg-muted" role="status">
-        {stopped ? (
-          <CircleStop size={14} strokeWidth={1.75} aria-hidden />
-        ) : (
-          <CircleAlert size={14} strokeWidth={1.75} aria-hidden />
-        )}
-        <span>{stopped ? "Respuesta detenida" : "Sin respuesta"}</span>
-        {notice.actionable && (
-          <>
-            <span aria-hidden>·</span>
-            <RetryButton onClick={onRetry} subtle />
-          </>
-        )}
+      <div className="flex flex-wrap items-center gap-2" role="status">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary">
+          {stopped ? (
+            <CircleStop size={13} strokeWidth={1.75} aria-hidden />
+          ) : (
+            <CircleAlert size={13} strokeWidth={1.75} aria-hidden />
+          )}
+          {label}
+        </span>
+        {notice.actionable && <RetryButton onClick={onRetry} subtle />}
       </div>
     );
   }
@@ -104,7 +111,7 @@ function RetryButton({ onClick, subtle = false }: { onClick: () => void; subtle?
       onClick={onClick}
       className={
         subtle
-          ? "inline-flex items-center gap-1 rounded-md px-1 font-semibold text-fg-secondary hover:text-fg"
+          ? "inline-flex items-center gap-1 rounded-md px-1 text-xs font-semibold text-fg-secondary hover:text-fg"
           : CARD_BUTTON
       }
     >

@@ -65,3 +65,18 @@ export function turnNotices(
 function hasText(message: ChatUIMessage): boolean {
   return message.parts.some((part) => part.type === "text" && part.text.trim().length > 0);
 }
+
+/**
+ * Una respuesta sin nada que pintar (F10.8.3): ni texto ni tools, solo marcas
+ * de paso o razonamiento (que la UI no muestra). Una cortada antes de la
+ * primera palabra se guarda así; pintarla igual dejaba un hueco entre el
+ * mensaje y su estado. Una tool a medias sí cuenta: Steps dice que se detuvo.
+ */
+export function isEmptyReply(message: ChatUIMessage): boolean {
+  return message.parts.every(
+    (part) =>
+      part.type === "step-start" ||
+      part.type === "reasoning" ||
+      (part.type === "text" && part.text.trim().length === 0),
+  );
+}
