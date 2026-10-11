@@ -11,6 +11,10 @@ import { TurnStatusCard } from "./TurnStatusCard.js";
 // Misma columna y mismos espacios que routes/chat.tsx: los componentes son
 // los reales, sin la parte que necesita stores ni API (las cards).
 
+// Con nombre y a nivel de módulo: así los clics quedan en el panel "Actions".
+const reintentar = fn().mockName("Reintentar");
+const editar = fn().mockName("Editar mensaje");
+
 function Turno({
   pedido,
   respuesta,
@@ -31,14 +35,14 @@ function Turno({
       notice={estado}
       failedAgain={failedAgain}
       apiError={apiError}
-      onRetry={fn()}
-      onEdit={estado.actionable ? fn() : undefined}
+      onRetry={reintentar}
+      onEdit={estado.actionable ? editar : undefined}
     />
   );
   return (
     <>
       <div className="flex flex-col gap-[18px]">
-        <MessageUser text={pedido} canEdit={ultimo} onEdit={fn()} />
+        <MessageUser text={pedido} canEdit={ultimo} onEdit={editar} />
         {respuesta === undefined && card}
       </div>
       {respuesta !== undefined && (
@@ -60,7 +64,13 @@ const meta = {
   // Sin el acento ni el "·" en la URL.
   id: "chat-conversacion",
   parameters: { layout: "fullscreen" },
-  decorators: [(Story) => <div className="px-4">{Story()}</div>],
+  decorators: [
+    (Story) => (
+      <div className="px-4">
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta;
 
 export default meta;

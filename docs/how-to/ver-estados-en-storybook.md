@@ -12,7 +12,7 @@ Abre `http://localhost:6006`. Turbo compila antes `@presencia/shared`, porque la
 
 ## Qué revisar en cada historia
 
-- **Tema** (toolbar, ícono de espejo): **Claro**, **Oscuro** o **Lado a lado**. "Lado a lado" pinta la historia dos veces, una en cada tema, para compararlos de un vistazo.
+- **Tema** (toolbar, ícono de espejo): **Claro**, **Oscuro** o **Lado a lado**. "Lado a lado" pinta la historia dos veces, una en cada tema, para compararlos de un vistazo. Lo que se abre flotando (tooltips, menús, modales) se pinta fuera de la historia y queda en claro en ese modo: para revisarlo, usa **Oscuro**.
 - **Ancho** (toolbar, ícono de viewport): Móvil 390, Tablet 768, Laptop 1024 y Escritorio 1440. Son los mismos anchos que revisa cada PR de UI.
 - **Accesibilidad** (panel "Accessibility"): contraste, roles y etiquetas.
 - Para la vista general del chat, abre **Chat → Conversación · Estados del turno**: todos los estados del turno en una conversación de ejemplo.
@@ -50,7 +50,7 @@ export const Fallo: Story = { args: { notice: notice({ status: "failed" }) } };
 - **Datos de ejemplo** en `src/stories/fixtures/`, construidos contra los tipos reales (`lib/chat-types.ts`, `lib/turn-status.ts`). Si cambia un tipo, la historia deja de compilar en vez de mostrar un estado que ya no existe.
 - **Callbacks con `fn()`:** quedan registrados en el panel "Actions".
 - **Un estado nuevo de UI llega con su historia en el mismo PR** (AGENTS.md, Convenciones).
-- **Componentes atados a stores o a la API** (las cards, `AssistantMessage`): se siembran los stores en un decorator y el preview responde las llamadas a `/api/*` con datos de ejemplo.
+- **Componentes atados a stores o a la API** (las cards, `AssistantMessage`): todavía no tienen historia. Hoy pedirían `/api/*` de verdad y fallarían sin backend. Los cubre el PR3 de F10.8.3: un stub de `fetch` para `/api/*` en el preview y los stores sembrados en un decorator.
 
 ## Compilar el catálogo
 

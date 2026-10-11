@@ -1,6 +1,6 @@
 import { MAX_MESSAGE_CHARS } from "@presencia/shared";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useState } from "react";
+import { useArgs } from "storybook/preview-api";
 import { fn } from "storybook/test";
 import { PEDIDO } from "../../stories/fixtures/chat.js";
 import { Composer } from "./Composer.js";
@@ -15,16 +15,17 @@ const meta = {
     onStop: fn(),
     busy: false,
   },
-  // Con estado propio: escribir en la historia sí cambia el texto.
+  // El texto vive en los args: escribir en la caja lo actualiza, y cambiar el
+  // control "value" del panel llega a la caja (con un useState local, solo se
+  // leía al montar).
   render: function Render(args) {
-    const [value, setValue] = useState(args.value);
+    const [, updateArgs] = useArgs<typeof args>();
     return (
       <div className="max-w-[752px] pt-12">
         <Composer
           {...args}
-          value={value}
           onChange={(next) => {
-            setValue(next);
+            updateArgs({ value: next });
             args.onChange(next);
           }}
         />

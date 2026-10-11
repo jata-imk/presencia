@@ -6,10 +6,15 @@ type Tema = "light" | "dark" | "ambos";
 /**
  * El tema, con el mismo mecanismo que la app (ADR-016): `data-theme` y
  * `colorScheme` en `<html>`. "Lado a lado" pinta la historia dos veces: los
- * tokens oscuros se definen en `[data-theme="dark"]` (tokens.css), no solo en
- * `<html>`, así que un `<div data-theme="dark">` los redefine para su
- * subárbol, igual que el variant `dark:` (app.css). Sirve para revisar claro y
- * oscuro de un vistazo: el dark mode existió desde F1 sin correr nunca.
+ * tokens se declaran en `[data-theme]` además de `:root` (tokens.css), así
+ * que un `<div data-theme="dark">` los recalcula para su subárbol, también los
+ * derivados (`color-mix` de otro token), igual que el variant `dark:`
+ * (app.css). Sirve para revisar claro y oscuro de un vistazo: el dark mode
+ * existió desde F1 sin correr nunca.
+ *
+ * Límite conocido: lo que se pinta en un portal a `<body>` (tooltips, menús,
+ * modales) queda en claro aun en la mitad oscura, porque `<html>` es claro en
+ * este modo. Para revisarlos, usa "Oscuro".
  */
 const withTema: Decorator = (Story, context) => {
   const tema = (context.globals.tema ?? "light") as Tema;
