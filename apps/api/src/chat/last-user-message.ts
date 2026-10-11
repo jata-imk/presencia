@@ -53,3 +53,22 @@ function textLengthOf(message: UIMessage): number {
     0,
   );
 }
+
+/**
+ * El último turno del chat, si `userMessageId` es su mensaje del creator: el
+ * último de la conversación (se quedó sin respuesta guardada) o el penúltimo,
+ * seguido de su respuesta. Solo el último turno se vuelve a correr: hacerlo
+ * con uno de en medio dejaría un hueco (dos mensajes del creator seguidos)
+ * sin tocar los turnos posteriores.
+ */
+export function lastTurnOf<M extends { id: string; role: string }>(
+  all: M[],
+  userMessageId: string,
+): { index: number; staleReply: M | undefined } | null {
+  const index = all.findIndex((m) => m.id === userMessageId);
+  if (index === -1 || all[index]!.role !== "user") return null;
+  const staleReply = all[index + 1];
+  if (index === all.length - 1) return { index, staleReply: undefined };
+  if (index === all.length - 2 && staleReply?.role === "assistant") return { index, staleReply };
+  return null;
+}

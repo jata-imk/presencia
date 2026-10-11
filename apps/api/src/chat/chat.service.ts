@@ -35,10 +35,10 @@ import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
 import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
 import { assembleContext, cardIdsForContext } from "./context-builder.js";
-import { ChatRepository, type ChatSummaryRow } from "./chat.repository.js";
+import { ChatRepository, type ChatSummaryRow, type MessageRow } from "./chat.repository.js";
 import { type CompressedCardOutput, type LiveCard } from "./context-diet.js";
 import { sanitizeInterruptedParts } from "./interrupted-turn.js";
-import { storableMessageId } from "./last-user-message.js";
+import { lastTurnOf, storableMessageId } from "./last-user-message.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
@@ -79,10 +79,7 @@ export class ChatService {
    * chat corre en una sola instancia (el contenedor `app`, ADR-020); con
    * varias, esto tendría que ir a la base.
    */
-  private readonly turnsInFlight = new Map<
-    string,
-    { done: Promise<void>; closed: () => boolean }
-  >();
+  private readonly turnsInFlight = new Map<string, TurnInFlight>();
 
   /** Espera a que termine de guardarse el turno en curso del chat, con tope. */
   private async afterTurnInFlight(chatId: string): Promise<void> {
@@ -93,18 +90,38 @@ export class ChatService {
     await Promise.race([turn.done, new Promise((resolve) => setTimeout(resolve, TURN_WAIT_MS))]);
   }
 
-  /** Registra un turno del chat; la función que devuelve lo da por terminado. */
-  private trackTurn(chatId: string, res: ServerResponse): () => void {
-    let release!: () => void;
-    const done = new Promise<void>((resolve) => {
-      release = resolve;
+  /**
+   * Registra un turno del chat desde que entra. El corte se escucha desde aquí
+   * y no desde el pipe: un "close" mientras se arma el turno (la cuota, el
+   * mensaje del creator) no se repite, y sin escucharlo el turno corría
+   * completo para nadie y se guardaba como completo.
+   */
+  private trackTurn(chatId: string, res: ServerResponse): TurnInFlight {
+    let resolve!: () => void;
+    const done = new Promise<void>((r) => {
+      resolve = r;
     });
-    const entry = { done, closed: () => res.destroyed || res.writableFinished };
-    this.turnsInFlight.set(chatId, entry);
-    return () => {
-      release();
-      if (this.turnsInFlight.get(chatId) === entry) this.turnsInFlight.delete(chatId);
+    let closed = false;
+    const abortController = new AbortController();
+    const onClose = () => {
+      closed = true;
+      if (!res.writableFinished) abortController.abort();
     };
+    res.once("close", onClose);
+    // El "close" pudo pasar antes (mientras se revisaba la cuota): no se
+    // repite. Es el mismo chequeo que hace el pipe del SDK.
+    if (res.destroyed) onClose();
+    const turn: TurnInFlight = {
+      done,
+      closed: () => closed,
+      abortController,
+      release: () => {
+        resolve();
+        if (this.turnsInFlight.get(chatId) === turn) this.turnsInFlight.delete(chatId);
+      },
+    };
+    this.turnsInFlight.set(chatId, turn);
+    return turn;
   }
 
   createChat(userId: string, title?: string): Promise<ChatSummary> {
@@ -226,6 +243,12 @@ export class ChatService {
    * Turno normal: inserta el mensaje user, carga el historial canónico
    * desde la DB (se ignora lo demás del body) y corre el pipeline del
    * agente.
+   *
+   * F10.8.2: si el id ya existe como el último mensaje del creator, es ese
+   * turno de nuevo, no un mensaje más: "Reintentar" de un turno que se quedó
+   * sin respuesta guardada (o que nunca llegó a guardarse: un corte antes de
+   * que el request llegara), o "Editar" el último mensaje. Su respuesta, si
+   * la hay, se borra con sus cards, igual que al regenerar.
    */
   async streamChat(
     userId: string,
@@ -240,13 +263,22 @@ export class ChatService {
     await this.afterTurnInFlight(chatId);
     // Desde aquí, no desde el pipe: un corte mientras se arma el turno también
     // se tiene que esperar.
-    const release = this.trackTurn(chatId, res);
+    const turn = this.trackTurn(chatId, res);
     try {
       const { history, summary } = await this.dbService
         .runWithTenant(userId, async (tx) => {
           const chat = await this.repo.getChat(tx, chatId);
           if (!chat) throw new NotFoundException("Ese chat no existe.");
-          const previous = await this.repo.listMessages(tx, chatId);
+          const all = await this.repo.listMessages(tx, chatId);
+          let previous = all;
+          if (all.some((m) => m.id === userMessage.id)) {
+            const last = lastTurnOf(all, userMessage.id);
+            // Un mensaje viejo con el mismo id: un reenvío por error.
+            if (!last) throw new ConflictException("Ese mensaje ya se envió.");
+            await this.dropStaleReply(tx, last.staleReply);
+            await this.repo.deleteMessage(tx, userMessage.id);
+            previous = all.slice(0, last.index);
+          }
           // Con el id del cliente (F10.8.2): web y base nombran igual al mensaje,
           // y "Regenerar" lo encuentra sin recargar la página.
           const saved = await this.repo.insertMessage(tx, {
@@ -263,7 +295,7 @@ export class ChatService {
           };
         })
         .catch((error: unknown) => {
-          // Un reenvío del mismo mensaje (doble clic, reintento de red).
+          // El id choca con un mensaje que RLS no deja ver (otra cuenta).
           if (isUniqueViolation(error, "messages_pkey")) {
             throw new ConflictException("Ese mensaje ya se envió.");
           }
@@ -277,10 +309,10 @@ export class ChatService {
         toHistorySummary(summary),
         res,
         voicePromise,
-        release,
+        turn,
       );
     } catch (error) {
-      release();
+      turn.release();
       throw error;
     }
   }
@@ -292,6 +324,24 @@ export class ChatService {
   // superarlo — ese caso es sobregiro intencional, no bug de este gate.
   private async assertQuotaForTurn(userId: string): Promise<void> {
     await this.creditsService.assertQuotaOr402(userId, getRateCard().minimumTurnUnits);
+  }
+
+  /**
+   * Borra la respuesta vieja de un turno que se vuelve a correr, con sus cards
+   * (decisión de producto, F3 PR3: no quedan huérfanas). Si alguna ya salió a
+   * la red, no: borrarla dejaría un post sin card que lo represente.
+   */
+  private async dropStaleReply(tx: Tx, staleReply: MessageRow | undefined): Promise<void> {
+    if (!staleReply) return;
+    if (await this.cardsRepo.hasSentCards(tx, staleReply.id)) {
+      throw new ConflictException(
+        "Esta respuesta tiene publicaciones programadas o publicadas. Cancela la programación antes de regenerarla.",
+      );
+    }
+    // Cards antes que mensaje: el FK message_id es "set null", no cascade —
+    // sin este orden quedarían huérfanas en vez de borradas.
+    await this.cardsRepo.deleteCardsByMessageId(tx, staleReply.id);
+    await this.repo.deleteMessage(tx, staleReply.id);
   }
 
   /**
@@ -363,40 +413,17 @@ export class ChatService {
     // "Detener" y luego "Reintentar" de inmediato: la respuesta cortada tiene
     // que estar guardada antes de leer qué se reintenta.
     await this.afterTurnInFlight(chatId);
-    const release = this.trackTurn(chatId, res);
+    const turn = this.trackTurn(chatId, res);
     try {
       const { history, summary } = await this.dbService.runWithTenant(userId, async (tx) => {
         const chat = await this.repo.getChat(tx, chatId);
         if (!chat) throw new NotFoundException("Ese chat no existe.");
         const all = await this.repo.listMessages(tx, chatId);
-        const targetIndex = all.findIndex((m) => m.id === userMessageId);
-        const target = targetIndex === -1 ? undefined : all[targetIndex];
-        const staleReply = targetIndex === -1 ? undefined : all[targetIndex + 1];
-        // Solo se reintenta el último turno: el mensaje user tiene que ser
-        // el último de la conversación (turno que falló antes de generar
-        // respuesta — el botón "Reintentar" de un error) o el penúltimo,
-        // seguido exactamente por la respuesta assistant a regenerar — sin
-        // este chequeo se podría borrar un mensaje intermedio dejando un
-        // hueco (dos turnos user seguidos) sin tocar los turnos posteriores.
-        const isLast = targetIndex === all.length - 1;
-        const isSecondToLastWithReply =
-          targetIndex === all.length - 2 && staleReply?.role === "assistant";
-        if (!target || target.role !== "user" || !(isLast || isSecondToLastWithReply)) {
-          throw new NotFoundException("Ese mensaje no se puede reintentar.");
-        }
-        if (staleReply && (await this.cardsRepo.hasSentCards(tx, staleReply.id))) {
-          throw new ConflictException(
-            "Esta respuesta tiene publicaciones programadas o publicadas. Cancela la programación antes de regenerarla.",
-          );
-        }
-        if (staleReply) {
-          // Cards antes que mensaje: el FK message_id es "set null", no
-          // cascade — sin este orden quedarían huérfanas en vez de borradas.
-          await this.cardsRepo.deleteCardsByMessageId(tx, staleReply.id);
-          await this.repo.deleteMessage(tx, staleReply.id);
-        }
+        const last = lastTurnOf(all, userMessageId);
+        if (!last) throw new NotFoundException("Ese mensaje no se puede reintentar.");
+        await this.dropStaleReply(tx, last.staleReply);
         return {
-          history: all.slice(0, targetIndex + 1).map((row) => toUIMessage(row)),
+          history: all.slice(0, last.index + 1).map((row) => toUIMessage(row)),
           summary: await this.repo.getSummary(tx, chatId),
         };
       });
@@ -408,10 +435,10 @@ export class ChatService {
         toHistorySummary(summary),
         res,
         voicePromise,
-        release,
+        turn,
       );
     } catch (error) {
-      release();
+      turn.release();
       throw error;
     }
   }
@@ -426,16 +453,10 @@ export class ChatService {
     summary: HistorySummary | null,
     res: ServerResponse,
     voicePromise: Promise<BrandVoiceForPrompt | null>,
-    /** Da por terminado el turno (turnsInFlight): al final de onEnd. */
-    release: () => void,
+    /** El turno registrado: su corte, y `release` al final de onEnd. */
+    turn: TurnInFlight,
   ): Promise<void> {
-    const abortController = new AbortController();
-    res.on("close", () => {
-      if (!res.writableFinished) abortController.abort();
-    });
-    // El creator pudo cortar mientras se guardaba su mensaje: el "close" ya
-    // pasó y no se repite. Sin esto, el turno corría completo para nadie.
-    if (res.destroyed) abortController.abort();
+    const { abortController, release } = turn;
 
     // Ids de las cards creadas durante este turno (closure compartido con la
     // tool): onEnd las vincula al mensaje assistant una vez que existe.
@@ -510,6 +531,29 @@ export class ChatService {
     // loadVoiceForPrompt. buildSystemPrompt cae al prompt base en ese caso,
     // el chat nunca se bloquea por esto.
     const voice = await voicePromise;
+    const modelMessages = await convertToModelMessages(modelHistory);
+
+    // Cortado mientras se armaba el turno (F10.8.2): no hay a quién responder.
+    // Después del último `await`: de aquí al pipe todo es síncrono, así que un
+    // corte posterior ya lo escucha el pipe.
+    // Ni se llama al modelo: el pipe escribiría a una conexión ya cerrada y
+    // nunca llegaría a onEnd. Se guarda la respuesta vacía como `stopped`,
+    // como un corte antes de la primera palabra.
+    if (abortController.signal.aborted) {
+      try {
+        await this.persistReply(
+          userId,
+          chatId,
+          { id: randomUUID(), role: "assistant", parts: [] },
+          "stopped",
+          null,
+          [],
+        );
+      } finally {
+        release();
+      }
+      return;
+    }
 
     // Resuelto una sola vez: el mismo objeto alimenta streamText y la
     // telemetría de abajo, así es imposible que ai_usage_events reporte un
@@ -543,7 +587,7 @@ export class ChatService {
       // pueda recortar del lado del cliente sin cambiar de API mode.
       // F10.5: con el contenido VIVO de cada card (editada, restaurada,
       // cambiada por la IA), no el que quedó congelado en messages.parts.
-      messages: await convertToModelMessages(modelHistory),
+      messages: modelMessages,
       tools,
       stopWhen: stepCountIs(MAX_AGENT_STEPS),
       abortSignal: abortController.signal,
@@ -589,7 +633,11 @@ export class ChatService {
         },
         onEnd: async ({ responseMessage, isAborted, finishReason }) => {
           try {
-            if (isAborted) {
+            // El SDK suelta el stream si la conexión ya no está, aunque el
+            // corte se nos haya escapado: el modelo seguiría generando (y se
+            // cobraría) para nadie. Se aborta y cuenta como corte.
+            if (res.destroyed && !res.writableFinished) abortController.abort();
+            if (isAborted || abortController.signal.aborted) {
               guardarTrazaCortada();
               await saveInterrupted(responseMessage, "stopped");
               return;
@@ -735,7 +783,8 @@ export class ChatService {
     chatId: string,
     responseMessage: UIMessage,
     status: MessageStatus,
-    runId: string,
+    /** null si el turno no llegó a correr: no hay traza que ligar. */
+    runId: string | null,
     createdCardIds: string[],
     charge?: (tx: Tx, messageId: string) => Promise<unknown>,
   ): Promise<string | null> {
@@ -780,6 +829,17 @@ export class ChatService {
       console.error(`[chat] No se pudieron borrar las cards tardías del chat ${chatId}:`, error);
     }
   }
+}
+
+/** Un turno de chat en curso (F10.8.2, ver ChatService.turnsInFlight). */
+interface TurnInFlight {
+  /** Se cumple cuando el turno terminó de guardarse. */
+  done: Promise<void>;
+  /** La conexión ya cerró: se cortó, o terminó y se está guardando. */
+  closed: () => boolean;
+  /** Se dispara con el corte, aunque llegue antes del pipe. */
+  abortController: AbortController;
+  release: () => void;
 }
 
 /** La fila de `chat_summaries` como la usa la ventana del historial. */

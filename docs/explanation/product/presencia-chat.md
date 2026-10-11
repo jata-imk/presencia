@@ -1046,6 +1046,16 @@ queremos forzarlo a esperar. Detener mantiene lo generado
 hasta el momento. El usuario puede pedir continuar o
 seguir conversando con eso.
 
+> **Implementado en F10.8.2.** Lo escrito se queda, también
+> al recargar, con una línea discreta al pie: "Respuesta
+> detenida · Reintentar". Si se detuvo antes de la primera
+> palabra, en el lugar de la respuesta queda una card: "Se
+> detuvo la respuesta antes de empezar." con Reintentar. Sin
+> ella, el chat parecía colgado. Detener no cobra. El copy no
+> dice "la detuviste": el servidor no distingue Detener de
+> cerrar la pestaña o perder la red. "Continuar" una
+> respuesta detenida no entra: se le pide al chat.
+
 ### El drawer de programación
 
 **Qué es:** El panel que se abre al hacer click en
@@ -1307,13 +1317,32 @@ usuario NO se pierda. Sigue visible en el chat. El reintento
 es fácil. Si vuelve a fallar, el mensaje se vuelve más
 descriptivo ("Sigue sin funcionar. Intenta en unos minutos.").
 
+> **Implementado en F10.8.2.** La card dice "No se pudo
+> generar la respuesta." + "Reintenta, o escribe otro mensaje
+> para seguir." y "Reintentar". Si el reintento vuelve a
+> fallar: "Sigue sin funcionar. Intenta en unos minutos."
+>
+> - **Sobrevive a la recarga:** la respuesta fallida (o
+>   detenida) se guarda con su estado. Lo que alcanzó a
+>   escribirse también se guarda.
+> - **Solo el último turno es accionable.** Un turno viejo
+>   que quedó así lleva una línea discreta ("Sin respuesta",
+>   "Respuesta detenida") sin botones.
+> - **Un rechazo con motivo** ("Tu mensaje es demasiado
+>   largo…") muestra el motivo y no ofrece Reintentar, porque
+>   daría lo mismo.
+> - **Lo que ve la IA:** el turno viaja marcado como "sin
+>   respuesta", así no contesta un pedido viejo como si
+>   siguiera pendiente, y el creator puede seguir con
+>   "para Instagram" sin repetir el pedido.
+
 ### Canal desconectado
 
 **El estado:** El usuario quiere programar para LinkedIn
 pero LinkedIn no está conectado en su cuenta.
 
 **El diseño:** Modal pequeño centrado (bloqueante porque
-impide la acción). Tono no punitivo: "Necesitás conectar
+impide la acción). Tono no punitivo: "Necesitas conectar
 LinkedIn primero". Botones claros: "Conectar LinkedIn
 ahora" (lleva a configuración) o "Programar solo para
 [otras redes conectadas]" o "Cancelar".
