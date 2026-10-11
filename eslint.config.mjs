@@ -4,10 +4,17 @@
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 import prettier from "eslint-config-prettier";
+import storybook from "eslint-plugin-storybook";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/build/**", "**/node_modules/**", "**/.turbo/**"],
+    ignores: [
+      "**/dist/**",
+      "**/build/**",
+      "**/node_modules/**",
+      "**/.turbo/**",
+      "**/storybook-static/**",
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -32,5 +39,7 @@ export default tseslint.config(
       "@typescript-eslint/unbound-method": "off",
     },
   },
+  // Historias de Storybook (F10.8.3): solo aplica a *.stories.tsx.
+  ...storybook.configs["flat/recommended"],
   prettier,
 );

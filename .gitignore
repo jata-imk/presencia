@@ -4,6 +4,7 @@ node_modules/
 
 # Builds
 dist/
+storybook-static/
 build/
 .turbo/
 *.tsbuildinfo
