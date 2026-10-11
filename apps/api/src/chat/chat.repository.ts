@@ -104,7 +104,9 @@ export class ChatRepository {
       .onConflictDoUpdate({
         target: chatSummaries.chatId,
         set: {
-          summary: row.summary,
+          blocks: row.blocks,
+          // La columna vieja (F10.8.1, expand/contract) deja de mentir.
+          summary: null,
           throughMessageId: row.throughMessageId,
           throughCreatedAt: row.throughCreatedAt,
           cards: row.cards,

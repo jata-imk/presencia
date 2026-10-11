@@ -28,7 +28,7 @@ import { env } from "../env.js";
 import { FoldersService } from "../folders/folders.service.js";
 import { ChatTitleService } from "./chat-title.service.js";
 import { toChatSummary, toUIMessage } from "./chat-summary.js";
-import { contextTokensOf } from "./history-compaction.js";
+import { blocksOf, contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
 import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
@@ -601,7 +601,7 @@ export class ChatService {
 function toHistorySummary(row: ChatSummaryRow | undefined): HistorySummary | null {
   if (!row) return null;
   return {
-    summary: row.summary,
+    blocks: blocksOf(row),
     throughMessageId: row.throughMessageId,
     cards: row.cards as CompressedCardOutput[],
   };

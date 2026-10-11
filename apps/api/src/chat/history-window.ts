@@ -1,6 +1,8 @@
 import type { UIMessage } from "ai";
 import { summarizeCardContent } from "@presencia/shared";
 import type { CompressedCardOutput, LiveCard } from "./context-diet.js";
+import { blockHeading } from "./history-compaction.js";
+import { estimateTextTokens } from "./text-tokens.js";
 
 // Lo que el modelo ve de un chat largo (F10.8). Puro: nada de base ni de red.
 //
@@ -36,7 +38,8 @@ export function isSyntheticMessage(message: UIMessage): boolean {
 }
 
 export interface HistorySummary {
-  summary: string;
+  /** Los bloques del resumen, en orden (F10.8.1). */
+  blocks: { summary: string; throughCreatedAt?: string }[];
   /** El último mensaje que cubre el resumen; los posteriores viajan completos. */
   throughMessageId: string;
   cards: CompressedCardOutput[];
@@ -115,7 +118,14 @@ export function applySummary(
     current.length > 0
       ? `\n\nPublicaciones que ya se crearon en esta conversación (usa su id si el creator se refiere a una):\n${current.map(cardLine).join("\n")}`
       : "";
-  const text = `[Contexto: resumen de la parte anterior de esta conversación, que ya no ves completa.]\n\n${summary.summary}${cards}`;
+  // Los bloques en orden y las cards al final: un bloque nuevo entra antes de
+  // la lista, así que el texto de los bloques viejos no cambia y su prefijo
+  // sigue en la caché del proveedor. La fecha ayuda a ubicar "lo de la otra
+  // semana" y a saber qué dato es el más reciente.
+  const partes = summary.blocks
+    .map((block, i) => `${blockHeading(i, block)}:\n${block.summary}`)
+    .join("\n\n");
+  const text = `[Contexto: resumen de la parte anterior de esta conversación, que ya no ves completa. Va por partes, en orden; si una parte posterior cambia algo, vale la posterior.]\n\n${partes}${cards}`;
   return [...syntheticPair("resumen", text), ...history.slice(through + 1)];
 }
 
@@ -170,7 +180,7 @@ export function estimateTokens(messages: UIMessage[]): number {
       ),
     0,
   );
-  return Math.ceil(chars / 4);
+  return estimateTextTokens(chars);
 }
 
 /**

@@ -60,7 +60,11 @@ describe("pendingAfterSummary", () => {
   it("es lo que el resumen todavía no cubre", () => {
     const chat = conversacion(4);
     expect(pendingAfterSummary(chat, null)).toEqual(chat);
-    const despues = pendingAfterSummary(chat, { summary: "", throughMessageId: "a1", cards: [] });
+    const despues = pendingAfterSummary(chat, {
+      blocks: [{ summary: "", throughCreatedAt: "2026-10-07T18:00:00.000Z" }],
+      throughMessageId: "a1",
+      cards: [],
+    });
     expect(despues.map((m) => m.id)).toEqual(["u2", "a2", "u3", "a3"]);
   });
 });
@@ -83,10 +87,37 @@ describe("compactableCut", () => {
 });
 
 describe("applySummary", () => {
+  it("los bloques van en orden y con fecha; uno nuevo no cambia el texto de los anteriores", () => {
+    const chat = conversacion(8);
+    const cards = [
+      { cardId: "c-1", network: "instagram" as const, status: "draft" as const, resumen: "Promo" },
+    ];
+    const uno = { summary: "- Vende marquesitas.", throughCreatedAt: "2026-10-07T18:00:00.000Z" };
+    const dos = {
+      summary: "- Cambió: ahora abre a las 8.",
+      throughCreatedAt: "2026-10-09T18:00:00.000Z",
+    };
+    const texto = (blocks: (typeof uno)[]) =>
+      JSON.stringify(applySummary(chat, { blocks, throughMessageId: "a4", cards })[0]!.parts);
+    const antes = texto([uno]);
+    const despues = texto([uno, dos]);
+    expect(despues).toContain("Parte 1 (hasta el 7 de octubre)");
+    expect(despues).toContain("Parte 2 (hasta el 9 de octubre)");
+    // Todo lo anterior a la lista de cards se conserva tal cual: caché.
+    // (JSON.stringify escapa el salto de línea como "\n" literal.)
+    const prefijo = antes.slice(0, antes.indexOf("\\n\\nPublicaciones que ya se crearon"));
+    expect(despues.startsWith(prefijo)).toBe(true);
+  });
+
   it("sustituye el tramo viejo por un intercambio con el resumen y la lista de cards", () => {
     const chat = conversacion(8);
     const window = applySummary(chat, {
-      summary: "- El creator vende marquesitas en Santa Ana.",
+      blocks: [
+        {
+          summary: "- El creator vende marquesitas en Santa Ana.",
+          throughCreatedAt: "2026-10-07T18:00:00.000Z",
+        },
+      ],
       throughMessageId: "a4",
       cards: [{ cardId: "c-1", network: "instagram", status: "draft", resumen: "Promo 2×1" }],
     });
@@ -103,15 +134,19 @@ describe("applySummary", () => {
   it("sin resumen, o si su último mensaje ya no está, devuelve el historial tal cual", () => {
     const chat = conversacion(3);
     expect(applySummary(chat, null)).toBe(chat);
-    expect(applySummary(chat, { summary: "x", throughMessageId: "no-existe", cards: [] })).toBe(
-      chat,
-    );
+    expect(
+      applySummary(chat, {
+        blocks: [{ summary: "x", throughCreatedAt: "2026-10-07T18:00:00.000Z" }],
+        throughMessageId: "no-existe",
+        cards: [],
+      }),
+    ).toBe(chat);
   });
 });
 
 describe("applySummary con las cards de hoy", () => {
   const resumen = {
-    summary: "resumen",
+    blocks: [{ summary: "resumen", throughCreatedAt: "2026-10-07T18:00:00.000Z" }],
     throughMessageId: "a1",
     cards: [
       { cardId: "c-1", network: "instagram" as const, status: "draft" as const, resumen: "Vieja" },
@@ -182,7 +217,11 @@ describe("capHistory", () => {
 
   it("conserva el resumen del principio aunque recorte lo demás", () => {
     const chat = conversacion(40, () => "x".repeat(400));
-    const resumida = applySummary(chat, { summary: "resumen", throughMessageId: "a1", cards: [] });
+    const resumida = applySummary(chat, {
+      blocks: [{ summary: "resumen", throughCreatedAt: "2026-10-07T18:00:00.000Z" }],
+      throughMessageId: "a1",
+      cards: [],
+    });
     const window = capHistory(resumida, 1_500);
     expect(window[0]!.id).toBe("presencia-resumen-u");
     expect(window[2]!.id).toBe("presencia-nota-u");

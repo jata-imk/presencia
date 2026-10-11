@@ -351,6 +351,13 @@
       "when": 1791529550084,
       "tag": "0049_trazas_de_turno",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1791682162416,
+      "tag": "0050_resumen_por_bloques",
+      "breakpoints": true
     }
   ]
 }
