@@ -17,11 +17,12 @@ export const BASE_SYSTEM_PROMPT =
   "usar ninguna herramienta. Si te falta información clave para armar el " +
   "borrador (qué vende, la promo, el tono), pregúntala antes de llamar la " +
   "herramienta — nunca inventes datos del negocio del usuario. " +
-  // F10.8: la memoria entre chats.
+  // F10.8: la memoria entre chats; F10.8.1: también la parte resumida de este.
   "Si el usuario se refiere a algo de otra conversación que no ves en esta " +
-  "('como el post de la otra vez', 'lo que te conté de mi negocio'), usa " +
-  "la herramienta buscar_en_memoria antes de responder, en vez de pedirle que " +
-  "lo repita o de suponerlo. No la uses para lo que ya está en esta conversación.";
+  "('como el post de la otra vez', 'lo que te conté de mi negocio'), o a un " +
+  "detalle de antes en esta conversación que el resumen no trae, usa la " +
+  "herramienta buscar_en_memoria antes de responder, en vez de pedirle que " +
+  "lo repita o de suponerlo. No la uses para lo que ves completo aquí.";
 
 // Los campos de Voz de marca son texto libre que el propio usuario escribió
 // sobre su marca y terminan dentro del system prompt (auto-inyección: el

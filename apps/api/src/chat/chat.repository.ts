@@ -1,5 +1,17 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, cosineDistance, desc, eq, isNotNull, isNull, lt, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  cosineDistance,
+  desc,
+  eq,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { chatSummaries, chats, memoryChunks, messages } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 import { CHAT_CHANGED_CHANNEL, encodeChatChanged } from "../realtime/card-events.js";
@@ -168,13 +180,27 @@ export class ChatRepository {
    */
   async searchMemory(
     tx: Tx,
-    input: { chatId: string; model: string; embedding: number[]; limit: number },
-  ): Promise<{ content: string; chatTitle: string; createdAt: Date; similarity: number }[]> {
+    input: {
+      chatId: string;
+      /**
+       * F10.8.1: el mensaje más viejo que el modelo ve completo. Del chat
+       * actual se busca solo lo anterior a él (lo que ya solo ve resumido);
+       * `null` excluye el chat actual entero, como antes.
+       */
+      visibleFromMessageId: string | null;
+      model: string;
+      embedding: number[];
+      limit: number;
+    },
+  ): Promise<
+    { content: string; chatId: string; chatTitle: string; createdAt: Date; similarity: number }[]
+  > {
     await tx.execute(sql`set local hnsw.iterative_scan = relaxed_order`);
     const distance = cosineDistance(memoryChunks.embedding, input.embedding);
     const rows = await tx
       .select({
         content: memoryChunks.content,
+        chatId: memoryChunks.chatId,
         chatTitle: chats.title,
         // La fecha de la conversación, no la del indexado: `memoria:reindexar`
         // indexa hoy intercambios de hace meses.
@@ -184,13 +210,27 @@ export class ChatRepository {
       .from(memoryChunks)
       .innerJoin(chats, eq(chats.id, memoryChunks.chatId))
       .innerJoin(messages, eq(messages.id, memoryChunks.messageId))
-      .where(and(ne(memoryChunks.chatId, input.chatId), eq(memoryChunks.model, input.model)))
+      .where(
+        and(
+          eq(memoryChunks.model, input.model),
+          input.visibleFromMessageId
+            ? or(
+                ne(memoryChunks.chatId, input.chatId),
+                lt(
+                  messages.createdAt,
+                  sql`(select ${messages.createdAt} from ${messages} where ${messages.id} = ${input.visibleFromMessageId})`,
+                ),
+              )
+            : ne(memoryChunks.chatId, input.chatId),
+        ),
+      )
       .orderBy(distance)
       .limit(input.limit);
     // relaxed_order puede devolverlos casi en orden: se ordena aquí de nuevo.
     return rows
       .map((r) => ({
         content: r.content,
+        chatId: r.chatId,
         chatTitle: r.chatTitle,
         createdAt: r.createdAt,
         similarity: 1 - Number(r.distance),

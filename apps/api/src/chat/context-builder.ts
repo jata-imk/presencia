@@ -9,6 +9,7 @@ import {
 import {
   applySummary,
   capHistory,
+  isSyntheticMessage,
   pendingAfterSummary,
   type HistorySummary,
 } from "./history-window.js";
@@ -26,6 +27,13 @@ import {
 
 export interface ModelContext {
   messages: UIMessage[];
+  /**
+   * El mensaje real más viejo que el modelo ve completo (el primero que no es
+   * el resumen ni la nota del techo). Lo anterior solo lo ve resumido: la
+   * memoria (F10.8.1) busca ahí también. `null` si no viaja ningún mensaje
+   * real.
+   */
+  oldestVisibleMessageId: string | null;
 }
 
 /**
@@ -56,5 +64,8 @@ export function assembleContext(
     ),
     capTokens,
   );
-  return { messages };
+  return {
+    messages,
+    oldestVisibleMessageId: messages.find((m) => !isSyntheticMessage(m))?.id ?? null,
+  };
 }

@@ -177,6 +177,63 @@ describe("MemoryService", { timeout: 60_000 }, () => {
     expect(mismo.resultados).toEqual([]);
   });
 
+  it("en el mismo chat, encuentra solo lo que ya quedó resumido (F10.8.1)", async () => {
+    // Un chat con un intercambio viejo y uno reciente, los dos de hashtags.
+    const viejo = await chatCon(
+      userId,
+      "Usa el hashtag #Lupe",
+      "Va, #Lupe.",
+      Date.now() - 3_600_000,
+    );
+    await service.index({ userId, ...viejo });
+    const [, reciente] = await dbService.runWithTenant(userId, (tx) =>
+      tx
+        .insert(messages)
+        .values([
+          {
+            chatId: viejo.chatId,
+            userId,
+            role: "user" as const,
+            parts: [{ type: "text", text: "Otro hashtag" }],
+            createdAt: new Date(Date.now() - 1_000),
+          },
+          {
+            chatId: viejo.chatId,
+            userId,
+            role: "assistant" as const,
+            parts: [{ type: "text", text: "Usa #Reciente." }],
+            createdAt: new Date(),
+          },
+        ])
+        .returning({ id: messages.id }),
+    );
+    await service.index({ userId, chatId: viejo.chatId, messageId: reciente!.id });
+    // El modelo ve completo desde el mensaje "Otro hashtag": lo anterior solo resumido.
+    const [frontera] = await dbService
+      .runWithTenant(userId, (tx) =>
+        tx
+          .select({ id: messages.id, createdAt: messages.createdAt })
+          .from(messages)
+          .where(eq(messages.chatId, viejo.chatId))
+          .orderBy(messages.createdAt),
+      )
+      .then((rows) => rows.slice(2));
+    const r = await service.search(
+      userId,
+      viejo.chatId,
+      "el hashtag que me dijiste",
+      undefined,
+      frontera!.id,
+    );
+    // (Otros chats de este usuario también salen; aquí importa este chat.)
+    const aqui = r.resultados.filter((h) => h.mismoChat);
+    expect(aqui).toHaveLength(1);
+    expect(aqui[0]!.fragmento).toContain("#Lupe"); // el reciente (#Reciente) el modelo ya lo ve
+    // Sin frontera (todo visible), el chat actual queda fuera, como antes.
+    const sinFrontera = await service.search(userId, viejo.chatId, "el hashtag que me dijiste");
+    expect(sinFrontera.resultados.some((h) => h.mismoChat)).toBe(false);
+  });
+
   it("otro usuario nunca encuentra la memoria ajena (RLS)", async () => {
     const mio = await chatCon(userId, "Mis marquesitas de cajeta", "Anotado.");
     await service.index({ userId, ...mio });
