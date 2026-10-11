@@ -15,7 +15,7 @@ import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
 import { ConfirmDeleteModal } from "../components/ui/ConfirmDeleteModal.js";
 import { fetchCardVersions } from "../lib/cards-api.js";
 import { parseApiErrorMessage, parseQuotaExhaustedError } from "../lib/chat-error.js";
-import { isCardToolPart, type ChatUIMessage } from "../lib/chat-types.js";
+import { isCardToolPart, messageText, type ChatUIMessage } from "../lib/chat-types.js";
 import { turnNotices, type TurnNotice, type TurnStatus } from "../lib/turn-status.js";
 import { useQuota } from "../lib/use-quota.js";
 import { uuid } from "../lib/uuid.js";
@@ -326,6 +326,7 @@ function ChatView({
   }
   function requestRegenerate(onGo?: () => void) {
     void confirmReplace("regenerar", () => {
+      setEditingId(null);
       onGo?.();
       void regenerate();
     });
@@ -335,18 +336,30 @@ function ChatView({
   // nuevo con otro texto: el SDK reemplaza el mensaje y corta lo de después, y
   // el servidor reconoce el id (streamChat) y borra la respuesta vieja.
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Mientras se revisan las cards (una lectura de red), un segundo Enviar o un
+  // mensaje del composer no deben colarse: se vuelve a revisar al enviar.
+  const replacing = useRef(false);
   function submitEdit(userId: string, text: string) {
+    if (replacing.current) return;
+    replacing.current = true;
     void confirmReplace("editar", () => {
+      const latest = latestRef.current;
+      if (latest.busy || latest.lastUserId !== userId) return;
       setEditingId(null);
       markTurn(userId, null);
       retryingId.current = null;
       setFailedAgain(false);
       scrollToEnd(false);
       void sendMessage({ text, messageId: userId });
+    }).finally(() => {
+      replacing.current = false;
     });
   }
 
   const lastUserId = [...messages].reverse().find((m) => m.role === "user")?.id;
+  // Lo de este render, para lo que corre después de un await.
+  const latestRef = useRef({ busy, lastUserId });
+  latestRef.current = { busy, lastUserId };
   const notices = turnNotices(messages, { busy, local: localStatus });
   // Un rechazo de la API no guardó nada: reintentarlo tal cual daría lo mismo.
   const turnApiError = quotaExhaustedError ? "Usaste toda tu cuota de este mes." : apiErrorMessage;
@@ -364,10 +377,8 @@ function ChatView({
       requestRegenerate(go);
       return;
     }
-    const text = messages
-      .find((m) => m.id === userId)
-      ?.parts.flatMap((p) => (p.type === "text" ? [p.text] : []))
-      .join("\n");
+    const message = messages.find((m) => m.id === userId);
+    const text = message ? messageText(message) : "";
     if (!text) return;
     go();
     void sendMessage({ text, messageId: userId });
@@ -382,7 +393,8 @@ function ChatView({
         failedAgain={failedAgain && notice.actionable}
         apiError={notice.actionable ? turnApiError : null}
         onRetry={() => retryTurn(userId, notice)}
-        onEdit={() => setEditingId(userId)}
+        // Sin cuota, editar daría el mismo rechazo.
+        onEdit={quotaExhaustedError ? undefined : () => setEditingId(userId)}
       />
     );
   }
@@ -395,6 +407,7 @@ function ChatView({
     setModalDismissed(false);
     setFailedAgain(false);
     retryingId.current = null;
+    setEditingId(null);
     // Lo que tú mandas siempre se ve, aunque estuvieras leyendo arriba.
     scrollToEnd(false);
     void sendMessage({ text });
@@ -423,15 +436,13 @@ function ChatView({
                 if (message.role === "user") {
                   // Sin respuesta en pantalla, la card de estado va aquí.
                   const noReply = messages[mi + 1]?.role !== "assistant";
-                  const text = message.parts
-                    .flatMap((p) => (p.type === "text" ? [p.text] : []))
-                    .join("\n");
+                  const isLastUser = message.id === lastUserId;
                   return (
                     <div key={message.id} className="flex flex-col gap-[18px]">
                       <MessageUser
-                        text={text}
-                        canEdit={message.id === lastUserId && !busy}
-                        editing={editingId === message.id && !busy}
+                        text={messageText(message)}
+                        canEdit={isLastUser && !busy}
+                        editing={isLastUser && editingId === message.id && !busy}
                         onEdit={() => setEditingId(message.id)}
                         onCancelEdit={() => setEditingId(null)}
                         onSubmitEdit={(edited) => submitEdit(message.id, edited)}

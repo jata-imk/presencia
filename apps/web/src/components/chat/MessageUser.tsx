@@ -1,6 +1,7 @@
 import { MAX_MESSAGE_CHARS } from "@presencia/shared";
 import { Copy, Pencil } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { isSubmitKey, measureMessage, useAutoGrow } from "../../lib/use-message-input.js";
 
 // Burbuja del usuario (Chat Conversation.html, MessageUser). Plum con texto
 // blanco en claro; en oscuro el mockup invierte a Blush Pop con texto plum
@@ -34,6 +35,7 @@ export function MessageUser({
   onSubmitEdit?: (text: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const editable = canEdit && onEdit !== undefined;
 
   function handleCopy() {
     void navigator.clipboard.writeText(text).then(() => {
@@ -57,25 +59,30 @@ export function MessageUser({
           <BubbleAction label={copied ? "Copiado" : "Copiar mensaje"} onClick={handleCopy}>
             <Copy size={12} strokeWidth={1.75} />
           </BubbleAction>
-          {canEdit && onEdit && (
+          {editable && (
             <BubbleAction label="Editar mensaje" onClick={onEdit}>
               <Pencil size={12} strokeWidth={1.75} />
             </BubbleAction>
           )}
         </div>
       </div>
-      {/* Sin hover (táctil) o sin espacio a la izquierda (angosto): "Editar"
-          va debajo, solo en el último. */}
-      {canEdit && onEdit && (
-        <button
-          type="button"
-          onClick={onEdit}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold text-fg-secondary hover:text-fg sm:pointer-fine:hidden"
-        >
-          <Pencil size={12} strokeWidth={1.75} aria-hidden />
-          Editar
-        </button>
-      )}
+      {/* Sin hover (táctil) o sin espacio a la izquierda (angosto): debajo de la
+          burbuja. Copiar aparece al tocarla; el último mensaje los muestra
+          siempre, porque ahí está "Editar". */}
+      <div
+        className={`flex gap-1 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 sm:pointer-fine:hidden ${
+          editable ? "" : "opacity-0"
+        }`}
+      >
+        <BelowAction label={copied ? "Copiado" : "Copiar"} onClick={handleCopy}>
+          <Copy size={12} strokeWidth={1.75} aria-hidden />
+        </BelowAction>
+        {editable && (
+          <BelowAction label="Editar" onClick={onEdit}>
+            <Pencil size={12} strokeWidth={1.75} aria-hidden />
+          </BelowAction>
+        )}
+      </div>
     </div>
   );
 }
@@ -86,7 +93,7 @@ function BubbleAction({
   children,
 }: {
   label: string;
-  onClick: () => void;
+  onClick?: () => void;
   children: ReactNode;
 }) {
   return (
@@ -98,6 +105,27 @@ function BubbleAction({
       className="flex size-7 items-center justify-center rounded-md border border-line bg-card text-fg-muted shadow-sm transition-colors hover:text-fg"
     >
       {children}
+    </button>
+  );
+}
+
+function BelowAction({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold text-fg-secondary hover:text-fg"
+    >
+      {children}
+      {label}
     </button>
   );
 }
@@ -114,9 +142,8 @@ function EditBubble({
 }) {
   const [value, setValue] = useState(initial);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const length = value.trim().length;
-  const tooLong = length > MAX_MESSAGE_CHARS;
-  const canSend = length > 0 && !tooLong;
+  const { tooLong, canSend } = measureMessage(value);
+  useAutoGrow(ref, value);
 
   useEffect(() => {
     const box = ref.current;
@@ -124,20 +151,22 @@ function EditBubble({
     box.focus();
     box.setSelectionRange(box.value.length, box.value.length);
   }, []);
-  useEffect(() => {
-    const box = ref.current;
-    if (!box) return;
-    box.style.height = "auto";
-    box.style.height = `${String(Math.min(box.scrollHeight, 320))}px`;
-  }, [value]);
+
+  // Sin cambios no hay nada que reemplazar: volver a correr el turno cobraría
+  // y borraría los borradores de la respuesta por nada.
+  function submit() {
+    if (!canSend) return;
+    if (value.trim() === initial.trim()) onCancel();
+    else onSubmit(value.trim());
+  }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Escape") {
       e.preventDefault();
       onCancel();
-    } else if (e.key === "Enter" && !e.shiftKey) {
+    } else if (isSubmitKey(e)) {
       e.preventDefault();
-      if (canSend) onSubmit(value.trim());
+      submit();
     }
   }
 
@@ -169,7 +198,7 @@ function EditBubble({
           <button
             type="button"
             disabled={!canSend}
-            onClick={() => onSubmit(value.trim())}
+            onClick={submit}
             className="h-8 rounded-md bg-primary px-3 text-xs font-semibold text-primary-fg disabled:opacity-50"
           >
             Enviar

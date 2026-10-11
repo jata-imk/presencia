@@ -1,9 +1,9 @@
 import { Mic, Paperclip, Palette, Send, Square } from "lucide-react";
-import { useEffect, useImperativeHandle, useRef, type KeyboardEvent, type Ref } from "react";
+import { useImperativeHandle, useRef, type KeyboardEvent, type Ref } from "react";
 import { MAX_MESSAGE_CHARS } from "@presencia/shared";
+import { isSubmitKey, measureMessage, useAutoGrow } from "../../lib/use-message-input.js";
 import { Tooltip } from "../ui/Tooltip.js";
 
-const MAX_HEIGHT_PX = 220;
 /** Desde aquí se ve el contador de caracteres (F10.8.2). */
 const COUNTER_FROM = Math.floor(MAX_MESSAGE_CHARS * 0.9);
 
@@ -45,25 +45,16 @@ export function Composer({
   inputRef?: Ref<HTMLTextAreaElement>;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // Pasarse del tope no corta el texto (un `maxLength` recortaría en silencio
-  // lo pegado): se avisa con el contador y no se deja enviar. Se mide lo que de
-  // verdad se manda: el envío recorta los bordes.
-  const length = value.trim().length;
-  const tooLong = length > MAX_MESSAGE_CHARS;
+  // Pasarse del tope se avisa con el contador y no deja enviar.
+  const { length, tooLong, canSend } = measureMessage(value);
   const hasText = length > 0;
-  const canSend = hasText && !tooLong;
 
   useImperativeHandle(inputRef, () => textareaRef.current as HTMLTextAreaElement, []);
 
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`;
-  }, [value]);
+  useAutoGrow(textareaRef, value);
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (isSubmitKey(e)) {
       e.preventDefault();
       if (canSend && !busy) onSubmit();
     }

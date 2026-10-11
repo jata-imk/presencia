@@ -29,8 +29,8 @@ export function TurnStatusCard({
    */
   apiError: string | null;
   onRetry: () => void;
-  /** Abre el último mensaje en modo edición (F10.8.2). */
-  onEdit: () => void;
+  /** Abre el último mensaje en modo edición (F10.8.2); sin él, no se ofrece. */
+  onEdit?: () => void;
 }) {
   const stopped = notice.status === "stopped";
 
@@ -61,8 +61,12 @@ export function TurnStatusCard({
         ? "Sigue sin funcionar. Intenta en unos minutos."
         : "No se pudo generar la respuesta.";
   const hint = apiError
-    ? "Edita tu mensaje o escribe otro para seguir."
-    : "Reintenta, edita tu mensaje o escribe otro para seguir.";
+    ? onEdit
+      ? "Edita tu mensaje o escribe otro para seguir."
+      : "Escribe otro mensaje para seguir."
+    : onEdit
+      ? "Reintenta, edita tu mensaje o escribe otro para seguir."
+      : "Reintenta, o escribe otro mensaje para seguir.";
 
   return (
     <div
@@ -81,10 +85,12 @@ export function TurnStatusCard({
         <p className="text-fg-secondary">{hint}</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {!apiError && <RetryButton onClick={onRetry} />}
-          <button type="button" onClick={onEdit} className={CARD_BUTTON}>
-            <Pencil size={12} strokeWidth={2} aria-hidden />
-            Editar mensaje
-          </button>
+          {onEdit && (
+            <button type="button" onClick={onEdit} className={CARD_BUTTON}>
+              <Pencil size={12} strokeWidth={2} aria-hidden />
+              Editar mensaje
+            </button>
+          )}
         </div>
       </div>
     </div>
