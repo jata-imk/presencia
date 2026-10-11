@@ -13,9 +13,10 @@ import { chatTransport } from "../lib/chat-transport.js";
 import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
 import { ConfirmDeleteModal } from "../components/ui/ConfirmDeleteModal.js";
 import { fetchCardVersions } from "../lib/cards-api.js";
-import { parseQuotaExhaustedError } from "../lib/chat-error.js";
+import { parseApiErrorMessage, parseQuotaExhaustedError } from "../lib/chat-error.js";
 import { isCardToolPart, type ChatUIMessage } from "../lib/chat-types.js";
 import { useQuota } from "../lib/use-quota.js";
+import { uuid } from "../lib/uuid.js";
 import { useCardsStore } from "../stores/cards-store.js";
 import { useChatsStore } from "../stores/chats-store.js";
 import { useToastStore } from "../stores/toast-store.js";
@@ -69,6 +70,10 @@ function ChatView({
     // Solo el último mensaje viaja al servidor (lib/chat-transport.ts). Uno
     // por chat: useChat se queda con el primero que recibe.
     transport,
+    // uuid (F10.8.2): el servidor guarda el mensaje con este mismo id, así
+    // "Regenerar" lo encuentra sin recargar. Con el id por default del SDK
+    // (no es uuid) la base le ponía otro, y regenerar daba 404.
+    generateId: uuid,
   });
   const busy = status === "submitted" || status === "streaming";
   // Auto-scroll (F10.6.2): el chat sigue a la respuesta SOLO si estabas en
@@ -234,6 +239,7 @@ function ChatView({
     });
   }
   const quotaExhaustedError = parseQuotaExhaustedError(error);
+  const apiErrorMessage = parseApiErrorMessage(error);
 
   // Regenerar borra las cards de la respuesta (ADR-006). Desde F10.5 una
   // card puede traer trabajo del usuario encima (ediciones, versiones):
@@ -325,10 +331,14 @@ function ChatView({
               {showTyping && <TypingDots />}
               {error && !quotaExhaustedError && (
                 <p className="flex items-center gap-2 text-sm text-error">
-                  Algo salió mal generando la respuesta.
-                  <button type="button" className="underline" onClick={() => void regenerate()}>
-                    Reintentar
-                  </button>
+                  {apiErrorMessage ?? "Algo salió mal generando la respuesta."}
+                  {/* Un rechazo de la API no guardó el mensaje: reintentarlo
+                      tal cual daría el mismo rechazo. */}
+                  {!apiErrorMessage && (
+                    <button type="button" className="underline" onClick={() => void regenerate()}>
+                      Reintentar
+                    </button>
+                  )}
                 </p>
               )}
             </div>

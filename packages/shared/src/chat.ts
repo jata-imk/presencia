@@ -48,6 +48,14 @@ export const chatStreamBodySchema = z.object({
 });
 export type ChatStreamBody = z.infer<typeof chatStreamBodySchema>;
 
+/**
+ * Tope de un mensaje del creator, en caracteres (F10.8.2). Lo aplican el
+ * composer (que no deja pasarlo) y el servidor (413 si llega más). ~12k
+ * tokens: cabe un artículo pegado para resumir, no un libro. El límite del
+ * body de `express.json` (main.ts) va holgado por encima de esto.
+ */
+export const MAX_MESSAGE_CHARS = 50_000;
+
 export const renameChatBodySchema = z.object({
   title: z.string().trim().min(1).max(120),
 });

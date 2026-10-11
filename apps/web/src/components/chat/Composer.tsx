@@ -1,8 +1,11 @@
 import { Mic, Paperclip, Palette, Send, Square } from "lucide-react";
 import { useEffect, useImperativeHandle, useRef, type KeyboardEvent, type Ref } from "react";
+import { MAX_MESSAGE_CHARS } from "@presencia/shared";
 import { Tooltip } from "../ui/Tooltip.js";
 
 const MAX_HEIGHT_PX = 220;
+/** Desde aquí se ve el contador de caracteres (F10.8.2). */
+const COUNTER_FROM = Math.floor(MAX_MESSAGE_CHARS * 0.9);
 
 // Caja de texto (Chat Conversation.html, StickyInput) — mismo componente en
 // la conversación (`large=false`) y en la pantalla de nuevo chat
@@ -42,7 +45,13 @@ export function Composer({
   inputRef?: Ref<HTMLTextAreaElement>;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const hasText = value.trim().length > 0;
+  // Pasarse del tope no corta el texto (un `maxLength` recortaría en silencio
+  // lo pegado): se avisa con el contador y no se deja enviar. Se mide lo que de
+  // verdad se manda: el envío recorta los bordes.
+  const length = value.trim().length;
+  const tooLong = length > MAX_MESSAGE_CHARS;
+  const hasText = length > 0;
+  const canSend = hasText && !tooLong;
 
   useImperativeHandle(inputRef, () => textareaRef.current as HTMLTextAreaElement, []);
 
@@ -56,7 +65,7 @@ export function Composer({
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (hasText && !busy) onSubmit();
+      if (canSend && !busy) onSubmit();
     }
   }
 
@@ -114,6 +123,16 @@ export function Composer({
             ))}
           </div>
           <div className="flex-1" />
+          {length >= COUNTER_FROM && (
+            <span
+              aria-live="polite"
+              className={`mr-2 text-xs tabular-nums ${tooLong ? "text-error" : "text-fg-muted"}`}
+            >
+              {tooLong
+                ? `Te pasas por ${excess(length - MAX_MESSAGE_CHARS)}`
+                : `${length.toLocaleString("es-MX")} / ${MAX_MESSAGE_CHARS.toLocaleString("es-MX")}`}
+            </span>
+          )}
           {busy ? (
             <button
               type="button"
@@ -127,16 +146,16 @@ export function Composer({
             <button
               type="button"
               aria-label="Enviar mensaje"
-              disabled={!hasText}
+              disabled={!canSend}
               onClick={onSubmit}
               className={`flex size-[30px] items-center justify-center rounded-md transition-all ${
-                hasText ? "scale-100 bg-primary opacity-100" : "scale-95 bg-secondary opacity-50"
+                canSend ? "scale-100 bg-primary opacity-100" : "scale-95 bg-secondary opacity-50"
               }`}
             >
               <Send
                 size={14}
                 strokeWidth={2}
-                className={hasText ? "text-primary-fg" : "text-fg-muted"}
+                className={canSend ? "text-primary-fg" : "text-fg-muted"}
               />
             </button>
           )}
@@ -144,4 +163,8 @@ export function Composer({
       </div>
     </div>
   );
+}
+
+function excess(count: number): string {
+  return count === 1 ? "1 carácter" : `${count.toLocaleString("es-MX")} caracteres`;
 }

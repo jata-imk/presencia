@@ -78,6 +78,11 @@ export class ChatRepository {
   async insertMessage(
     tx: Tx,
     input: {
+      /**
+       * F10.8.2: el id que ya conoce la web (el del cliente para el mensaje
+       * user, el del stream para la respuesta). Sin él, la base genera uno.
+       */
+      id?: string;
       chatId: string;
       userId: string;
       role: "user" | "assistant";

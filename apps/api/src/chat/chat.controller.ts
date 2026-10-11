@@ -11,7 +11,7 @@ import {
   Post,
   Res,
 } from "@nestjs/common";
-import { safeValidateUIMessages, type UIMessage } from "ai";
+import type { UIMessage } from "ai";
 import {
   chatIdParamSchema,
   chatStreamBodySchema,
@@ -24,6 +24,7 @@ import type { Response } from "express";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { SessionUser } from "../auth/auth.js";
 import { ChatService } from "./chat.service.js";
+import { parseLastUserMessage } from "./last-user-message.js";
 
 @Controller("chats")
 export class ChatController {
@@ -126,7 +127,7 @@ export class ChatController {
     // historial: lib/chat-transport.ts; regenerate() recorta la respuesta
     // vieja antes de mandar). El historial sale de la base. No hay un campo
     // `messageId` separado que el protocolo real envíe.
-    const userMessage = await this.parseLastUserMessage(body);
+    const userMessage = await parseLastUserMessage(body);
 
     if (trigger.data.trigger === "regenerate-message") {
       await this.chatService.regenerateChat(user.id, chatId, userMessage.id, res);
@@ -140,19 +141,5 @@ export class ChatController {
     const parsed = chatIdParamSchema.safeParse({ id });
     if (!parsed.success) throw new BadRequestException("El id del chat no es válido.");
     return parsed.data.id;
-  }
-
-  // El server solo toma el último mensaje user del body; el resto del
-  // historial se reconstruye desde la DB (fuente de verdad única).
-  private async parseLastUserMessage(body: unknown): Promise<UIMessage> {
-    const messages = (body as { messages?: unknown })?.messages;
-    if (!Array.isArray(messages) || messages.length === 0) {
-      throw new BadRequestException("Falta el mensaje.");
-    }
-    const validated = await safeValidateUIMessages({ messages: [messages.at(-1)] });
-    if (!validated.success || validated.data[0]?.role !== "user") {
-      throw new BadRequestException("El mensaje no es válido.");
-    }
-    return validated.data[0];
   }
 }
