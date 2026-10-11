@@ -36,7 +36,7 @@ import { MemoryService } from "./memory.service.js";
 import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
 import { assembleContext, cardIdsForContext } from "./context-builder.js";
 import { ChatRepository, type ChatSummaryRow, type MessageRow } from "./chat.repository.js";
-import { type CompressedCardOutput, type LiveCard } from "./context-diet.js";
+import { cardIdsIn, type CompressedCardOutput, type LiveCard } from "./context-diet.js";
 import { sanitizeInterruptedParts } from "./interrupted-turn.js";
 import { lastTurnOf, storableMessageId } from "./last-user-message.js";
 import { buildSystemPrompt } from "./system-prompt.js";
@@ -87,7 +87,14 @@ export class ChatService {
     // uno que sigue respondiendo en otra pestaña no frena a este.
     const turn = this.turnsInFlight.get(chatId);
     if (!turn?.closed()) return;
-    await Promise.race([turn.done, new Promise((resolve) => setTimeout(resolve, TURN_WAIT_MS))]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      turn.done,
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, TURN_WAIT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
   }
 
   /**
@@ -426,6 +433,12 @@ export class ChatService {
     // "Detener" y luego "Reintentar" de inmediato: la respuesta cortada tiene
     // que estar guardada antes de leer qué se reintenta.
     await this.afterTurnInFlight(chatId);
+    // Su respuesta todavía se está generando (otra pestaña): regenerar ahora
+    // sería una segunda respuesta en paralelo.
+    const running = this.turnsInFlight.get(chatId);
+    if (running && !running.closed()) {
+      throw new ConflictException("Esta respuesta todavía se está generando.");
+    }
     const turn = this.trackTurn(chatId, res);
     // Cortado antes de empezar: no se borra la respuesta de un regenerar que
     // nadie va a recibir.
@@ -624,11 +637,22 @@ export class ChatService {
     // guardado su tool quedó a medias), así que al vencer la misma gracia de
     // la traza se borra en vez de quedar huérfana.
     const saveInterrupted = async (responseMessage: UIMessage, status: "stopped" | "failed") => {
-      // Las que existen ahora; las que lleguen después son las tardías.
-      const linked = createdCardIds.slice();
+      // Se ligan solo las cards que la respuesta guardada muestra: una cuya
+      // tool quedó a medias (el saneado la quita) no se ve en el chat, aunque
+      // la card ya exista. Esas, y las que terminen de crearse después, se
+      // borran al vencer la gracia.
+      const visible = new Set(
+        cardIdsIn([{ ...responseMessage, parts: sanitizeInterruptedParts(responseMessage.parts) }]),
+      );
+      const linked = createdCardIds.filter((id) => visible.has(id));
       await this.persistReply(userId, chatId, responseMessage, status, trace.runId, linked);
       setTimeout(
-        () => void this.dropLateCards(userId, chatId, createdCardIds.slice(linked.length)),
+        () =>
+          void this.dropLateCards(
+            userId,
+            chatId,
+            createdCardIds.filter((id) => !visible.has(id)),
+          ),
         ABORTED_TRACE_GRACE_MS,
       );
     };
