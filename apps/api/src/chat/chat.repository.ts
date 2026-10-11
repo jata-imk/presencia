@@ -117,8 +117,10 @@ export class ChatRepository {
         target: chatSummaries.chatId,
         set: {
           blocks: row.blocks,
-          // La columna vieja (F10.8.1, expand/contract) deja de mentir.
-          summary: null,
+          // La columna vieja (F10.8.1, expand/contract) lleva el texto del
+          // último bloque: la app vieja que siga corriendo durante el deploy
+          // la lee, y `blocksOf` reconoce que va al día con los bloques.
+          summary: row.summary,
           throughMessageId: row.throughMessageId,
           throughCreatedAt: row.throughCreatedAt,
           cards: row.cards,

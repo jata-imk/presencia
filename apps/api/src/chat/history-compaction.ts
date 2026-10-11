@@ -57,9 +57,9 @@ const blockSchema = z.object({
 
 /**
  * Los bloques de una fila de `chat_summaries`, validados: es jsonb, y un
- * bloque mal formado se descarta en vez de llegar al prompt. Si la fila no
- * tiene bloques pero sí el `summary` viejo (lo escribió la app anterior
- * durante el deploy de F10.8.1), ese texto es el bloque 1.
+ * bloque mal formado se descarta en vez de llegar al prompt. Durante el
+ * deploy de F10.8.1 la app vieja puede escribir `summary` sin tocar `blocks`
+ * (insertando o actualizando la fila): ese texto entra como bloque.
  */
 export function blocksOf(row: {
   blocks: unknown;
@@ -75,16 +75,24 @@ export function blocksOf(row: {
         return parsed.success ? [parsed.data] : [];
       })
     : [];
-  if (blocks.length > 0 || !row.summary) return blocks;
-  return [
-    {
-      summary: row.summary,
-      throughMessageId: row.throughMessageId,
-      throughCreatedAt: row.throughCreatedAt.toISOString(),
-      model: row.model,
-      createdAt: row.updatedAt.toISOString(),
-    },
-  ];
+  const viejo: SummaryBlock | null = row.summary
+    ? {
+        summary: row.summary,
+        throughMessageId: row.throughMessageId,
+        throughCreatedAt: row.throughCreatedAt.toISOString(),
+        model: row.model,
+        createdAt: row.updatedAt.toISOString(),
+      }
+    : null;
+  if (blocks.length === 0) return viejo ? [viejo] : [];
+  // La app vieja ACTUALIZÓ la fila después de los bloques: movió el corte y
+  // escribió su resumen en `summary` sin tocar `blocks`. Ese resumen cubre el
+  // tramo nuevo: entra como un bloque más. (La app nueva siempre deja en
+  // `summary` el texto de su último bloque, con el mismo corte.)
+  if (viejo && blocks[blocks.length - 1]!.throughMessageId !== row.throughMessageId) {
+    return [...blocks, viejo];
+  }
+  return blocks;
 }
 
 export const SUMMARY_SYSTEM = `Resumes conversaciones entre un creator mexicano y Presencia, su asistente de contenido para redes sociales. Tu resumen sustituye a una parte vieja de la conversación: el asistente ya no la verá completa, solo los resúmenes.
@@ -136,21 +144,27 @@ export function transcriptForSummary(messages: UIMessage[]): string {
     .join("\n\n");
 }
 
-/** Las partes con su encabezado y en orden: así se sabe cuál dato es el más reciente. */
-function partes(blocks: Pick<SummaryBlock, "summary" | "throughCreatedAt">[]): string {
+/**
+ * Los bloques con su encabezado y en orden: así se sabe cuál dato es el más
+ * reciente. El mismo formato para el modelo del chat (history-window.ts) y
+ * para el que resume.
+ */
+export function renderBlocks(
+  blocks: { summary: string; throughCreatedAt?: string | null }[],
+): string {
   return blocks.map((block, i) => `${blockHeading(i, block)}:\n${block.summary}`).join("\n\n");
 }
 
 export function summaryPrompt(previous: SummaryBlock[], transcript: string): string {
   const anteriores =
     previous.length > 0
-      ? `Resúmenes anteriores (solo de referencia, no los repitas; si dos dicen distinto, vale el más reciente):\n${partes(previous)}\n\n`
+      ? `Resúmenes anteriores (solo de referencia, no los repitas; si dos dicen distinto, vale el más reciente):\n${renderBlocks(previous)}\n\n`
       : "";
   return `${anteriores}Conversación a resumir:\n${transcript}`;
 }
 
 export function consolidatePrompt(blocks: SummaryBlock[]): string {
-  return partes(blocks);
+  return renderBlocks(blocks);
 }
 
 /** Las cards del resumen anterior más las del tramo nuevo; la más reciente gana. */

@@ -263,7 +263,9 @@ describe("AiUsageService.registrarTraza (F10.8.1)", () => {
     const { RunTrace } = await import("./run-trace.js");
     const insertRunSteps = vi.fn();
     const insertEvent = vi.fn();
-    const tenant = vi.fn((_userId: string, fn: (tx: never) => unknown) => fn({} as never));
+    // La traza va en un savepoint (tx.transaction) dentro de la transacción del uso.
+    const tx = { transaction: (fn: (sp: never) => unknown) => fn({} as never) };
+    const tenant = vi.fn((_userId: string, fn: (tx: never) => unknown) => fn(tx as never));
     const aiUsage = await servicio(tenant as never, insertEvent, insertRunSteps);
     const trace = new RunTrace("run-11");
     const registro = {
@@ -290,6 +292,31 @@ describe("AiUsageService.registrarTraza (F10.8.1)", () => {
     const aiUsage = await servicio(() => Promise.reject(new Error("se cayó la base")));
     await expect(aiUsage.registrarTraza("u1", null, new RunTrace("r"))).resolves.toBeUndefined();
     expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+});
+
+describe("AiUsageService.registrar con traza que falla (F10.8.1)", () => {
+  it("si la traza no se puede guardar, la fila de uso se queda", async () => {
+    const { RunTrace } = await import("./run-trace.js");
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const insertEvent = vi.fn();
+    const tx = { transaction: () => Promise.reject(new Error("ai_run_steps falló")) };
+    const aiUsage = await servicio((_u, fn) => fn(tx as never), insertEvent, vi.fn());
+    await aiUsage.registrar(
+      {
+        userId: "u1",
+        task: "chat",
+        modelo: { provider: "openai", modelName: "luna" },
+        usage: USAGE,
+        stepsCount: 1,
+        arranque: Date.now(),
+        providerRaw: {},
+      },
+      new RunTrace("run-12"),
+    );
+    expect(insertEvent).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("run-12"), expect.anything());
     error.mockRestore();
   });
 });

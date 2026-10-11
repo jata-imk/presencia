@@ -68,9 +68,6 @@ export class AiUsageService {
     const { userId, task, modelo, usage } = registro;
     try {
       await this.dbService.runWithTenant(userId, async (tx) => {
-        if (trace?.claim()) {
-          await this.repo.insertRunSteps(tx, stepRows(trace, userId, registro.chatId ?? null));
-        }
         await this.repo.insertEvent(tx, {
           userId,
           chatId: registro.chatId ?? null,
@@ -94,6 +91,17 @@ export class AiUsageService {
               ? withAttempts(registro.providerRaw, modelo.attempts)
               : registro.providerRaw,
         });
+        // La traza en un savepoint: si falla, se pierde ella sola, nunca la
+        // fila de uso con la que se mide el gasto.
+        if (trace?.claim()) {
+          try {
+            await tx.transaction((sp) =>
+              this.repo.insertRunSteps(sp, stepRows(trace, userId, registro.chatId ?? null)),
+            );
+          } catch (error) {
+            console.error(`[ai] No se pudo guardar la traza ${trace.runId} de ${userId}:`, error);
+          }
+        }
       });
     } catch (error) {
       console.error(`[ai] No se pudo registrar el usage de ${task} para ${userId}:`, error);
