@@ -65,7 +65,16 @@ function ChatView({
   const { messages, sendMessage, regenerate, stop, status, error } = useChat<ChatUIMessage>({
     id: chatId,
     messages: initialMessages,
-    transport: new DefaultChatTransport({ api: `/api/chats/${chatId}/stream` }),
+    transport: new DefaultChatTransport({
+      api: `/api/chats/${chatId}/stream`,
+      // Solo el último mensaje: el servidor reconstruye el historial desde la
+      // base (fuente de verdad única) y nunca leyó el resto. Mandarlo entero
+      // hacía crecer cada request con el chat, y uno largo (cards, razonamiento)
+      // pasaba el límite de 100 kB de express.json() con un 413.
+      prepareSendMessagesRequest: ({ messages, trigger, messageId }) => ({
+        body: { trigger, messageId, messages: messages.slice(-1) },
+      }),
+    }),
   });
   const busy = status === "submitted" || status === "streaming";
   // Auto-scroll (F10.6.2): el chat sigue a la respuesta SOLO si estabas en
