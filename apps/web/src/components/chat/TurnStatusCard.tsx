@@ -1,4 +1,4 @@
-import { CircleAlert, CircleStop, RefreshCw } from "lucide-react";
+import { CircleAlert, CircleStop, Pencil, RefreshCw } from "lucide-react";
 import type { TurnNotice } from "../../lib/turn-status.js";
 
 // El estado de un turno que se quedó sin respuesta completa (F10.8.2,
@@ -18,6 +18,7 @@ export function TurnStatusCard({
   failedAgain,
   apiError,
   onRetry,
+  onEdit,
 }: {
   notice: TurnNotice;
   /** El reintento de esta sesión volvió a fallar. */
@@ -28,6 +29,8 @@ export function TurnStatusCard({
    */
   apiError: string | null;
   onRetry: () => void;
+  /** Abre el último mensaje en modo edición (F10.8.2). */
+  onEdit: () => void;
 }) {
   const stopped = notice.status === "stopped";
 
@@ -58,8 +61,8 @@ export function TurnStatusCard({
         ? "Sigue sin funcionar. Intenta en unos minutos."
         : "No se pudo generar la respuesta.";
   const hint = apiError
-    ? "Escribe otro mensaje para seguir."
-    : "Reintenta, o escribe otro mensaje para seguir.";
+    ? "Edita tu mensaje o escribe otro para seguir."
+    : "Reintenta, edita tu mensaje o escribe otro para seguir.";
 
   return (
     <div
@@ -76,11 +79,13 @@ export function TurnStatusCard({
       <div className="flex-1">
         <p className="font-semibold">{title}</p>
         <p className="text-fg-secondary">{hint}</p>
-        {!apiError && (
-          <div className="mt-2">
-            <RetryButton onClick={onRetry} />
-          </div>
-        )}
+        <div className="mt-2 flex flex-wrap gap-2">
+          {!apiError && <RetryButton onClick={onRetry} />}
+          <button type="button" onClick={onEdit} className={CARD_BUTTON}>
+            <Pencil size={12} strokeWidth={2} aria-hidden />
+            Editar mensaje
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -94,7 +99,7 @@ function RetryButton({ onClick, subtle = false }: { onClick: () => void; subtle?
       className={
         subtle
           ? "inline-flex items-center gap-1 rounded-md px-1 font-semibold text-fg-secondary hover:text-fg"
-          : "inline-flex h-7 items-center gap-1.5 rounded-md bg-card px-2.5 font-display text-xs font-semibold text-fg shadow-xs hover:bg-surface"
+          : CARD_BUTTON
       }
     >
       <RefreshCw size={12} strokeWidth={2} aria-hidden />
@@ -102,3 +107,6 @@ function RetryButton({ onClick, subtle = false }: { onClick: () => void; subtle?
     </button>
   );
 }
+
+const CARD_BUTTON =
+  "inline-flex h-7 items-center gap-1.5 rounded-md bg-card px-2.5 font-display text-xs font-semibold text-fg shadow-xs hover:bg-surface";
