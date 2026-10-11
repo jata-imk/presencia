@@ -47,6 +47,8 @@ describe("assembleContext", () => {
     const chat = conversacion(3);
     const context = assembleContext(chat, null, new Map(), 120_000);
     expect(context.messages.map((m) => m.id)).toEqual(chat.map((m) => m.id));
+    // Nada escondido: la memoria no tiene qué buscar en este chat.
+    expect(context.oldestVisibleMessageId).toBeNull();
   });
 
   it("con resumen, viaja el resumen y después lo que no cubre", () => {
@@ -63,6 +65,8 @@ describe("assembleContext", () => {
     );
     expect(context.messages[0]!.id.startsWith("presencia-")).toBe(true);
     expect(context.messages.find((m) => !m.id.startsWith("presencia-"))!.id).toBe("u3");
+    // Lo anterior solo lo ve resumido: la memoria puede buscar ahí (F10.8.1).
+    expect(context.oldestVisibleMessageId).toBe("u3");
   });
 
   it("con el techo, viaja la nota y lo más reciente que cupo", () => {
@@ -70,6 +74,7 @@ describe("assembleContext", () => {
     const context = assembleContext(chat, null, new Map(), 3_000);
     const reales = context.messages.filter((m) => !m.id.startsWith("presencia-"));
     expect(reales.length).toBeLessThan(chat.length);
+    expect(context.oldestVisibleMessageId).toBe(reales[0]!.id);
   });
 
   it("describe las cards como son hoy; si la lectura falló, se queda con la foto", () => {

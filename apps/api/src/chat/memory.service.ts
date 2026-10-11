@@ -112,20 +112,24 @@ export class MemoryService {
 
   /**
    * La tool: los recuerdos más parecidos a `consulta` en los otros chats del
-   * usuario. Nunca lanza: una memoria que no respondió deja al chat seguir
-   * sin ella, no tumba el turno.
+   * usuario y, desde F10.8.1, en la parte de este chat anterior a
+   * `visibleFromMessageId` (la que el modelo ya solo ve resumida; `null` si
+   * la ve completa). Nunca lanza: una memoria que no respondió deja al chat
+   * seguir sin ella, no tumba el turno.
    */
   async search(
     userId: string,
     chatId: string,
     consulta: string,
     runId?: string,
+    visibleFromMessageId: string | null = null,
   ): Promise<MemorySearchOutput> {
     try {
       const vector = await this.embed(userId, chatId, consulta, "query", runId);
       const rows = await this.dbService.runWithTenant(userId, (tx) =>
         this.repo.searchMemory(tx, {
           chatId,
+          visibleFromMessageId,
           model: this.modelId,
           embedding: vector,
           limit: MEMORY_RESULTS,
@@ -138,6 +142,7 @@ export class MemoryService {
             fragmento: row.content,
             chat: row.chatTitle,
             fecha: row.createdAt.toISOString(),
+            mismoChat: row.chatId === chatId,
           })),
       };
     } catch (error) {

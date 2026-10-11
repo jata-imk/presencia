@@ -357,6 +357,20 @@ export class ChatService {
     // pasos del modelo y las tools, y lo que el turno dispara (título,
     // compactación, memoria) en ai_usage_events.
     const trace = new RunTrace(randomUUID());
+
+    // Lo que el modelo ve (F10.8.1, context-builder.ts): el resumen en lugar
+    // del tramo viejo (mensajes ENTEROS, nunca partes: la regla del reasoning
+    // item de abajo), las cards como son hoy, la dieta y el techo. Las cards
+    // del resumen y las de la ventana se leen de una sola vez. `history` no
+    // se toca: la UI y lo que se persiste siguen siendo la conversación
+    // completa.
+    const context = assembleContext(
+      history,
+      summary,
+      await this.loadLiveCardsByIds(userId, cardIdsForContext(history, summary)),
+      env.CHAT_HISTORY_CAP_TOKENS,
+    );
+    const modelHistory = context.messages;
     const tools = {
       ...buildPublicationCardTools({
         userId,
@@ -368,14 +382,19 @@ export class ChatService {
       }),
       // F10.8: la memoria entre chats. El modelo la llama cuando el creator
       // alude a otra conversación (system-prompt.ts dice cuándo); busca en
-      // sus OTROS chats. Nunca lanza: sin memoria, el turno sigue igual.
+      // sus OTROS chats y, desde F10.8.1, en la parte de este que ya solo ve
+      // resumida (antes de `oldestVisibleMessageId`). Nunca lanza: sin
+      // memoria, el turno sigue igual.
       [MEMORY_TOOL_NAME]: tool({
         description:
-          "Busca en las conversaciones anteriores del creator (otros chats) lo que " +
-          "hablaron sobre un tema. Úsala cuando se refiera a algo de otra conversación " +
-          "que no está en esta. Devuelve fragmentos con el título del chat y la fecha.",
+          "Busca en las conversaciones anteriores del creator (otros chats) y en la parte " +
+          "vieja de esta conversación que ya solo ves resumida. Úsala cuando se refiera a " +
+          "algo que no ves completo aquí: de otra conversación, o un detalle de antes en " +
+          "esta que el resumen no trae. Devuelve fragmentos con el título del chat, la " +
+          "fecha y si son de esta misma conversación.",
         inputSchema: memorySearchInputSchema,
-        execute: ({ consulta }) => this.memory.search(userId, chatId, consulta, trace.runId),
+        execute: ({ consulta }) =>
+          this.memory.search(userId, chatId, consulta, trace.runId, context.oldestVisibleMessageId),
       }),
     };
 
@@ -396,20 +415,6 @@ export class ChatService {
         : null,
     );
     const startedAt = Date.now();
-
-    // Lo que el modelo ve (F10.8.1, context-builder.ts): el resumen en lugar
-    // del tramo viejo (mensajes ENTEROS, nunca partes: la regla del reasoning
-    // item de abajo), las cards como son hoy, la dieta y el techo. Las cards
-    // del resumen y las de la ventana se leen de una sola vez. `history` no
-    // se toca: la UI y lo que se persiste siguen siendo la conversación
-    // completa.
-    const context = assembleContext(
-      history,
-      summary,
-      await this.loadLiveCardsByIds(userId, cardIdsForContext(history, summary)),
-      env.CHAT_HISTORY_CAP_TOKENS,
-    );
-    const modelHistory = context.messages;
 
     const result = streamText({
       model: resolved.model,

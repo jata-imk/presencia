@@ -294,17 +294,22 @@ function MemoryNote({ parts, streaming }: { parts: MemoryToolPart[]; streaming: 
   // queda en "Buscando…" mientras el modelo sigue escribiendo.
   const pending = parts.some((p) => p.state === "input-streaming" || p.state === "input-available");
   const hits = done.flatMap((p) => p.output.resultados);
-  const chats = [...new Set(hits.map((h) => h.chat))];
+  // F10.8.1: un recuerdo puede ser de la parte resumida de este mismo chat.
+  // Los guardados antes no traen `mismoChat`: son de otros chats.
+  const aqui = hits.some((h) => h.mismoChat === true);
+  const otros = [...new Set(hits.filter((h) => h.mismoChat !== true).map((h) => h.chat))];
+  const enOtros =
+    otros.length === 1 ? `en «${otros[0]!}»` : `en ${String(otros.length)} chats anteriores`;
   const label =
     pending && streaming
-      ? "Buscando en tus chats anteriores…"
+      ? "Buscando en lo que hemos hablado…"
       : done.length === 0
-        ? "No pude buscar en tus chats anteriores"
-        : chats.length === 0
-          ? "Busqué en tus chats anteriores, sin coincidencias"
-          : chats.length === 1
-            ? `Recordé lo que hablamos en «${chats[0]!}»`
-            : `Recordé lo que hablamos en ${String(chats.length)} chats anteriores`;
+        ? "No pude buscar en lo que hemos hablado"
+        : hits.length === 0
+          ? "Busqué en lo que hemos hablado, sin coincidencias"
+          : aqui
+            ? `Recordé lo que hablamos antes en este chat${otros.length > 0 ? ` y ${enOtros}` : ""}`
+            : `Recordé lo que hablamos ${enOtros}`;
   return (
     <div className="flex items-center gap-1.5 text-[13px] text-fg-muted">
       <History size={14} strokeWidth={1.75} aria-hidden />

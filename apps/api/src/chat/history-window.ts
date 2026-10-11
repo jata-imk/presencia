@@ -208,7 +208,7 @@ export function capHistory(messages: UIMessage[], capTokens: number): UIMessage[
   while (start < rest.length - 1 && rest[start]!.role !== "user") start++;
   const note = syntheticPair(
     "nota",
-    "[Nota: esta conversación es muy larga y la parte más antigua ya no está disponible. Si el creator se refiere a algo de antes que no ves aquí, pídele que te lo recuerde.]",
+    "[Nota: esta conversación es muy larga y ya no ves completa la parte más antigua. Si el creator se refiere a algo de antes que no ves aquí, búscalo con buscar_en_memoria; si no aparece, pídele que te lo recuerde.]",
   );
   return [...head, ...note, ...rest.slice(start)];
 }

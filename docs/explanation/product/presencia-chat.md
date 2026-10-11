@@ -1147,8 +1147,9 @@ conversación ("hazme otro como el de las marquesitas", "lo
 que te conté de mi horario"), Presencia busca en sus chats
 anteriores y responde con eso. Arriba de la respuesta queda
 una nota discreta: "Recordé lo que hablamos en «Promo 2x1»"
-(o "en 3 chats anteriores"), o "Busqué en tus chats
-anteriores, sin coincidencias" si no encontró nada.
+(o "en 3 chats anteriores"), o "Busqué en lo que hemos
+hablado, sin coincidencias" si no encontró nada (la búsqueda
+también cubre la parte vieja de este chat, F10.8.1).
 
 **Por qué:** Sin memoria, cada chat nuevo empieza de cero y
 el creator repite su negocio, sus precios y su promo cada
@@ -1156,10 +1157,15 @@ vez. La busca el modelo con una tool solo cuando hace falta,
 en lugar de inyectar memoria en cada mensaje: no agrega
 espera ni costo a los turnos que no la necesitan. Busca por
 significado, no por palabra exacta ("la promo de los
-martes" encuentra "2x1 en marquesitas"), y nunca en el chat
-actual, que el modelo ya tiene completo. La nota existe para
-que el creator sepa de dónde salió un dato que no dijo en
-esta conversación.
+martes" encuentra "2x1 en marquesitas"). En el chat actual
+solo busca lo que ya quedó resumido (F10.8.1): un chat largo
+conserva el resumen, pero un detalle viejo ("el WhatsApp que
+te di al principio") puede no estar ahí, y la memoria lo
+recupera; lo que el modelo ve completo no se busca. La nota
+existe para que el creator sepa de dónde salió un dato que no
+dijo en esta parte de la conversación: "Recordé lo que
+hablamos antes en este chat" cuando el recuerdo es del mismo
+chat.
 
 **Lo que no hace en V1:** no hay pantalla para ver o borrar
 recuerdos sueltos ni un interruptor para apagarla. Borrar un
