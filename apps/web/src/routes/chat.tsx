@@ -16,7 +16,7 @@ import { ConfirmDeleteModal } from "../components/ui/ConfirmDeleteModal.js";
 import { fetchCardVersions } from "../lib/cards-api.js";
 import { parseApiErrorMessage, parseQuotaExhaustedError } from "../lib/chat-error.js";
 import { isCardToolPart, messageText, type ChatUIMessage } from "../lib/chat-types.js";
-import { isEmptyReply, turnNotices, type TurnNotice, type TurnStatus } from "../lib/turn-status.js";
+import { turnNotices, type TurnNotice, type TurnStatus } from "../lib/turn-status.js";
 import { useQuota } from "../lib/use-quota.js";
 import { uuid } from "../lib/uuid.js";
 import { useCardsStore } from "../stores/cards-store.js";
@@ -459,19 +459,15 @@ function ChatView({
                 const hasNotice = userId !== undefined && notices.has(userId);
                 return (
                   <div key={message.id} className="flex flex-col gap-3">
-                    {/* Vacía y con estado: solo el estado, sin el hueco de un
-                        mensaje sin nada (F10.8.3). */}
-                    {!(hasNotice && isEmptyReply(message)) && (
-                      <AssistantMessage
-                        message={message}
-                        chatId={chatId}
-                        isLast={isLastMessage}
-                        streamingNow={status === "streaming"}
-                        // Con card de estado, "Reintentar" ya está en ella.
-                        canRegenerate={isLastMessage && !busy && !hasNotice}
-                        onRegenerate={() => requestRegenerate()}
-                      />
-                    )}
+                    <AssistantMessage
+                      message={message}
+                      chatId={chatId}
+                      isLast={isLastMessage}
+                      streamingNow={status === "streaming"}
+                      // Con card de estado, "Reintentar" ya está en ella.
+                      canRegenerate={isLastMessage && !busy && !hasNotice}
+                      onRegenerate={() => requestRegenerate()}
+                    />
                     {renderNotice(userId)}
                   </div>
                 );

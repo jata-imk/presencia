@@ -88,7 +88,7 @@ export const Historial: Story = {
       <Turno
         pedido={PEDIDO}
         respuesta={RESPUESTA_PARCIAL}
-        estado={notice({ actionable: false, hasReply: true, partial: true })}
+        estado={notice({ actionable: false, hasReply: true, content: "text" })}
       />
       <Turno
         pedido="¿Qué es el relleno negro? En dos líneas."
@@ -115,7 +115,7 @@ export const UltimoDetenidoConTexto: Story = {
       <Turno
         pedido={PEDIDO}
         respuesta={RESPUESTA_PARCIAL}
-        estado={notice({ hasReply: true, partial: true })}
+        estado={notice({ hasReply: true, content: "text" })}
         ultimo
       />
     </Columna>

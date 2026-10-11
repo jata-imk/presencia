@@ -1,4 +1,4 @@
-import type { ChatUIMessage } from "./chat-types.js";
+import { isCardToolPart, isMemoryToolPart, type ChatUIMessage } from "./chat-types.js";
 
 /**
  * Cómo se quedó un turno sin respuesta completa (F10.8.2). `stopped`: se cortó
@@ -7,10 +7,18 @@ import type { ChatUIMessage } from "./chat-types.js";
  */
 export type TurnStatus = "stopped" | "failed";
 
+/**
+ * Qué alcanzó a quedar en pantalla de la respuesta (F10.8.3), con la misma
+ * regla que usa AssistantMessage para pintar: texto, o tools (cards, la línea
+ * de pasos, la nota de memoria), o nada. Lo demás (marcas de paso,
+ * razonamiento) no se pinta.
+ */
+export type ReplyContent = "none" | "tools" | "text";
+
 export interface TurnNotice {
   status: TurnStatus;
-  /** La respuesta alcanzó a escribir texto: se ve, y la card va al pie. */
-  partial: boolean;
+  /** Lo que la respuesta alcanzó a mostrar; decide el copy y la forma del estado. */
+  content: ReplyContent;
   /** Hay una respuesta del asistente en pantalla (vacía o no). */
   hasReply: boolean;
   /** El último turno: el único que se puede reintentar o editar. */
@@ -54,7 +62,7 @@ export function turnNotices(
 
     notices.set(message.id, {
       status,
-      partial: reply ? hasText(reply) : false,
+      content: reply ? replyContent(reply) : "none",
       hasReply: reply !== undefined,
       actionable,
     });
@@ -62,21 +70,13 @@ export function turnNotices(
   return notices;
 }
 
-function hasText(message: ChatUIMessage): boolean {
-  return message.parts.some((part) => part.type === "text" && part.text.trim().length > 0);
-}
-
-/**
- * Una respuesta sin nada que pintar (F10.8.3): ni texto ni tools, solo marcas
- * de paso o razonamiento (que la UI no muestra). Una cortada antes de la
- * primera palabra se guarda así; pintarla igual dejaba un hueco entre el
- * mensaje y su estado. Una tool a medias sí cuenta: Steps dice que se detuvo.
- */
-export function isEmptyReply(message: ChatUIMessage): boolean {
-  return message.parts.every(
-    (part) =>
-      part.type === "step-start" ||
-      part.type === "reasoning" ||
-      (part.type === "text" && part.text.trim().length === 0),
-  );
+/** Lo que una respuesta muestra: texto, solo tools, o nada. */
+export function replyContent(message: ChatUIMessage): ReplyContent {
+  if (message.parts.some((part) => part.type === "text" && part.text.trim().length > 0)) {
+    return "text";
+  }
+  if (message.parts.some((part) => isCardToolPart(part) || isMemoryToolPart(part))) {
+    return "tools";
+  }
+  return "none";
 }

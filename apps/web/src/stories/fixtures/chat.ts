@@ -6,7 +6,7 @@ import type { TurnNotice } from "../../lib/turn-status.js";
 
 /** Un estado de turno; por default, el último turno detenido antes de empezar. */
 export function notice(over: Partial<TurnNotice> = {}): TurnNotice {
-  return { status: "stopped", partial: false, hasReply: false, actionable: true, ...over };
+  return { status: "stopped", content: "none", hasReply: false, actionable: true, ...over };
 }
 
 export const PEDIDO = "Hazme un post para Instagram sobre las marquesitas de Mérida.";

@@ -6,12 +6,13 @@ import type { TurnNotice } from "../../lib/turn-status.js";
 // Tres formas:
 //
 // - Turno viejo: una pastilla discreta, sin acciones (solo el último se
-//   reintenta). Desde F10.8.3 dice qué pasó: "Se detuvo antes de responder",
-//   "Respuesta detenida" (con texto) o "Sin respuesta".
-// - Se detuvo con texto: lo escrito se queda y la pastilla va al pie, con
-//   Reintentar. Es la respuesta, interrumpida: no un error.
-// - Sin texto (se detuvo antes de empezar, o falló): una card sutil con la
-//   salida explícita, porque sin ella el chat parece colgado.
+//   reintenta). Desde F10.8.3 dice qué pasó, contra lo que se ve arriba:
+//   "Se detuvo antes de responder" / "Respuesta detenida" (se cortó, sin o
+//   con algo en pantalla) y "Sin respuesta" / "Respuesta incompleta" (falló).
+// - Se detuvo con algo en pantalla (texto o cards): se queda, y la pastilla va
+//   al pie con Reintentar. Es la respuesta, interrumpida: no un error.
+// - Se detuvo sin nada en pantalla, o falló (con o sin algo escrito): una
+//   card sutil con la salida explícita, porque sin ella el chat parece colgado.
 //
 // El copy no dice "la detuviste": el servidor no distingue Detener de cerrar
 // la pestaña o perder la red.
@@ -35,16 +36,21 @@ export function TurnStatusCard({
   onEdit?: () => void;
 }) {
   const stopped = notice.status === "stopped";
+  // Lo que la respuesta alcanzó a mostrar (texto, o cards/pasos/memoria).
+  const shown = notice.content !== "none";
 
-  if (!notice.actionable || (stopped && notice.partial)) {
+  if (!notice.actionable || (stopped && shown)) {
     // Una pastilla (F10.8.3): el texto gris suelto parecía un residuo de la
-    // interfaz, no un estado. El copy dice qué pasó en cada caso: "detenida"
-    // sola sugería un texto cortado arriba aunque no hubiera ninguno.
-    const label = !stopped
-      ? "Sin respuesta"
-      : notice.partial
+    // interfaz, no un estado. El copy dice qué pasó en cada caso, contra lo
+    // que se ve arriba: "detenida" sola sugería un texto cortado aunque no
+    // hubiera ninguno, y "sin respuesta" debajo de dos párrafos mentía.
+    const label = stopped
+      ? shown
         ? "Respuesta detenida"
-        : "Se detuvo antes de responder";
+        : "Se detuvo antes de responder"
+      : shown
+        ? "Respuesta incompleta"
+        : "Sin respuesta";
     return (
       <div className="flex flex-wrap items-center gap-2" role="status">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-medium text-fg-secondary">
@@ -66,7 +72,9 @@ export function TurnStatusCard({
       ? "Se detuvo la respuesta antes de empezar."
       : failedAgain
         ? "Sigue sin funcionar. Intenta en unos minutos."
-        : "No se pudo generar la respuesta.";
+        : shown
+          ? "No se pudo terminar la respuesta."
+          : "No se pudo generar la respuesta.";
   const hint = apiError
     ? onEdit
       ? "Edita tu mensaje o escribe otro para seguir."

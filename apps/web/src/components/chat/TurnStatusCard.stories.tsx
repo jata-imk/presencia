@@ -30,7 +30,7 @@ type Story = StoryObj<typeof meta>;
 export const DetenidaAntesDeEmpezar: Story = {};
 
 export const DetenidaConTexto: Story = {
-  args: { notice: notice({ partial: true, hasReply: true }) },
+  args: { notice: notice({ content: "text", hasReply: true }) },
 };
 
 export const Fallo: Story = {
@@ -64,9 +64,27 @@ export const TurnoViejoDetenido: Story = {
 };
 
 export const TurnoViejoConTexto: Story = {
-  args: { notice: notice({ actionable: false, hasReply: true, partial: true }) },
+  args: { notice: notice({ actionable: false, hasReply: true, content: "text" }) },
 };
 
 export const TurnoViejoSinRespuesta: Story = {
   args: { notice: notice({ status: "failed", actionable: false }) },
+};
+
+/** Se detuvo después de crear cards, sin texto: no "antes de responder". */
+export const DetenidaConCards: Story = {
+  name: "Detenida con cards (sin texto)",
+  args: { notice: notice({ content: "tools", hasReply: true }) },
+};
+
+export const FalloConTexto: Story = {
+  name: "Falló con texto",
+  args: { notice: notice({ status: "failed", content: "text", hasReply: true }) },
+};
+
+export const TurnoViejoIncompleto: Story = {
+  name: "Turno viejo incompleto (falló con texto)",
+  args: {
+    notice: notice({ status: "failed", actionable: false, content: "text", hasReply: true }),
+  },
 };

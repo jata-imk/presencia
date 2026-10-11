@@ -1049,8 +1049,14 @@ seguir conversando con eso.
 > **Implementado en F10.8.2.** Lo escrito se queda, también
 > al recargar, con una pastilla discreta al pie: "Respuesta
 > detenida" y Reintentar. En un turno viejo, la pastilla dice
-> qué pasó, sin botones: "Se detuvo antes de responder",
-> "Respuesta detenida" o "Sin respuesta" (F10.8.3). Si se detuvo antes de la primera
+> qué pasó, contra lo que se ve arriba, sin botones (F10.8.3):
+>
+> | Cómo terminó | Sin nada en pantalla         | Con texto o cards    |
+> | ------------ | ---------------------------- | -------------------- |
+> | Se cortó     | Se detuvo antes de responder | Respuesta detenida   |
+> | Falló        | Sin respuesta                | Respuesta incompleta |
+>
+> En el último turno, si se detuvo antes de la primera
 > palabra, en el lugar de la respuesta queda una card: "Se
 > detuvo la respuesta antes de empezar." con Reintentar. Sin
 > ella, el chat parecía colgado. Detener no cobra. El copy no

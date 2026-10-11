@@ -84,6 +84,20 @@ export function AssistantMessage({
   // primero abre el panel, los demás suman pestañas (ver CardBlock).
   const firstCardsIndex = blocks.find((b) => b.kind === "cards")?.index;
 
+  // Nada que pintar (F10.8.3): una respuesta cortada antes de la primera
+  // palabra se guarda solo con marcas de paso. Un contenedor vacío dejaba un
+  // hueco entre el mensaje del creator y el estado del turno. Mismo criterio
+  // que `replyContent` (lib/turn-status.ts), que decide el copy de ese estado.
+  if (
+    !streaming &&
+    !fullText &&
+    toolParts.length === 0 &&
+    memoryParts.length === 0 &&
+    !canRegenerate
+  ) {
+    return null;
+  }
+
   function handleCopy() {
     void navigator.clipboard.writeText(fullText).then(() => {
       setCopied(true);
