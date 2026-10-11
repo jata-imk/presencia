@@ -169,3 +169,9 @@ El backlog de "compactación real" (HIGH desde F4.5) se cierra así:
   - si el corte llegó antes de llamar al modelo, ni se llama: se guarda la respuesta vacía como `stopped`;
   - `onEnd` trata una conexión destruida como corte y aborta el modelo.
 - **La web sabe cómo terminó el turno con `onFinish` de `useChat`.** Se cortó solo si `isAbort` y **no** llegó el `finish`: Detener justo cuando terminaba no es un corte, y el servidor la guardó completa. `isError` es un fallo. Ese estado local vale para la sesión, porque la respuesta en pantalla de un turno en vivo no trae `metadata`; al recargar manda `metadata.status`. Un mensaje del creator sin respuesta guardada se ve como "sin respuesta" (`lib/turn-status.ts`, puro, con spec).
+- **Ajustes del review del PR3:**
+  - Un reenvío del mismo id mientras su turno sigue respondiendo (doble clic, reintento de la red) es **409**, no un segundo turno en paralelo.
+  - Un corte antes de empezar no toca nada: ni se inserta el mensaje ni se borra la respuesta de un regenerar que nadie va a recibir.
+  - `closed()` cuenta también `writableFinished`: el `close` llega un tick después del `finish`.
+  - **Con `finishReason`, la respuesta está completa** aunque la conexión se cerrara antes del final del pipe: se guarda `complete` y se cobra. Pasa cuando el modelo va más rápido que la entrega y Detener llega tarde. En vivo la web ve el corte; al recargar se ve completa, que es lo que de verdad se generó y se cobró.
+  - En la web, un stream que termina sin `finish` (el servidor se reinició a media respuesta) cuenta como fallido, y un reintento que sale bien reinicia el "Sigue sin funcionar".

@@ -90,18 +90,23 @@ function ChatView({
     // "Regenerar" lo encuentra sin recargar. Con el id por default del SDK
     // (no es uuid) la base le ponía otro, y regenerar daba 404.
     generateId: uuid,
-    // F10.8.2: cómo terminó el turno, para su card de estado. Se cortó solo si
-    // no llegó el `finish`: Detener justo cuando terminaba no es un corte (el
-    // servidor ya la guardó completa). Solo setters y refs: useChat se queda
-    // con este callback del primer render.
+    // F10.8.2: cómo terminó el turno, para su card de estado. Sin `finish` no
+    // terminó: se cortó (Detener, la red) o el stream se cerró de golpe (el
+    // servidor se reinició a media respuesta). Detener justo cuando terminaba
+    // no es un corte: el servidor ya la guardó completa. Solo setters y refs:
+    // useChat se queda con este callback del primer render.
     onFinish: ({ messages: all, isAbort, isError, finishReason }) => {
       const userId = [...all].reverse().find((m) => m.role === "user")?.id;
       if (!userId) return;
-      if (isError) {
-        markTurn(userId, "failed");
-        if (retryingId.current === userId) setFailedAgain(true);
-      } else if (isAbort && !finishReason) {
-        markTurn(userId, "stopped");
+      if (isError || !finishReason) {
+        markTurn(userId, isAbort && !isError ? "stopped" : "failed");
+        if (isError && retryingId.current === userId) setFailedAgain(true);
+        return;
+      }
+      // Salió bien: el siguiente fallo de este turno vuelve a ser el primero.
+      if (retryingId.current === userId) {
+        retryingId.current = null;
+        setFailedAgain(false);
       }
     },
   });

@@ -113,7 +113,9 @@ export class ChatService {
     if (res.destroyed) onClose();
     const turn: TurnInFlight = {
       done,
-      closed: () => closed,
+      // También con el flag: "close" llega un tick después de "finish", y en
+      // medio un turno que ya terminó y se está guardando se tiene que esperar.
+      closed: () => closed || res.writableFinished,
       abortController,
       release: () => {
         resolve();
@@ -261,9 +263,17 @@ export class ChatService {
     await this.assertQuotaForTurn(userId);
     const voicePromise = this.loadVoiceForPrompt(userId);
     await this.afterTurnInFlight(chatId);
+    // Un turno del chat que sigue respondiendo: un reenvío del mismo id no lo
+    // reemplaza (sería una segunda respuesta en paralelo).
+    const running = this.turnsInFlight.get(chatId);
     // Desde aquí, no desde el pipe: un corte mientras se arma el turno también
     // se tiene que esperar.
     const turn = this.trackTurn(chatId, res);
+    // Cortado antes de empezar: no hay a quién responder, y no se toca nada.
+    if (turn.abortController.signal.aborted) {
+      turn.release();
+      return;
+    }
     try {
       const { history, summary } = await this.dbService
         .runWithTenant(userId, async (tx) => {
@@ -273,8 +283,11 @@ export class ChatService {
           let previous = all;
           if (all.some((m) => m.id === userMessage.id)) {
             const last = lastTurnOf(all, userMessage.id);
-            // Un mensaje viejo con el mismo id: un reenvío por error.
-            if (!last) throw new ConflictException("Ese mensaje ya se envió.");
+            // Un mensaje viejo con el mismo id, o el turno sigue corriendo: un
+            // reenvío por error (doble clic, reintento de la red).
+            if (!last || (running && !running.closed())) {
+              throw new ConflictException("Ese mensaje ya se envió.");
+            }
             await this.dropStaleReply(tx, last.staleReply);
             await this.repo.deleteMessage(tx, userMessage.id);
             previous = all.slice(0, last.index);
@@ -414,6 +427,12 @@ export class ChatService {
     // que estar guardada antes de leer qué se reintenta.
     await this.afterTurnInFlight(chatId);
     const turn = this.trackTurn(chatId, res);
+    // Cortado antes de empezar: no se borra la respuesta de un regenerar que
+    // nadie va a recibir.
+    if (turn.abortController.signal.aborted) {
+      turn.release();
+      return;
+    }
     try {
       const { history, summary } = await this.dbService.runWithTenant(userId, async (tx) => {
         const chat = await this.repo.getChat(tx, chatId);
@@ -635,9 +654,12 @@ export class ChatService {
           try {
             // El SDK suelta el stream si la conexión ya no está, aunque el
             // corte se nos haya escapado: el modelo seguiría generando (y se
-            // cobraría) para nadie. Se aborta y cuenta como corte.
-            if (res.destroyed && !res.writableFinished) abortController.abort();
-            if (isAborted || abortController.signal.aborted) {
+            // cobraría) para nadie. Se aborta y cuenta como corte. Con
+            // `finishReason` el modelo ya terminó: es una respuesta completa
+            // aunque la conexión se cerrara antes del final del pipe.
+            const cut = !finishReason;
+            if (cut && res.destroyed && !res.writableFinished) abortController.abort();
+            if (isAborted || (cut && abortController.signal.aborted)) {
               guardarTrazaCortada();
               await saveInterrupted(responseMessage, "stopped");
               return;
