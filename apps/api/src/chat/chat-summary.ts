@@ -20,9 +20,10 @@ export function toChatSummary(chat: ChatRow): ChatSummary {
 }
 
 /**
- * Un mensaje guardado como lo usa el AI SDK. El id de fila (uuid) sustituye al
- * id efímero del cliente. Una sola traducción para el turno del chat y para
- * la compactación (F10.8): las dos tienen que ver los mismos mensajes.
+ * Un mensaje guardado como lo usa el AI SDK. Desde F10.8.2 el id de fila es
+ * el mismo que tiene la web (el del cliente para el creator, el del stream
+ * para la respuesta). Una sola traducción para el turno del chat y para la
+ * compactación (F10.8): las dos tienen que ver los mismos mensajes.
  */
 export function toUIMessage(row: MessageRow): UIMessage {
   return {

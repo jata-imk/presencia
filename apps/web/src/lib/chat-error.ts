@@ -17,3 +17,23 @@ export function parseQuotaExhaustedError(error: Error | undefined): QuotaStatusD
   }
   return null;
 }
+
+/**
+ * El mensaje en español de un rechazo de la API (la excepción de Nest llega
+ * como `{statusCode, message}` en error.message, igual que el 402 de
+ * arriba): "Tu mensaje es demasiado largo…", "Ese mensaje ya se envió.".
+ * null si no es eso (un error a media respuesta, la red): ahí el chat pone
+ * su propio texto.
+ */
+export function parseApiErrorMessage(error: Error | undefined): string | null {
+  if (!error) return null;
+  try {
+    const body = JSON.parse(error.message) as { statusCode?: unknown; message?: unknown };
+    if (typeof body.statusCode === "number" && typeof body.message === "string") {
+      return body.message;
+    }
+  } catch {
+    // No era JSON.
+  }
+  return null;
+}

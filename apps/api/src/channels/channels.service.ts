@@ -9,6 +9,7 @@ import type { ChannelAccountDto, ConnectIntentDto, SocialNetwork } from "@presen
 import { randomUUID } from "node:crypto";
 import { CardsRepository } from "../cards/cards.repository.js";
 import { DbService } from "../db/db.service.js";
+import { isUniqueViolation } from "../db/pg-error.js";
 import { FakePublishingProvider } from "../publishing/fake.provider.js";
 import { PUBLISHING_PROVIDER, type PublishingProvider } from "../publishing/publishing.provider.js";
 import { toHttpException } from "../publishing/to-http-exception.js";
@@ -320,19 +321,6 @@ function toDto(row: SocialAccountRow): ChannelAccountDto {
   return { id: row.id, network: row.network, displayName: row.displayName, status: row.status };
 }
 
-/** SQLSTATE 23505 (unique_violation) sobre social_accounts_provider_ref. */
 function isProviderRefConflict(error: unknown): boolean {
-  const pgError = extractPgError(error);
-  return pgError?.code === "23505" && pgError.constraint === "social_accounts_provider_ref";
-}
-
-function extractPgError(error: unknown): { code?: string; constraint?: string } | undefined {
-  if (typeof error !== "object" || error === null) return undefined;
-  const withCode = error as { code?: unknown; constraint?: unknown; cause?: unknown };
-  if (typeof withCode.code === "string") {
-    return { code: withCode.code, constraint: withCode.constraint as string | undefined };
-  }
-  // drizzle-orm envuelve el error del driver pg y lo expone en `.cause`
-  // (mismo patrón que rls.spec.ts usa para inspeccionar violaciones de RLS).
-  return withCode.cause ? extractPgError(withCode.cause) : undefined;
+  return isUniqueViolation(error, "social_accounts_provider_ref");
 }

@@ -24,6 +24,7 @@ import { buildPublicationCardTools } from "../cards/publication-card.tools.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
+import { isUniqueViolation } from "../db/pg-error.js";
 import { env } from "../env.js";
 import { FoldersService } from "../folders/folders.service.js";
 import { ChatTitleService } from "./chat-title.service.js";
@@ -191,22 +192,33 @@ export class ChatService {
     // tokens del proveedor — nunca deja un mensaje user huérfano sin respuesta.
     await this.assertQuotaForTurn(userId);
     const voicePromise = this.loadVoiceForPrompt(userId);
-    const { history, summary } = await this.dbService.runWithTenant(userId, async (tx) => {
-      const chat = await this.repo.getChat(tx, chatId);
-      if (!chat) throw new NotFoundException("Ese chat no existe.");
-      const previous = await this.repo.listMessages(tx, chatId);
-      const saved = await this.repo.insertMessage(tx, {
-        chatId,
-        userId,
-        role: "user",
-        parts: userMessage.parts,
+    const { history, summary } = await this.dbService
+      .runWithTenant(userId, async (tx) => {
+        const chat = await this.repo.getChat(tx, chatId);
+        if (!chat) throw new NotFoundException("Ese chat no existe.");
+        const previous = await this.repo.listMessages(tx, chatId);
+        // Con el id del cliente (F10.8.2): web y base nombran igual al mensaje,
+        // y "Regenerar" lo encuentra sin recargar la página.
+        const saved = await this.repo.insertMessage(tx, {
+          id: userMessage.id,
+          chatId,
+          userId,
+          role: "user",
+          parts: userMessage.parts,
+        });
+        await this.repo.touchChat(tx, chatId);
+        return {
+          history: [...previous, saved].map((row) => toUIMessage(row)),
+          summary: await this.repo.getSummary(tx, chatId),
+        };
+      })
+      .catch((error: unknown) => {
+        // Un reenvío del mismo mensaje (doble clic, reintento de red).
+        if (isUniqueViolation(error, "messages_pkey")) {
+          throw new ConflictException("Ese mensaje ya se envió.");
+        }
+        throw error;
       });
-      await this.repo.touchChat(tx, chatId);
-      return {
-        history: [...previous, saved].map((row) => toUIMessage(row)),
-        summary: await this.repo.getSummary(tx, chatId),
-      };
-    });
 
     await this.runAgentTurn(userId, chatId, history, toHistorySummary(summary), res, voicePromise);
   }
@@ -465,6 +477,9 @@ export class ChatService {
     void result
       .pipeUIMessageStreamToResponse(res, {
         originalMessages: history,
+        // El id de la respuesta viaja en el primer chunk y es con el que se
+        // guarda abajo (F10.8.2): la web y la base nombran igual al mensaje.
+        generateMessageId: randomUUID,
         onError: (error) => {
           console.error("Error en el stream del chat:", error);
           trace.failed(error);
@@ -515,6 +530,7 @@ export class ChatService {
           try {
             savedId = await this.dbService.runWithTenant(userId, async (tx) => {
               const saved = await this.repo.insertMessage(tx, {
+                id: responseMessage.id,
                 chatId,
                 userId,
                 role: "assistant",

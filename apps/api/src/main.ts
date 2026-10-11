@@ -17,8 +17,11 @@ async function bootstrap() {
   instance.all("/api/auth/*splat", toNodeHandler(auth));
 
   // El resto de rutas sí parsea JSON (registrado después del handler de
-  // auth: en Express 5 el stack respeta el orden de registro).
-  app.use(express.json());
+  // auth: en Express 5 el stack respeta el orden de registro). El límite va
+  // holgado sobre el tope de un mensaje del chat (MAX_MESSAGE_CHARS, que se
+  // valida con un 413 en español): el default de 100 kB lo cortaba antes,
+  // con un error crudo.
+  app.use(express.json({ limit: "1mb" }));
 
   // El SPA, en el mismo origen que la API (ADR-020).
   //
