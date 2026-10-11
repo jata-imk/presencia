@@ -12,6 +12,7 @@ import {
   type BrandVoiceForPrompt,
   type CardContent,
   type ChatSummary,
+  type MessageStatus,
 } from "@presencia/shared";
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
@@ -23,7 +24,7 @@ import { CardsRepository } from "../cards/cards.repository.js";
 import { buildPublicationCardTools } from "../cards/publication-card.tools.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
-import { DbService } from "../db/db.service.js";
+import { DbService, type Tx } from "../db/db.service.js";
 import { isUniqueViolation } from "../db/pg-error.js";
 import { env } from "../env.js";
 import { FoldersService } from "../folders/folders.service.js";
@@ -553,7 +554,25 @@ export class ChatService {
       onAbort: guardarTrazaCortada,
     });
 
-    // Desde ai 7.0.1xx devuelve una promesa que se cumple al cerrar el stream.
+    // Una respuesta cortada o que falló sin usage (F10.8.2): se guarda lo que
+    // alcanzó a escribirse, con su estado y sin cobro (no hay usage, ADR-012),
+    // ni título, memoria o compactación. Una tool que corría al cortar todavía
+    // puede terminar y crear su card después: el creator nunca la vio (en lo
+    // guardado su tool quedó a medias), así que al vencer la misma gracia de
+    // la traza se borra en vez de quedar huérfana.
+    const saveInterrupted = async (responseMessage: UIMessage, status: "stopped" | "failed") => {
+      // Las que existen ahora; las que lleguen después son las tardías.
+      const linked = createdCardIds.slice();
+      await this.persistReply(userId, chatId, responseMessage, status, trace.runId, linked);
+      setTimeout(
+        () => void this.dropLateCards(userId, chatId, createdCardIds.slice(linked.length)),
+        ABORTED_TRACE_GRACE_MS,
+      );
+    };
+
+    // Promesa que se cumple cuando el stream deja de escribir. Al cortar, eso
+    // pasa ANTES de onEnd (que corre desde el cancel del stream): por eso el
+    // turno se da por terminado al final de onEnd, no aquí.
     // No se espera: los headers ya salieron, así que un rechazo no tiene a
     // quién responderle (el filtro de Nest intentaría mandar un 500 encima).
     // Solo se registra; el usuario ya recibió el error por `onError`.
@@ -572,19 +591,12 @@ export class ChatService {
           try {
             if (isAborted) {
               guardarTrazaCortada();
-              await this.saveInterruptedReply(
-                userId,
-                chatId,
-                responseMessage,
-                "stopped",
-                trace.runId,
-                createdCardIds,
-              );
+              await saveInterrupted(responseMessage, "stopped");
               return;
             }
 
-            // Se lee una sola vez, antes de las dos transacciones de abajo. Si
-            // esto falla, no hay cobro: es lo que pasa cuando el creator corta
+            // Se lee una sola vez, antes de guardar. Si esto falla, no hay
+            // cobro: es lo que pasa cuando el creator corta
             // el turno (`isAborted` llega en false y `totalUsage` rechaza con
             // AbortError). Los tokens de ese turno quedan sin cobrar y sin fila
             // en ai_usage_events (hueco conocido, ver PR
@@ -607,14 +619,7 @@ export class ChatService {
                 trace.close("error", error);
                 void this.aiUsage.registrarTraza(userId, chatId, trace);
               }
-              await this.saveInterruptedReply(
-                userId,
-                chatId,
-                responseMessage,
-                stopped ? "stopped" : "failed",
-                trace.runId,
-                createdCardIds,
-              );
+              await saveInterrupted(responseMessage, stopped ? "stopped" : "failed");
               return;
             }
             // El error ya lo vio onError (trace.failed); aquí solo se cierra el paso.
@@ -631,47 +636,28 @@ export class ChatService {
             // alcanzó a escribirse como `failed` (F10.8.2) y se cobra, como antes.
             const failed = finishReason === "error";
             // El id de la respuesta guardada; null si no se guardó.
-            let savedId: string | null = null;
-            try {
-              savedId = await this.dbService.runWithTenant(userId, async (tx) => {
-                const saved = await this.repo.insertMessage(tx, {
-                  id: responseMessage.id,
-                  chatId,
-                  userId,
-                  role: "assistant",
-                  parts: failed
-                    ? sanitizeInterruptedParts(responseMessage.parts)
-                    : responseMessage.parts,
-                  runId: trace.runId,
-                  status: failed ? "failed" : "complete",
-                });
-                await this.repo.touchChat(tx, chatId);
-                if (createdCardIds.length > 0) {
-                  await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
-                }
-                // Cobro real con el usage real del turno, en la MISMA
-                // transacción que el mensaje que cobra (modelo-de-datos.md: "o
-                // se cobra y se produce, o ninguna de las dos"). charge() puede
-                // dejar saldo negativo a propósito — el gate de arriba es lo
-                // que evita que esto sea frecuente, no esto.
-                await this.creditsService.charge(tx, {
+            const savedId = await this.persistReply(
+              userId,
+              chatId,
+              responseMessage,
+              failed ? "failed" : "complete",
+              trace.runId,
+              createdCardIds,
+              // Cobro real con el usage real del turno, en la MISMA
+              // transacción que el mensaje que cobra (modelo-de-datos.md: "o
+              // se cobra y se produce, o ninguna de las dos"). charge() puede
+              // dejar saldo negativo a propósito — el gate de arriba es lo
+              // que evita que esto sea frecuente, no esto.
+              (tx, messageId) =>
+                this.creditsService.charge(tx, {
                   userId,
                   usage: chargeUsageOf(usage),
                   taskKind: "chat",
                   reason: "chat_message",
                   referenceType: "message",
-                  referenceId: saved.id,
-                });
-                return saved.id;
-              });
-            } catch (error) {
-              console.error(
-                `[chat] onEnd falló para chat ${chatId} (turno no abortado). ` +
-                  `Cards de este turno posiblemente huérfanas: ` +
-                  `${createdCardIds.length > 0 ? createdCardIds.join(", ") : "ninguna"}.`,
-                error,
-              );
-            }
+                  referenceId: messageId,
+                }),
+            );
 
             // Fuera de la transacción del mensaje, y AiUsageService nunca lanza:
             // un fallo al registrar usage no puede costar el mensaje ni el cobro,
@@ -738,44 +724,60 @@ export class ChatService {
   }
 
   /**
-   * Guarda una respuesta que se cortó o falló sin usage (F10.8.2): lo que
-   * alcanzó a escribirse, saneado para volver a viajar al modelo, con su
-   * estado. Así la card de estado sobrevive a la recarga, el turno siguiente
-   * no ve dos mensajes del creator seguidos, y las cards que el turno alcanzó
-   * a crear quedan ligadas a su mensaje en vez de huérfanas. Sin cobro (no
-   * hay usage: ADR-012) ni título, memoria o compactación.
+   * Guarda la respuesta del turno con su estado (F10.8.2) y le liga las cards
+   * que el turno creó, en una transacción; `charge` cobra en esa misma. Si no
+   * terminó completa, lo guardado pasa por `sanitizeInterruptedParts`:
+   * vuelve a viajar al modelo. Devuelve el id guardado, o null si falló (se
+   * registra; nunca lanza, corre en onEnd).
    */
-  private async saveInterruptedReply(
+  private async persistReply(
     userId: string,
     chatId: string,
     responseMessage: UIMessage,
-    status: "stopped" | "failed",
+    status: MessageStatus,
     runId: string,
     createdCardIds: string[],
-  ): Promise<void> {
+    charge?: (tx: Tx, messageId: string) => Promise<unknown>,
+  ): Promise<string | null> {
     try {
-      await this.dbService.runWithTenant(userId, async (tx) => {
+      return await this.dbService.runWithTenant(userId, async (tx) => {
         const saved = await this.repo.insertMessage(tx, {
           id: responseMessage.id,
           chatId,
           userId,
           role: "assistant",
-          parts: sanitizeInterruptedParts(responseMessage.parts),
+          parts:
+            status === "complete"
+              ? responseMessage.parts
+              : sanitizeInterruptedParts(responseMessage.parts),
           runId,
           status,
         });
         await this.repo.touchChat(tx, chatId);
-        if (createdCardIds.length > 0) {
-          await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
-        }
+        await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
+        await charge?.(tx, saved.id);
+        return saved.id;
       });
     } catch (error) {
       console.error(
-        `[chat] No se pudo guardar la respuesta ${status === "stopped" ? "cortada" : "fallida"} del chat ${chatId}. ` +
+        `[chat] No se pudo guardar la respuesta (${status}) del chat ${chatId}. ` +
           `Cards de este turno posiblemente huérfanas: ` +
           `${createdCardIds.length > 0 ? createdCardIds.join(", ") : "ninguna"}.`,
         error,
       );
+      return null;
+    }
+  }
+
+  /** Ver saveInterrupted en runAgentTurn. Nunca lanza: corre en un timer. */
+  private async dropLateCards(userId: string, chatId: string, cardIds: string[]): Promise<void> {
+    if (cardIds.length === 0) return;
+    try {
+      await this.dbService.runWithTenant(userId, (tx) =>
+        this.cardsRepo.deleteUnlinkedDrafts(tx, cardIds),
+      );
+    } catch (error) {
+      console.error(`[chat] No se pudieron borrar las cards tardías del chat ${chatId}:`, error);
     }
   }
 }
