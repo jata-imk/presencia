@@ -7,6 +7,7 @@ import { PublicationPanel } from "../components/panel/PublicationPanel.js";
 import { SelectionBar } from "../components/chat/SelectionBar.js";
 import { AssistantMessage } from "../components/chat/AssistantMessage.js";
 import { MessageUser } from "../components/chat/MessageUser.js";
+import { TurnStatusCard } from "../components/chat/TurnStatusCard.js";
 import { TypingDots } from "../components/chat/TypingDots.js";
 import { QuotaBanner } from "../components/QuotaBanner.js";
 import { chatTransport } from "../lib/chat-transport.js";
@@ -15,6 +16,7 @@ import { ConfirmDeleteModal } from "../components/ui/ConfirmDeleteModal.js";
 import { fetchCardVersions } from "../lib/cards-api.js";
 import { parseApiErrorMessage, parseQuotaExhaustedError } from "../lib/chat-error.js";
 import { isCardToolPart, type ChatUIMessage } from "../lib/chat-types.js";
+import { turnNotices, type TurnNotice, type TurnStatus } from "../lib/turn-status.js";
 import { useQuota } from "../lib/use-quota.js";
 import { uuid } from "../lib/uuid.js";
 import { useCardsStore } from "../stores/cards-store.js";
@@ -63,6 +65,20 @@ function ChatView({
   initialMessages: ChatUIMessage[];
 }) {
   const [input, setInput] = useState("");
+  // F10.8.2: los turnos que se quedaron sin respuesta completa. `localStatus`
+  // es lo que pasó en esta sesión (la respuesta en pantalla de un turno en
+  // vivo no trae metadata); al recargar manda lo que guardó el servidor.
+  const [localStatus, setLocalStatus] = useState<ReadonlyMap<string, TurnStatus>>(new Map());
+  const [failedAgain, setFailedAgain] = useState(false);
+  const retryingId = useRef<string | null>(null);
+  function markTurn(userId: string, status: TurnStatus | null) {
+    setLocalStatus((prev) => {
+      const next = new Map(prev);
+      if (status) next.set(userId, status);
+      else next.delete(userId);
+      return next;
+    });
+  }
   const transport = useMemo(() => chatTransport(chatId), [chatId]);
   const { messages, sendMessage, regenerate, stop, status, error } = useChat<ChatUIMessage>({
     id: chatId,
@@ -74,6 +90,25 @@ function ChatView({
     // "Regenerar" lo encuentra sin recargar. Con el id por default del SDK
     // (no es uuid) la base le ponía otro, y regenerar daba 404.
     generateId: uuid,
+    // F10.8.2: cómo terminó el turno, para su card de estado. Sin `finish` no
+    // terminó: se cortó (Detener, la red) o el stream se cerró de golpe (el
+    // servidor se reinició a media respuesta). Detener justo cuando terminaba
+    // no es un corte: el servidor ya la guardó completa. Solo setters y refs:
+    // useChat se queda con este callback del primer render.
+    onFinish: ({ messages: all, isAbort, isError, finishReason }) => {
+      const userId = [...all].reverse().find((m) => m.role === "user")?.id;
+      if (!userId) return;
+      if (isError || !finishReason) {
+        markTurn(userId, isAbort && !isError ? "stopped" : "failed");
+        if (isError && retryingId.current === userId) setFailedAgain(true);
+        return;
+      }
+      // Salió bien: el siguiente fallo de este turno vuelve a ser el primero.
+      if (retryingId.current === userId) {
+        retryingId.current = null;
+        setFailedAgain(false);
+      }
+    },
   });
   const busy = status === "submitted" || status === "streaming";
   // Auto-scroll (F10.6.2): el chat sigue a la respuesta SOLO si estabas en
@@ -247,7 +282,17 @@ function ChatView({
   // (la API también lo impide): borrarla dejaría un post programado sin card.
   const toast = useToastStore((s) => s.show);
   const [regenerateEdited, setRegenerateEdited] = useState<number | null>(null);
-  async function requestRegenerate() {
+  // Lo que corre justo antes de regenerar de verdad (F10.8.2): reintentar un
+  // turno limpia su card de estado solo si el regenerar sale, no si el
+  // creator cancela la confirmación.
+  const beforeRegenerate = useRef<(() => void) | null>(null);
+  function goRegenerate() {
+    beforeRegenerate.current?.();
+    beforeRegenerate.current = null;
+    void regenerate();
+  }
+  async function requestRegenerate(onGo?: () => void) {
+    beforeRegenerate.current = onGo ?? null;
     const last = messages.at(-1);
     const ids =
       last?.role === "assistant"
@@ -273,7 +318,46 @@ function ChatView({
     );
     const count = edited.filter(Boolean).length;
     if (count > 0) setRegenerateEdited(count);
-    else void regenerate();
+    else goRegenerate();
+  }
+
+  const notices = turnNotices(messages, { busy, local: localStatus });
+  // Un rechazo de la API no guardó nada: reintentarlo tal cual daría lo mismo.
+  const turnApiError = quotaExhaustedError ? "Usaste toda tu cuota de este mes." : apiErrorMessage;
+
+  // Con respuesta en pantalla, es regenerarla (mismas guardas de cards). Sin
+  // ella, el mensaje se reenvía con su mismo id: si el servidor lo tiene, es
+  // ese turno de nuevo; si el corte fue antes de que llegara, entra como nuevo.
+  function retryTurn(userId: string, notice: TurnNotice) {
+    const go = () => {
+      markTurn(userId, null);
+      retryingId.current = userId;
+      scrollToEnd(false);
+    };
+    if (notice.hasReply) {
+      void requestRegenerate(go);
+      return;
+    }
+    const text = messages
+      .find((m) => m.id === userId)
+      ?.parts.flatMap((p) => (p.type === "text" ? [p.text] : []))
+      .join("\n");
+    if (!text) return;
+    go();
+    void sendMessage({ text, messageId: userId });
+  }
+
+  function renderNotice(userId: string | undefined) {
+    const notice = userId ? notices.get(userId) : undefined;
+    if (!userId || !notice) return null;
+    return (
+      <TurnStatusCard
+        notice={notice}
+        failedAgain={failedAgain && notice.actionable}
+        apiError={notice.actionable ? turnApiError : null}
+        onRetry={() => retryTurn(userId, notice)}
+      />
+    );
   }
 
   function handleSubmit(e?: FormEvent) {
@@ -282,6 +366,8 @@ function ChatView({
     if (!text || busy) return;
     setInput("");
     setModalDismissed(false);
+    setFailedAgain(false);
+    retryingId.current = null;
     // Lo que tú mandas siempre se ve, aunque estuvieras leyendo arriba.
     scrollToEnd(false);
     void sendMessage({ text });
@@ -308,39 +394,35 @@ function ChatView({
               {messages.map((message, mi) => {
                 const isLastMessage = mi === messages.length - 1;
                 if (message.role === "user") {
+                  // Sin respuesta en pantalla, la card de estado va aquí.
+                  const noReply = messages[mi + 1]?.role !== "assistant";
                   return (
                     <div key={message.id} className="flex flex-col gap-[18px]">
                       {message.parts.map((part, i) =>
                         part.type === "text" ? <MessageUser key={i} text={part.text} /> : null,
                       )}
+                      {noReply && renderNotice(message.id)}
                     </div>
                   );
                 }
+                const userId = messages[mi - 1]?.role === "user" ? messages[mi - 1]!.id : undefined;
+                const hasNotice = userId !== undefined && notices.has(userId);
                 return (
-                  <AssistantMessage
-                    key={message.id}
-                    message={message}
-                    chatId={chatId}
-                    isLast={isLastMessage}
-                    streamingNow={status === "streaming"}
-                    canRegenerate={isLastMessage && !busy}
-                    onRegenerate={() => void requestRegenerate()}
-                  />
+                  <div key={message.id} className="flex flex-col gap-3">
+                    <AssistantMessage
+                      message={message}
+                      chatId={chatId}
+                      isLast={isLastMessage}
+                      streamingNow={status === "streaming"}
+                      // Con card de estado, "Reintentar" ya está en ella.
+                      canRegenerate={isLastMessage && !busy && !hasNotice}
+                      onRegenerate={() => void requestRegenerate()}
+                    />
+                    {renderNotice(userId)}
+                  </div>
                 );
               })}
               {showTyping && <TypingDots />}
-              {error && !quotaExhaustedError && (
-                <p className="flex items-center gap-2 text-sm text-error">
-                  {apiErrorMessage ?? "Algo salió mal generando la respuesta."}
-                  {/* Un rechazo de la API no guardó el mensaje: reintentarlo
-                      tal cual daría el mismo rechazo. */}
-                  {!apiErrorMessage && (
-                    <button type="button" className="underline" onClick={() => void regenerate()}>
-                      Reintentar
-                    </button>
-                  )}
-                </p>
-              )}
             </div>
           </div>
           {!atBottom && (
@@ -380,7 +462,7 @@ function ChatView({
                 // respuesta, y el modal se quedaba encima mientras llegaba.
                 // Un error del turno lo muestra el chat, como cualquier otro.
                 onConfirm={() => {
-                  void regenerate();
+                  goRegenerate();
                   return Promise.resolve();
                 }}
                 onConfirmed={() => setRegenerateEdited(null)}
