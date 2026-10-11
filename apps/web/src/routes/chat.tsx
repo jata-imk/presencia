@@ -95,11 +95,14 @@ function ChatView({
     // servidor se reinició a media respuesta). Detener justo cuando terminaba
     // no es un corte: el servidor ya la guardó completa. Solo setters y refs:
     // useChat se queda con este callback del primer render.
-    onFinish: ({ messages: all, isAbort, isError, finishReason }) => {
+    onFinish: ({ messages: all, isAbort, isDisconnect, isError, finishReason }) => {
       const userId = [...all].reverse().find((m) => m.role === "user")?.id;
       if (!userId) return;
       if (isError || !finishReason) {
-        markTurn(userId, isAbort && !isError ? "stopped" : "failed");
+        // Perder la red es un corte, como Detener: el servidor lo ve igual
+        // (se cerró la conexión) y lo guarda como detenida. Marcarla fallida
+        // aquí la haría cambiar de card al recargar.
+        markTurn(userId, (isAbort && !isError) || isDisconnect ? "stopped" : "failed");
         if (isError && retryingId.current === userId) setFailedAgain(true);
         return;
       }
@@ -441,7 +444,8 @@ function ChatView({
                     <div key={message.id} className="flex flex-col gap-[18px]">
                       <MessageUser
                         text={messageText(message)}
-                        canEdit={isLastUser && !busy}
+                        // Sin cuota, editar daría el mismo rechazo.
+                        canEdit={isLastUser && !busy && !quotaExhaustedError}
                         editing={isLastUser && editingId === message.id && !busy}
                         onEdit={() => setEditingId(message.id)}
                         onCancelEdit={() => setEditingId(null)}

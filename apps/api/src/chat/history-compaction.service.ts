@@ -24,6 +24,7 @@ import {
   type SummaryBlock,
 } from "./history-compaction.js";
 import { compactableCut } from "./history-window.js";
+import { markUnansweredTurns } from "./unanswered-turns.js";
 
 // Compactación del historial de un chat largo (F10.8).
 //
@@ -142,7 +143,9 @@ export class HistoryCompactionService {
     const respuesta = await generateText({
       model: modelo.model,
       system: SUMMARY_SYSTEM,
-      prompt: summaryPrompt(anteriores, transcriptForSummary(tramo)),
+      // Con los turnos sin respuesta marcados (F10.8.2), como los ve el modelo:
+      // sin la marca, el resumen daría por contestado un pedido que se cortó.
+      prompt: summaryPrompt(anteriores, transcriptForSummary(markUnansweredTurns(tramo))),
     });
     await this.registrar(userId, chatId, modelo, respuesta, arranque, runId, false);
     const summary = respuesta.text.trim();

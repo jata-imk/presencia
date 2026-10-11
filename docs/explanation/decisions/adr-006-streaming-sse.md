@@ -177,3 +177,12 @@ El backlog de "compactación real" (HIGH desde F4.5) se cierra así:
   - En la web, un stream que termina sin `finish` (el servidor se reinició a media respuesta) cuenta como fallido, y un reintento que sale bien reinicia el "Sigue sin funcionar".
 
 **Addendum (F10.8.2 PR4, 2026-10-11) — editar el último mensaje.** Es solo de la web: el servidor ya trata un `submit-message` con el id del último mensaje del creator como ese turno de nuevo (PR3). Editar es `sendMessage({ text, messageId })`: el SDK reemplaza el mensaje en pantalla y corta lo que venía después, y el servidor borra la respuesta vieja con sus cards y guarda el texto nuevo con el mismo id. Regenerar y editar comparten las guardas de cards (`confirmReplace` en `routes/chat.tsx`). Un mensaje de en medio no se edita.
+
+**Addendum (F10.8.2, review de cierre, 2026-10-11).**
+
+- **Solo se ligan las cards que la respuesta cortada muestra.** Una card cuya tool quedó a medias (el saneado la quita) ya existe pero no se ve en el chat: se borra al vencer la gracia, junto con las que terminen de crearse después. Queda un residuo conocido: una card que termina de guardarse después de los 3 s de gracia queda huérfana.
+- **Regenerar mientras la respuesta todavía se genera** (otra pestaña) responde **409**, igual que un reenvío.
+- **La compactación ve los turnos marcados** (`markUnansweredTurns` en el transcript): sin la marca, el resumen daba por contestado un pedido que se cortó.
+- **Perder la red es un corte**, no un fallo: el servidor solo ve que se cerró la conexión y lo guarda como detenida, y la web lo marca igual (`isDisconnect`).
+- El timer de la espera entre turnos se limpia. Sin cuota, la burbuja no ofrece Editar.
+- **Diferido:** al editar el primer mensaje, el título automático no se rehace (`maybeTitle` solo titula chats con su título de nacimiento).

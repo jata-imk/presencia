@@ -40,16 +40,16 @@ const CARD_TOOL_TYPES: ReadonlySet<string> = new Set(
   CARD_ARCHETYPE_TOOLS.map((def) => `tool-${def.toolName}`),
 );
 
-/**
- * Una tool que creó (o está creando) una card de publicación. Desde F10.8 no
- * toda tool es una card: la de memoria solo busca, y pintarla como card
- * dejaría una tarjeta rota en el chat.
- */
 /** El texto de un mensaje del creator, como se muestra, se reintenta y se edita. */
 export function messageText(message: ChatUIMessage): string {
   return message.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n");
 }
 
+/**
+ * Una tool que creó (o está creando) una card de publicación. Desde F10.8 no
+ * toda tool es una card: la de memoria solo busca, y pintarla como card
+ * dejaría una tarjeta rota en el chat.
+ */
 export function isCardToolPart(part: ChatPart): part is CardToolPart {
   return isStaticToolUIPart(part) && CARD_TOOL_TYPES.has(part.type);
 }
