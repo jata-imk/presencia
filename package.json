@@ -12,6 +12,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "storybook": "turbo run storybook",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"
@@ -22,6 +23,7 @@
     "@eslint/js": "^10.0.1",
     "eslint": "^9.28.0",
     "eslint-config-prettier": "^10.1.0",
+    "eslint-plugin-storybook": "10.6.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.1.0",
     "prettier": "^3.5.3",
