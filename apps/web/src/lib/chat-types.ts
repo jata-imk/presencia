@@ -45,6 +45,11 @@ const CARD_TOOL_TYPES: ReadonlySet<string> = new Set(
  * toda tool es una card: la de memoria solo busca, y pintarla como card
  * dejaría una tarjeta rota en el chat.
  */
+/** El texto de un mensaje del creator, como se muestra, se reintenta y se edita. */
+export function messageText(message: ChatUIMessage): string {
+  return message.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n");
+}
+
 export function isCardToolPart(part: ChatPart): part is CardToolPart {
   return isStaticToolUIPart(part) && CARD_TOOL_TYPES.has(part.type);
 }

@@ -15,7 +15,7 @@ import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
 import { ConfirmDeleteModal } from "../components/ui/ConfirmDeleteModal.js";
 import { fetchCardVersions } from "../lib/cards-api.js";
 import { parseApiErrorMessage, parseQuotaExhaustedError } from "../lib/chat-error.js";
-import { isCardToolPart, type ChatUIMessage } from "../lib/chat-types.js";
+import { isCardToolPart, messageText, type ChatUIMessage } from "../lib/chat-types.js";
 import { turnNotices, type TurnNotice, type TurnStatus } from "../lib/turn-status.js";
 import { useQuota } from "../lib/use-quota.js";
 import { uuid } from "../lib/uuid.js";
@@ -276,23 +276,19 @@ function ChatView({
   const quotaExhaustedError = parseQuotaExhaustedError(error);
   const apiErrorMessage = parseApiErrorMessage(error);
 
-  // Regenerar borra las cards de la respuesta (ADR-006). Desde F10.5 una
-  // card puede traer trabajo del usuario encima (ediciones, versiones):
-  // antes de tirarlo, se pregunta. Y una que ya salió a la red no se toca
-  // (la API también lo impide): borrarla dejaría un post programado sin card.
+  // Regenerar (y desde F10.8.2, editar el último mensaje) borra las cards de
+  // la respuesta (ADR-006). Desde F10.5 una card puede traer trabajo del
+  // usuario encima (ediciones, versiones): antes de tirarlo, se pregunta. Y
+  // una que ya salió a la red no se toca (la API también lo impide): borrarla
+  // dejaría un post programado sin card. `go` corre solo si de verdad se
+  // reemplaza, no si el creator cancela la confirmación.
   const toast = useToastStore((s) => s.show);
-  const [regenerateEdited, setRegenerateEdited] = useState<number | null>(null);
-  // Lo que corre justo antes de regenerar de verdad (F10.8.2): reintentar un
-  // turno limpia su card de estado solo si el regenerar sale, no si el
-  // creator cancela la confirmación.
-  const beforeRegenerate = useRef<(() => void) | null>(null);
-  function goRegenerate() {
-    beforeRegenerate.current?.();
-    beforeRegenerate.current = null;
-    void regenerate();
-  }
-  async function requestRegenerate(onGo?: () => void) {
-    beforeRegenerate.current = onGo ?? null;
+  const [pendingReplace, setPendingReplace] = useState<{
+    count: number;
+    kind: ReplaceKind;
+    go: () => void;
+  } | null>(null);
+  async function confirmReplace(kind: ReplaceKind, go: () => void) {
     const last = messages.at(-1);
     const ids =
       last?.role === "assistant"
@@ -302,11 +298,19 @@ function ChatView({
         : [];
     const byId = useCardsStore.getState().byId;
     if (ids.some((id) => byId[id]?.status === "scheduled" || byId[id]?.status === "published")) {
-      toast({
-        title: "No se puede regenerar esta respuesta",
-        description:
-          "Tiene publicaciones programadas o publicadas. Cancela la programación antes de regenerarla.",
-      });
+      toast(
+        kind === "editar"
+          ? {
+              title: "No se puede editar este mensaje",
+              description:
+                "Su respuesta tiene publicaciones programadas o publicadas. Cancela la programación antes de editarlo.",
+            }
+          : {
+              title: "No se puede regenerar esta respuesta",
+              description:
+                "Tiene publicaciones programadas o publicadas. Cancela la programación antes de regenerarla.",
+            },
+      );
       return;
     }
     const edited = await Promise.all(
@@ -317,10 +321,45 @@ function ChatView({
       ),
     );
     const count = edited.filter(Boolean).length;
-    if (count > 0) setRegenerateEdited(count);
-    else goRegenerate();
+    if (count > 0) setPendingReplace({ count, kind, go });
+    else go();
+  }
+  function requestRegenerate(onGo?: () => void) {
+    void confirmReplace("regenerar", () => {
+      setEditingId(null);
+      onGo?.();
+      void regenerate();
+    });
   }
 
+  // F10.8.2: editar el último mensaje, en su burbuja. Enviar es ese turno de
+  // nuevo con otro texto: el SDK reemplaza el mensaje y corta lo de después, y
+  // el servidor reconoce el id (streamChat) y borra la respuesta vieja.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // Mientras se revisan las cards (una lectura de red), un segundo Enviar o un
+  // mensaje del composer no deben colarse: se vuelve a revisar al enviar.
+  const replacing = useRef(false);
+  function submitEdit(userId: string, text: string) {
+    if (replacing.current) return;
+    replacing.current = true;
+    void confirmReplace("editar", () => {
+      const latest = latestRef.current;
+      if (latest.busy || latest.lastUserId !== userId) return;
+      setEditingId(null);
+      markTurn(userId, null);
+      retryingId.current = null;
+      setFailedAgain(false);
+      scrollToEnd(false);
+      void sendMessage({ text, messageId: userId });
+    }).finally(() => {
+      replacing.current = false;
+    });
+  }
+
+  const lastUserId = [...messages].reverse().find((m) => m.role === "user")?.id;
+  // Lo de este render, para lo que corre después de un await.
+  const latestRef = useRef({ busy, lastUserId });
+  latestRef.current = { busy, lastUserId };
   const notices = turnNotices(messages, { busy, local: localStatus });
   // Un rechazo de la API no guardó nada: reintentarlo tal cual daría lo mismo.
   const turnApiError = quotaExhaustedError ? "Usaste toda tu cuota de este mes." : apiErrorMessage;
@@ -335,13 +374,11 @@ function ChatView({
       scrollToEnd(false);
     };
     if (notice.hasReply) {
-      void requestRegenerate(go);
+      requestRegenerate(go);
       return;
     }
-    const text = messages
-      .find((m) => m.id === userId)
-      ?.parts.flatMap((p) => (p.type === "text" ? [p.text] : []))
-      .join("\n");
+    const message = messages.find((m) => m.id === userId);
+    const text = message ? messageText(message) : "";
     if (!text) return;
     go();
     void sendMessage({ text, messageId: userId });
@@ -356,6 +393,8 @@ function ChatView({
         failedAgain={failedAgain && notice.actionable}
         apiError={notice.actionable ? turnApiError : null}
         onRetry={() => retryTurn(userId, notice)}
+        // Sin cuota, editar daría el mismo rechazo.
+        onEdit={quotaExhaustedError ? undefined : () => setEditingId(userId)}
       />
     );
   }
@@ -368,6 +407,7 @@ function ChatView({
     setModalDismissed(false);
     setFailedAgain(false);
     retryingId.current = null;
+    setEditingId(null);
     // Lo que tú mandas siempre se ve, aunque estuvieras leyendo arriba.
     scrollToEnd(false);
     void sendMessage({ text });
@@ -396,11 +436,17 @@ function ChatView({
                 if (message.role === "user") {
                   // Sin respuesta en pantalla, la card de estado va aquí.
                   const noReply = messages[mi + 1]?.role !== "assistant";
+                  const isLastUser = message.id === lastUserId;
                   return (
                     <div key={message.id} className="flex flex-col gap-[18px]">
-                      {message.parts.map((part, i) =>
-                        part.type === "text" ? <MessageUser key={i} text={part.text} /> : null,
-                      )}
+                      <MessageUser
+                        text={messageText(message)}
+                        canEdit={isLastUser && !busy}
+                        editing={isLastUser && editingId === message.id && !busy}
+                        onEdit={() => setEditingId(message.id)}
+                        onCancelEdit={() => setEditingId(null)}
+                        onSubmitEdit={(edited) => submitEdit(message.id, edited)}
+                      />
                       {noReply && renderNotice(message.id)}
                     </div>
                   );
@@ -416,7 +462,7 @@ function ChatView({
                       streamingNow={status === "streaming"}
                       // Con card de estado, "Reintentar" ya está en ella.
                       canRegenerate={isLastMessage && !busy && !hasNotice}
-                      onRegenerate={() => void requestRegenerate()}
+                      onRegenerate={() => requestRegenerate()}
                     />
                     {renderNotice(userId)}
                   </div>
@@ -444,28 +490,32 @@ function ChatView({
             {quota && !bannerDismissed && (
               <QuotaBanner quota={quota} onDismiss={() => setBannerDismissed(true)} />
             )}
-            {regenerateEdited !== null && (
+            {pendingReplace !== null && (
               <ConfirmDeleteModal
-                titleId="regenerar-titulo"
-                title="¿Regenerar la respuesta?"
-                description={
-                  regenerateEdited === 1
-                    ? "Uno de sus borradores tiene ediciones tuyas."
-                    : `${String(regenerateEdited)} de sus borradores tienen ediciones tuyas.`
+                titleId="reemplazar-titulo"
+                title={
+                  pendingReplace.kind === "editar"
+                    ? "¿Enviar tu mensaje editado?"
+                    : "¿Regenerar la respuesta?"
                 }
-                warning="Regenerar borra los borradores de esta respuesta, con sus versiones, y crea otros nuevos."
-                confirmLabel="Regenerar"
-                confirmingLabel="Regenerando…"
-                errorFallback="No se pudo regenerar."
-                onClose={() => setRegenerateEdited(null)}
-                // Sin await: regenerate() resuelve cuando termina TODA la
+                description={
+                  pendingReplace.count === 1
+                    ? "Uno de sus borradores tiene ediciones tuyas."
+                    : `${String(pendingReplace.count)} de sus borradores tienen ediciones tuyas.`
+                }
+                warning={`${pendingReplace.kind === "editar" ? "Editar tu mensaje" : "Regenerar"} borra los borradores de esta respuesta, con sus versiones, y crea otros nuevos.`}
+                confirmLabel={pendingReplace.kind === "editar" ? "Enviar" : "Regenerar"}
+                confirmingLabel={pendingReplace.kind === "editar" ? "Enviando…" : "Regenerando…"}
+                errorFallback="No se pudo completar."
+                onClose={() => setPendingReplace(null)}
+                // Sin await: el turno resuelve cuando termina TODA la
                 // respuesta, y el modal se quedaba encima mientras llegaba.
                 // Un error del turno lo muestra el chat, como cualquier otro.
                 onConfirm={() => {
-                  goRegenerate();
+                  pendingReplace.go();
                   return Promise.resolve();
                 }}
-                onConfirmed={() => setRegenerateEdited(null)}
+                onConfirmed={() => setPendingReplace(null)}
               />
             )}
             {quotaExhaustedError && !modalDismissed && (
@@ -489,3 +539,6 @@ function ChatView({
     </div>
   );
 }
+
+/** Lo que reemplaza la última respuesta (F10.8.2): mismas guardas de cards. */
+type ReplaceKind = "regenerar" | "editar";

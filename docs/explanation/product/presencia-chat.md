@@ -1303,6 +1303,26 @@ mensajes pendientes se envían automáticamente y el banner
 cambia a "Conexión restaurada" con check verde antes de
 desaparecer.
 
+### Editar tu último mensaje
+
+**El estado:** El creator se equivocó al escribir, o quiere
+pedir lo mismo de otra forma.
+
+**El diseño (F10.8.2):** Su **último** mensaje se edita en la
+misma burbuja, como en ChatGPT y Claude: "Editar" aparece en
+hover junto a Copiar (en táctil o pantalla angosta, debajo de
+la burbuja), y también en la card de estado de un turno que
+se quedó sin respuesta. Enter envía, Shift+Enter es salto de
+línea, Esc cancela. Enviar reemplaza el mensaje **y su
+respuesta**: es ese turno de nuevo, no uno más. Con las
+mismas guardas que Regenerar: si la respuesta tiene
+borradores programados o publicados no se deja, y si tiene
+borradores con ediciones pide confirmación.
+
+**Por qué solo el último:** editar uno de en medio obligaría a
+borrar todo lo que vino después (o a ramificar la
+conversación). Es destructivo y no entra en V1.
+
 ### IA falló
 
 **El estado:** Error técnico en el backend al generar
