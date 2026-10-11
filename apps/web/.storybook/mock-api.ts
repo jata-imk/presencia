@@ -21,8 +21,12 @@ const RESPUESTAS: Record<string, unknown> = {
   },
 };
 
+/** El fetch del navegador, guardado una sola vez: el HMR re-evalúa el preview. */
+const globalConFetch = window as Window & { __fetchReal?: typeof window.fetch };
+
 export function installMockApi(): void {
-  const real = window.fetch.bind(window);
+  globalConFetch.__fetchReal ??= window.fetch.bind(window);
+  const real = globalConFetch.__fetchReal;
   window.fetch = (input, init) => {
     const url = new URL(
       typeof input === "string" ? input : input instanceof URL ? input.href : input.url,

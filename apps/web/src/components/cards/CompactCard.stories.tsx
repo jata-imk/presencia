@@ -76,8 +76,9 @@ export const GenerandoImagen: Story = {
           kind: "generate",
           aspectRatio: "4:5",
           assetIds: [],
-          // Recién empezado: si fuera viejo, la card lo daría por muerto.
-          startedAt: new Date().toISOString(),
+          // En el futuro a propósito: pasados 5 min (IMAGE_JOB_STALE_MS) la
+          // card da un trabajo por muerto, y la historia queda abierta horas.
+          startedAt: "2099-01-01T00:00:00.000Z",
         },
       }),
     ],

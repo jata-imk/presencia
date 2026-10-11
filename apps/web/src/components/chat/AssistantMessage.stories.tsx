@@ -82,14 +82,14 @@ export const Llegando: Story = {
   },
 };
 
-/** Se detuvo después de crear una card y antes de escribir texto (F10.8.2). */
+/**
+ * Se detuvo después de crear una card y antes de escribir texto (F10.8.2). Una
+ * tool que quedó a medias no se pinta: CardBlock la oculta al terminar el turno.
+ */
 export const DetenidaConCards: Story = {
   name: "Detenida con cards (sin texto)",
   args: {
-    message: respuesta([
-      cardPart(IG, "instagram", CONTENIDO.instagram),
-      cardPartNaciendo("linkedin"),
-    ]),
+    message: respuesta([cardPart(IG, "instagram", CONTENIDO.instagram)]),
     canRegenerate: false,
   },
 };

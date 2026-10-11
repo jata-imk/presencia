@@ -1,9 +1,12 @@
-import type {
-  CardContent,
-  CardStatus,
-  ImagesConfigDto,
-  PublicationCardDto,
-  SocialNetwork,
+import {
+  CARD_ARCHETYPE_TOOLS,
+  NETWORKS_BY_ARCHETYPE,
+  type CardContent,
+  type CardStatus,
+  type ImagesConfigDto,
+  type PublicationArchetype,
+  type PublicationCardDto,
+  type SocialNetwork,
 } from "@presencia/shared";
 import type { CardToolPart } from "../../lib/chat-types.js";
 
@@ -61,6 +64,25 @@ export function card(id: string, over: Partial<PublicationCardDto> = {}): Public
   };
 }
 
+/** La tool real de cada arquetipo: la misma que emite el chat (crear_borrador_*). */
+function toolType(archetype: PublicationArchetype): CardToolPart["type"] {
+  const def = CARD_ARCHETYPE_TOOLS.find((d) => d.archetype === archetype);
+  if (!def) throw new Error(`Sin tool para el arquetipo ${archetype}`);
+  return `tool-${def.toolName}`;
+}
+
+function archetypeOf(network: SocialNetwork): PublicationArchetype {
+  const entry = Object.entries(NETWORKS_BY_ARCHETYPE).find(([, redes]) =>
+    (redes as readonly string[]).includes(network),
+  );
+  if (!entry) throw new Error(`Sin arquetipo para ${network}`);
+  return entry[0] as PublicationArchetype;
+}
+
+// Ids distintos por llamada: dos tools iguales en un mensaje no comparten key.
+let siguiente = 0;
+const toolCallId = (prefijo: string) => `t-${prefijo}-${String(++siguiente)}`;
+
 /** El tool part con que el chat nombra una card ya creada. */
 export function cardPart(
   cardId: string,
@@ -69,33 +91,33 @@ export function cardPart(
   status: CardStatus = "draft",
 ): CardToolPart {
   return {
-    type: "tool-crear_borrador_visual",
-    toolCallId: `t-${cardId}`,
+    type: toolType(content.archetype),
+    toolCallId: toolCallId(cardId),
     state: "output-available",
     input: { network },
     output: { cardId, network, status, content },
-  } as unknown as CardToolPart;
+  };
 }
 
 /** Una tool que todavía escribe su borrador (la card "naciendo"). */
 export function cardPartNaciendo(network: SocialNetwork): CardToolPart {
   return {
-    type: "tool-crear_borrador_visual",
-    toolCallId: `t-naciendo-${network}`,
+    type: toolType(archetypeOf(network)),
+    toolCallId: toolCallId(`naciendo-${network}`),
     state: "input-streaming",
     input: { network },
-  } as unknown as CardToolPart;
+  };
 }
 
 /** Una tool que falló al crear la card. */
-export function cardPartConError(): CardToolPart {
+export function cardPartConError(network: SocialNetwork = "instagram"): CardToolPart {
   return {
-    type: "tool-crear_borrador_visual",
-    toolCallId: "t-error",
+    type: toolType(archetypeOf(network)),
+    toolCallId: toolCallId("error"),
     state: "output-error",
-    input: { network: "instagram" },
+    input: { network },
     errorText: "El texto pasa de 2,200 caracteres.",
-  } as unknown as CardToolPart;
+  };
 }
 
 /** Lo que responde GET /api/images/config en las historias. */
