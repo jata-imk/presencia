@@ -72,7 +72,7 @@ Notas del modo B:
 
    Si el 3000 ya está ocupado por otra app, pon `PORT=3001` en el `.env` (o en el shell, `PORT=3001 pnpm dev`): la API escucha ahí y el proxy de Vite lo sigue.
 
-5. `pnpm --filter @presencia/api test` corre los tests de la API (vitest). El test de RLS (`src/db/rls.spec.ts`, DoD de F2) conecta contra la base real como `presencia_app` usando el mismo `.env` — necesita la DB alcanzable (túnel o compose local). Si la API dev está prendida con su worker (`WORKER_INLINE`, el default), los tests se niegan a correr: su cron `cards.reconcile` barre la misma base y marcaba como fallidas las cards de los tests. Levanta la API con `WORKER_INLINE=false` para tener las dos cosas a la vez.
+5. `pnpm --filter @presencia/api test` corre los tests de la API (vitest). El test de RLS (`src/db/rls.spec.ts`, DoD de F2) conecta contra la base real como `presencia_app` usando el mismo `.env` — necesita la DB alcanzable (túnel o compose local). Si hay un worker dev prendido (la API con `WORKER_INLINE`, el default, o `dev:worker`), `cards.service.spec` se niega a correr: el cron `cards.reconcile` barre la misma base y marcaba como fallidas las cards de los tests. Levanta la API con `WORKER_INLINE=false` y sin `dev:worker` para tener las dos cosas a la vez.
 6. `pnpm --filter @presencia/api seed:dev` crea la cuenta de desarrollo:
 
    ```

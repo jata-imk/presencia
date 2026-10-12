@@ -5,6 +5,7 @@ import type { CardContent, SocialNetwork } from "@presencia/shared";
 import { chats, folders, publicationCards, users } from "../db/schema.js";
 import { PublishingRejectedError, PublishingUnavailableError } from "../publishing/errors.js";
 import { FakePublishingProvider } from "../publishing/fake.provider.js";
+import { sinWorkerDeReconciliacion } from "../test-support/guarda-cron-dev.js";
 import type { ProviderPostState, SchedulePostRequest } from "../publishing/publishing.provider.js";
 // Imports solo de tipo: los módulos reales se cargan en beforeAll, mismo
 // patrón que credits.service.spec.ts / channels.service.spec.ts.
@@ -231,6 +232,9 @@ describe("CardsService", () => {
     } catch {
       // sin .env: se usa el process.env tal cual (CI)
     }
+    // Antes de crear nada: un worker dev contra esta base marca failed las
+    // cards programadas de estos tests (F10.8.4).
+    await sinWorkerDeReconciliacion();
     const { DbService } = await import("../db/db.service.js");
     const { CardsRepository } = await import("./cards.repository.js");
     const { ChannelsRepository } = await import("../channels/channels.repository.js");

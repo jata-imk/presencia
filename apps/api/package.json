@@ -5,7 +5,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src scripts drizzle.config.ts vitest.config.ts",
+    "lint": "eslint src scripts drizzle.config.ts",
     "dev": "tsx watch --env-file=../../.env src/main.ts",
     "dev:worker": "tsx watch --env-file=../../.env src/worker.ts",
     "test": "vitest run",
