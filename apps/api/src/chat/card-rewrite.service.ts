@@ -222,7 +222,6 @@ export class CardRewriteService {
       const next = cardContentSchema.parse({
         ...latest,
         ...result.object,
-        hashtags: result.object.hashtags.map((t) => t.replace(/^#+/, "").trim()).filter(Boolean),
         archetype: latest.archetype,
         ...mediaOf(latest),
       });

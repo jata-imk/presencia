@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
 import {
   NETWORK_TEXT_LIMITS,
   buildPostText,
+  withHashtags,
   type CardContent,
   type CardImageJob,
   type SocialNetwork,
@@ -374,14 +375,7 @@ function ScriptPreview({ network, content }: { network: SocialNetwork; content: 
             DESCRIPCIÓN
           </p>
           <p className="text-[13.5px] leading-relaxed whitespace-pre-line">
-            <PostText
-              text={
-                content.hashtags.length > 0
-                  ? `${content.caption}\n\n${content.hashtags.map((t) => `#${t}`).join(" ")}`
-                  : content.caption
-              }
-              tagClassName={TAG}
-            />
+            <PostText text={withHashtags(content.caption, content.hashtags)} tagClassName={TAG} />
           </p>
         </div>
       </div>

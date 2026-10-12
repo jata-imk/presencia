@@ -53,10 +53,42 @@ const slidesSchema = z.array(carouselSlideSchema).min(2).max(10).optional();
  */
 const slidesAspectSchema = imageAspectRatioSchema.optional();
 
+/**
+ * F10.8.4: un hashtag se guarda sin "#" y sin espacios; el "#" lo pone quien
+ * lo pinta o lo publica (buildPostText). El modelo casi siempre lo manda con
+ * "#", y la card salía con "##tacos". Vive aquí para que todos los caminos
+ * (la tool del chat, "Pide un cambio", el editor) guarden lo mismo. La
+ * migración 0052 limpió con esta misma regla las cards guardadas antes.
+ *
+ * - Un "#" o una coma a media cadena separan etiquetas: el modelo a veces
+ *   manda varias juntas ("#tacos #merida"), y fundirlas daría "#tacos#merida".
+ * - Dentro de cada una se quitan los espacios ("Café Xtabay" → "CaféXtabay").
+ *   Son los mismos que `\s` de JS, escritos a mano: la migración los repite
+ *   tal cual, porque `[[:space:]]` de Postgres depende del locale.
+ * - Las vacías (un "#" suelto) y las repetidas se descartan; el chip del
+ *   editor usa la etiqueta como key y la quita por valor.
+ */
+// Los mismos que `\s` de JS (ver normalizeHashtags).
+const HASHTAG_SPACES =
+  /[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+/g;
+
+export function normalizeHashtags(tags: readonly string[]): string[] {
+  const clean = tags
+    .flatMap((tag) => tag.split(/[#,]/))
+    .map((tag) => tag.replace(HASHTAG_SPACES, ""))
+    .filter((tag) => tag.length > 0);
+  return [...new Set(clean)];
+}
+
+// Un transform dentro de un pipe: el JSON Schema de la tool (zodSchema del AI
+// SDK, io "input") describe el array de strings de entrada, y el parse guarda
+// la versión normalizada.
+const hashtagsSchema = z.array(z.string()).transform(normalizeHashtags).default([]);
+
 export const visualFirstContentSchema = z.object({
   archetype: z.literal("visual_first"),
   caption: z.string(),
-  hashtags: z.array(z.string()).default([]),
+  hashtags: hashtagsSchema,
   // Siempre UNA imagen por prompt. Antes del carrusel (F10.6 PR5) el modelo
   // metía "carrusel de 5 diapositivas" en este campo y el generador dibujaba
   // una tira de paneles cortada que igual se cobraba; ahora las varias
@@ -87,7 +119,7 @@ export const videoScriptContentSchema = z.object({
   hook: z.string(),
   script: z.string(),
   caption: z.string(),
-  hashtags: z.array(z.string()).default([]),
+  hashtags: hashtagsSchema,
   recordingNotes: z.string().optional(),
   // Faltaba (code review 2026-08-20): assertHasMedia (cards.service.ts)
   // exige `"assetIds" in content` para tiktok/youtube igual que para
@@ -102,7 +134,7 @@ export const videoScriptContentSchema = z.object({
 export const textFirstContentSchema = z.object({
   archetype: z.literal("text_first"),
   body: z.string(),
-  hashtags: z.array(z.string()).default([]),
+  hashtags: hashtagsSchema,
   // F10: la imagen acompañante de LinkedIn/X/Threads es opcional (overview
   // §3). El modelo la sugiere solo cuando suma: la mayoría de estos posts no
   // la llevan, y un prompt de relleno invitaría a gastar en algo que nadie

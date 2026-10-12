@@ -1,4 +1,4 @@
-import type { CardContent, SocialNetwork } from "./publication.js";
+import { normalizeHashtags, type CardContent, type SocialNetwork } from "./publication.js";
 
 /**
  * Aplana una CardContent al único campo de texto que aceptan los
@@ -13,14 +13,26 @@ import type { CardContent, SocialNetwork } from "./publication.js";
  * adapter invente la suya.
  */
 export function buildPostText(content: CardContent): string {
-  const hashtags = content.hashtags.map((tag) => `#${tag}`).join(" ");
   const body =
     content.archetype === "visual_first"
       ? content.caption
       : content.archetype === "video_script"
         ? `${content.hook}\n\n${content.script}\n\n${content.caption}`
         : content.body;
-  return hashtags ? `${body}\n\n${hashtags}` : body;
+  return withHashtags(body, content.hashtags);
+}
+
+/**
+ * Un texto con sus hashtags al final, como se publica: "#uno #dos" después de
+ * una línea en blanco. La vista previa del video lo usa para la descripción
+ * sola. Normaliza otra vez por si una card trae el "#" guardado (la app de
+ * antes de F10.8.4 lo guardaba, y salía "##").
+ */
+export function withHashtags(text: string, tags: readonly string[]): string {
+  const line = normalizeHashtags(tags)
+    .map((tag) => `#${tag}`)
+    .join(" ");
+  return line ? `${text}\n\n${line}` : text;
 }
 
 /**

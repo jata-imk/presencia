@@ -54,7 +54,10 @@
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      // El puerto de la API: la API escucha ahí y el proxy de Vite lo sigue
+      // (apps/web/vite.config.ts). Sin esto, turbo lo filtra.
+      "passThroughEnv": ["PORT"]
     },
     // Catálogo de estados de UI (F10.8.3, ADR-027). La web consume shared
     // desde dist/, así que se compila antes.

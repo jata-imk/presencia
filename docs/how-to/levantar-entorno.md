@@ -69,6 +69,9 @@ Notas del modo B:
    `APP_DATABASE_URL` debe conectar con `presencia_app` (sujeto a RLS); `JOBS_DATABASE_URL` con `presencia_jobs`, dueño de la cola; `DATABASE_URL` (owner) queda solo para migraciones.
 
 4. `pnpm dev` levanta api (puerto 3000) y web (5173, con proxy `/api` → 3000). La API lee `.env` de la raíz vía `tsx --env-file`.
+
+   Si el 3000 ya está ocupado por otra app, pon `PORT=3001` en el `.env` (o en el shell, `PORT=3001 pnpm dev`): la API escucha ahí y el proxy de Vite lo sigue.
+
 5. `pnpm --filter @presencia/api test` corre los tests de la API (vitest). El test de RLS (`src/db/rls.spec.ts`, DoD de F2) conecta contra la base real como `presencia_app` usando el mismo `.env` — necesita la DB alcanzable (túnel o compose local).
 6. `pnpm --filter @presencia/api seed:dev` crea la cuenta de desarrollo:
 
