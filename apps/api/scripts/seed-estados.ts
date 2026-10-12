@@ -4,155 +4,157 @@
  * Existe porque esos estados solo nacen en vivo: detener en el segundo justo,
  * que falle el proveedor, un turno de antes de F10.8.2 que quedó sin
  * respuesta. Storybook los muestra en aislamiento; esto deja probar el flujo
- * real contra la API: recargar, Reintentar y Editar.
+ * real contra la API: recargar, Reintentar y Editar. Las variantes con cards
+ * (una respuesta cortada que alcanzó a crear borradores) viven en Storybook:
+ * aquí pedirían filas de cards de verdad.
  *
  * Solo el último turno de un chat es accionable, así que cada estado
- * accionable va en su propio chat. Todos viven en la carpeta "Estados del
- * turno", que es también la marca de idempotencia: si ya existe, no se siembra
- * de nuevo.
+ * accionable va en su propio chat, todos en la carpeta "Estados del turno".
+ *
+ * Se RECREA en cada corrida: Reintentar o Editar gastan el estado (el turno
+ * pasa a completo), y volver a sembrar lo repone sin `--reset`, que borraría
+ * toda la data de dev. Se borra por título además de por carpeta: si alguien
+ * borró la carpeta, sus chats quedaron sueltos y no deben duplicarse.
  *
  * `createdAt` va explícito y creciente: en un insert en lote el default
  * `now()` es el mismo para todas las filas, y el orden del chat quedaría al
  * azar.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { MessageStatus } from "@presencia/shared";
 import type { Tx } from "../src/db/db.service.js";
-import { chats, folders, messages } from "../src/db/schema.js";
+import { chats, folders, messages, publicationCards } from "../src/db/schema.js";
 
-const CARPETA = "Estados del turno";
+const FOLDER = "Estados del turno";
 
-type Turno = {
-  pedido: string;
+type Turn = {
+  prompt: string;
   /** Sin respuesta: el mensaje del creator queda solo (huérfano de antes de F10.8.2). */
-  respuesta?: { texto: string; status: MessageStatus };
+  reply?: {
+    text: string;
+    status: MessageStatus;
+    /**
+     * Las dos formas en que el servidor guarda un corte vacío: `[]` si se
+     * cortó antes de llamar al modelo, `[step-start]` si ya había empezado.
+     */
+    bare?: boolean;
+  };
 };
 
-const PARCIAL =
+const PARTIAL =
   "Las marquesitas son de esas cosas que en Mérida no se discuten: crujientes, con queso de bola y";
 
-const COMPLETA =
+const COMPLETE =
   "Va una propuesta para Instagram, pensada para el antojo de la tarde:\n\n" +
   '**Gancho:** "¿Queso de bola solo o con Nutella? En Mérida esto divide familias."\n\n' +
   "1. Abre con un close-up de la marquesita saliendo de la plancha.\n" +
   "2. Pregunta en el texto por su combinación favorita.\n" +
   "3. Cierra con la ubicación y el horario del carrito.";
 
-const CHATS: { titulo: string; turnos: Turno[] }[] = [
+const PROMPT = "Hazme un post para Instagram sobre las marquesitas de Mérida.";
+const REELS_PARTIAL = "Van cinco, pensadas para grabar con el celular:\n\n1. El crujido";
+
+const SEEDED_CHATS: { title: string; turns: Turn[] }[] = [
   {
     // Turnos viejos en cada estado (sin botones) y, al final, uno completo.
-    titulo: "Historial con estados",
-    turnos: [
+    title: "Historial con estados",
+    turns: [
       {
-        pedido: "Escríbeme 900 palabras sobre la jarana yucateca. Solo texto.",
-        respuesta: { texto: "", status: "stopped" },
+        prompt: "Escríbeme 900 palabras sobre la jarana yucateca. Solo texto.",
+        reply: { text: "", status: "stopped", bare: true },
       },
+      { prompt: PROMPT, reply: { text: PARTIAL, status: "stopped" } },
       {
-        pedido: "Hazme un post para Instagram sobre las marquesitas de Mérida.",
-        respuesta: { texto: PARCIAL, status: "stopped" },
+        prompt: "Dame 5 ideas de reels para un carrito de marquesitas.",
+        reply: { text: REELS_PARTIAL, status: "failed" },
       },
+      { prompt: "¿Qué es el relleno negro? En dos líneas." },
       {
-        pedido: "Dame 5 ideas de reels para un carrito de marquesitas.",
-        respuesta: {
-          texto: "Van cinco, pensadas para grabar con el celular:\n\n1. El crujido",
-          status: "failed",
-        },
-      },
-      { pedido: "¿Qué es el relleno negro? En dos líneas." },
-      {
-        pedido: "Ahora sí, hazme el post de marquesitas.",
-        respuesta: { texto: COMPLETA, status: "complete" },
+        prompt: "Ahora sí, hazme el post de marquesitas.",
+        reply: { text: COMPLETE, status: "complete" },
       },
     ],
   },
   {
-    titulo: "Último turno: detenida antes de empezar",
-    turnos: [
-      {
-        pedido: "Hazme un post para Instagram sobre las marquesitas de Mérida.",
-        respuesta: { texto: "", status: "stopped" },
-      },
-    ],
+    title: "Último turno: detenida antes de empezar",
+    turns: [{ prompt: PROMPT, reply: { text: "", status: "stopped" } }],
   },
   {
-    titulo: "Último turno: detenida con texto",
-    turnos: [
-      {
-        pedido: "Hazme un post para Instagram sobre las marquesitas de Mérida.",
-        respuesta: { texto: PARCIAL, status: "stopped" },
-      },
-    ],
+    title: "Último turno: detenida con texto",
+    turns: [{ prompt: PROMPT, reply: { text: PARTIAL, status: "stopped" } }],
   },
   {
-    titulo: "Último turno: falló",
-    turnos: [
-      {
-        pedido: "Hazme un post para Instagram sobre las marquesitas de Mérida.",
-        respuesta: { texto: "", status: "failed" },
-      },
-    ],
+    title: "Último turno: falló",
+    turns: [{ prompt: PROMPT, reply: { text: "", status: "failed" } }],
+  },
+  {
+    title: "Último turno: falló con texto",
+    turns: [{ prompt: PROMPT, reply: { text: PARTIAL, status: "failed" } }],
+  },
+  {
+    // Un turno que nunca tuvo respuesta guardada (cayó con el servidor, o se
+    // cortó antes de llegar): la web lo trata como fallido y accionable.
+    title: "Último turno: sin respuesta",
+    turns: [{ prompt: PROMPT }],
   },
 ];
 
-/**
- * Siembra la carpeta con sus chats si todavía no existe. Devuelve cuántos
- * chats creó (0 si ya estaba).
- */
-export async function seedEstadosDelTurno(tx: Tx, userId: string): Promise<number> {
-  const [existente] = await tx
-    .select({ id: folders.id })
-    .from(folders)
-    .where(and(eq(folders.userId, userId), eq(folders.name, CARPETA)));
-  if (existente) return 0;
+/** Borra lo sembrado antes y lo vuelve a crear. Devuelve cuántos chats creó. */
+export async function seedTurnStates(tx: Tx, userId: string): Promise<number> {
+  const titles = SEEDED_CHATS.map((c) => c.title);
+  const previous = await tx
+    .select({ id: chats.id })
+    .from(chats)
+    .where(and(eq(chats.userId, userId), inArray(chats.title, titles)));
+  if (previous.length > 0) {
+    const ids = previous.map((c) => c.id);
+    // Los borradores que crearon los reintentos: sin esto quedarían sueltos
+    // (el FK de chat_id es SET NULL).
+    await tx.delete(publicationCards).where(inArray(publicationCards.chatId, ids));
+    await tx.delete(chats).where(inArray(chats.id, ids));
+  }
+  await tx.delete(folders).where(and(eq(folders.userId, userId), eq(folders.name, FOLDER)));
 
-  const [carpeta] = await tx
+  const [folder] = await tx
     .insert(folders)
-    .values({ userId, name: CARPETA, icon: "🧪" })
+    .values({ userId, name: FOLDER, icon: "🧪" })
     .returning({ id: folders.id });
-  if (!carpeta) throw new Error("No se pudo crear la carpeta de estados del turno");
+  if (!folder) throw new Error("No se pudo crear la carpeta de estados del turno");
 
-  // Una hora atrás, un minuto por mensaje: el orden queda fijo y el chat no
-  // aparece como la conversación más reciente del sidebar.
-  let reloj = Date.now() - 60 * 60 * 1000;
-  const siguiente = () => new Date((reloj += 60 * 1000));
+  // Una semana atrás, un minuto por mensaje: el orden de cada chat queda fijo
+  // y la carpeta no se adelanta a los chats de ejemplo en el sidebar.
+  let clock = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const next = () => new Date((clock += 60 * 1000));
 
-  for (const { titulo, turnos } of CHATS) {
-    const [chat] = await tx
-      .insert(chats)
-      .values({ userId, title: titulo, folderId: carpeta.id })
-      .returning({ id: chats.id });
-    if (!chat) throw new Error(`No se pudo crear el chat "${titulo}"`);
-
-    const filas = turnos.flatMap(({ pedido, respuesta }) => [
-      {
-        chatId: chat.id,
-        userId,
-        role: "user" as const,
-        parts: [{ type: "text", text: pedido }],
-        createdAt: siguiente(),
-      },
-      ...(respuesta
+  for (const { title, turns } of SEEDED_CHATS) {
+    const rows = turns.flatMap(({ prompt, reply }) => [
+      { role: "user" as const, parts: [{ type: "text", text: prompt }], createdAt: next() },
+      ...(reply
         ? [
             {
-              chatId: chat.id,
-              userId,
               role: "assistant" as const,
-              // Como lo guarda el servidor: una cortada antes de la primera
-              // palabra solo trae la marca de paso.
-              parts: respuesta.texto
-                ? [{ type: "step-start" }, { type: "text", text: respuesta.texto, state: "done" }]
-                : [{ type: "step-start" }],
-              status: respuesta.status,
-              createdAt: siguiente(),
+              parts: reply.text
+                ? [{ type: "step-start" }, { type: "text", text: reply.text, state: "done" }]
+                : reply.bare
+                  ? []
+                  : [{ type: "step-start" }],
+              status: reply.status,
+              createdAt: next(),
             },
           ]
         : []),
     ]);
-    await tx.insert(messages).values(filas);
-    await tx
-      .update(chats)
-      .set({ lastMessageAt: filas.at(-1)!.createdAt })
-      .where(eq(chats.id, chat.id));
+    const [chat] = await tx
+      .insert(chats)
+      .values({
+        userId,
+        title,
+        folderId: folder.id,
+        lastMessageAt: rows[rows.length - 1]?.createdAt ?? null,
+      })
+      .returning({ id: chats.id });
+    if (!chat) throw new Error(`No se pudo crear el chat "${title}"`);
+    await tx.insert(messages).values(rows.map((row) => ({ ...row, chatId: chat.id, userId })));
   }
-  return CHATS.length;
+  return SEEDED_CHATS.length;
 }

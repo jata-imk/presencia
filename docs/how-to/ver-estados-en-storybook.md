@@ -57,7 +57,7 @@ export const Fallo: Story = { args: { notice: notice({ status: "failed" }) } };
 
 ## Probar el flujo real contra la API
 
-Storybook muestra los estados; para probar recargar, Reintentar y Editar contra la API, `pnpm --filter @presencia/api seed:dev` siembra la carpeta **"Estados del turno"** en la cuenta de dev: un historial con cada estado viejo y un chat por cada estado accionable (detenida antes de empezar, detenida con texto, falló). Si la cuenta ya existe, solo agrega la carpeta y no la duplica.
+Storybook muestra los estados; para probar recargar, Reintentar y Editar contra la API, `pnpm --filter @presencia/api seed:dev` siembra la carpeta **"Estados del turno"** en la cuenta de dev: un historial con cada estado viejo y un chat por cada estado accionable (detenida antes de empezar, detenida con texto, falló, falló con texto, sin respuesta). Se recrea en cada corrida, también con la cuenta ya existente: si Reintentar o Editar gastaron un estado, volver a correr el seed lo repone.
 
 ## Compilar el catálogo
 

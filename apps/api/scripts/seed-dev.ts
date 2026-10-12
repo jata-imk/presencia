@@ -36,7 +36,7 @@ import {
   users,
 } from "../src/db/schema.js";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
-import { seedEstadosDelTurno } from "./seed-estados.js";
+import { seedTurnStates } from "./seed-estados.js";
 import { seedRitmo } from "./seed-ritmo.js";
 
 const dbService = new DbService();
@@ -81,9 +81,12 @@ async function seed(): Promise<void> {
   const yaExiste = await findUser();
   if (yaExiste) {
     console.log(`· El usuario ya existe (${EMAIL}). Usa --reset para recrearlo desde cero.`);
-    // Lo que se agregó al seed después de crear la cuenta se siembra igual,
-    // sin perder la data de dev (idempotente: no duplica).
-    await sembrarEstados(yaExiste.id);
+    // Los chats de estados del turno se recrean igual, sin perder la data de
+    // dev: así un estado que ya se gastó (Reintentar, Editar) vuelve.
+    const estados = await dbService.runWithTenant(yaExiste.id, (tx) =>
+      seedTurnStates(tx, yaExiste.id),
+    );
+    logTurnStates(estados);
     printCredentials();
     return;
   }
@@ -173,10 +176,12 @@ async function seed(): Promise<void> {
       enCarpetaId: rows[3]?.id,
     });
     const ritmo = await seedRitmo(tx, user.id, cuentaDe);
+    // En la misma transacción: si algo falla, la cuenta no queda a medias.
+    const estados = await seedTurnStates(tx, user.id);
 
-    return { rows, ritmo };
+    return { rows, ritmo, estados };
   });
-  await sembrarEstados(user.id);
+  logTurnStates(creados.estados);
 
   console.log(
     `· Usuario creado con ${String(creados.rows.length)} chats, 1 carpeta y 1 voz de marca.`,
@@ -468,12 +473,9 @@ async function seedCalendar(
 }
 
 /** F10.8.3: los chats con cada estado del turno (scripts/seed-estados.ts). */
-async function sembrarEstados(userId: string): Promise<void> {
-  const creados = await dbService.runWithTenant(userId, (tx) => seedEstadosDelTurno(tx, userId));
+function logTurnStates(count: number): void {
   console.log(
-    creados > 0
-      ? `· Estados del turno sembrados: ${String(creados)} chats en la carpeta "Estados del turno".`
-      : '· Los chats de "Estados del turno" ya existían.',
+    `· Estados del turno: ${String(count)} chats (re)creados en la carpeta "Estados del turno".`,
   );
 }
 
