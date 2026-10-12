@@ -32,13 +32,21 @@ export function ReconnectScreen({
             No pudimos conectar con Presencia
           </h1>
           <p className="text-sm leading-relaxed text-fg-secondary">
-            Puede ser tu conexión o que estemos actualizando la app. Tu sesión sigue abierta: lo
-            intentamos de nuevo en unos segundos.
+            Puede ser tu conexión o que estemos actualizando la app. Seguimos intentando: en cuanto
+            responda, vuelves a donde estabas.
           </p>
         </div>
         <Button onClick={onReintentar} disabled={reintentando} className="min-w-40">
           {reintentando ? "Conectando…" : "Reintentar ahora"}
         </Button>
+        {/* La salida si no es un deploy: un <a> y no un <Link>, para que la
+            pantalla no dependa del router (Storybook no lo monta). */}
+        <a
+          href="/login"
+          className="text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+        >
+          Ir a iniciar sesión
+        </a>
       </div>
     </main>
   );
