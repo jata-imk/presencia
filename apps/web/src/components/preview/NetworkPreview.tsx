@@ -376,11 +376,7 @@ function ScriptPreview({ network, content }: { network: SocialNetwork; content: 
           </p>
           <p className="text-[13.5px] leading-relaxed whitespace-pre-line">
             <PostText
-              text={
-                content.hashtags.length > 0
-                  ? `${content.caption}\n\n${hashtagLine(content.hashtags)}`
-                  : content.caption
-              }
+              text={[content.caption, hashtagLine(content.hashtags)].filter(Boolean).join("\n\n")}
               tagClassName={TAG}
             />
           </p>

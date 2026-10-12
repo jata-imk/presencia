@@ -57,15 +57,26 @@ const slidesAspectSchema = imageAspectRatioSchema.optional();
  * F10.8.4: un hashtag se guarda sin "#" y sin espacios; el "#" lo pone quien
  * lo pinta o lo publica (buildPostText). El modelo casi siempre lo manda con
  * "#", y la card salía con "##tacos". Vive aquí para que todos los caminos
- * (la tool del chat, "Pide un cambio", el editor) guarden lo mismo.
+ * (la tool del chat, "Pide un cambio", el editor) guarden lo mismo. La
+ * migración 0052 limpió con esta misma regla las cards guardadas antes.
+ *
+ * Una sola etiqueta: quita cualquier "#", coma o espacio ("Café Xtabay" →
+ * "CaféXtabay").
  */
 export function normalizeHashtag(raw: string): string {
-  return raw.trim().replace(/^#+/, "").replace(/\s+/g, "");
+  return raw.replace(/[#,\s]+/g, "");
 }
 
-/** Normaliza cada hashtag y descarta los que quedan vacíos (un "#" suelto). */
+/**
+ * La lista completa. Un "#" o una coma a media cadena separan etiquetas: el
+ * modelo a veces manda varias juntas ("#tacos #merida"), y fundirlas daría
+ * "#tacos#merida". Las que quedan vacías (un "#" suelto) se descartan.
+ */
 export function normalizeHashtags(tags: readonly string[]): string[] {
-  return tags.map(normalizeHashtag).filter((tag) => tag.length > 0);
+  return tags
+    .flatMap((tag) => tag.split(/[#,]/))
+    .map(normalizeHashtag)
+    .filter((tag) => tag.length > 0);
 }
 
 // Un transform dentro de un pipe: el JSON Schema de la tool (zodSchema del AI

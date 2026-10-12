@@ -29,6 +29,18 @@ describe("hashtags", () => {
     expect(content.hashtags).toEqual(["tacos", "Mérida", "cochinita", "CaféXtabay"]);
   });
 
+  it("varias etiquetas juntas en un string se separan, no se funden", () => {
+    const def = tool("crear_borrador_texto");
+    const content = def.buildContent(
+      def.inputSchema.parse({
+        network: "linkedin",
+        body: "Hola",
+        hashtags: ["#tacos #merida", "uno, dos"],
+      }),
+    );
+    expect(content.hashtags).toEqual(["tacos", "merida", "uno", "dos"]);
+  });
+
   it("el texto publicado lleva un solo # aunque la card vieja lo traiga guardado", () => {
     const legacy = {
       archetype: "text_first",
@@ -42,6 +54,14 @@ describe("hashtags", () => {
   it("el editor del panel también los normaliza al guardar", () => {
     const fields = cardTextFieldsSchema.parse({ hashtags: ["#uno", "dos", "#"] });
     expect(fields.hashtags).toEqual(["uno", "dos"]);
+  });
+
+  it("los topes del editor cuentan lo normalizado, no lo crudo", () => {
+    const largo = "a".repeat(100);
+    expect(cardTextFieldsSchema.parse({ hashtags: [`#${largo}`] }).hashtags).toEqual([largo]);
+    const treinta = Array.from({ length: 30 }, (_, i) => `t${String(i)}`);
+    expect(cardTextFieldsSchema.safeParse({ hashtags: [...treinta, "#"] }).success).toBe(true);
+    expect(cardTextFieldsSchema.safeParse({ hashtags: [...treinta, "otra"] }).success).toBe(false);
   });
 
   // El transform no puede romper la conversión del SDK: zodSchema() convierte

@@ -16,7 +16,13 @@ export const cardTextFieldsSchema = z
     body: z.string().max(63206),
     hook: z.string().max(2000),
     script: z.string().max(20000),
-    hashtags: z.array(z.string().max(100)).max(30).transform(normalizeHashtags),
+    // Los topes van después de normalizar: un "#" de más no debe tumbar el
+    // autoguardado entero.
+    hashtags: z
+      .array(z.string().max(500))
+      .max(100)
+      .transform(normalizeHashtags)
+      .pipe(z.array(z.string().max(100)).max(30)),
     recordingNotes: z.string().max(5000),
     imagePrompt: z.string().max(2000),
   })

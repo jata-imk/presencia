@@ -5,7 +5,6 @@ import {
   NETWORK_TEXT_LIMITS,
   buildPostText,
   normalizeHashtag,
-  normalizeHashtags,
   type CardContent,
   type CardTextFields,
   type CardVersionDto,
@@ -140,8 +139,7 @@ export function ContentEditor({
   const tags = (
     <Section title="Hashtags" Icon={Hash} meta={String(draft.hashtags.length)}>
       <TagInput
-        // Las cards de antes de F10.8.4 pueden traerlos con "#" guardado.
-        value={normalizeHashtags(draft.hashtags)}
+        value={draft.hashtags}
         onChange={(hashtags) => change({ hashtags })}
         placeholder="Agrega un hashtag y presiona Enter"
         maxItems={30}
