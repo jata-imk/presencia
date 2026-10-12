@@ -36,6 +36,7 @@ import {
   users,
 } from "../src/db/schema.js";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
+import { seedEstadosDelTurno } from "./seed-estados.js";
 import { seedRitmo } from "./seed-ritmo.js";
 
 const dbService = new DbService();
@@ -80,6 +81,9 @@ async function seed(): Promise<void> {
   const yaExiste = await findUser();
   if (yaExiste) {
     console.log(`· El usuario ya existe (${EMAIL}). Usa --reset para recrearlo desde cero.`);
+    // Lo que se agregó al seed después de crear la cuenta se siembra igual,
+    // sin perder la data de dev (idempotente: no duplica).
+    await sembrarEstados(yaExiste.id);
     printCredentials();
     return;
   }
@@ -172,6 +176,7 @@ async function seed(): Promise<void> {
 
     return { rows, ritmo };
   });
+  await sembrarEstados(user.id);
 
   console.log(
     `· Usuario creado con ${String(creados.rows.length)} chats, 1 carpeta y 1 voz de marca.`,
@@ -460,6 +465,16 @@ async function seedCalendar(
   // de las mismas en vez de inventar otras, para que el usuario de dev tenga
   // una sola cuenta por red como tendría uno real.
   return cuentaDe;
+}
+
+/** F10.8.3: los chats con cada estado del turno (scripts/seed-estados.ts). */
+async function sembrarEstados(userId: string): Promise<void> {
+  const creados = await dbService.runWithTenant(userId, (tx) => seedEstadosDelTurno(tx, userId));
+  console.log(
+    creados > 0
+      ? `· Estados del turno sembrados: ${String(creados)} chats en la carpeta "Estados del turno".`
+      : '· Los chats de "Estados del turno" ya existían.',
+  );
 }
 
 function printCredentials(): void {
