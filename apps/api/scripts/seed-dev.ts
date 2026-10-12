@@ -36,6 +36,7 @@ import {
   users,
 } from "../src/db/schema.js";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
+import { seedTurnStates } from "./seed-estados.js";
 import { seedRitmo } from "./seed-ritmo.js";
 
 const dbService = new DbService();
@@ -80,6 +81,12 @@ async function seed(): Promise<void> {
   const yaExiste = await findUser();
   if (yaExiste) {
     console.log(`· El usuario ya existe (${EMAIL}). Usa --reset para recrearlo desde cero.`);
+    // Los chats de estados del turno se recrean igual, sin perder la data de
+    // dev: así un estado que ya se gastó (Reintentar, Editar) vuelve.
+    const estados = await dbService.runWithTenant(yaExiste.id, (tx) =>
+      seedTurnStates(tx, yaExiste.id),
+    );
+    logTurnStates(estados);
     printCredentials();
     return;
   }
@@ -169,9 +176,12 @@ async function seed(): Promise<void> {
       enCarpetaId: rows[3]?.id,
     });
     const ritmo = await seedRitmo(tx, user.id, cuentaDe);
+    // En la misma transacción: si algo falla, la cuenta no queda a medias.
+    const estados = await seedTurnStates(tx, user.id);
 
-    return { rows, ritmo };
+    return { rows, ritmo, estados };
   });
+  logTurnStates(creados.estados);
 
   console.log(
     `· Usuario creado con ${String(creados.rows.length)} chats, 1 carpeta y 1 voz de marca.`,
@@ -460,6 +470,13 @@ async function seedCalendar(
   // de las mismas en vez de inventar otras, para que el usuario de dev tenga
   // una sola cuenta por red como tendría uno real.
   return cuentaDe;
+}
+
+/** F10.8.3: los chats con cada estado del turno (scripts/seed-estados.ts). */
+function logTurnStates(count: number): void {
+  console.log(
+    `· Estados del turno: ${String(count)} chats (re)creados en la carpeta "Estados del turno".`,
+  );
 }
 
 function printCredentials(): void {

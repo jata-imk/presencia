@@ -55,6 +55,10 @@ export const Fallo: Story = { args: { notice: notice({ status: "failed" }) } };
   - **Red:** `.storybook/mock-api.ts` responde `/api/images/config` y la sesión (`/api/auth/get-session`, con zona horaria). Cualquier otra ruta de `/api/*` responde 503 con un aviso `[storybook] Sin backend` en consola: si aparece, a esa historia le falta su respuesta de ejemplo.
   - **Imágenes:** `/api/assets/<id>/content` sale de `src/stories/fixtures/assets/<id>/content` (`staticDirs` en `main.ts`). Para la imagen de ejemplo usa `IMAGEN_DEMO`.
 
+## Probar el flujo real contra la API
+
+Storybook muestra los estados; para probar recargar, Reintentar y Editar contra la API, `pnpm --filter @presencia/api seed:dev` siembra la carpeta **"Estados del turno"** en la cuenta de dev: un historial con cada estado viejo y un chat por cada estado accionable (detenida antes de empezar, detenida con texto, falló, falló con texto, sin respuesta). Se recrea en cada corrida, también con la cuenta ya existente: si Reintentar o Editar gastaron un estado, volver a correr el seed lo repone.
+
 ## Compilar el catálogo
 
 ```bash
