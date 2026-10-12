@@ -117,7 +117,7 @@ export class ChatRepository {
    * igual o posterior (otro job que corrió a la vez), no lo pisa con uno más
    * corto. `false` si no se escribió; quien llama no cobra en ese caso.
    */
-  async saveSummary(tx: Tx, row: Omit<ChatSummaryRow, "updatedAt">): Promise<boolean> {
+  async saveSummary(tx: Tx, row: Omit<ChatSummaryRow, "updatedAt" | "summary">): Promise<boolean> {
     const saved = await tx
       .insert(chatSummaries)
       .values(row)
@@ -125,10 +125,6 @@ export class ChatRepository {
         target: chatSummaries.chatId,
         set: {
           blocks: row.blocks,
-          // La columna vieja (F10.8.1, expand/contract) lleva el texto del
-          // último bloque: la app vieja que siga corriendo durante el deploy
-          // la lee, y `blocksOf` reconoce que va al día con los bloques.
-          summary: row.summary,
           throughMessageId: row.throughMessageId,
           throughCreatedAt: row.throughCreatedAt,
           cards: row.cards,

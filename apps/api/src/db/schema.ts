@@ -364,9 +364,8 @@ export const chatSummaries = pgTable("chat_summaries", {
   // abajo es el del último bloque.
   blocks: jsonb("blocks").notNull().default([]),
   // Obsoleta desde F10.8.1 (expand/contract): el resumen vive en `blocks`.
-  // Opcional para que la app nueva no la escriba, y se lee solo como respaldo
-  // de una fila que la app vieja haya escrito durante el deploy. Se borra en
-  // un release posterior, cuando ya no corre código que la use.
+  // Desde F10.8.4 nadie la lee ni la escribe; se borra en una migración del
+  // release siguiente, cuando ya no corra en prod la app que la escribía.
   summary: text("summary"),
   // Sin FK: los mensajes del tramo resumido nunca se borran (reintentar solo
   // toca la última respuesta, que siempre queda fuera del tramo).
