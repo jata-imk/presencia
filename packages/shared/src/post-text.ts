@@ -13,24 +13,26 @@ import { normalizeHashtags, type CardContent, type SocialNetwork } from "./publi
  * adapter invente la suya.
  */
 export function buildPostText(content: CardContent): string {
-  const hashtags = hashtagLine(content.hashtags);
   const body =
     content.archetype === "visual_first"
       ? content.caption
       : content.archetype === "video_script"
         ? `${content.hook}\n\n${content.script}\n\n${content.caption}`
         : content.body;
-  return hashtags ? `${body}\n\n${hashtags}` : body;
+  return withHashtags(body, content.hashtags);
 }
 
 /**
- * Los hashtags como se publican: "#uno #dos". Normaliza otra vez porque las
- * cards guardadas antes de F10.8.4 pueden traer el "#" puesto (salían "##").
+ * Un texto con sus hashtags al final, como se publica: "#uno #dos" después de
+ * una línea en blanco. La vista previa del video lo usa para la descripción
+ * sola. Normaliza otra vez por si una card trae el "#" guardado (la app de
+ * antes de F10.8.4 lo guardaba, y salía "##").
  */
-export function hashtagLine(tags: readonly string[]): string {
-  return normalizeHashtags(tags)
+export function withHashtags(text: string, tags: readonly string[]): string {
+  const line = normalizeHashtags(tags)
     .map((tag) => `#${tag}`)
     .join(" ");
+  return line ? `${text}\n\n${line}` : text;
 }
 
 /**

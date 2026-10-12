@@ -14,9 +14,10 @@ interface TagInputProps {
   /**
    * Convierte lo escrito en el tag que se guarda, o `null` si no sirve. Sin
    * esto el tag es el texto recortado. Un `null` deja el borrador en el input
-   * para que se pueda corregir, y avisa por `onInvalid`.
+   * para que se pueda corregir, y avisa por `onInvalid`. Puede devolver varios
+   * (hashtags pegados juntos, "#tacos #merida"): se agregan los que caben.
    */
-  normalize?: (raw: string) => string | null;
+  normalize?: (raw: string) => string | readonly string[] | null;
   /**
    * El texto que `normalize` rechazó, o `null` en cuanto el borrador cambia:
    * quien pinta el error sabe así cuándo dejar de pintarlo.
@@ -61,14 +62,18 @@ export function TagInput({
       setDraft("");
       return;
     }
-    const tag = normalize ? normalize(trimmed) : trimmed;
-    if (tag === null) {
+    const result = normalize ? normalize(trimmed) : trimmed;
+    if (result === null) {
       onInvalid?.(trimmed);
       return;
     }
     setDraft("");
-    if (atLimit || value.includes(tag)) return;
-    onChange([...value, tag]);
+    const next = [...value];
+    for (const tag of typeof result === "string" ? [result] : result) {
+      if (maxItems !== undefined && next.length >= maxItems) break;
+      if (!next.includes(tag)) next.push(tag);
+    }
+    if (next.length > value.length) onChange(next);
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {

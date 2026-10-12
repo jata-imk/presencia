@@ -4,7 +4,7 @@ import {
   CARD_EDIT_SESSION_IDLE_MS,
   NETWORK_TEXT_LIMITS,
   buildPostText,
-  normalizeHashtag,
+  normalizeHashtags,
   type CardContent,
   type CardTextFields,
   type CardVersionDto,
@@ -145,7 +145,10 @@ export function ContentEditor({
         maxItems={30}
         maxLength={100}
         // Se guardan sin "#": el texto publicado se lo pone (buildPostText).
-        normalize={(raw) => normalizeHashtag(raw) || null}
+        normalize={(raw) => {
+          const tags = normalizeHashtags([raw]);
+          return tags.length > 0 ? tags : null;
+        }}
       />
     </Section>
   );

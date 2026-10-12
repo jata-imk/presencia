@@ -5,8 +5,10 @@
 -- si no, cada parse del schema nuevo la vería distinta y abriría versiones de
 -- texto que nadie editó.
 --
--- La regla: un "#" o una coma separan etiquetas; dentro de cada una se quitan
--- los espacios; las vacías se descartan. El orden se conserva.
+-- La regla, igual que en JS: un "#" o una coma separan etiquetas; dentro de
+-- cada una se quitan los espacios (la misma lista que `\s` de JS, escrita a
+-- mano: [[:space:]] depende del locale de la base); las vacías y las
+-- repetidas se descartan. El orden se conserva (la primera aparición).
 --
 -- Solo datos, sin cambio de forma: la app vieja que sigue corriendo hasta el
 -- reinicio lee y escribe igual (y buildPostText normaliza al publicar, por si
@@ -16,25 +18,25 @@
 -- huérfanas.
 CREATE FUNCTION pg_temp.normalizar_hashtags(tags jsonb) RETURNS jsonb
 LANGUAGE sql IMMUTABLE AS $$
-  SELECT coalesce(jsonb_agg(limpia ORDER BY i, j), '[]'::jsonb)
+  SELECT coalesce(jsonb_agg(limpia ORDER BY primera), '[]'::jsonb)
   FROM (
-    SELECT t.i, p.j, regexp_replace(p.parte, '[[:space:]]+', '', 'g') AS limpia
-    FROM jsonb_array_elements_text(tags) WITH ORDINALITY AS t(tag, i)
-    CROSS JOIN LATERAL regexp_split_to_table(t.tag, '[#,]') WITH ORDINALITY AS p(parte, j)
-  ) partes
-  WHERE limpia <> ''
+    SELECT limpia, min(pos) AS primera
+    FROM (
+      SELECT
+        regexp_replace(p.parte, '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+', '', 'g') AS limpia,
+        row_number() OVER (ORDER BY t.i, p.j) AS pos
+      FROM jsonb_array_elements_text(tags) WITH ORDINALITY AS t(tag, i)
+      CROSS JOIN LATERAL regexp_split_to_table(t.tag, '[#,]') WITH ORDINALITY AS p(parte, j)
+    ) partes
+    WHERE limpia <> ''
+    GROUP BY limpia
+  ) unicas
 $$;--> statement-breakpoint
 UPDATE "publication_cards"
 SET "content" = jsonb_set("content", '{hashtags}', pg_temp.normalizar_hashtags("content"->'hashtags'))
 WHERE jsonb_typeof("content"->'hashtags') = 'array'
-  AND EXISTS (
-    SELECT 1 FROM jsonb_array_elements_text("content"->'hashtags') AS t(tag)
-    WHERE t.tag ~ '[#,[:space:]]' OR t.tag = ''
-  );--> statement-breakpoint
+  AND "content"->'hashtags' <> pg_temp.normalizar_hashtags("content"->'hashtags');--> statement-breakpoint
 UPDATE "card_versions"
 SET "content" = jsonb_set("content", '{hashtags}', pg_temp.normalizar_hashtags("content"->'hashtags'))
 WHERE jsonb_typeof("content"->'hashtags') = 'array'
-  AND EXISTS (
-    SELECT 1 FROM jsonb_array_elements_text("content"->'hashtags') AS t(tag)
-    WHERE t.tag ~ '[#,[:space:]]' OR t.tag = ''
-  );
+  AND "content"->'hashtags' <> pg_temp.normalizar_hashtags("content"->'hashtags');

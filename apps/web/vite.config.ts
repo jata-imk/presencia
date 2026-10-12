@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => ({
     // mismo que lee la API): si el 3000 está ocupado, PORT=3001 mueve las dos
     // (docs/how-to/levantar-entorno.md).
     proxy: {
-      "/api": `http://localhost:${process.env.PORT ?? loadEnv(mode, ROOT, "").PORT ?? "3000"}`,
+      "/api": `http://localhost:${process.env.PORT || loadEnv(mode, ROOT, "").PORT || "3000"}`,
     },
   },
 }));

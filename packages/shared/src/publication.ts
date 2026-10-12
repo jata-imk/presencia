@@ -60,23 +60,24 @@ const slidesAspectSchema = imageAspectRatioSchema.optional();
  * (la tool del chat, "Pide un cambio", el editor) guarden lo mismo. La
  * migración 0052 limpió con esta misma regla las cards guardadas antes.
  *
- * Una sola etiqueta: quita cualquier "#", coma o espacio ("Café Xtabay" →
- * "CaféXtabay").
+ * - Un "#" o una coma a media cadena separan etiquetas: el modelo a veces
+ *   manda varias juntas ("#tacos #merida"), y fundirlas daría "#tacos#merida".
+ * - Dentro de cada una se quitan los espacios ("Café Xtabay" → "CaféXtabay").
+ *   Son los mismos que `\s` de JS, escritos a mano: la migración los repite
+ *   tal cual, porque `[[:space:]]` de Postgres depende del locale.
+ * - Las vacías (un "#" suelto) y las repetidas se descartan; el chip del
+ *   editor usa la etiqueta como key y la quita por valor.
  */
-export function normalizeHashtag(raw: string): string {
-  return raw.replace(/[#,\s]+/g, "");
-}
+// Los mismos que `\s` de JS (ver normalizeHashtags).
+const HASHTAG_SPACES =
+  /[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+/g;
 
-/**
- * La lista completa. Un "#" o una coma a media cadena separan etiquetas: el
- * modelo a veces manda varias juntas ("#tacos #merida"), y fundirlas daría
- * "#tacos#merida". Las que quedan vacías (un "#" suelto) se descartan.
- */
 export function normalizeHashtags(tags: readonly string[]): string[] {
-  return tags
+  const clean = tags
     .flatMap((tag) => tag.split(/[#,]/))
-    .map(normalizeHashtag)
+    .map((tag) => tag.replace(HASHTAG_SPACES, ""))
     .filter((tag) => tag.length > 0);
+  return [...new Set(clean)];
 }
 
 // Un transform dentro de un pipe: el JSON Schema de la tool (zodSchema del AI

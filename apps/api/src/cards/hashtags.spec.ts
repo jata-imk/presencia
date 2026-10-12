@@ -4,6 +4,7 @@ import {
   CARD_ARCHETYPE_TOOLS,
   buildPostText,
   cardTextFieldsSchema,
+  normalizeHashtags,
   type CardContent,
 } from "@presencia/shared";
 
@@ -39,6 +40,14 @@ describe("hashtags", () => {
       }),
     );
     expect(content.hashtags).toEqual(["tacos", "merida", "uno", "dos"]);
+  });
+
+  // La migración 0052 repite esta regla en SQL: si cambia aquí, cambia allá.
+  it("descarta repetidos y quita también los espacios Unicode", () => {
+    expect(normalizeHashtags(["tacos", "#tacos #tacos", "Café Xtabay", "Café Xtabay"])).toEqual([
+      "tacos",
+      "CaféXtabay",
+    ]);
   });
 
   it("el texto publicado lleva un solo # aunque la card vieja lo traiga guardado", () => {
