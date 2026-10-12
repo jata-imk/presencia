@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation, useMatches } from "react-router";
 import { Sidebar } from "../components/layout/Sidebar.js";
 import { Topbar } from "../components/layout/Topbar.js";
@@ -9,6 +9,32 @@ import { ToastViewport } from "../components/ui/Toast.js";
 import { authClient } from "../lib/auth-client.js";
 import { recordarRutaDeLaApp } from "../lib/ultima-ruta.js";
 import { AppLoading } from "../components/ui/AppLoading.js";
+import { ReconnectScreen } from "../components/ui/ReconnectScreen.js";
+
+/** Cada cuánto se vuelve a preguntar por la sesión mientras la API no contesta. */
+const REINTENTOS_MS = [3_000, 6_000, 12_000, 24_000, 30_000];
+
+/**
+ * Mientras `activo`, vuelve a pedir la sesión con espera creciente (3 s hasta
+ * 30 s). Better Auth ya reintenta solo al volver el foco o la red; esto cubre
+ * la pestaña abierta mientras el contenedor termina de arrancar.
+ */
+function useReintentoDeSesion(activo: boolean, refetch: () => Promise<void>) {
+  useEffect(() => {
+    if (!activo) return;
+    let intento = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const programar = () => {
+      const espera = REINTENTOS_MS[Math.min(intento, REINTENTOS_MS.length - 1)]!;
+      timer = setTimeout(() => {
+        intento++;
+        void refetch().finally(programar);
+      }, espera);
+    };
+    programar();
+    return () => clearTimeout(timer);
+  }, [activo, refetch]);
+}
 
 // Layout de rutas autenticadas: sin sesión → /login. Con sesión pero sin
 // onboarding completo → /onboarding (excepto en la propia ruta, para no
@@ -47,7 +73,20 @@ interface RouteHandle {
 }
 
 export function ProtectedLayout() {
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending, error, refetch } = authClient.useSession();
+  // F10.8.4: "no hay sesión" y "no pude preguntar" no son lo mismo. Solo un
+  // 401 (o una respuesta sin sesión) manda a /login; una API caída (red, 5xx:
+  // un deploy reiniciando el contenedor) muestra la pantalla de reconexión.
+  // Better Auth conserva la sesión si ya la tenía, así que esto solo pasa al
+  // abrir o recargar con la API abajo.
+  const caida = !session && error != null && error.status !== 401;
+  // Al reintentar, Better Auth vuelve a isPending y borra el error: sin esto
+  // la pantalla parpadearía a vacío en cada intento. Se ajusta en el render
+  // (no en un efecto) para no pintar ni un frame de <Navigate>.
+  const [reconectando, setReconectando] = useState(false);
+  if (caida && !reconectando) setReconectando(true);
+  if (reconectando && !caida && !isPending) setReconectando(false);
+  useReintentoDeSesion(reconectando, refetch);
   const location = useLocation();
   const handles = useMatches().map((match) => match.handle as RouteHandle | undefined);
   const ownScroll = handles.some((handle) => handle?.ownScroll);
@@ -58,6 +97,9 @@ export function ProtectedLayout() {
     recordarRutaDeLaApp(location.pathname, location.search);
   }, [location.pathname, location.search]);
 
+  if (!session && reconectando) {
+    return <ReconnectScreen reintentando={isPending} onReintentar={() => void refetch()} />;
+  }
   if (isPending) {
     return <AppLoading />;
   }
