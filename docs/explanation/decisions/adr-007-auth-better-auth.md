@@ -26,6 +26,7 @@ Lo que se decidió con Jose:
   - El medidor de fuerza pide como mínimo "Aceptable": 8 caracteres y otro criterio.
 
 **Correos:** todos salen de una plantilla (`apps/api/src/mailer/layout.ts`, de `Email Template.html`).
+
 - Los colores van en hex porque los clientes de correo no leen variables CSS. Están en una sola constante.
 - El isotipo es `isotipo-correo.png`, la versión clara: los clientes no soportan `mask-image`.
 - El pie es mínimo, sin ligas legales ni dirección, hasta F13.

@@ -65,7 +65,9 @@ function parrafo(html: string, paddingBottom = 20): string {
 
 function bloqueDeCodigo({ label, value }: NonNullable<EmailContent["code"]>): string {
   // 483917 → "483 917": se lee y se dicta mejor en dos grupos.
-  const visible = /^\d{6}$/.test(value) ? `${value.slice(0, 3)}&thinsp;${value.slice(3)}` : escapeHtml(value);
+  const visible = /^\d{6}$/.test(value)
+    ? `${value.slice(0, 3)}&thinsp;${value.slice(3)}`
+    : escapeHtml(value);
   return `<tr><td align="center" style="padding-bottom:24px;">
 <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tbody><tr>
 <td class="otp-box" align="center" style="background-color:${COLORS.codeBg};border:2px solid ${COLORS.orchid};border-radius:14px;padding:24px 48px;">

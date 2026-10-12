@@ -15,7 +15,10 @@ function saludo(name: string | null | undefined): string {
 }
 
 /** Confirmar el correo al registrarse: botón con el link de Better Auth. */
-export function correoDeVerificacion(user: { name?: string | null; email: string }, url: string): Correo {
+export function correoDeVerificacion(
+  user: { name?: string | null; email: string },
+  url: string,
+): Correo {
   return {
     subject: "Confirma tu correo para empezar a usar Presencia",
     html: renderEmail({

@@ -29,7 +29,12 @@ describe("correos de acceso (F10.8.4)", () => {
 
   it("no arrastra datos de relleno del mock", () => {
     const { html } = mod.correoDeCuentaExistente({ name: null, email: "dev@presencia.local" });
-    for (const relleno of ["presencia.ai", "placeholder", "Ciudad de México", "usuario@ejemplo.com"]) {
+    for (const relleno of [
+      "presencia.ai",
+      "placeholder",
+      "Ciudad de México",
+      "usuario@ejemplo.com",
+    ]) {
       expect(html).not.toContain(relleno);
     }
     expect(html).toContain("Hola:");
