@@ -57,42 +57,14 @@ const blockSchema = z.object({
 
 /**
  * Los bloques de una fila de `chat_summaries`, validados: es jsonb, y un
- * bloque mal formado se descarta en vez de llegar al prompt. Durante el
- * deploy de F10.8.1 la app vieja puede escribir `summary` sin tocar `blocks`
- * (insertando o actualizando la fila): ese texto entra como bloque.
+ * bloque mal formado se descarta en vez de llegar al prompt.
  */
-export function blocksOf(row: {
-  blocks: unknown;
-  summary?: string | null;
-  throughMessageId: string;
-  throughCreatedAt: Date;
-  model: string;
-  updatedAt: Date;
-}): SummaryBlock[] {
-  const blocks = Array.isArray(row.blocks)
-    ? row.blocks.flatMap((block) => {
-        const parsed = blockSchema.safeParse(block);
-        return parsed.success ? [parsed.data] : [];
-      })
-    : [];
-  const viejo: SummaryBlock | null = row.summary
-    ? {
-        summary: row.summary,
-        throughMessageId: row.throughMessageId,
-        throughCreatedAt: row.throughCreatedAt.toISOString(),
-        model: row.model,
-        createdAt: row.updatedAt.toISOString(),
-      }
-    : null;
-  if (blocks.length === 0) return viejo ? [viejo] : [];
-  // La app vieja ACTUALIZÓ la fila después de los bloques: movió el corte y
-  // escribió su resumen en `summary` sin tocar `blocks`. Ese resumen cubre el
-  // tramo nuevo: entra como un bloque más. (La app nueva siempre deja en
-  // `summary` el texto de su último bloque, con el mismo corte.)
-  if (viejo && blocks[blocks.length - 1]!.throughMessageId !== row.throughMessageId) {
-    return [...blocks, viejo];
-  }
-  return blocks;
+export function blocksOf(row: { blocks: unknown }): SummaryBlock[] {
+  if (!Array.isArray(row.blocks)) return [];
+  return row.blocks.flatMap((block) => {
+    const parsed = blockSchema.safeParse(block);
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 export const SUMMARY_SYSTEM = `Resumes conversaciones entre un creator mexicano y Presencia, su asistente de contenido para redes sociales. Tu resumen sustituye a una parte vieja de la conversación: el asistente ya no la verá completa, solo los resúmenes.

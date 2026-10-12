@@ -208,7 +208,6 @@ export class HistoryCompactionService {
         throughCreatedAt: lastRow.createdAt,
         cards,
         model: modelo.id,
-        summary: blocks[blocks.length - 1]!.summary,
       });
       // Otro job ya guardó uno que llega igual o más lejos: este no cuenta.
       if (!saved) return;

@@ -442,16 +442,8 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
 });
 
 describe("blocksOf y blockHeading (F10.8.1)", () => {
-  const fila = {
-    throughMessageId: "m-9",
-    throughCreatedAt: new Date("2026-10-09T18:00:00.000Z"),
-    model: "openai:mock",
-    updatedAt: new Date("2026-10-09T18:05:00.000Z"),
-  };
-
   it("descarta bloques mal formados en vez de mandarlos al prompt", () => {
     const blocks = blocksOf({
-      ...fila,
       blocks: [
         {
           summary: "bueno",
@@ -465,33 +457,6 @@ describe("blocksOf y blockHeading (F10.8.1)", () => {
       ],
     });
     expect(blocks.map((b) => b.summary)).toEqual(["bueno"]);
-  });
-
-  it("sin bloques, el summary viejo (escrito por la app anterior durante el deploy) es el bloque 1", () => {
-    const [bloque] = blocksOf({ ...fila, blocks: [], summary: "- Vende pan." });
-    expect(bloque).toMatchObject({ summary: "- Vende pan.", throughMessageId: "m-9" });
-    expect(blocksOf({ ...fila, blocks: [], summary: null })).toEqual([]);
-  });
-
-  it("si la app vieja actualizó la fila después de los bloques, su resumen entra como bloque más", () => {
-    const bloque = {
-      summary: "- Abre a las 7.",
-      throughMessageId: "m-1",
-      throughCreatedAt: "2026-10-07T18:00:00.000Z",
-      model: "x",
-      createdAt: "x",
-    };
-    // La app vieja movió el corte a m-9 y escribió solo summary.
-    const conViejo = blocksOf({ ...fila, blocks: [bloque], summary: "- Ahora abre a las 8." });
-    expect(conViejo.map((b) => b.summary)).toEqual(["- Abre a las 7.", "- Ahora abre a las 8."]);
-    // La app nueva deja en summary el texto de su último bloque, con el mismo corte: no se duplica.
-    const alDia = blocksOf({
-      ...fila,
-      throughMessageId: "m-1",
-      blocks: [bloque],
-      summary: "- Abre a las 7.",
-    });
-    expect(alDia).toHaveLength(1);
   });
 
   it("el encabezado lleva la fecha si la hay, y nunca dice Invalid Date", () => {
