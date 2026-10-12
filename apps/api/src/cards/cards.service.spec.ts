@@ -5,6 +5,7 @@ import type { CardContent, SocialNetwork } from "@presencia/shared";
 import { chats, folders, publicationCards, users } from "../db/schema.js";
 import { PublishingRejectedError, PublishingUnavailableError } from "../publishing/errors.js";
 import { FakePublishingProvider } from "../publishing/fake.provider.js";
+import { sinWorkerDeReconciliacion } from "../test-support/guarda-cron-dev.js";
 import type { ProviderPostState, SchedulePostRequest } from "../publishing/publishing.provider.js";
 // Imports solo de tipo: los módulos reales se cargan en beforeAll, mismo
 // patrón que credits.service.spec.ts / channels.service.spec.ts.
@@ -202,6 +203,28 @@ class FlakyProvider extends FakePublishingProvider {
   }
 }
 
+const AMBIGUOUS_BODY = "Este post recibe el fallo ambiguo.";
+
+/**
+ * Falla el post cuyo texto es AMBIGUOUS_BODY, venga en el orden que venga.
+ * scheduleGroup programa los items en paralelo (Promise.all), así que fallar
+ * "la primera llamada" (FlakyProvider) le pegaba a cualquiera de los dos: el
+ * test salía rojo cuando el otro item llegaba antes al proveedor.
+ */
+class FailsOneBodyProvider extends FakePublishingProvider {
+  override schedule(req: SchedulePostRequest): Promise<{ providerRef: string }> {
+    if (req.content.archetype === "text_first" && req.content.body === AMBIGUOUS_BODY) {
+      return Promise.reject(
+        new PublishingUnavailableError("PostFast no devolvió el id del post programado.", {
+          reason: "no_id_in_response",
+          body: {},
+        }),
+      );
+    }
+    return super.schedule(req);
+  }
+}
+
 describe("CardsService", () => {
   beforeAll(async () => {
     try {
@@ -209,6 +232,9 @@ describe("CardsService", () => {
     } catch {
       // sin .env: se usa el process.env tal cual (CI)
     }
+    // Antes de crear nada: un worker dev contra esta base marca failed las
+    // cards programadas de estos tests (F10.8.4).
+    await sinWorkerDeReconciliacion();
     const { DbService } = await import("../db/db.service.js");
     const { CardsRepository } = await import("./cards.repository.js");
     const { ChannelsRepository } = await import("../channels/channels.repository.js");
@@ -923,20 +949,17 @@ describe("CardsService", () => {
     "scheduleGroup: un item ambiguo devuelve ok:false con el aviso y no aborta el resto",
     { timeout: 15_000 },
     async () => {
-      const cardAmbiguous = await createCard(TEXT_CONTENT, "linkedin");
+      const cardAmbiguous = await createCard({ ...TEXT_CONTENT, body: AMBIGUOUS_BODY }, "linkedin");
       const cardOk = await createCard(TEXT_CONTENT, "linkedin");
       const account = await connectAccount(userA, "linkedin");
-      // FlakyProvider falla en su primera llamada a schedule() y tiene
-      // éxito en la segunda — scheduleGroup itera los items en orden, así
-      // que el primer item (cardAmbiguous) recibe el fallo y el segundo
-      // (cardOk) el éxito. No hace falta un provider nuevo por-cardId:
-      // SchedulePostRequest ni siquiera lleva el cardId (ver
-      // publishing.provider.ts), el orden de la lista ya distingue los dos.
+      // El fallo va por el texto del post, no por el orden de llegada:
+      // SchedulePostRequest no lleva el cardId, y scheduleGroup programa los
+      // items en paralelo.
       const mixedService = new CardsServiceCtor(
         dbService,
         cardsRepo,
         channelsRepo,
-        new FlakyProvider(),
+        new FailsOneBodyProvider(),
         assetsStub,
       );
 
