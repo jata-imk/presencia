@@ -13,14 +13,16 @@
  *
  * Se RECREA en cada corrida: Reintentar o Editar gastan el estado (el turno
  * pasa a completo), y volver a sembrar lo repone sin `--reset`, que borraría
- * toda la data de dev. Se borra por título además de por carpeta: si alguien
- * borró la carpeta, sus chats quedaron sueltos y no deben duplicarse.
+ * toda la data de dev. Se borra con cuidado: solo chats con esos títulos que
+ * estén en la carpeta o sueltos (si alguien borró la carpeta, sus chats
+ * quedaron sin carpeta y no deben duplicarse), nunca uno homónimo que el
+ * creator movió a otra carpeta; y de sus cards, solo los borradores.
  *
  * `createdAt` va explícito y creciente: en un insert en lote el default
  * `now()` es el mismo para todas las filas, y el orden del chat quedaría al
  * azar.
  */
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import type { MessageStatus } from "@presencia/shared";
 import type { Tx } from "../src/db/db.service.js";
 import { chats, folders, messages, publicationCards } from "../src/db/schema.js";
@@ -102,18 +104,34 @@ const SEEDED_CHATS: { title: string; turns: Turn[] }[] = [
 /** Borra lo sembrado antes y lo vuelve a crear. Devuelve cuántos chats creó. */
 export async function seedTurnStates(tx: Tx, userId: string): Promise<number> {
   const titles = SEEDED_CHATS.map((c) => c.title);
+  const oldFolders = await tx
+    .select({ id: folders.id })
+    .from(folders)
+    .where(and(eq(folders.userId, userId), eq(folders.name, FOLDER)));
+  const oldFolderIds = oldFolders.map((f) => f.id);
   const previous = await tx
     .select({ id: chats.id })
     .from(chats)
-    .where(and(eq(chats.userId, userId), inArray(chats.title, titles)));
+    .where(
+      and(
+        eq(chats.userId, userId),
+        inArray(chats.title, titles),
+        oldFolderIds.length > 0
+          ? or(isNull(chats.folderId), inArray(chats.folderId, oldFolderIds))
+          : isNull(chats.folderId),
+      ),
+    );
   if (previous.length > 0) {
     const ids = previous.map((c) => c.id);
     // Los borradores que crearon los reintentos: sin esto quedarían sueltos
-    // (el FK de chat_id es SET NULL).
-    await tx.delete(publicationCards).where(inArray(publicationCards.chatId, ids));
+    // (el FK de chat_id es SET NULL). Una card programada o publicada desde
+    // estos chats se queda, ya sin chat: es trabajo real del creator.
+    await tx
+      .delete(publicationCards)
+      .where(and(inArray(publicationCards.chatId, ids), eq(publicationCards.status, "draft")));
     await tx.delete(chats).where(inArray(chats.id, ids));
   }
-  await tx.delete(folders).where(and(eq(folders.userId, userId), eq(folders.name, FOLDER)));
+  if (oldFolderIds.length > 0) await tx.delete(folders).where(inArray(folders.id, oldFolderIds));
 
   const [folder] = await tx
     .insert(folders)

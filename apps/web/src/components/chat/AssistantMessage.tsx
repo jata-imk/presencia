@@ -8,6 +8,7 @@ import {
   type MemoryToolPart,
 } from "../../lib/chat-types.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
+import { replyContent } from "../../lib/turn-status.js";
 import { useMediaQuery } from "../../lib/use-media-query.js";
 import { useCardSelectionStore, useSelectedIds } from "../../stores/card-selection-store.js";
 import { useCardsByIds } from "../../stores/cards-store.js";
@@ -86,17 +87,10 @@ export function AssistantMessage({
 
   // Nada que pintar (F10.8.3): una respuesta cortada antes de la primera
   // palabra se guarda solo con marcas de paso. Un contenedor vacío dejaba un
-  // hueco entre el mensaje del creator y el estado del turno. Mismo criterio
-  // que `replyContent` (lib/turn-status.ts), que decide el copy de ese estado.
-  if (
-    !streaming &&
-    !fullText &&
-    toolParts.length === 0 &&
-    memoryParts.length === 0 &&
-    !canRegenerate
-  ) {
-    return null;
-  }
+  // hueco entre el mensaje del creator y el estado del turno. La misma regla
+  // (`replyContent`) decide el copy de ese estado: lo que se ve y lo que dice
+  // la card no pueden contradecirse.
+  if (!streaming && !canRegenerate && replyContent(message) === "none") return null;
 
   function handleCopy() {
     void navigator.clipboard.writeText(fullText).then(() => {

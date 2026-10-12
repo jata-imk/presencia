@@ -12,7 +12,7 @@ Abre `http://localhost:6006`. Turbo compila antes `@presencia/shared`, porque la
 
 ## Qué revisar en cada historia
 
-- **Tema** (toolbar, ícono de espejo): **Claro**, **Oscuro** o **Lado a lado**. "Lado a lado" pinta la historia dos veces, una en cada tema, para compararlos de un vistazo. Lo que se abre flotando (tooltips, menús, modales) se pinta fuera de la historia y queda en claro en ese modo: para revisarlo, usa **Oscuro**.
+- **Tema** (toolbar, ícono de espejo): **Claro**, **Oscuro** o **Lado a lado**. "Lado a lado" pinta la historia dos veces, una en cada tema, para compararlos de un vistazo. Lo que se abre flotando (tooltips, menús, modales) se pinta fuera de la historia y queda en claro en ese modo: para revisarlo, usa **Oscuro**. Las dos copias comparten los stores, así que abrir el panel o seleccionar una card en una mitad cambia la otra: para interactuar, usa un solo tema.
 - **Ancho** (toolbar, ícono de viewport): Móvil 390, Tablet 768, Laptop 1024 y Escritorio 1440. Son los mismos anchos que revisa cada PR de UI.
 - **Accesibilidad** (panel "Accessibility"): contraste, roles y etiquetas.
 - Para la vista general del chat, abre **Chat → Conversación · Estados del turno**: todos los estados del turno en una conversación de ejemplo.
