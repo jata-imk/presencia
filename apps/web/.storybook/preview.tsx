@@ -1,5 +1,13 @@
+import type { PublicationCardDto } from "@presencia/shared";
 import type { Decorator, Preview } from "@storybook/react-vite";
+import { useCardSelectionStore } from "../src/stores/card-selection-store.js";
+import { useCardsStore } from "../src/stores/cards-store.js";
+import { usePublicationPanelStore } from "../src/stores/publication-panel-store.js";
 import "../src/styles/app.css";
+import { installMockApi } from "./mock-api.js";
+
+// Las pocas rutas de /api/* que piden los componentes conectados (ADR-027).
+installMockApi();
 
 type Tema = "light" | "dark" | "ambos";
 
@@ -47,6 +55,19 @@ const viewport = (
 
 const preview: Preview = {
   decorators: [withTema],
+  // Cada historia arranca con los stores limpios: lo que una dejó (el panel que
+  // abrió el auto-abrir de CardBlock, una selección) no se cuela en la
+  // siguiente. Las cards vivas de la historia (`parameters.cards`) van al store
+  // normalizado, con su lista por chat. Antes de pintar, no durante: un
+  // setState en el render avisaría que se actualiza otro componente.
+  beforeEach: ({ parameters }) => {
+    usePublicationPanelStore.setState(usePublicationPanelStore.getInitialState(), true);
+    useCardSelectionStore.setState(useCardSelectionStore.getInitialState(), true);
+    const cards = (parameters.cards ?? []) as PublicationCardDto[];
+    const chatIds: Record<string, string[]> = {};
+    for (const c of cards) if (c.chatId) (chatIds[c.chatId] ??= []).push(c.id);
+    useCardsStore.setState({ byId: Object.fromEntries(cards.map((c) => [c.id, c])), chatIds });
+  },
   globalTypes: {
     tema: {
       description: "Tema de la interfaz",

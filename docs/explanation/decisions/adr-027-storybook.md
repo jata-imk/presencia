@@ -25,7 +25,10 @@ Ver cada estado en claro y oscuro, a cada ancho y sin backend ataca las dos cosa
 
 - **CI:** ni el addon de Vitest (las historias como tests en Chromium) ni `build-storybook`. Las historias están en `src/`, así que `pnpm typecheck` y `pnpm lint`, que sí corren en CI, las compilan. Una historia que truena en runtime se descubre al abrirla.
 - **Publicar el build:** solo local.
-- **MSW:** los componentes atados a stores o red se cubren con un stub de `fetch` para `/api/*` y sembrando los stores en un decorator (PR3 de la fase).
+- **MSW:** los componentes atados a stores o red se cubren con tres piezas del preview:
+  - un stub de `fetch` para `/api/*` (`.storybook/mock-api.ts`) que responde las dos rutas que piden al montar y falla con aviso en las demás;
+  - `beforeEach`, que reinicia los stores del panel y de la selección y siembra las cards de `parameters.cards` en `useCardsStore` (con su lista por chat);
+  - las imágenes de `/api/assets/<id>/content` servidas desde fixtures (`staticDirs`), sin el proxy de `/api` del `vite.config` de la web.
 
 ## Cuándo reevaluar
 

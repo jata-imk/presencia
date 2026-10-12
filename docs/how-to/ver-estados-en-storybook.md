@@ -50,7 +50,10 @@ export const Fallo: Story = { args: { notice: notice({ status: "failed" }) } };
 - **Datos de ejemplo** en `src/stories/fixtures/`, construidos contra los tipos reales (`lib/chat-types.ts`, `lib/turn-status.ts`). Si cambia un tipo, la historia deja de compilar en vez de mostrar un estado que ya no existe.
 - **Callbacks con `fn()`:** quedan registrados en el panel "Actions".
 - **Un estado nuevo de UI llega con su historia en el mismo PR** (AGENTS.md, Convenciones).
-- **Componentes atados a stores o a la API** (las cards, `AssistantMessage`): todavía no tienen historia. Hoy pedirían `/api/*` de verdad y fallarían sin backend. Los cubre el PR3 de F10.8.3: un stub de `fetch` para `/api/*` en el preview y los stores sembrados en un decorator.
+- **Componentes atados a stores o a la API** (las cards, `AssistantMessage`):
+  - **Cards vivas:** se declaran en `parameters.cards` y el preview las siembra en `useCardsStore` antes de pintar (`beforeEach`). Fixtures en `src/stories/fixtures/cards.ts`.
+  - **Red:** `.storybook/mock-api.ts` responde `/api/images/config` y la sesión (`/api/auth/get-session`, con zona horaria). Cualquier otra ruta de `/api/*` responde 503 con un aviso `[storybook] Sin backend` en consola: si aparece, a esa historia le falta su respuesta de ejemplo.
+  - **Imágenes:** `/api/assets/<id>/content` sale de `src/stories/fixtures/assets/<id>/content` (`staticDirs` en `main.ts`). Para la imagen de ejemplo usa `IMAGEN_DEMO`.
 
 ## Compilar el catálogo
 
