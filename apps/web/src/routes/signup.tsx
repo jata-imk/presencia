@@ -1,6 +1,18 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router";
+import {
+  AUTH_LINK,
+  AuthBanner,
+  AuthFooter,
+  AuthHeading,
+  AuthLogo,
+  AuthShell,
+  AuthSubmit,
+} from "../components/auth/AuthShell.js";
+import { AuthField } from "../components/auth/AuthField.js";
+import { PasswordStrength } from "../components/auth/PasswordStrength.js";
 import { authClient } from "../lib/auth-client.js";
+import { errorDeCorreo, fuerzaDeContrasena } from "../lib/auth/validar.js";
 
 // FormData.get() devuelve string | File | null — nuestros inputs son de
 // texto, nunca File, pero el tipo lo permite; esto lo estrecha sin usar
@@ -10,22 +22,51 @@ function getField(data: FormData, name: string): string {
   return typeof value === "string" ? value : "";
 }
 
+/**
+ * Mínimo "Aceptable" (Auth Flow.html): 8 caracteres y otro criterio más. El
+ * servidor solo exige los 8; el resto es para no dejar pasar "contraseña".
+ */
+function errorDeContrasena(contrasena: string): string | null {
+  const { criterios, puntos } = fuerzaDeContrasena(contrasena);
+  if (!criterios.largo) return "Usa al menos 8 caracteres.";
+  if (puntos < 2) return "Combínala con una mayúscula, un número o un símbolo.";
+  return null;
+}
+
 export function SignupPage() {
   const navigate = useNavigate();
+  const [errors, setErrors] = useState<{
+    name?: string | null;
+    email?: string | null;
+    password?: string | null;
+  }>({});
   const [error, setError] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   // Mismo motivo que login.tsx: FormData en vez de inputs controlados,
   // para no depender de que el autofill del navegador/gestor de
   // contraseñas dispare el evento que React necesita para actualizar el
-  // state antes del primer submit.
+  // state antes del primer submit. `password` sí se sigue en el state, pero
+  // solo para pintar el medidor; lo que se manda sale del FormData.
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
-    void submit(getField(data, "name"), getField(data, "email"), getField(data, "password"));
+    void submit(
+      getField(data, "name").trim(),
+      getField(data, "email").trim(),
+      getField(data, "password"),
+    );
   }
 
   async function submit(name: string, email: string, password: string) {
+    const nuevos = {
+      name: name ? null : "Cuéntanos cómo te llamas.",
+      email: errorDeCorreo(email),
+      password: errorDeContrasena(password),
+    };
+    setErrors(nuevos);
+    if (nuevos.name || nuevos.email || nuevos.password) return;
     setError(null);
     setSubmitting(true);
     const { error } = await authClient.signUp.email({
@@ -38,35 +79,79 @@ export function SignupPage() {
       callbackURL: `${window.location.origin}/chats`,
     });
     setSubmitting(false);
+    // Un correo que ya tiene cuenta también llega aquí sin error (F10.8.4):
+    // Better Auth responde igual para no revelar qué correos están
+    // registrados, y al dueño le manda un aviso (onExistingUserSignUp en
+    // apps/api/src/auth/auth.ts). Por eso tampoco hay chequeo en vivo.
     if (error) {
-      setError(error.message ?? "No se pudo crear la cuenta. Inténtalo de nuevo.");
+      setError(
+        error.status === 429
+          ? "Demasiados intentos. Espera unos segundos y vuelve a intentarlo."
+          : "No pudimos crear la cuenta. Inténtalo de nuevo en un momento.",
+      );
       return;
     }
-    void navigate("/verify-email");
+    void navigate("/verify-email", { state: { email } });
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 p-8">
-      <h1 className="text-2xl font-bold">Crea tu cuenta</h1>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <input className="border p-2" name="name" placeholder="Tu nombre" required />
-        <input className="border p-2" type="email" name="email" placeholder="Correo" required />
-        <input
-          className="border p-2"
-          type="password"
-          name="password"
-          placeholder="Contraseña (mínimo 8 caracteres)"
-          minLength={8}
-          required
+    <AuthShell>
+      <AuthLogo />
+      <AuthHeading title="Crea tu cuenta" subtitle="Empieza a construir tu presencia hoy." />
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        {error && (
+          <AuthBanner tone="error" onClose={() => setError(null)}>
+            {error}
+          </AuthBanner>
+        )}
+        <AuthField
+          label="Nombre"
+          name="name"
+          autoComplete="name"
+          placeholder="Tu nombre o el de tu marca"
+          error={errors.name}
+          onChange={() => errors.name && setErrors((prev) => ({ ...prev, name: null }))}
         />
-        {error && <p className="text-sm text-error">{error}</p>}
-        <button type="submit" className="border p-2 font-semibold" disabled={submitting}>
-          {submitting ? "Creando cuenta…" : "Registrarme"}
-        </button>
+        <AuthField
+          label="Correo"
+          type="email"
+          name="email"
+          autoComplete="email"
+          placeholder="tu@correo.com"
+          error={errors.email}
+          onChange={() => errors.email && setErrors((prev) => ({ ...prev, email: null }))}
+          onBlur={(e) => {
+            // El valor se lee aquí: el updater corre después y para entonces
+            // React ya soltó currentTarget.
+            const correo = e.currentTarget.value;
+            if (correo) setErrors((prev) => ({ ...prev, email: errorDeCorreo(correo) }));
+          }}
+        />
+        <div className="flex flex-col gap-2">
+          <AuthField
+            label="Contraseña"
+            type="password"
+            name="password"
+            autoComplete="new-password"
+            placeholder="Mínimo 8 caracteres"
+            error={errors.password}
+            onChange={(e) => {
+              setPassword(e.currentTarget.value);
+              if (errors.password) setErrors((prev) => ({ ...prev, password: null }));
+            }}
+          />
+          <PasswordStrength password={password} />
+        </div>
+        <AuthSubmit loading={submitting}>
+          {submitting ? "Creando tu cuenta…" : "Crear cuenta"}
+        </AuthSubmit>
       </form>
-      <p className="text-sm">
-        ¿Ya tienes cuenta? <Link to="/login">Inicia sesión</Link>
-      </p>
-    </main>
+      <AuthFooter>
+        ¿Ya tienes cuenta?{" "}
+        <Link to="/login" className={AUTH_LINK}>
+          Inicia sesión
+        </Link>
+      </AuthFooter>
+    </AuthShell>
   );
 }

@@ -21,6 +21,7 @@ import { ModalNewFolder } from "../folders/ModalNewFolder.js";
 import { BrandMark } from "../ui/BrandMark.js";
 import { Tooltip } from "../ui/Tooltip.js";
 import { authClient } from "../../lib/auth-client.js";
+import { cerrarSesion } from "../../lib/auth/sesion.js";
 import { useQuota } from "../../lib/use-quota.js";
 import { useChatsStore } from "../../stores/chats-store.js";
 import { useFoldersStore } from "../../stores/folders-store.js";
@@ -92,7 +93,7 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
       .join("") || "?";
 
   async function handleLogout() {
-    await authClient.signOut();
+    await cerrarSesion();
     void navigate("/login");
   }
 

@@ -21,6 +21,23 @@ const RESPUESTAS: Record<string, unknown> = {
   },
 };
 
+/**
+ * Lo que una historia responde distinto (F10.8.4): el login con credenciales
+ * malas (401) o con demasiados intentos (429 y su X-Retry-After). Se declara
+ * en `parameters.api` y el preview la instala antes de cada historia.
+ */
+export interface RespuestaDeHistoria {
+  status?: number;
+  body: unknown;
+  headers?: Record<string, string>;
+}
+
+let deLaHistoria: Record<string, RespuestaDeHistoria> = {};
+
+export function usarRespuestas(respuestas: Record<string, RespuestaDeHistoria>): void {
+  deLaHistoria = respuestas;
+}
+
 /** El fetch del navegador, guardado una sola vez: el HMR re-evalúa el preview. */
 const globalConFetch = window as Window & { __fetchReal?: typeof window.fetch };
 
@@ -34,6 +51,12 @@ export function installMockApi(): void {
     );
     if (url.origin !== window.location.origin || !url.pathname.startsWith("/api/")) {
       return real(input, init);
+    }
+    const propia = deLaHistoria[url.pathname];
+    if (propia) {
+      return Promise.resolve(
+        Response.json(propia.body, { status: propia.status ?? 200, headers: propia.headers }),
+      );
     }
     const body = RESPUESTAS[url.pathname];
     if (body !== undefined) {

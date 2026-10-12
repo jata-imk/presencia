@@ -1,16 +1,40 @@
-import { Link } from "react-router";
+import { MailCheck } from "lucide-react";
+import { Link, useLocation } from "react-router";
+import { AUTH_LINK, AuthFooter, AuthHeading, AuthShell } from "../components/auth/AuthShell.js";
 
+// Después de crear la cuenta (F10.8.4: misma tarjeta que el resto del acceso).
 export function VerifyEmailPage() {
+  const email = (useLocation().state as { email?: string } | null)?.email;
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4 p-8">
-      <h1 className="text-2xl font-bold">Te mandamos un correo</h1>
-      <p>
-        Abre el link de confirmación para activar tu cuenta. Al confirmarlo entrarás directo a tus
-        chats.
+    <AuthShell>
+      <span className="flex size-13 items-center justify-center rounded-[14px] bg-info-bg text-info-fg">
+        <MailCheck size={24} strokeWidth={1.6} aria-hidden />
+      </span>
+      <AuthHeading
+        align="start"
+        title="Revisa tu correo"
+        subtitle={
+          <>
+            Te mandamos un link de confirmación
+            {email ? (
+              <>
+                {" "}
+                a <strong className="text-brand">{email}</strong>
+              </>
+            ) : null}
+            . Ábrelo para activar tu cuenta y entrarás directo a tus chats.
+          </>
+        }
+      />
+      <p className="text-xs text-fg-muted">
+        Si no lo ves en unos minutos, busca en la carpeta de spam o promociones.
       </p>
-      <p className="text-sm">
-        ¿Ya confirmaste? <Link to="/login">Inicia sesión</Link>
-      </p>
-    </main>
+      <AuthFooter>
+        ¿Ya confirmaste?{" "}
+        <Link to="/login" className={AUTH_LINK}>
+          Inicia sesión
+        </Link>
+      </AuthFooter>
+    </AuthShell>
   );
 }
