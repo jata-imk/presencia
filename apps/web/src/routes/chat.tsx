@@ -458,7 +458,7 @@ function ChatView({
                 const userId = messages[mi - 1]?.role === "user" ? messages[mi - 1]!.id : undefined;
                 const hasNotice = userId !== undefined && notices.has(userId);
                 return (
-                  <div key={message.id} className="flex flex-col gap-3">
+                  <div key={message.id} className="flex flex-col gap-3 empty:hidden">
                     <AssistantMessage
                       message={message}
                       chatId={chatId}

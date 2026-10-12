@@ -119,14 +119,16 @@
 }
 
 /* Tokens semánticos (cambian con el tema).
-   También en `[data-theme]`, no solo en :root: un token derivado de otro
-   (var() o color-mix() de uno que el bloque oscuro redefine) se calcula donde
-   se declara. Declarado solo en :root, un subárbol `data-theme="dark"` lo
-   heredaría ya calculado en claro. En la app no cambia nada (el atributo vive
-   en <html>, igual que :root); sí lo necesita el "Lado a lado" de Storybook
-   (ADR-027), que pinta un subárbol oscuro dentro de una página clara. */
+   También en `[data-theme-scope]`, no solo en :root: un token derivado de
+   otro (var() o color-mix() de uno que el bloque oscuro redefine) se calcula
+   donde se declara. Declarado solo en :root, un subárbol `data-theme="dark"`
+   lo heredaría ya calculado en claro. Lo usa el "Lado a lado" de Storybook
+   (ADR-027), que pinta un subárbol oscuro dentro de una página clara. Opt-in
+   con su propio atributo: un `data-theme` cualquiera en la app reiniciaría
+   también los tokens de layout (el ancho del sidebar que el creator arrastró
+   vive inline en <html>). */
 :root,
-[data-theme] {
+[data-theme-scope] {
   /* Foreground */
   --fg-primary: var(--color-neutral-900);
   --fg-secondary: var(--color-neutral-500);
