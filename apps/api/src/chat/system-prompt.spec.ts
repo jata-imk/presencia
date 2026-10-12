@@ -36,6 +36,13 @@ describe("buildSystemPrompt — sin voz", () => {
   it("no incluye el delimitador <voz_de_marca> cuando no hay voz", () => {
     expect(buildSystemPrompt(null)).not.toContain("<voz_de_marca>");
   });
+
+  // F10.8.4: sin esta frase el modelo decía haber leído enlaces que nunca
+  // abrió. La suite cultural mide el comportamiento (limite-enlace y
+  // tool-post-con-enlace); esto solo evita que una reescritura la tire.
+  it("dice que no puede abrir enlaces", () => {
+    expect(BASE_SYSTEM_PROMPT).toContain("No puedes abrir enlaces");
+  });
 });
 
 describe("buildSystemPrompt — con voz completa", () => {
