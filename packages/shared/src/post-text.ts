@@ -1,4 +1,4 @@
-import type { CardContent, SocialNetwork } from "./publication.js";
+import { normalizeHashtags, type CardContent, type SocialNetwork } from "./publication.js";
 
 /**
  * Aplana una CardContent al único campo de texto que aceptan los
@@ -13,7 +13,7 @@ import type { CardContent, SocialNetwork } from "./publication.js";
  * adapter invente la suya.
  */
 export function buildPostText(content: CardContent): string {
-  const hashtags = content.hashtags.map((tag) => `#${tag}`).join(" ");
+  const hashtags = hashtagLine(content.hashtags);
   const body =
     content.archetype === "visual_first"
       ? content.caption
@@ -21,6 +21,16 @@ export function buildPostText(content: CardContent): string {
         ? `${content.hook}\n\n${content.script}\n\n${content.caption}`
         : content.body;
   return hashtags ? `${body}\n\n${hashtags}` : body;
+}
+
+/**
+ * Los hashtags como se publican: "#uno #dos". Normaliza otra vez porque las
+ * cards guardadas antes de F10.8.4 pueden traer el "#" puesto (salían "##").
+ */
+export function hashtagLine(tags: readonly string[]): string {
+  return normalizeHashtags(tags)
+    .map((tag) => `#${tag}`)
+    .join(" ");
 }
 
 /**

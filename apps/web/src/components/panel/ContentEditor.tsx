@@ -4,6 +4,8 @@ import {
   CARD_EDIT_SESSION_IDLE_MS,
   NETWORK_TEXT_LIMITS,
   buildPostText,
+  normalizeHashtag,
+  normalizeHashtags,
   type CardContent,
   type CardTextFields,
   type CardVersionDto,
@@ -138,16 +140,14 @@ export function ContentEditor({
   const tags = (
     <Section title="Hashtags" Icon={Hash} meta={String(draft.hashtags.length)}>
       <TagInput
-        value={draft.hashtags}
+        // Las cards de antes de F10.8.4 pueden traerlos con "#" guardado.
+        value={normalizeHashtags(draft.hashtags)}
         onChange={(hashtags) => change({ hashtags })}
         placeholder="Agrega un hashtag y presiona Enter"
         maxItems={30}
         maxLength={100}
         // Se guardan sin "#": el texto publicado se lo pone (buildPostText).
-        normalize={(raw) => {
-          const tag = raw.trim().replace(/^#+/, "").replace(/\s+/g, "");
-          return tag.length > 0 ? tag : null;
-        }}
+        normalize={(raw) => normalizeHashtag(raw) || null}
       />
     </Section>
   );

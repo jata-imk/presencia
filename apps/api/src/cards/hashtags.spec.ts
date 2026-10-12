@@ -1,0 +1,58 @@
+import { describe, expect, it } from "vitest";
+import { zodSchema } from "ai";
+import {
+  CARD_ARCHETYPE_TOOLS,
+  buildPostText,
+  cardTextFieldsSchema,
+  type CardContent,
+} from "@presencia/shared";
+
+// F10.8.4: el modelo manda los hashtags con "#" y la card salía "##tacos".
+// Se guardan sin "#" (el schema compartido los normaliza en todos los
+// caminos) y buildPostText se lo pone al publicar o pintar.
+
+function tool(name: (typeof CARD_ARCHETYPE_TOOLS)[number]["toolName"]) {
+  const def = CARD_ARCHETYPE_TOOLS.find((t) => t.toolName === name);
+  if (!def) throw new Error(`sin tool ${name}`);
+  return def;
+}
+
+describe("hashtags", () => {
+  it("la card del chat guarda los hashtags sin # ni espacios", () => {
+    const def = tool("crear_borrador_visual");
+    const input = def.inputSchema.parse({
+      network: "instagram",
+      caption: "Tacos de cochinita",
+      hashtags: ["#tacos", "##Mérida", "cochinita", " #Café Xtabay ", "#", ""],
+    });
+    const content = def.buildContent(input);
+    expect(content.hashtags).toEqual(["tacos", "Mérida", "cochinita", "CaféXtabay"]);
+  });
+
+  it("el texto publicado lleva un solo # aunque la card vieja lo traiga guardado", () => {
+    const legacy = {
+      archetype: "text_first",
+      body: "Hola",
+      hashtags: ["#tacos", "mérida"],
+      assetIds: [],
+    } as CardContent;
+    expect(buildPostText(legacy)).toBe("Hola\n\n#tacos #mérida");
+  });
+
+  it("el editor del panel también los normaliza al guardar", () => {
+    const fields = cardTextFieldsSchema.parse({ hashtags: ["#uno", "dos", "#"] });
+    expect(fields.hashtags).toEqual(["uno", "dos"]);
+  });
+
+  // El transform no puede romper la conversión del SDK: zodSchema() convierte
+  // con io "input", y un transform suelto (sin pipe) lanzaría aquí.
+  it.each(CARD_ARCHETYPE_TOOLS.map((t) => t.toolName))(
+    "%s sigue convirtiéndose a JSON Schema",
+    (name) => {
+      const json = zodSchema(tool(name).inputSchema).jsonSchema as {
+        properties: Record<string, { type?: unknown; items?: { type?: unknown } }>;
+      };
+      expect(json.properties.hashtags).toMatchObject({ type: "array", items: { type: "string" } });
+    },
+  );
+});

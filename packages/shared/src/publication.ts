@@ -53,10 +53,30 @@ const slidesSchema = z.array(carouselSlideSchema).min(2).max(10).optional();
  */
 const slidesAspectSchema = imageAspectRatioSchema.optional();
 
+/**
+ * F10.8.4: un hashtag se guarda sin "#" y sin espacios; el "#" lo pone quien
+ * lo pinta o lo publica (buildPostText). El modelo casi siempre lo manda con
+ * "#", y la card salía con "##tacos". Vive aquí para que todos los caminos
+ * (la tool del chat, "Pide un cambio", el editor) guarden lo mismo.
+ */
+export function normalizeHashtag(raw: string): string {
+  return raw.trim().replace(/^#+/, "").replace(/\s+/g, "");
+}
+
+/** Normaliza cada hashtag y descarta los que quedan vacíos (un "#" suelto). */
+export function normalizeHashtags(tags: readonly string[]): string[] {
+  return tags.map(normalizeHashtag).filter((tag) => tag.length > 0);
+}
+
+// Un transform dentro de un pipe: el JSON Schema de la tool (zodSchema del AI
+// SDK, io "input") describe el array de strings de entrada, y el parse guarda
+// la versión normalizada.
+const hashtagsSchema = z.array(z.string()).transform(normalizeHashtags).default([]);
+
 export const visualFirstContentSchema = z.object({
   archetype: z.literal("visual_first"),
   caption: z.string(),
-  hashtags: z.array(z.string()).default([]),
+  hashtags: hashtagsSchema,
   // Siempre UNA imagen por prompt. Antes del carrusel (F10.6 PR5) el modelo
   // metía "carrusel de 5 diapositivas" en este campo y el generador dibujaba
   // una tira de paneles cortada que igual se cobraba; ahora las varias
@@ -87,7 +107,7 @@ export const videoScriptContentSchema = z.object({
   hook: z.string(),
   script: z.string(),
   caption: z.string(),
-  hashtags: z.array(z.string()).default([]),
+  hashtags: hashtagsSchema,
   recordingNotes: z.string().optional(),
   // Faltaba (code review 2026-08-20): assertHasMedia (cards.service.ts)
   // exige `"assetIds" in content` para tiktok/youtube igual que para
@@ -102,7 +122,7 @@ export const videoScriptContentSchema = z.object({
 export const textFirstContentSchema = z.object({
   archetype: z.literal("text_first"),
   body: z.string(),
-  hashtags: z.array(z.string()).default([]),
+  hashtags: hashtagsSchema,
   // F10: la imagen acompañante de LinkedIn/X/Threads es opcional (overview
   // §3). El modelo la sugiere solo cuando suma: la mayoría de estos posts no
   // la llevan, y un prompt de relleno invitaría a gastar en algo que nadie
