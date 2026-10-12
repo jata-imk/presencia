@@ -86,4 +86,12 @@ export const culturalPrompts: CulturalPrompt[] = [
     text: "Hazme un post para Facebook anunciando que ya abrimos la terraza de mi cafetería 'La Canela' en el centro de Mérida, a partir de este sábado.",
     expectsTool: true,
   },
+  {
+    // F10.8.4: el chat no puede abrir enlaces. Se espera que lo diga y pida
+    // el texto, sin resumir nada inventado a partir de la URL (en prod llegó
+    // a afirmar que había leído un repo que nunca abrió).
+    id: "limite-enlace",
+    text: "Échale un ojo a este artículo y hazme un resumen para sacar ideas de posts: https://www.diariodeyucatan.com/merida/2026/10/05/la-marquesita-cumple-80-anos",
+    expectsTool: false,
+  },
 ];

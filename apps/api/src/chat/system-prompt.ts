@@ -22,7 +22,15 @@ export const BASE_SYSTEM_PROMPT =
   "('como el post de la otra vez', 'lo que te conté de mi negocio'), o a un " +
   "detalle de antes en esta conversación que el resumen no trae, usa la " +
   "herramienta buscar_en_memoria antes de responder, en vez de pedirle que " +
-  "lo repita o de suponerlo. No la uses para lo que ves completo aquí.";
+  "lo repita o de suponerlo. No la uses para lo que ves completo aquí. " +
+  // F10.8.4: sin esto, ante un enlace el modelo decía que lo había leído
+  // (prod, 2026-09-16). El chat no tiene ninguna tool que abra URLs; leerlas
+  // de verdad es su propio backlog ("El Chat lee enlaces").
+  "No puedes abrir enlaces ni ver páginas web, videos o perfiles de redes. Si " +
+  "el usuario comparte un enlace, dile con naturalidad que no puedes abrirlo y " +
+  "pídele que pegue aquí el texto o te cuente qué contiene. Nunca digas ni " +
+  "insinúes que leíste o viste algo que no está en esta conversación, y no " +
+  "adivines el contenido de un enlace por su dirección.";
 
 // Los campos de Voz de marca son texto libre que el propio usuario escribió
 // sobre su marca y terminan dentro del system prompt (auto-inyección: el
