@@ -22,7 +22,20 @@ function getField(data: FormData, name: string): string {
   return typeof value === "string" ? value : "";
 }
 
-/** Lo que ProtectedLayout (o el registro) deja en el state al mandar aquí. */
+/** Qué decirle según lo que respondió Better Auth. */
+function mensajeDeError(error: { status?: number; code?: string }): string {
+  if (error.status === 403) return "Confirma tu correo antes de entrar. Revisa tu bandeja.";
+  if (error.status === 401) {
+    return "El correo o la contraseña no coinciden. Revisa que sea la cuenta correcta.";
+  }
+  if (error.code === "INVALID_EMAIL") return "Ese correo no parece válido. Revísalo.";
+  if (error.status !== undefined && error.status < 500) {
+    return "No pudimos iniciar sesión con esos datos. Revísalos e inténtalo de nuevo.";
+  }
+  return "No pudimos conectar. Inténtalo de nuevo en un momento.";
+}
+
+/** Lo que ProtectedLayout (o "Revisa tu correo") deja en el state al mandar aquí. */
 interface LoginState {
   from?: string;
   expired?: boolean;
@@ -58,7 +71,8 @@ function useEspera(): [number, (segundos: number) => void] {
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const state = (useLocation().state ?? {}) as LoginState;
+  const location = useLocation();
+  const [state] = useState(() => (location.state ?? {}) as LoginState);
   const [errors, setErrors] = useState<{ email?: string | null; password?: string | null }>({});
   const [error, setError] = useState<string | null>(null);
   const [expired, setExpired] = useState(state.expired === true);
@@ -66,9 +80,14 @@ export function LoginPage() {
   const [espera, esperar] = useEspera();
   const { refetch: refrescarSesion } = authClient.useSession();
 
-  // El aviso se muestra una vez: si recarga o vuelve a /login, ya no.
+  // El aviso se muestra una vez: si recarga o vuelve a /login, ya no. El
+  // state del router vive en history.state y sobrevive a la recarga, así que
+  // se reemplaza por uno que solo conserva a dónde volver.
   useEffect(() => {
     olvidarSesion();
+    if (state.expired || state.email) {
+      void navigate(location.pathname, { replace: true, state: { from: state.from } });
+    }
   }, []);
 
   // FormData en vez de inputs controlados para email/password: los
@@ -105,23 +124,19 @@ export function LoginPage() {
         },
       },
     );
-    setSubmitting(false);
     if (reintentarEn !== null) {
+      setSubmitting(false);
       esperar(reintentarEn);
       return;
     }
     if (error) {
-      setError(
-        error.status === 403
-          ? "Confirma tu correo antes de entrar. Revisa tu bandeja."
-          : error.status === 401
-            ? "El correo o la contraseña no coinciden. Revisa que sea la cuenta correcta."
-            : "No pudimos conectar. Inténtalo de nuevo en un momento.",
-      );
+      setSubmitting(false);
+      setError(mensajeDeError(error));
       return;
     }
     // La sesión nueva antes de navegar: Better Auth la vuelve a pedir en otro
     // tick, y ProtectedLayout la vería todavía vacía y regresaría al login.
+    // El botón sigue ocupado hasta navegar: otro clic sería otro sign-in.
     await refrescarSesion();
     void navigate(rutaDeRegreso(state.from), { replace: true });
   }

@@ -10,10 +10,14 @@ import { authClient } from "../auth-client.js";
 let huboSesion = false;
 let salidaVoluntaria = false;
 
-/** El layout vio una sesión válida en esta pestaña. */
+/**
+ * El layout vio una sesión válida en esta pestaña. No toca
+ * `salidaVoluntaria`: el layout se vuelve a pintar con la sesión todavía
+ * puesta justo después de "Cerrar sesión", y borrarla aquí haría que esa
+ * salida se leyera como sesión expirada. La limpia el login (olvidarSesion).
+ */
 export function registrarSesion(): void {
   huboSesion = true;
-  salidaVoluntaria = false;
 }
 
 /** ¿La sesión que había se perdió sin que el usuario cerrara sesión? */

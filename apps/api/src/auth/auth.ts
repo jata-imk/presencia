@@ -56,8 +56,16 @@ export const auth = betterAuth({
     requireEmailVerification: true,
     // Con la verificación obligatoria, registrarse con un correo que ya tiene
     // cuenta responde igual que uno nuevo: la pantalla no revela qué correos
-    // están registrados. El aviso le llega al dueño (F10.8.4).
+    // están registrados. El aviso le llega al dueño (F10.8.4). Si esa cuenta
+    // nunca se confirmó (el link se perdió o venció), lo útil es un link
+    // nuevo: "entra con tu contraseña" la dejaría en el 403 de confirmar.
     onExistingUserSignUp: async ({ user }) => {
+      if (!user.emailVerified) {
+        await auth.api.sendVerificationEmail({
+          body: { email: user.email, callbackURL: `${env.WEB_URL}/chats` },
+        });
+        return;
+      }
       await sendMail({ to: user.email, ...correoDeCuentaExistente(user) });
     },
   },

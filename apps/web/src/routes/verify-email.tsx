@@ -31,7 +31,7 @@ export function VerifyEmailPage() {
       </p>
       <AuthFooter>
         ¿Ya confirmaste?{" "}
-        <Link to="/login" className={AUTH_LINK}>
+        <Link to="/login" state={email ? { email } : undefined} className={AUTH_LINK}>
           Inicia sesión
         </Link>
       </AuthFooter>

@@ -1,5 +1,6 @@
 import { AlertCircle, CheckCircle2, Clock, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { IsotipoGlyph } from "../ui/BrandMark.js";
 
 // Las piezas de las pantallas de acceso (F10.8.4, Auth Flow.html de Claude
 // Design): login, registro, verificar correo y recuperar contraseña. Todo con
@@ -28,15 +29,12 @@ export function AuthShell({ children, above }: { children: ReactNode; above?: Re
   );
 }
 
-/** Isotipo + "Presencia", como el BrandMark pero grande y apilado. */
+/** Isotipo + "Presencia": el BrandMark grande y apilado. */
 export function AuthLogo() {
   return (
     <div className="flex flex-col items-center gap-2">
       <span className="flex size-13 items-center justify-center rounded-[14px] bg-primary text-primary-fg">
-        <span
-          aria-hidden="true"
-          className="size-7 bg-current [mask-image:url(/assets/isotipo.png)] [mask-size:contain] [mask-position:center] [mask-repeat:no-repeat] [-webkit-mask-image:url(/assets/isotipo.png)] [-webkit-mask-position:center] [-webkit-mask-repeat:no-repeat] [-webkit-mask-size:contain]"
-        />
+        <IsotipoGlyph className="size-7" />
       </span>
       <span className="font-display text-xl font-bold text-brand">Presencia</span>
     </div>

@@ -33,6 +33,20 @@ function errorDeContrasena(contrasena: string): string | null {
   return null;
 }
 
+/** Qué decirle según lo que respondió Better Auth. */
+function mensajeDeError(error: { status?: number; code?: string }): string {
+  if (error.status === 429)
+    return "Demasiados intentos. Espera unos segundos y vuelve a intentarlo.";
+  if (error.code === "INVALID_EMAIL") return "Ese correo no parece válido. Revísalo.";
+  if (error.code === "PASSWORD_TOO_LONG")
+    return "La contraseña es demasiado larga: usa máximo 128 caracteres.";
+  if (error.code === "PASSWORD_TOO_SHORT") return "Usa una contraseña de al menos 8 caracteres.";
+  if (error.status !== undefined && error.status < 500) {
+    return "No pudimos crear la cuenta con esos datos. Revísalos e inténtalo de nuevo.";
+  }
+  return "No pudimos crear la cuenta. Inténtalo de nuevo en un momento.";
+}
+
 export function SignupPage() {
   const navigate = useNavigate();
   const [errors, setErrors] = useState<{
@@ -84,11 +98,7 @@ export function SignupPage() {
     // registrados, y al dueño le manda un aviso (onExistingUserSignUp en
     // apps/api/src/auth/auth.ts). Por eso tampoco hay chequeo en vivo.
     if (error) {
-      setError(
-        error.status === 429
-          ? "Demasiados intentos. Espera unos segundos y vuelve a intentarlo."
-          : "No pudimos crear la cuenta. Inténtalo de nuevo en un momento.",
-      );
+      setError(mensajeDeError(error));
       return;
     }
     void navigate("/verify-email", { state: { email } });
