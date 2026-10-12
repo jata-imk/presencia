@@ -363,10 +363,10 @@ export const chatSummaries = pgTable("chat_summaries", {
   // SummaryBlock[] (chat/history-compaction.ts), en orden. El `through_*` de
   // abajo es el del último bloque.
   blocks: jsonb("blocks").notNull().default([]),
-  // Obsoleta desde F10.8.1 (expand/contract): el resumen vive en `blocks`.
-  // Desde F10.8.4 nadie la lee ni la escribe; se borra en una migración del
-  // release siguiente, cuando ya no corra en prod la app que la escribía.
-  summary: text("summary"),
+  // `summary` (obsoleta desde F10.8.1) sigue en la base, nullable, hasta la
+  // migración del release siguiente. Ya no se declara aquí: Drizzle nombra
+  // todas las columnas declaradas en cada select e insert, y este build
+  // tronaría en cuanto la borre esa migración, que corre antes del reinicio.
   // Sin FK: los mensajes del tramo resumido nunca se borran (reintentar solo
   // toca la última respuesta, que siempre queda fuera del tramo).
   throughMessageId: uuid("through_message_id").notNull(),
