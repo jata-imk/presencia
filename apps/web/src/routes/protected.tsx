@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation, useMatches } from "react-router";
 import { Sidebar } from "../components/layout/Sidebar.js";
 import { Topbar } from "../components/layout/Topbar.js";
@@ -9,6 +9,57 @@ import { ToastViewport } from "../components/ui/Toast.js";
 import { authClient } from "../lib/auth-client.js";
 import { recordarRutaDeLaApp } from "../lib/ultima-ruta.js";
 import { AppLoading } from "../components/ui/AppLoading.js";
+import { ReconnectScreen } from "../components/ui/ReconnectScreen.js";
+
+/** Cada cuánto se vuelve a preguntar por la sesión mientras la API no contesta. */
+const REINTENTOS_MS = [3_000, 6_000, 12_000, 24_000, 30_000];
+
+/**
+ * Mientras `activo`, vuelve a pedir la sesión con espera creciente (3 s hasta
+ * 30 s). Better Auth ya reintenta solo al volver el foco o la red; esto cubre
+ * la pestaña abierta mientras el contenedor termina de arrancar. Devuelve el
+ * "Reintentar ahora": pregunta ya y la espera vuelve a empezar en 3 s.
+ */
+function useReintentoDeSesion(activo: boolean, refetch: () => Promise<void>): () => void {
+  const [ronda, setRonda] = useState(0);
+  useEffect(() => {
+    if (!activo) return;
+    // El refetch en curso puede terminar después del cleanup (otro render,
+    // otra ronda, la pantalla se desmontó): sin la bandera programaría un
+    // timer que ya nadie limpia.
+    let cancelado = false;
+    let intento = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const preguntar = () => {
+      if (cancelado) return;
+      intento++;
+      void refetch().finally(programar);
+    };
+    const programar = () => {
+      if (cancelado) return;
+      const espera = REINTENTOS_MS[Math.min(intento, REINTENTOS_MS.length - 1)]!;
+      timer = setTimeout(preguntar, espera);
+    };
+    if (ronda > 0) preguntar();
+    else programar();
+    return () => {
+      cancelado = true;
+      clearTimeout(timer);
+    };
+  }, [activo, refetch, ronda]);
+  return () => setRonda((n) => n + 1);
+}
+
+/**
+ * La API no contestó: un fallo de red (sin status) o un 5xx, lo que se ve
+ * mientras un deploy reinicia el contenedor. Cualquier otro error (un 403 de
+ * Cloudflare, un 404 por una ruta mal puesta) no se arregla esperando: va a
+ * /login como antes, en vez de dejar a alguien reintentando para siempre.
+ */
+function esApiCaida(error: { status?: number } | null): boolean {
+  if (!error) return false;
+  return error.status === undefined || error.status >= 500;
+}
 
 // Layout de rutas autenticadas: sin sesión → /login. Con sesión pero sin
 // onboarding completo → /onboarding (excepto en la propia ruta, para no
@@ -47,7 +98,20 @@ interface RouteHandle {
 }
 
 export function ProtectedLayout() {
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending, error, refetch } = authClient.useSession();
+  // F10.8.4: "no hay sesión" y "no pude preguntar" no son lo mismo. Una API
+  // caída (red, 5xx: un deploy reiniciando el contenedor) muestra la pantalla
+  // de reconexión; lo demás (401, respuesta sin sesión) manda a /login.
+  // Better Auth conserva la sesión si ya la tenía, así que esto solo pasa al
+  // abrir o recargar con la API abajo.
+  const caida = !session && esApiCaida(error);
+  // Al reintentar, Better Auth vuelve a isPending y borra el error: sin esto
+  // la pantalla parpadearía a vacío en cada intento. Se ajusta en el render
+  // (no en un efecto) para no pintar ni un frame de <Navigate>.
+  const [reconectando, setReconectando] = useState(false);
+  if (caida && !reconectando) setReconectando(true);
+  if (reconectando && !caida && !isPending) setReconectando(false);
+  const reintentarAhora = useReintentoDeSesion(reconectando, refetch);
   const location = useLocation();
   const handles = useMatches().map((match) => match.handle as RouteHandle | undefined);
   const ownScroll = handles.some((handle) => handle?.ownScroll);
@@ -58,6 +122,9 @@ export function ProtectedLayout() {
     recordarRutaDeLaApp(location.pathname, location.search);
   }, [location.pathname, location.search]);
 
+  if (!session && reconectando) {
+    return <ReconnectScreen reintentando={isPending} onReintentar={reintentarAhora} />;
+  }
   if (isPending) {
     return <AppLoading />;
   }
