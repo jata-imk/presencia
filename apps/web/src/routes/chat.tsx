@@ -182,7 +182,7 @@ function ChatView({
     if (!initialPrompt || sentInitialPrompt.current) return;
     sentInitialPrompt.current = true;
     void navigate(location.pathname, { replace: true, state: null });
-    void sendMessage({ text: initialPrompt });
+    enviar(sendMessage({ text: initialPrompt }));
   }, []);
 
   // F5: % de cuota + traducción a publicaciones, nunca un número crudo de
@@ -298,6 +298,19 @@ function ChatView({
   // dejaría un post programado sin card. `go` corre solo si de verdad se
   // reemplaza, no si el creator cancela la confirmación.
   const toast = useToastStore((s) => s.show);
+  // Los errores del stream los muestra el SDK en `error` (y su card de estado);
+  // lo que rechaza la promesa es otra cosa: desde ai 7.0.1xx, un messageId que
+  // ya no existe (la lista cambió entre el render y el clic). Sin esto sería
+  // un rechazo sin manejar y el clic no haría nada visible.
+  function enviar(envio: Promise<void>) {
+    envio.catch((err: unknown) => {
+      console.error("[chat] No se pudo enviar:", err);
+      toast({
+        title: "No pudimos enviar el mensaje",
+        description: "Recarga el chat e inténtalo de nuevo.",
+      });
+    });
+  }
   const [pendingReplace, setPendingReplace] = useState<{
     count: number;
     kind: ReplaceKind;
@@ -343,7 +356,7 @@ function ChatView({
     void confirmReplace("regenerar", () => {
       setEditingId(null);
       onGo?.();
-      void regenerate();
+      enviar(regenerate());
     });
   }
 
@@ -365,7 +378,7 @@ function ChatView({
       retryingId.current = null;
       setFailedAgain(false);
       scrollToEnd(false);
-      void sendMessage({ text, messageId: userId });
+      enviar(sendMessage({ text, messageId: userId }));
     }).finally(() => {
       replacing.current = false;
     });
@@ -396,7 +409,7 @@ function ChatView({
     const text = message ? messageText(message) : "";
     if (!text) return;
     go();
-    void sendMessage({ text, messageId: userId });
+    enviar(sendMessage({ text, messageId: userId }));
   }
 
   function renderNotice(userId: string | undefined) {
@@ -425,7 +438,7 @@ function ChatView({
     setEditingId(null);
     // Lo que tú mandas siempre se ve, aunque estuvieras leyendo arriba.
     scrollToEnd(false);
-    void sendMessage({ text });
+    enviar(sendMessage({ text }));
   }
 
   const lastMessage = messages.at(-1);

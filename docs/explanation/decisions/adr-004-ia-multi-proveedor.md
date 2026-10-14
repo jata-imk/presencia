@@ -43,6 +43,13 @@ El enum `ai_task_kind` (`chat`, `chat_title`, `history_compaction`, `post_adapt`
 - **La web NO sube** (`ai@7.0.31`, `@ai-sdk/react@4.0.34`). `@ai-sdk/react` 4.0.1xx agregó `chat.stop()` al desmontar `useChat`, y cambia dos cosas que funcionan hoy: el prompt inicial de un chat nuevo se aborta en dev (StrictMode desmonta en falso justo después del efecto que lo manda, y la guarda de un solo envío ya no lo repite), y en prod salir del chat a media respuesta abortaría el turno — el servidor no lo guarda ni lo cobra, y la respuesta desaparece. Antes el stream seguía en segundo plano y la respuesta estaba ahí al volver. Subirla pide pasarle a `useChat` un `Chat` propio por chat (fuera del componente), y eso es una tarea aparte. Verificado en el navegador que el cliente 7.0.31 lee bien el stream del servidor 7.0.127: chat con card, segundo turno con razonamiento de Responses en el historial, y "Pide un cambio".
 - **`pipeUIMessageStreamToResponse` ahora devuelve una promesa.** No se espera (los headers ya salieron; un rechazo no tiene a quién responder) y su rechazo solo se registra.
 
+**Addendum (F10.8.4, 2026-10-13): la web sube también.** `ai@7.0.127` y `@ai-sdk/react@4.0.130`, con versiones fijas, así que la web y la API corren el mismo SDK.
+
+- **El `Chat` no quedó fuera del componente**, como proponía el addendum de F10.7. `ChatView` lo crea en un `useState`, uno por montaje, y se lo pasa a `useChat({ chat })`: un `Chat` externo no se detiene al desmontar. Eso basta para los dos problemas: el prompt inicial sobrevive a StrictMode, y al salir del chat a media respuesta el stream sigue en segundo plano y se guarda completo.
+- **Al volver a media respuesta no se ve el stream en vivo.** El montaje nuevo arma su `Chat` desde `GET /messages`, igual que antes de subir. Jose eligió mantener ese comportamiento y no hacer un registro de `Chat` por chat.
+- **El servidor ya impide un segundo turno en paralelo.** Responde 409 "Esta respuesta todavía se está generando" si alguien reintenta mientras corre.
+- **`sendMessage` ahora rechaza** si el `messageId` ya no existe. `chat.tsx` atrapa esos rechazos y avisa con un toast.
+
 **Addendum (F10.7 PR2, 2026-10-06) — esfuerzo de razonamiento por modelo, y el chat pasa a `gpt-6-luna@high`.**
 
 - **Sintaxis.** Cualquier variable de modelo de texto acepta `@esfuerzo`: `AI_MODEL_CHAT=openai:gpt-6-luna@high`.
