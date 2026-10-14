@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import {
   AUTH_LINK,
@@ -12,6 +12,7 @@ import {
 import { AuthField } from "../components/auth/AuthField.js";
 import { authClient } from "../lib/auth-client.js";
 import { olvidarSesion, rutaDeRegreso } from "../lib/auth/sesion.js";
+import { esperaDe429, useEspera } from "../lib/auth/use-espera.js";
 import { errorDeCorreo } from "../lib/auth/validar.js";
 
 // FormData.get() devuelve string | File | null — nuestros inputs son de
@@ -40,33 +41,8 @@ interface LoginState {
   from?: string;
   expired?: boolean;
   email?: string;
-}
-
-/**
- * Cuenta regresiva del límite de intentos (F10.8.4): Better Auth deja 3
- * intentos de entrar cada 10 s por IP y responde 429 con X-Retry-After.
- * Mientras corre, el formulario se deshabilita.
- */
-function useEspera(): [number, (segundos: number) => void] {
-  const [hasta, setHasta] = useState<number | null>(null);
-  const [ahora, setAhora] = useState(() => Date.now());
-  useEffect(() => {
-    if (hasta === null) return;
-    const id = setInterval(() => {
-      const t = Date.now();
-      setAhora(t);
-      if (t >= hasta) setHasta(null);
-    }, 250);
-    return () => clearInterval(id);
-  }, [hasta]);
-  const restantes = hasta === null ? 0 : Math.max(0, Math.ceil((hasta - ahora) / 1000));
-  return [
-    restantes,
-    (segundos) => {
-      setAhora(Date.now());
-      setHasta(Date.now() + segundos * 1000);
-    },
-  ];
+  /** Recuperar cambió la contraseña pero no pudo entrar solo. */
+  contrasenaCambiada?: boolean;
 }
 
 export function LoginPage() {
@@ -79,13 +55,14 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [espera, esperar] = useEspera();
   const { refetch: refrescarSesion } = authClient.useSession();
+  const correoRef = useRef<HTMLInputElement>(null);
 
   // El aviso se muestra una vez: si recarga o vuelve a /login, ya no. El
   // state del router vive en history.state y sobrevive a la recarga, así que
   // se reemplaza por uno que solo conserva a dónde volver.
   useEffect(() => {
     olvidarSesion();
-    if (state.expired || state.email) {
+    if (state.expired || state.email || state.contrasenaCambiada) {
       void navigate(location.pathname, { replace: true, state: { from: state.from } });
     }
   }, []);
@@ -117,10 +94,9 @@ export function LoginPage() {
     const { error } = await authClient.signIn.email(
       { email, password },
       {
+        // Better Auth deja 3 intentos de entrar cada 10 s por IP (F10.8.4).
         onError: ({ response }) => {
-          if (response.status === 429) {
-            reintentarEn = Number(response.headers.get("X-Retry-After")) || 10;
-          }
+          reintentarEn = esperaDe429(response, 10);
         },
       },
     );
@@ -146,6 +122,11 @@ export function LoginPage() {
   return (
     <AuthShell>
       <AuthLogo />
+      {state.contrasenaCambiada && (
+        <AuthBanner tone="success" title="Tu contraseña cambió">
+          Entra con la nueva para seguir.
+        </AuthBanner>
+      )}
       {expired && (
         <AuthBanner tone="info" title="Tu sesión se cerró" onClose={() => setExpired(false)}>
           Inicia sesión de nuevo para seguir donde te quedaste.
@@ -174,6 +155,7 @@ export function LoginPage() {
           )
         )}
         <AuthField
+          ref={correoRef}
           label="Correo"
           type="email"
           name="email"
@@ -190,17 +172,28 @@ export function LoginPage() {
             if (correo) setErrors((prev) => ({ ...prev, email: errorDeCorreo(correo) }));
           }}
         />
-        <AuthField
-          label="Contraseña"
-          type="password"
-          name="password"
-          autoComplete="current-password"
-          placeholder="Tu contraseña"
-          autoFocus={expired || Boolean(state.email)}
-          error={errors.password}
-          disabled={bloqueado}
-          onChange={() => errors.password && setErrors((prev) => ({ ...prev, password: null }))}
-        />
+        <div className="flex flex-col gap-1.5">
+          <AuthField
+            label="Contraseña"
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            placeholder="Tu contraseña"
+            autoFocus={expired || Boolean(state.email)}
+            error={errors.password}
+            disabled={bloqueado}
+            onChange={() => errors.password && setErrors((prev) => ({ ...prev, password: null }))}
+          />
+          <button
+            type="button"
+            onClick={() =>
+              void navigate("/recuperar", { state: { email: correoRef.current?.value.trim() } })
+            }
+            className="self-end text-xs text-fg-secondary underline-offset-2 hover:text-brand hover:underline"
+          >
+            ¿Olvidaste tu contraseña?
+          </button>
+        </div>
         <AuthSubmit loading={submitting} disabled={bloqueado}>
           {submitting ? "Entrando…" : "Iniciar sesión"}
         </AuthSubmit>

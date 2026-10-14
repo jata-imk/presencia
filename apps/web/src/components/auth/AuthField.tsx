@@ -1,5 +1,5 @@
 import { AlertCircle, Eye, EyeOff } from "lucide-react";
-import { useId, useState, type InputHTMLAttributes, type ReactNode } from "react";
+import { useId, useState, type InputHTMLAttributes, type ReactNode, type Ref } from "react";
 
 // Campo de las pantallas de acceso (Auth Flow.html): etiqueta, caja de 48px,
 // error con ícono debajo. Los inputs NO son controlados por defecto: login y
@@ -12,6 +12,8 @@ interface AuthFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "id
   hint?: ReactNode;
   /** Algo a la derecha de la caja: un check de "coinciden", un spinner. */
   trailing?: ReactNode;
+  /** Al input (React 19: ref es una prop más). */
+  ref?: Ref<HTMLInputElement>;
 }
 
 export function AuthField({
