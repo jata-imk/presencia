@@ -37,6 +37,28 @@ export function correoDeVerificacion(
   };
 }
 
+/** El código para recuperar la contraseña (Email Template.html, tal cual el mock). */
+export function correoDeRecuperacion(email: string, otp: string): Correo {
+  return {
+    subject: `${otp} es tu código para recuperar tu contraseña de Presencia`,
+    html: renderEmail({
+      preheader: "Tu código para recuperar el acceso a Presencia. Expira en 10 minutos.",
+      greeting: "Hola:",
+      intro: [
+        "Recibimos una solicitud para cambiar la contraseña de tu cuenta en Presencia. Usa este código para continuar:",
+      ],
+      code: { label: "Tu código", value: otp },
+      outro: ["Escríbelo en la pantalla de recuperación. <strong>Expira en 10 minutos.</strong>"],
+      notice: {
+        title: "¿No lo pediste?",
+        body: "Ignora este correo: tu contraseña no cambia mientras nadie use el código.",
+      },
+      recipient: email,
+      reason: "alguien pidió recuperar la contraseña de",
+    }),
+  };
+}
+
 /**
  * Alguien intentó registrarse con un correo que ya tiene cuenta. La pantalla
  * no lo dice (no revela qué correos están registrados): se le avisa al dueño.

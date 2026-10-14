@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import {
   AUTH_LINK,
@@ -79,6 +79,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [espera, esperar] = useEspera();
   const { refetch: refrescarSesion } = authClient.useSession();
+  const correoRef = useRef<HTMLInputElement>(null);
 
   // El aviso se muestra una vez: si recarga o vuelve a /login, ya no. El
   // state del router vive en history.state y sobrevive a la recarga, así que
@@ -174,6 +175,7 @@ export function LoginPage() {
           )
         )}
         <AuthField
+          ref={correoRef}
           label="Correo"
           type="email"
           name="email"
@@ -190,17 +192,28 @@ export function LoginPage() {
             if (correo) setErrors((prev) => ({ ...prev, email: errorDeCorreo(correo) }));
           }}
         />
-        <AuthField
-          label="Contraseña"
-          type="password"
-          name="password"
-          autoComplete="current-password"
-          placeholder="Tu contraseña"
-          autoFocus={expired || Boolean(state.email)}
-          error={errors.password}
-          disabled={bloqueado}
-          onChange={() => errors.password && setErrors((prev) => ({ ...prev, password: null }))}
-        />
+        <div className="flex flex-col gap-1.5">
+          <AuthField
+            label="Contraseña"
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            placeholder="Tu contraseña"
+            autoFocus={expired || Boolean(state.email)}
+            error={errors.password}
+            disabled={bloqueado}
+            onChange={() => errors.password && setErrors((prev) => ({ ...prev, password: null }))}
+          />
+          <button
+            type="button"
+            onClick={() =>
+              void navigate("/recuperar", { state: { email: correoRef.current?.value.trim() } })
+            }
+            className="self-end text-xs text-fg-secondary underline-offset-2 hover:text-brand hover:underline"
+          >
+            ¿Olvidaste tu contraseña?
+          </button>
+        </div>
         <AuthSubmit loading={submitting} disabled={bloqueado}>
           {submitting ? "Entrando…" : "Iniciar sesión"}
         </AuthSubmit>

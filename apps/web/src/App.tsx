@@ -19,6 +19,7 @@ import { VozDeMarcaPage } from "./routes/configuracion/voz-de-marca.js";
 import { LoginPage } from "./routes/login.js";
 import { OnboardingPage } from "./routes/onboarding.js";
 import { ProtectedLayout } from "./routes/protected.js";
+import { RecuperarPage } from "./routes/recuperar.js";
 import { SignupPage } from "./routes/signup.js";
 import { VerifyEmailPage } from "./routes/verify-email.js";
 
@@ -28,6 +29,7 @@ const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
   { path: "/signup", element: <SignupPage /> },
   { path: "/verify-email", element: <VerifyEmailPage /> },
+  { path: "/recuperar", element: <RecuperarPage /> },
   {
     element: <ProtectedLayout />,
     children: [

@@ -40,6 +40,14 @@ describe("correos de acceso (F10.8.4)", () => {
     expect(html).toContain("Hola:");
   });
 
+  it("el correo de recuperación lleva el código y cuánto dura", () => {
+    const { subject, html } = mod.correoDeRecuperacion("ana@ejemplo.mx", "483917");
+    expect(subject).toContain("483917");
+    expect(html).toContain("483&thinsp;917");
+    expect(html).toContain("Expira en 10 minutos.");
+    expect(html).toContain("ana@ejemplo.mx");
+  });
+
   it("el código de 6 dígitos sale en dos grupos y lo demás se escapa", () => {
     const conCodigo = layout.renderEmail({
       preheader: "p",
