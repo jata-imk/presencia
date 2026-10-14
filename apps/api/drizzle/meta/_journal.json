@@ -379,6 +379,13 @@
       "when": 1791783763992,
       "tag": "0053_resumenes_viejos_a_bloques",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1791949788627,
+      "tag": "0054_borrar_resumen_viejo",
+      "breakpoints": true
     }
   ]
 }
