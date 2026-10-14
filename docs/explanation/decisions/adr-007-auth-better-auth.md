@@ -36,7 +36,9 @@ Lo que se decidió con Jose:
 
 - **Solo dos rutas del plugin quedan abiertas:** pedir el código (`request-password-reset`) y cambiar la contraseña con él (`reset-password`). El resto se apaga en `disabledPaths`, incluido entrar con código.
   - `check-verification-otp` también queda apagado: responde "usuario no encontrado" a un correo sin cuenta y dejaría averiguar quién está registrado.
-  - Por eso el código se valida al cambiar la contraseña, que responde igual haya cuenta o no. Si estaba mal, la pantalla regresa al paso del código con los intentos que quedan y conserva la contraseña escrita: al corregir el código, la cambia sin pedirla otra vez.
-- **Un fallo al mandar el correo no llega al navegador.** A un correo sin cuenta no se manda nada, así que un 500 solo para los registrados diría cuáles existen. El error queda en el log.
+  - Por eso el código se valida al cambiar la contraseña, que a la primera responde igual haya cuenta o no. Si estaba mal, la pantalla regresa al paso del código con los intentos que quedan y conserva la contraseña escrita: al corregir el código, la cambia sin pedirla otra vez.
+  - **Queda una diferencia, a sabiendas.** Después de varios códigos malos, un correo registrado responde "demasiados intentos" y uno sin cuenta sigue en "código inválido". Cerrarla obliga a reescribir el plugin. Explotarla cuesta mandarle al dueño un correo real y pasar por el límite de intentos.
+  - La contraseña nueva se limita a 128 caracteres también en la pantalla: el servidor gasta el código antes de revisar el largo, y una contraseña rechazada lo dejaría inservible.
+- **El correo del código se manda sin esperarlo, y un fallo al mandarlo no llega al navegador.** A un correo sin cuenta no se manda nada, así que esperar el envío (cientos de ms) o devolver un 500 solo para los registrados diría cuáles existen. El error queda en el log.
 - **`revokeSessionsOnPasswordReset`:** cambiar la contraseña cierra las demás sesiones. La pantalla entra con la contraseña nueva y lleva a los chats.
 - **El correo del código** usa la plantilla de `Email Template.html`, con el código en dos grupos ("483 917").

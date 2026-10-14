@@ -88,23 +88,26 @@ export const auth = betterAuth({
       allowedAttempts: 3,
       // Entrar con código no es un flujo nuestro: que nunca cree cuentas.
       disableSignUp: true,
-      sendVerificationOTP: async ({ email, otp, type }) => {
-        if (type !== "forget-password") return;
-        // Un fallo del correo no se le contesta al navegador: a un correo sin
-        // cuenta no se manda nada, así que un 500 solo para los registrados
-        // diría cuáles existen. Queda en el log.
-        try {
-          await sendMail({ to: email, ...correoDeRecuperacion(email, otp) });
-        } catch (error) {
+      sendVerificationOTP: ({ email, otp, type }) => {
+        if (type !== "forget-password") return Promise.resolve();
+        // Sin esperar el envío, y su fallo no llega al navegador: a un correo
+        // sin cuenta no se manda nada, así que esperarlo (cientos de ms) o
+        // devolver un 500 solo para los registrados diría cuáles existen.
+        sendMail({ to: email, ...correoDeRecuperacion(email, otp) }).catch((error: unknown) => {
           console.error("[auth] No se pudo mandar el código de recuperación:", error);
-        }
+        });
+        return Promise.resolve();
       },
     }),
   ],
   // Lo que el plugin trae y no usamos. check-verification-otp, además, dice
-  // "usuario no encontrado" para un correo sin cuenta: dejaría averiguar qué
-  // correos están registrados. El código se valida al cambiar la contraseña
-  // (reset-password), que responde igual con o sin cuenta.
+  // "usuario no encontrado" para un correo sin cuenta: lo averiguaría con una
+  // sola llamada. El código se valida al cambiar la contraseña
+  // (reset-password), que a la primera responde igual con o sin cuenta.
+  // Queda una diferencia que no se cierra sin reescribir el plugin: tras
+  // varios códigos malos, un correo registrado responde "demasiados intentos"
+  // y uno sin cuenta sigue en "código inválido". Averiguarlo así cuesta
+  // mandarle al dueño un correo real y pasar por el límite de intentos.
   disabledPaths: [
     "/email-otp/check-verification-otp",
     "/email-otp/send-verification-otp",

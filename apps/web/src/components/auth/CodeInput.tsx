@@ -41,12 +41,24 @@ export function CodeInput({
   }
 
   function escribir(i: number, texto: string) {
-    const digito = texto.replace(/\D/g, "").slice(-1);
-    if (!digito) return;
+    const solo = texto.replace(/\D/g, "");
+    // Varios dígitos de golpe: el autollenado del sistema ("one-time-code")
+    // o un teclado que pega. Se toman todos, no solo el último.
+    if (solo.length > 1) {
+      const code =
+        solo.length >= LARGO_DEL_CODIGO ? solo.slice(-LARGO_DEL_CODIGO) : value.slice(0, i) + solo;
+      poner(code, code.length);
+      return;
+    }
+    // Uno o ninguno: vacío también llega por Supr, cortar o el teclado de
+    // Android (que no manda "Backspace"), y borra el dígito.
     const nuevo = [...digitos];
-    nuevo[i] = digito;
-    // Sin huecos: lo escrito después de una caja vacía se recorre hacia atrás.
-    poner(nuevo.join(""), i + 1);
+    nuevo[i] = solo;
+    // Sin huecos: lo escrito después de una caja vacía se recorre hacia atrás,
+    // y el foco va a la primera caja vacía, no a la siguiente de la que se
+    // tocó (quedaría desfasada).
+    const code = nuevo.join("");
+    poner(code, solo ? code.length : Math.min(i, code.length));
   }
 
   function tecla(i: number, e: KeyboardEvent<HTMLInputElement>) {

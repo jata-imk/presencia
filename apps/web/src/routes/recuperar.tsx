@@ -13,6 +13,7 @@ import { AuthField } from "../components/auth/AuthField.js";
 import { CodeInput, LARGO_DEL_CODIGO } from "../components/auth/CodeInput.js";
 import { PasswordStrength } from "../components/auth/PasswordStrength.js";
 import { authClient } from "../lib/auth-client.js";
+import { esperaDe429, minutosYSegundos, useEspera } from "../lib/auth/use-espera.js";
 import { errorDeCorreo, fuerzaDeContrasena } from "../lib/auth/validar.js";
 
 // Recuperar la contraseña con un código (F10.8.4, Auth Flow.html): correo →
@@ -27,6 +28,7 @@ type Paso = "correo" | "codigo" | "contrasena" | "listo";
 type EstadoDelCodigo = null | "incorrecto" | "expirado" | "bloqueado";
 
 const INTENTOS = 3;
+const MAXIMO_CONTRASENA = 128;
 const ESPERA_PARA_REENVIAR = 60;
 const PASOS: Paso[] = ["correo", "codigo", "contrasena"];
 
@@ -80,35 +82,6 @@ function Icono({ tono, children }: { tono: "plum" | "info" | "ok"; children: Rea
   return <span className={`flex shrink-0 items-center justify-center ${clase}`}>{children}</span>;
 }
 
-/** Segundos que faltan para poder reenviar el código. */
-function useCuentaRegresiva(): [number, () => void] {
-  const [hasta, setHasta] = useState<number | null>(null);
-  const [ahora, setAhora] = useState(() => Date.now());
-  useEffect(() => {
-    if (hasta === null) return;
-    const id = setInterval(() => {
-      const t = Date.now();
-      setAhora(t);
-      if (t >= hasta) setHasta(null);
-    }, 250);
-    return () => clearInterval(id);
-  }, [hasta]);
-  const faltan = hasta === null ? 0 : Math.max(0, Math.ceil((hasta - ahora) / 1000));
-  return [
-    faltan,
-    () => {
-      setAhora(Date.now());
-      setHasta(Date.now() + ESPERA_PARA_REENVIAR * 1000);
-    },
-  ];
-}
-
-/** Qué decir cuando Better Auth responde 429 al pedir o cambiar. */
-function esperaDe(response: Response): number | null {
-  if (response.status !== 429) return null;
-  return Number(response.headers.get("X-Retry-After")) || ESPERA_PARA_REENVIAR;
-}
-
 export function RecuperarPage() {
   const navigate = useNavigate();
   const desdeLogin = (useLocation().state as { email?: string } | null)?.email ?? "";
@@ -124,7 +97,10 @@ export function RecuperarPage() {
   const [confirmacion, setConfirmacion] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
-  const [reenviarEn, empezarEspera] = useCuentaRegresiva();
+  const [reenviarEn, esperarReenvio] = useEspera();
+  // El 429 de Better Auth (3 códigos por minuto, 3 intentos cada 10 s): el
+  // aviso lleva la cuenta regresiva y los botones esperan con él.
+  const [limite, esperarLimite] = useEspera();
 
   async function pedirCodigo(correo: string): Promise<boolean> {
     setError(null);
@@ -132,13 +108,11 @@ export function RecuperarPage() {
     let espera: number | null = null;
     const { error } = await authClient.emailOtp.requestPasswordReset(
       { email: correo },
-      { onError: ({ response }) => void (espera = esperaDe(response)) },
+      { onError: ({ response }) => void (espera = esperaDe429(response, ESPERA_PARA_REENVIAR)) },
     );
     setOcupado(false);
     if (espera !== null) {
-      setError(
-        `Pediste varios códigos seguidos. Espera ${String(espera)} segundos y vuelve a intentarlo.`,
-      );
+      esperarLimite(espera);
       return false;
     }
     if (error) {
@@ -148,7 +122,7 @@ export function RecuperarPage() {
     setCodigo("");
     setFallos(0);
     setEstadoCodigo(null);
-    empezarEspera();
+    esperarReenvio(ESPERA_PARA_REENVIAR);
     return true;
   }
 
@@ -164,7 +138,7 @@ export function RecuperarPage() {
   function codigoCompleto(code: string) {
     setEstadoCodigo(null);
     // Si ya había contraseña (el código anterior estaba mal), se cambia ya.
-    if (password && contrasenaLista(password, confirmacion)) void cambiar(code);
+    if (contrasenaLista(password, confirmacion)) void cambiar(code);
     else setPaso("contrasena");
   }
 
@@ -174,46 +148,55 @@ export function RecuperarPage() {
     let espera: number | null = null;
     const { error } = await authClient.emailOtp.resetPassword(
       { email: email.trim(), otp: code, password },
-      { onError: ({ response }) => void (espera = esperaDe(response)) },
+      { onError: ({ response }) => void (espera = esperaDe429(response, 10)) },
     );
-    if (espera !== null) {
+    if (espera !== null || error) {
       setOcupado(false);
-      setError(`Demasiados intentos. Espera ${String(espera)} segundos y vuelve a intentarlo.`);
-      return;
-    }
-    if (error) {
-      setOcupado(false);
-      const codigoDeError = (error as { code?: string }).code;
-      if (codigoDeError === "INVALID_OTP") {
+      const codigoDeError = (error as { code?: string } | null)?.code;
+      if (codigoDeError === "INVALID_OTP" && espera === null) {
         const nuevos = fallos + 1;
         setFallos(nuevos);
         setEstadoCodigo(nuevos >= INTENTOS ? "bloqueado" : "incorrecto");
-      } else if (codigoDeError === "TOO_MANY_ATTEMPTS") {
-        setEstadoCodigo("bloqueado");
-      } else if (codigoDeError === "OTP_EXPIRED") {
-        setEstadoCodigo("expirado");
-      } else if (codigoDeError === "PASSWORD_TOO_LONG") {
-        setError("La contraseña es demasiado larga: usa máximo 128 caracteres.");
-        return;
-      } else {
-        setError("No pudimos cambiar la contraseña. Inténtalo de nuevo en un momento.");
+        setCodigo("");
+        setPaso("codigo");
         return;
       }
-      setCodigo("");
-      setPaso("codigo");
+      if (codigoDeError === "TOO_MANY_ATTEMPTS" || codigoDeError === "OTP_EXPIRED") {
+        setEstadoCodigo(codigoDeError === "OTP_EXPIRED" ? "expirado" : "bloqueado");
+        setCodigo("");
+        setPaso("codigo");
+        return;
+      }
+      // Lo demás se corrige o se reintenta desde la contraseña, también si
+      // venía del cambio automático al corregir el código: en el paso del
+      // código no habría forma de volver a mandarlo.
+      if (espera !== null) esperarLimite(espera);
+      else setError("No pudimos cambiar la contraseña. Inténtalo de nuevo en un momento.");
+      setPaso("contrasena");
       return;
     }
     // Contraseña cambiada (y las otras sesiones cerradas): se entra con la
-    // nueva y se espera la sesión, como en el login.
+    // nueva y se espera la sesión, como en el login. Si entrar falla (el
+    // límite de intentos, la red), el login dice que la contraseña sí cambió.
     const entrada = await authClient.signIn.email({ email: email.trim(), password });
     if (entrada.error) {
-      void navigate("/login", { replace: true, state: { email: email.trim() } });
+      void navigate("/login", {
+        replace: true,
+        state: { email: email.trim(), contrasenaCambiada: true },
+      });
       return;
     }
     await refrescarSesion();
     setOcupado(false);
     setPaso("listo");
   }
+
+  const avisoDeLimite = limite > 0 && (
+    <AuthBanner tone="warning" title="Demasiados intentos">
+      Por seguridad, espera <strong className="tabular-nums">{minutosYSegundos(limite)}</strong>{" "}
+      antes de volver a intentarlo.
+    </AuthBanner>
+  );
 
   return (
     <AuthShell above={<Pasos paso={paso} />}>
@@ -231,7 +214,7 @@ export function RecuperarPage() {
             />
           </div>
           <form onSubmit={enviarCorreo} noValidate className="flex flex-col gap-4">
-            {error && <AuthBanner tone="error">{error}</AuthBanner>}
+            {avisoDeLimite || (error && <AuthBanner tone="error">{error}</AuthBanner>)}
             <AuthField
               label="Correo"
               type="email"
@@ -246,7 +229,9 @@ export function RecuperarPage() {
                 if (errorCorreo) setErrorCorreo(null);
               }}
             />
-            <AuthSubmit loading={ocupado}>{ocupado ? "Enviando…" : "Enviar código"}</AuthSubmit>
+            <AuthSubmit loading={ocupado} disabled={limite > 0}>
+              {ocupado ? "Enviando…" : "Enviar código"}
+            </AuthSubmit>
           </form>
           <AuthFooter>
             ¿Ya la recordaste?{" "}
@@ -297,7 +282,7 @@ export function RecuperarPage() {
                 Revisando el código…
               </p>
             )}
-            {error && <AuthBanner tone="error">{error}</AuthBanner>}
+            {avisoDeLimite || (error && <AuthBanner tone="error">{error}</AuthBanner>)}
             {estadoCodigo === "incorrecto" && (
               <AuthBanner tone="error">
                 Código incorrecto. Te{" "}
@@ -321,12 +306,12 @@ export function RecuperarPage() {
               {estadoCodigo === "bloqueado" || estadoCodigo === "expirado" ? (
                 <button
                   type="button"
-                  disabled={ocupado || reenviarEn > 0}
+                  disabled={ocupado || reenviarEn > 0 || limite > 0}
                   onClick={() => void pedirCodigo(email.trim())}
                   className="rounded-[10px] bg-primary px-6 py-2.5 font-display text-sm font-semibold text-primary-fg hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {reenviarEn > 0
-                    ? `Pide uno nuevo en 0:${String(reenviarEn).padStart(2, "0")}`
+                    ? `Pide uno nuevo en ${minutosYSegundos(reenviarEn)}`
                     : "Pedir un código nuevo"}
                 </button>
               ) : (
@@ -334,13 +319,13 @@ export function RecuperarPage() {
                   <span className="text-[13px] text-fg-muted">¿No te llegó?</span>
                   <button
                     type="button"
-                    disabled={ocupado || reenviarEn > 0}
+                    disabled={ocupado || reenviarEn > 0 || limite > 0}
                     onClick={() => void pedirCodigo(email.trim())}
                     className="flex items-center gap-1.5 px-2 py-1 font-display text-[13px] font-semibold text-brand disabled:cursor-not-allowed disabled:text-fg-muted"
                   >
                     <RefreshCw size={13} aria-hidden />
                     {reenviarEn > 0
-                      ? `Reenviar en 0:${String(reenviarEn).padStart(2, "0")}`
+                      ? `Reenviar en ${minutosYSegundos(reenviarEn)}`
                       : "Reenviar código"}
                   </button>
                 </>
@@ -373,7 +358,7 @@ export function RecuperarPage() {
             noValidate
             className="flex flex-col gap-4"
           >
-            {error && <AuthBanner tone="error">{error}</AuthBanner>}
+            {avisoDeLimite || (error && <AuthBanner tone="error">{error}</AuthBanner>)}
             <div className="flex flex-col gap-2">
               <AuthField
                 label="Nueva contraseña"
@@ -384,6 +369,11 @@ export function RecuperarPage() {
                 autoFocus
                 value={password}
                 onChange={(e) => setPassword(e.currentTarget.value)}
+                error={
+                  password.length > MAXIMO_CONTRASENA
+                    ? "Es demasiado larga: usa máximo 128 caracteres."
+                    : null
+                }
               />
               <PasswordStrength password={password} />
             </div>
@@ -408,7 +398,10 @@ export function RecuperarPage() {
               <Lock size={14} aria-hidden className="mt-px shrink-0" />
               No la uses en otras cuentas: es lo que protege tu marca si alguna otra se filtra.
             </p>
-            <AuthSubmit loading={ocupado} disabled={!contrasenaLista(password, confirmacion)}>
+            <AuthSubmit
+              loading={ocupado}
+              disabled={limite > 0 || !contrasenaLista(password, confirmacion)}
+            >
               {ocupado ? "Cambiando tu contraseña…" : "Cambiar contraseña"}
             </AuthSubmit>
           </form>
@@ -423,7 +416,14 @@ export function RecuperarPage() {
 /** Mínimo "Buena" (Auth Flow.html): 8 caracteres y dos criterios más, y que coincida. */
 function contrasenaLista(password: string, confirmacion: string): boolean {
   const { criterios, puntos } = fuerzaDeContrasena(password);
-  return criterios.largo && puntos >= 3 && password === confirmacion;
+  // Máximo 128 como el servidor: allá el código se gasta ANTES de revisar el
+  // largo, y una contraseña rechazada dejaría el código bueno inservible.
+  return (
+    criterios.largo &&
+    puntos >= 3 &&
+    password.length <= MAXIMO_CONTRASENA &&
+    password === confirmacion
+  );
 }
 
 const ESPERA_LISTO_MS = 3000;
