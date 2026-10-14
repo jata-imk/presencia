@@ -143,10 +143,11 @@ export function ContentEditor({
         onChange={(hashtags) => change({ hashtags })}
         placeholder="Agrega un hashtag y presiona Enter"
         maxItems={30}
-        maxLength={100}
         // Se guardan sin "#": el texto publicado se lo pone (buildPostText).
+        // Sin maxLength en la caja: se pueden pegar varios juntos, y el tope de
+        // 100 es por hashtag, después de separarlos (el del servidor).
         normalize={(raw) => {
-          const tags = normalizeHashtags([raw]);
+          const tags = normalizeHashtags([raw]).map((tag) => tag.slice(0, 100));
           return tags.length > 0 ? tags : null;
         }}
       />

@@ -10,6 +10,7 @@ import {
   correoDeVerificacion,
 } from "../mailer/auth-emails.js";
 import { sendMail } from "../mailer/mailer.js";
+import { TRUSTED_PROXIES } from "./proxies.js";
 
 // Instancia plana (sin DI): la CLI de Better Auth y toNodeHandler la
 // importan directo. ADR-007: Better Auth es la plomería, la UI es nuestra.
@@ -29,7 +30,12 @@ export const auth = betterAuth({
   }),
   // Postgres genera los uuid (defaultRandom en el schema); el adapter no
   // manda id porque supportsUUIDs es true con provider "pg".
-  advanced: { database: { generateId: "uuid" } },
+  advanced: {
+    database: { generateId: "uuid" },
+    // La IP real detrás de Cloudflare y nginx, para que el límite de intentos
+    // sea por cliente y no uno solo para todos (ver proxies.ts).
+    ipAddress: { trustedProxies: TRUSTED_PROXIES },
+  },
   user: {
     additionalFields: {
       displayName: {
@@ -85,6 +91,9 @@ export const auth = betterAuth({
     emailOTP({
       otpLength: 6,
       expiresIn: 600,
+      // Con hash, no en claro: quien pudiera leer `verifications` (un
+      // respaldo filtrado) podría pedir un código y tomar cualquier cuenta.
+      storeOTP: "hashed",
       allowedAttempts: 3,
       // Entrar con código no es un flujo nuestro: que nunca cree cuentas.
       disableSignUp: true,

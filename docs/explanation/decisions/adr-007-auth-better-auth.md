@@ -42,3 +42,8 @@ Lo que se decidió con Jose:
 - **El correo del código se manda sin esperarlo, y un fallo al mandarlo no llega al navegador.** A un correo sin cuenta no se manda nada, así que esperar el envío (cientos de ms) o devolver un 500 solo para los registrados diría cuáles existen. El error queda en el log.
 - **`revokeSessionsOnPasswordReset`:** cambiar la contraseña cierra las demás sesiones. La pantalla entra con la contraseña nueva y lleva a los chats.
 - **El correo del código** usa la plantilla de `Email Template.html`, con el código en dos grupos ("483 917").
+
+**Addendum (F10.8.4, review de cierre): el límite de intentos es por cliente también detrás de Cloudflare.** En prod la petición pasa por Cloudflare y luego por el nginx de CloudPanel, así que `X-Forwarded-For` llega con dos IPs. Sin `trustedProxies`, Better Auth no elige ninguna y todo cae en un solo contador por ruta: tres logins o tres códigos de quien fuera bloqueaban a todos. El límite ya estaba prendido en prod antes, porque Better Auth lo enciende por defecto en producción; la recuperación con código lo volvió crítico.
+
+- `advanced.ipAddress.trustedProxies` lleva el loopback y los rangos publicados de Cloudflare (`apps/api/src/auth/proxies.ts`, con la fecha de consulta). Better Auth recorre la cabecera desde la derecha y se queda con la primera IP que no es proxy. Una IP falsa agregada a la izquierda no sirve: probado en vivo.
+- Los códigos se guardan con hash (`storeOTP: "hashed"`): quien leyera `verifications` no puede usarlos para tomar una cuenta.
