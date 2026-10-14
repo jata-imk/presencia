@@ -41,7 +41,14 @@ export function CodeInput({
   }
 
   function escribir(i: number, texto: string) {
-    const solo = texto.replace(/\D/g, "");
+    let solo = texto.replace(/\D/g, "");
+    // Dos caracteres en una caja que ya tenía dígito: se escribió con el
+    // cursor dentro (no seleccionado). Es cambiar ese dígito, no pegar dos:
+    // queda el que no estaba, sin tocar los de las demás cajas.
+    const anterior = digitos[i];
+    if (solo.length === 2 && anterior) {
+      solo = solo[0] === anterior ? solo.slice(1) : solo.slice(0, 1);
+    }
     // Varios dígitos de golpe: el autollenado del sistema ("one-time-code")
     // o un teclado que pega. Se toman todos, no solo el último.
     if (solo.length > 1) {

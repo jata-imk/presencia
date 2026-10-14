@@ -68,6 +68,9 @@ const slidesAspectSchema = imageAspectRatioSchema.optional();
  * - Las vacías (un "#" suelto) y las repetidas se descartan; el chip del
  *   editor usa la etiqueta como key y la quita por valor.
  */
+/** Cuántos hashtags admite una publicación. */
+export const MAXIMO_HASHTAGS = 30;
+
 // Los mismos que `\s` de JS (ver normalizeHashtags).
 const HASHTAG_SPACES =
   /[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+/g;
@@ -83,7 +86,13 @@ export function normalizeHashtags(tags: readonly string[]): string[] {
 // Un transform dentro de un pipe: el JSON Schema de la tool (zodSchema del AI
 // SDK, io "input") describe el array de strings de entrada, y el parse guarda
 // la versión normalizada.
-const hashtagsSchema = z.array(z.string()).transform(normalizeHashtags).default([]);
+// Máximo 30, el tope de Instagram y el del editor (card-versions.ts): al
+// separar "#a #b #c" la lista puede crecer, y una card con más de 30 ya no se
+// podría guardar desde el editor.
+const hashtagsSchema = z
+  .array(z.string())
+  .transform((tags) => normalizeHashtags(tags).slice(0, MAXIMO_HASHTAGS))
+  .default([]);
 
 export const visualFirstContentSchema = z.object({
   archetype: z.literal("visual_first"),

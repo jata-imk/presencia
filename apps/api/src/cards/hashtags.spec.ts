@@ -42,6 +42,18 @@ describe("hashtags", () => {
     expect(content.hashtags).toEqual(["tacos", "merida", "uno", "dos"]);
   });
 
+  it("una card nunca pasa de 30 hashtags, aunque separarlos los multiplique", () => {
+    const def = tool("crear_borrador_texto");
+    const juntos = Array.from(
+      { length: 12 },
+      (_, i) => `#a${String(i)} #b${String(i)} #c${String(i)}`,
+    );
+    const content = def.buildContent(
+      def.inputSchema.parse({ network: "linkedin", body: "Hola", hashtags: juntos }),
+    );
+    expect(content.hashtags).toHaveLength(30);
+  });
+
   // La migración 0052 repite esta regla en SQL: si cambia aquí, cambia allá.
   it("descarta repetidos y quita también los espacios Unicode", () => {
     expect(normalizeHashtags(["tacos", "#tacos #tacos", "Café Xtabay", "Café Xtabay"])).toEqual([

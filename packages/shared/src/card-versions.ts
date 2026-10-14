@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { normalizeHashtags, type CardContent, type PublicationCardDto } from "./publication.js";
+import {
+  MAXIMO_HASHTAGS,
+  normalizeHashtags,
+  type CardContent,
+  type PublicationCardDto,
+} from "./publication.js";
 
 // F10.5: editar a mano el texto de una card y su historial de versiones.
 // La imagen tiene su propio historial (images.ts): una versión de texto no
@@ -22,7 +27,7 @@ export const cardTextFieldsSchema = z
       .array(z.string().max(500))
       .max(100)
       .transform(normalizeHashtags)
-      .pipe(z.array(z.string().max(100)).max(30)),
+      .pipe(z.array(z.string().max(100)).max(MAXIMO_HASHTAGS)),
     recordingNotes: z.string().max(5000),
     imagePrompt: z.string().max(2000),
   })
