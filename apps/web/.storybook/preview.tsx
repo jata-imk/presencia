@@ -5,7 +5,7 @@ import { useCardsStore } from "../src/stores/cards-store.js";
 import { usePublicationPanelStore } from "../src/stores/publication-panel-store.js";
 import { useToastStore } from "../src/stores/toast-store.js";
 import "../src/styles/app.css";
-import { installMockApi } from "./mock-api.js";
+import { installMockApi, usarRespuestas, type RespuestaDeHistoria } from "./mock-api.js";
 
 // Las pocas rutas de /api/* que piden los componentes conectados (ADR-027).
 installMockApi();
@@ -75,6 +75,7 @@ const preview: Preview = {
   // normalizado, con su lista por chat. Antes de pintar, no durante: un
   // setState en el render avisaría que se actualiza otro componente.
   beforeEach: ({ parameters }) => {
+    usarRespuestas((parameters.api ?? {}) as Record<string, RespuestaDeHistoria>);
     usePublicationPanelStore.setState(usePublicationPanelStore.getInitialState(), true);
     useCardSelectionStore.setState(useCardSelectionStore.getInitialState(), true);
     useToastStore.setState(useToastStore.getInitialState(), true);

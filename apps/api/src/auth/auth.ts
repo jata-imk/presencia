@@ -3,6 +3,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "../db/client.js";
 import { accounts, sessions, users, verifications } from "../db/schema.js";
 import { env } from "../env.js";
+import { correoDeCuentaExistente, correoDeVerificacion } from "../mailer/auth-emails.js";
 import { sendMail } from "../mailer/mailer.js";
 
 // Instancia plana (sin DI): la CLI de Better Auth y toNodeHandler la
@@ -46,24 +47,33 @@ export const auth = betterAuth({
       },
     },
   },
+  // F10.8.4: el límite de intentos también en dev (Better Auth lo prende solo
+  // en producción). Paridad: la pantalla de "demasiados intentos" del login se
+  // prueba igual que se ve en prod. 3 intentos de entrar cada 10 s por IP.
+  rateLimit: { enabled: true },
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
+    // Con la verificación obligatoria, registrarse con un correo que ya tiene
+    // cuenta responde igual que uno nuevo: la pantalla no revela qué correos
+    // están registrados. El aviso le llega al dueño (F10.8.4). Si esa cuenta
+    // nunca se confirmó (el link se perdió o venció), lo útil es un link
+    // nuevo: "entra con tu contraseña" la dejaría en el 403 de confirmar.
+    onExistingUserSignUp: async ({ user }) => {
+      if (!user.emailVerified) {
+        await auth.api.sendVerificationEmail({
+          body: { email: user.email, callbackURL: `${env.WEB_URL}/chats` },
+        });
+        return;
+      }
+      await sendMail({ to: user.email, ...correoDeCuentaExistente(user) });
+    },
   },
   emailVerification: {
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
-      await sendMail({
-        to: user.email,
-        subject: "Confirma tu correo para empezar a usar Presencia",
-        html: `
-          <p>Hola${user.name ? ` ${user.name}` : ""}:</p>
-          <p>Gracias por registrarte en Presencia. Confirma tu correo para activar tu cuenta:</p>
-          <p><a href="${url}">Confirmar mi correo</a></p>
-          <p>Si tú no creaste esta cuenta, ignora este mensaje.</p>
-        `,
-      });
+      await sendMail({ to: user.email, ...correoDeVerificacion(user, url) });
     },
   },
 });

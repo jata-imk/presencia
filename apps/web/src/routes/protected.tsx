@@ -8,6 +8,7 @@ import { ScheduleDrawer } from "../components/schedule/ScheduleDrawer.js";
 import { ToastViewport } from "../components/ui/Toast.js";
 import { authClient } from "../lib/auth-client.js";
 import { recordarRutaDeLaApp } from "../lib/ultima-ruta.js";
+import { registrarSesion, sesionExpiro } from "../lib/auth/sesion.js";
 import { AppLoading } from "../components/ui/AppLoading.js";
 import { ReconnectScreen } from "../components/ui/ReconnectScreen.js";
 
@@ -129,8 +130,17 @@ export function ProtectedLayout() {
     return <AppLoading />;
   }
   if (!session) {
-    return <Navigate to="/login" replace />;
+    // F10.8.4: después de entrar se vuelve a esta ruta, y si en esta pestaña
+    // había sesión (y no se cerró a propósito) el login avisa que expiró.
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: location.pathname + location.search, expired: sesionExpiro() }}
+      />
+    );
   }
+  registrarSesion();
 
   const needsOnboarding = session.user.onboardingCompletedAt === null;
   const onOnboardingRoute = location.pathname === "/onboarding";

@@ -5,6 +5,7 @@ import { ThemeToggle } from "./ThemeToggle.js";
 import { ChatCrumb } from "../chat/ChatCrumb.js";
 import { Menu } from "../ui/Menu.js";
 import { authClient } from "../../lib/auth-client.js";
+import { cerrarSesion } from "../../lib/auth/sesion.js";
 import { useCommandPaletteStore } from "../../stores/command-palette-store.js";
 import { useSidebarStore } from "../../stores/sidebar-store.js";
 
@@ -54,7 +55,7 @@ export function Topbar() {
       .join("") || "?";
 
   async function handleLogout() {
-    await authClient.signOut();
+    await cerrarSesion();
     void navigate("/login");
   }
 
