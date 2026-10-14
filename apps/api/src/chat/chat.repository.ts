@@ -117,7 +117,7 @@ export class ChatRepository {
    * igual o posterior (otro job que corrió a la vez), no lo pisa con uno más
    * corto. `false` si no se escribió; quien llama no cobra en ese caso.
    */
-  async saveSummary(tx: Tx, row: Omit<ChatSummaryRow, "updatedAt" | "summary">): Promise<boolean> {
+  async saveSummary(tx: Tx, row: Omit<ChatSummaryRow, "updatedAt">): Promise<boolean> {
     const saved = await tx
       .insert(chatSummaries)
       .values(row)
