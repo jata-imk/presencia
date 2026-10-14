@@ -1,6 +1,6 @@
-import { useChat } from "@ai-sdk/react";
+import { Chat, useChat } from "@ai-sdk/react";
 import { ArrowDown } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { Composer } from "../components/chat/Composer.js";
 import { PublicationPanel } from "../components/panel/PublicationPanel.js";
@@ -79,40 +79,52 @@ function ChatView({
       return next;
     });
   }
-  const transport = useMemo(() => chatTransport(chatId), [chatId]);
-  const { messages, sendMessage, regenerate, stop, status, error } = useChat<ChatUIMessage>({
-    id: chatId,
-    messages: initialMessages,
-    // Solo el último mensaje viaja al servidor (lib/chat-transport.ts). Uno
-    // por chat: useChat se queda con el primero que recibe.
-    transport,
-    // uuid (F10.8.2): el servidor guarda el mensaje con este mismo id, así
-    // "Regenerar" lo encuentra sin recargar. Con el id por default del SDK
-    // (no es uuid) la base le ponía otro, y regenerar daba 404.
-    generateId: uuid,
-    // F10.8.2: cómo terminó el turno, para su card de estado. Sin `finish` no
-    // terminó: se cortó (Detener, la red) o el stream se cerró de golpe (el
-    // servidor se reinició a media respuesta). Detener justo cuando terminaba
-    // no es un corte: el servidor ya la guardó completa. Solo setters y refs:
-    // useChat se queda con este callback del primer render.
-    onFinish: ({ messages: all, isAbort, isDisconnect, isError, finishReason }) => {
-      const userId = [...all].reverse().find((m) => m.role === "user")?.id;
-      if (!userId) return;
-      if (isError || !finishReason) {
-        // Perder la red es un corte, como Detener: el servidor lo ve igual
-        // (se cerró la conexión) y lo guarda como detenida. Marcarla fallida
-        // aquí la haría cambiar de card al recargar.
-        markTurn(userId, (isAbort && !isError) || isDisconnect ? "stopped" : "failed");
-        if (isError && retryingId.current === userId) setFailedAgain(true);
-        return;
-      }
-      // Salió bien: el siguiente fallo de este turno vuelve a ser el primero.
-      if (retryingId.current === userId) {
-        retryingId.current = null;
-        setFailedAgain(false);
-      }
-    },
-  });
+  // F10.8.4: el Chat es nuestro, uno por montaje (ChatView lleva key={id}).
+  // Desde @ai-sdk/react 4.0.1xx, useChat le hace stop() al Chat que crea él
+  // cuando se desmonta, y eso rompía dos cosas: en dev, el desmontaje falso
+  // de StrictMode abortaba el prompt inicial antes de salir; en prod, salir
+  // del chat a media respuesta cortaba el turno (el servidor lo guardaba
+  // como detenido). Un Chat que le pasamos (`useChat({ chat })`) no se
+  // detiene al desmontar: el stream sigue en segundo plano y la respuesta
+  // está al volver, como antes. useState y no useMemo: React puede tirar un
+  // memo, y un Chat nuevo perdería el stream en curso.
+  const [chat] = useState(
+    () =>
+      new Chat<ChatUIMessage>({
+        id: chatId,
+        messages: initialMessages,
+        // Solo el último mensaje viaja al servidor (lib/chat-transport.ts).
+        transport: chatTransport(chatId),
+        // uuid (F10.8.2): el servidor guarda el mensaje con este mismo id, así
+        // "Regenerar" lo encuentra sin recargar. Con el id por default del SDK
+        // (no es uuid) la base le ponía otro, y regenerar daba 404.
+        generateId: uuid,
+        // F10.8.2: cómo terminó el turno, para su card de estado. Sin `finish` no
+        // terminó: se cortó (Detener, la red) o el stream se cerró de golpe (el
+        // servidor se reinició a media respuesta). Detener justo cuando terminaba
+        // no es un corte: el servidor ya la guardó completa. Solo setters y refs:
+        // el Chat se queda con este callback del primer render. No debe lanzar:
+        // desde ai 7.0.1xx un error aquí rechaza el sendMessage.
+        onFinish: ({ messages: all, isAbort, isDisconnect, isError, finishReason }) => {
+          const userId = [...all].reverse().find((m) => m.role === "user")?.id;
+          if (!userId) return;
+          if (isError || !finishReason) {
+            // Perder la red es un corte, como Detener: el servidor lo ve igual
+            // (se cerró la conexión) y lo guarda como detenida. Marcarla fallida
+            // aquí la haría cambiar de card al recargar.
+            markTurn(userId, (isAbort && !isError) || isDisconnect ? "stopped" : "failed");
+            if (isError && retryingId.current === userId) setFailedAgain(true);
+            return;
+          }
+          // Salió bien: el siguiente fallo de este turno vuelve a ser el primero.
+          if (retryingId.current === userId) {
+            retryingId.current = null;
+            setFailedAgain(false);
+          }
+        },
+      }),
+  );
+  const { messages, sendMessage, regenerate, stop, status, error } = useChat({ chat });
   const busy = status === "submitted" || status === "streaming";
   // Auto-scroll (F10.6.2): el chat sigue a la respuesta SOLO si estabas en
   // el final. Antes bajaba en cada mensaje aunque estuvieras leyendo arriba.
