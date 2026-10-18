@@ -30,7 +30,7 @@ import { env } from "../env.js";
 import { FoldersService } from "../folders/folders.service.js";
 import { ChatTitleService } from "./chat-title.service.js";
 import { toChatSummary, toUIMessage } from "./chat-summary.js";
-import { blocksOf, contextTokensOf, textOf } from "./history-compaction.js";
+import { blocksOf, contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
 import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
@@ -297,9 +297,12 @@ export class ChatService {
             if (!last || (running && !running.closed())) {
               throw new ConflictException("Ese mensaje ya se envió.");
             }
-            // F10.9: se editó el PRIMER mensaje (no un "Reintentar", que lo
-            // reenvía igual): el título describía el texto viejo.
-            retitle = last.index === 0 && textOf(toUIMessage(all[0]!)) !== textOf(userMessage);
+            // F10.9: se rehace el PRIMER turno, editado o reintentado. El
+            // título puede describir el texto viejo; y no basta comparar
+            // textos, porque una edición que se cortó ya guardó el nuevo y su
+            // reintento llega igual. Un título que no cambia es una llamada
+            // utility de más, nada más.
+            retitle = last.index === 0;
             await this.dropStaleReply(tx, last.staleReply);
             await this.repo.deleteMessage(tx, userMessage.id);
             previous = all.slice(0, last.index);
@@ -494,7 +497,7 @@ export class ChatService {
     voicePromise: Promise<BrandVoiceForPrompt | null>,
     /** El turno registrado: su corte, y `release` al final de onEnd. */
     turn: TurnInFlight,
-    /** F10.9: se editó el primer mensaje; el título automático se rehace. */
+    /** F10.9: se rehízo el primer turno; el título automático se rehace. */
     retitle = false,
   ): Promise<void> {
     const { abortController, release } = turn;

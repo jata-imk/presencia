@@ -255,6 +255,15 @@ describe("ChatTitleService", { timeout: 30_000 }, () => {
     expect(delTurno).toHaveLength(1);
   });
 
+  it("sin el turno no reemplaza un título automático (no tendría contra qué cobrar)", async () => {
+    const chatId = await nuevoChat();
+    const llamadas = { n: 0 };
+    await crear("Post de marquesitas", llamadas).maybeTitle(userId, chatId, primerIntercambio);
+    await crear("Otro", llamadas).maybeTitle(userId, chatId, primerIntercambio, undefined, true);
+    expect(llamadas.n).toBe(1);
+    expect((await chatDe(chatId)).title).toBe("Post de marquesitas");
+  });
+
   it("al editar el primer mensaje respeta el título que escribió el creator", async () => {
     const chatId = await nuevoChat();
     await dbService.runWithTenant(userId, async (tx) => {

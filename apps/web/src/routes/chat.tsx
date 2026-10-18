@@ -34,7 +34,10 @@ export function ChatPage() {
   useEffect(() => {
     setInitialMessages(null);
     setLoadError(null);
-    if (!id) return;
+    if (!id) {
+      setLoadError("No se pudo cargar el chat.");
+      return;
+    }
     fetchChatMessages(id)
       .then(setInitialMessages)
       .catch(() => setLoadError("No se pudo cargar el chat."));
@@ -299,7 +302,9 @@ function ChatView({
   // pedido no empieza a responder; con el stream en marcha, ya se aceptó.
   const resyncOnReject = useRef<string | null>(null);
   useEffect(() => {
-    if (status === "streaming") resyncOnReject.current = null;
+    // Empezó a responder (se aceptó) o se detuvo antes: ya no hay rechazo
+    // que esperar.
+    if (status === "streaming" || status === "ready") resyncOnReject.current = null;
   }, [status]);
   useEffect(() => {
     const userId = resyncOnReject.current;
@@ -310,6 +315,8 @@ function ChatView({
     resyncOnReject.current = null;
     fetchChatMessages(chatId)
       .then((saved) => {
+        // Mientras se releía, el creator ya mandó otra cosa: esa manda.
+        if (chat.status !== "error") return;
         setMessages(saved);
         markTurn(userId, null);
         retryingId.current = null;
@@ -325,7 +332,17 @@ function ChatView({
         // Se queda la card de estado con el rechazo: al menos dice qué pasó.
         console.error("[chat] No se pudo releer el chat tras el rechazo:", err);
       });
-  }, [status, error]);
+  }, [
+    status,
+    error,
+    chat,
+    chatId,
+    quotaExhaustedError,
+    apiErrorMessage,
+    setMessages,
+    clearError,
+    toast,
+  ]);
 
   // Regenerar (y desde F10.8.2, editar el último mensaje) borra las cards de
   // la respuesta (ADR-006). Desde F10.5 una card puede traer trabajo del
@@ -482,6 +499,9 @@ function ChatView({
   }
 
   function send(text: string) {
+    // Un mensaje nuevo no es el regenerar o editar de antes: su rechazo no
+    // repone nada.
+    resyncOnReject.current = null;
     setModalDismissed(false);
     setFailedAgain(false);
     retryingId.current = null;

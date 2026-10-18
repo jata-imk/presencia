@@ -32,7 +32,11 @@ export function buildPublicationCardTools(deps: PublicationCardToolsDeps): ToolS
     tools[def.toolName] = tool({
       description: def.description,
       inputSchema: def.inputSchema,
-      execute: async (input) => {
+      execute: async (input, { abortSignal }) => {
+        // F10.9: el turno ya se cortó (Detener, la red): la card no llegaría
+        // a ningún mensaje. Se corta antes de escribirla; una que ya iba en
+        // camino la recoge el colector del turno (chat/turn-cards.ts).
+        abortSignal?.throwIfAborted();
         const content = def.buildContent(input);
         // archetype se deriva de content.archetype dentro de insertCard —
         // nunca se pasa por separado, así es imposible que se desalineen.

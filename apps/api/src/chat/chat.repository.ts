@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm";
 import type { MessageStatus } from "@presencia/shared";
 import { chatSummaries, chats, memoryChunks, messages } from "../db/schema.js";
+import { replaceableTitleSources } from "./chat-title.js";
 import type { Tx } from "../db/db.service.js";
 import { CHAT_CHANGED_CHANNEL, encodeChatChanged } from "../realtime/card-events.js";
 
@@ -280,16 +281,15 @@ export class ChatRepository {
     tx: Tx,
     chatId: string,
     title: string,
-    /** F10.9: también sobre un título automático (se editó el primer mensaje). */
+    /** F10.9: también sobre un título automático (se rehízo el primer turno). */
     retitle = false,
   ): Promise<ChatRow | undefined> {
-    const replaceable = retitle
-      ? inArray(chats.titleSource, ["default", "auto"])
-      : eq(chats.titleSource, "default");
     const [chat] = await tx
       .update(chats)
       .set({ title, titleSource: "auto", updatedAt: sql`now()` })
-      .where(and(eq(chats.id, chatId), replaceable))
+      .where(
+        and(eq(chats.id, chatId), inArray(chats.titleSource, replaceableTitleSources(retitle))),
+      )
       .returning();
     if (chat) await this.notifyChanged(tx, chat);
     return chat;
