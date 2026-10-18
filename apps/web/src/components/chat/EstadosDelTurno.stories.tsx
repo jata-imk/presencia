@@ -14,6 +14,7 @@ import { TurnStatusCard } from "./TurnStatusCard.js";
 // Con nombre y a nivel de módulo: así los clics quedan en el panel "Actions".
 const reintentar = fn().mockName("Reintentar");
 const editar = fn().mockName("Editar mensaje");
+const continuar = fn().mockName("Continuar");
 
 function Turno({
   pedido,
@@ -37,6 +38,7 @@ function Turno({
       apiError={apiError}
       onRetry={reintentar}
       onEdit={estado.actionable ? editar : undefined}
+      onContinue={continuar}
     />
   );
   return (

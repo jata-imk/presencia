@@ -11,6 +11,7 @@ import {
   TITLE_SYSTEM,
   assistantTurns,
   cleanTitle,
+  replaceableTitleSources,
   transcriptForTitle,
 } from "./chat-title.js";
 
@@ -21,6 +22,14 @@ import {
 // - Una sola vez: un chat titulado no se vuelve a titular, y uno renombrado a
 //   mano (`title_source = 'user'`) nunca se toca.
 // - Se cobra con la tarifa utility (`chat_title`), una vez por chat.
+//
+// F10.9 (pendiente de F10.8.2): si el primer turno se vuelve a correr (el
+// creator editó el primer mensaje, o lo reintentó tras una edición que se
+// cortó), el título puede describir el texto viejo. Ese turno vuelve a titular
+// aunque el chat ya tenga uno automático (`retitle`); el que el creator
+// escribió sigue sin tocarse. Reemplazar uno automático se cobra contra el
+// turno, no contra el chat: el dedup del ledger ya tiene ocupada la
+// referencia del chat con el primer título.
 //
 // Corre fuera del turno, sin que nadie lo espere: el creator ya tiene su
 // respuesta, y el título llega a la pantalla por el stream de eventos
@@ -50,13 +59,19 @@ export class ChatTitleService {
     chatId: string,
     conversation: UIMessage[],
     runId?: string,
+    /** Se rehízo el primer turno: también reemplaza un título automático. */
+    retitle = false,
   ): Promise<void> {
     try {
       if (assistantTurns(conversation) > TITLE_ATTEMPTS) return;
       const chat = await this.dbService.runWithTenant(userId, (tx) =>
         this.repo.getChat(tx, chatId),
       );
-      if (!chat || chat.titleSource !== "default") return;
+      if (!chat) return;
+      // Reemplazar uno automático necesita el turno: es la referencia del cobro.
+      const replacesAuto = chat.titleSource === "auto" && retitle && runId !== undefined;
+      const sources: string[] = replaceableTitleSources(replacesAuto);
+      if (!sources.includes(chat.titleSource)) return;
       const transcript = transcriptForTitle(conversation);
       if (!transcript) return;
 
@@ -71,19 +86,22 @@ export class ChatTitleService {
 
       if (title) {
         await this.dbService.runWithTenant(userId, async (tx) => {
-          const saved = await this.repo.setAutoTitle(tx, chatId, title);
+          const saved = await this.repo.setAutoTitle(tx, chatId, title, replacesAuto);
           // Lo renombró el creator mientras el modelo pensaba: gana el suyo,
           // y un título que no quedó no se cobra.
           if (!saved) return;
           // En la MISMA transacción que el título que cobra. La referencia es
           // el chat: el dedup del ledger impide cobrar dos títulos al mismo.
+          // Al reemplazar uno automático, el turno (ver la cabecera).
+          const reference = replacesAuto
+            ? { referenceType: "run", referenceId: runId }
+            : { referenceType: "chat", referenceId: chatId };
           await this.credits.charge(tx, {
             userId,
             usage: chargeUsageOf(respuesta.usage),
             taskKind: TASK_KIND,
             reason: "chat_title",
-            referenceType: "chat",
-            referenceId: chatId,
+            ...reference,
           });
         });
       }

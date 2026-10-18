@@ -116,7 +116,7 @@ export class CardsRepository {
   // (que se inserta en onEnd) — backfill de message_id una vez que sí existe.
   // Sin NOTIFY: `message_id` no viaja en el DTO, así que no cambia nada de lo
   // que se ve, y el mismo turno ya avisó al insertar la card.
-  async linkCardsToMessage(tx: Tx, cardIds: string[], messageId: string): Promise<void> {
+  async linkCardsToMessage(tx: Tx, cardIds: readonly string[], messageId: string): Promise<void> {
     if (cardIds.length === 0) return;
     await tx
       .update(publicationCards)

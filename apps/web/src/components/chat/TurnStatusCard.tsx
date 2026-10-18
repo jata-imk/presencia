@@ -1,4 +1,4 @@
-import { CircleAlert, CircleStop, Pencil, RefreshCw } from "lucide-react";
+import { CircleAlert, CircleStop, Pencil, Play, RefreshCw } from "lucide-react";
 import type { TurnNotice } from "../../lib/turn-status.js";
 
 // El estado de un turno que se quedó sin respuesta completa (F10.8.2,
@@ -10,7 +10,8 @@ import type { TurnNotice } from "../../lib/turn-status.js";
 //   "Se detuvo antes de responder" / "Respuesta detenida" (se cortó, sin o
 //   con algo en pantalla) y "Sin respuesta" / "Respuesta incompleta" (falló).
 // - Se detuvo con algo en pantalla (texto o cards): se queda, y la pastilla va
-//   al pie con Reintentar. Es la respuesta, interrumpida: no un error.
+//   al pie con Reintentar y, desde F10.9, Continuar. Es la respuesta,
+//   interrumpida: no un error.
 // - Se detuvo sin nada en pantalla, o falló (con o sin algo escrito): una
 //   card sutil con la salida explícita, porque sin ella el chat parece colgado.
 //
@@ -22,6 +23,7 @@ export function TurnStatusCard({
   apiError,
   onRetry,
   onEdit,
+  onContinue,
 }: {
   notice: TurnNotice;
   /** El reintento de esta sesión volvió a fallar. */
@@ -34,6 +36,11 @@ export function TurnStatusCard({
   onRetry: () => void;
   /** Abre el último mensaje en modo edición (F10.8.2); sin él, no se ofrece. */
   onEdit?: () => void;
+  /**
+   * F10.9: sigue una respuesta detenida a medias (manda "Continúa"). Solo
+   * donde hay algo que seguir; sin él, no se ofrece.
+   */
+  onContinue?: () => void;
 }) {
   const stopped = notice.status === "stopped";
   // Lo que la respuesta alcanzó a mostrar (texto, o cards/pasos/memoria).
@@ -61,6 +68,12 @@ export function TurnStatusCard({
           )}
           {label}
         </span>
+        {notice.actionable && stopped && shown && onContinue && (
+          <button type="button" onClick={onContinue} className={SUBTLE_BUTTON}>
+            <Play size={12} strokeWidth={2} aria-hidden />
+            Continuar
+          </button>
+        )}
         {notice.actionable && <RetryButton onClick={onRetry} subtle />}
       </div>
     );
@@ -114,20 +127,15 @@ export function TurnStatusCard({
 
 function RetryButton({ onClick, subtle = false }: { onClick: () => void; subtle?: boolean }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        subtle
-          ? "inline-flex items-center gap-1 rounded-md px-1 text-xs font-semibold text-fg-secondary hover:text-fg"
-          : CARD_BUTTON
-      }
-    >
+    <button type="button" onClick={onClick} className={subtle ? SUBTLE_BUTTON : CARD_BUTTON}>
       <RefreshCw size={12} strokeWidth={2} aria-hidden />
       Reintentar
     </button>
   );
 }
+
+const SUBTLE_BUTTON =
+  "inline-flex items-center gap-1 rounded-md px-1 text-xs font-semibold text-fg-secondary hover:text-fg";
 
 const CARD_BUTTON =
   "inline-flex h-7 items-center gap-1.5 rounded-md bg-card px-2.5 font-display text-xs font-semibold text-fg shadow-xs hover:bg-surface";

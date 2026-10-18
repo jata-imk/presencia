@@ -1061,8 +1061,15 @@ seguir conversando con eso.
 > detuvo la respuesta antes de empezar." con Reintentar. Sin
 > ella, el chat parecía colgado. Detener no cobra. El copy no
 > dice "la detuviste": el servidor no distingue Detener de
-> cerrar la pestaña o perder la red. "Continuar" una
-> respuesta detenida no entra: se le pide al chat.
+> cerrar la pestaña o perder la red.
+>
+> **Continuar (F10.9).** La pastilla de una respuesta
+> detenida a medias ofrece también "Continuar": manda
+> "Continúa" como un mensaje tuyo más, visible (como en
+> Claude), y la IA retoma desde donde se cortó. ChatGPT
+> extendía la misma respuesta, y era justo donde fallaba
+> (repetía o reiniciaba); un mensaje visible además es
+> honesto con el historial y con lo que se cobra.
 
 ### El drawer de programación
 
@@ -1330,6 +1337,13 @@ borradores con ediciones pide confirmación.
 **Por qué solo el último:** editar uno de en medio obligaría a
 borrar todo lo que vino después (o a ramificar la
 conversación). Es destructivo y no entra en V1.
+
+> **F10.9.** Si el mensaje editado es el primero del chat, el
+> título automático se rehace (el viejo describía el texto
+> anterior); uno que el creator escribió no se toca. Y si la
+> app rechaza la edición o el regenerar (sin cuota, mensaje
+> demasiado largo), la respuesta original vuelve a la
+> pantalla con el motivo: el servidor nunca la borró.
 
 ### IA falló
 

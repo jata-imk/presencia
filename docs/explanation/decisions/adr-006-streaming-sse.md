@@ -180,9 +180,16 @@ El backlog de "compactación real" (HIGH desde F4.5) se cierra así:
 
 **Addendum (F10.8.2, review de cierre, 2026-10-11).**
 
-- **Solo se ligan las cards que la respuesta cortada muestra.** Una card cuya tool quedó a medias (el saneado la quita) ya existe pero no se ve en el chat: se borra al vencer la gracia, junto con las que terminen de crearse después. Queda un residuo conocido: una card que termina de guardarse después de los 3 s de gracia queda huérfana.
+- **Solo se ligan las cards que la respuesta cortada muestra.** Una card cuya tool quedó a medias (el saneado la quita) ya existe pero no se ve en el chat: se borra al vencer la gracia, junto con las que terminen de crearse después. Queda un residuo conocido: una card que termina de guardarse después de los 3 s de gracia queda huérfana (resuelto en F10.9 PR1, abajo).
 - **Regenerar mientras la respuesta todavía se genera** (otra pestaña) responde **409**, igual que un reenvío.
 - **La compactación ve los turnos marcados** (`markUnansweredTurns` en el transcript): sin la marca, el resumen daba por contestado un pedido que se cortó.
 - **Perder la red es un corte**, no un fallo: el servidor solo ve que se cerró la conexión y lo guarda como detenida, y la web lo marca igual (`isDisconnect`).
 - El timer de la espera entre turnos se limpia. Sin cuota, la burbuja no ofrece Editar.
 - **Diferido:** al editar el primer mensaje, el título automático no se rehace (`maybeTitle` solo titula chats con su título de nacimiento).
+
+**Addendum (F10.9 PR1, 2026-10-17) — los pendientes de F10.8.2.**
+
+- **La card tardía ya no queda huérfana.** La tool de cards no escribe si el turno ya se cortó (`abortSignal`), y las cards del turno viven en un colector (`chat/turn-cards.ts`), no en un arreglo suelto, para la que ya iba en camino. Al vencer la gracia, el turno cortado borra las que el creator no vio y **cierra** el colector: desde ahí, una tool que termine tarde entrega su card y se borra en cuanto llega. No es un cron: un borrador sin mensaje también existe legítimamente (el turno en curso, antes de `persistReply`; un chat borrado, `schema.ts`), y un barrido no sabría distinguirlos.
+- **Editar el primer mensaje rehace el título automático.** Todo turno de `streamChat` que rehace el mensaje 0 (editado o reintentado) pide `maybeTitle(..., retitle)`, que también reemplaza un título `auto`. No se comparan textos: una edición que se cortó ya guardó el texto nuevo, y su reintento llega igual. Un título que no cambia cuesta una llamada utility de más. Uno escrito por el creator (`user`) sigue sin tocarse. Reemplazar uno `auto` se cobra contra el turno (`run`), porque el dedup del ledger ya tiene ocupada la referencia del chat con el primero; uno que seguía de nacimiento se cobra contra el chat, como siempre.
+- **Un regenerar o editar rechazado ya no deja la pantalla mintiendo.** El SDK quita la respuesta (o corta lo de después) antes de mandar. Si la API rechaza antes de responder (402, 409, 413), la web vuelve a leer `GET /chats/:id/messages` y repone lo guardado (`setMessages`). El motivo sale en un toast, salvo sin cuota, donde ya lo dicen el modal y el aviso. Un error que no es un rechazo con motivo (la red, un 500) no se resincroniza: no se sabe qué guardó el servidor, y la card de estado ofrece reintentar.
+- **"Continuar"** en una respuesta detenida a medias es la web mandando "Continúa", visible (como en Claude). No hay trigger nuevo: el modelo ya ve la respuesta detenida marcada (F10.8.2 PR2) y retoma desde ahí.

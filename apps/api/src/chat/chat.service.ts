@@ -40,6 +40,7 @@ import { cardIdsIn, type CompressedCardOutput, type LiveCard } from "./context-d
 import { sanitizeInterruptedParts } from "./interrupted-turn.js";
 import { lastTurnOf, storableMessageId } from "./last-user-message.js";
 import { buildSystemPrompt } from "./system-prompt.js";
+import { TurnCards } from "./turn-cards.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
 // Si el modelo agota este presupuesto a mitad de una tool call, onEnd lo
@@ -282,12 +283,13 @@ export class ChatService {
       return;
     }
     try {
-      const { history, summary } = await this.dbService
+      const { history, summary, retitle } = await this.dbService
         .runWithTenant(userId, async (tx) => {
           const chat = await this.repo.getChat(tx, chatId);
           if (!chat) throw new NotFoundException("Ese chat no existe.");
           const all = await this.repo.listMessages(tx, chatId);
           let previous = all;
+          let retitle = false;
           if (all.some((m) => m.id === userMessage.id)) {
             const last = lastTurnOf(all, userMessage.id);
             // Un mensaje viejo con el mismo id, o el turno sigue corriendo: un
@@ -295,6 +297,12 @@ export class ChatService {
             if (!last || (running && !running.closed())) {
               throw new ConflictException("Ese mensaje ya se envió.");
             }
+            // F10.9: se rehace el PRIMER turno, editado o reintentado. El
+            // título puede describir el texto viejo; y no basta comparar
+            // textos, porque una edición que se cortó ya guardó el nuevo y su
+            // reintento llega igual. Un título que no cambia es una llamada
+            // utility de más, nada más.
+            retitle = last.index === 0;
             await this.dropStaleReply(tx, last.staleReply);
             await this.repo.deleteMessage(tx, userMessage.id);
             previous = all.slice(0, last.index);
@@ -312,6 +320,7 @@ export class ChatService {
           return {
             history: [...previous, saved].map((row) => toUIMessage(row)),
             summary: await this.repo.getSummary(tx, chatId),
+            retitle,
           };
         })
         .catch((error: unknown) => {
@@ -330,6 +339,7 @@ export class ChatService {
         res,
         voicePromise,
         turn,
+        retitle,
       );
     } catch (error) {
       turn.release();
@@ -487,12 +497,14 @@ export class ChatService {
     voicePromise: Promise<BrandVoiceForPrompt | null>,
     /** El turno registrado: su corte, y `release` al final de onEnd. */
     turn: TurnInFlight,
+    /** F10.9: se rehízo el primer turno; el título automático se rehace. */
+    retitle = false,
   ): Promise<void> {
     const { abortController, release } = turn;
 
-    // Ids de las cards creadas durante este turno (closure compartido con la
-    // tool): onEnd las vincula al mensaje assistant una vez que existe.
-    const createdCardIds: string[] = [];
+    // Las cards creadas durante este turno (closure compartido con la tool):
+    // onEnd las vincula al mensaje assistant una vez que existe.
+    const turnCards = new TurnCards();
     // Un groupId por turno, no por card — coincide con lo ya documentado
     // en presencia-chat.md (el toggle multi-red del drawer se dispara
     // cuando "la publicación se generó para múltiples redes en el mismo
@@ -537,7 +549,7 @@ export class ChatService {
         chatId,
         dbService: this.dbService,
         cardsRepository: this.cardsRepo,
-        createdCardIds,
+        turnCards,
         groupId,
       }),
       // F10.8: la memoria entre chats. El modelo la llama cuando el creator
@@ -644,17 +656,17 @@ export class ChatService {
       const visible = new Set(
         cardIdsIn([{ ...responseMessage, parts: sanitizeInterruptedParts(responseMessage.parts) }]),
       );
-      const linked = createdCardIds.filter((id) => visible.has(id));
+      const linked = turnCards.ids.filter((id) => visible.has(id));
       await this.persistReply(userId, chatId, responseMessage, status, trace.runId, linked);
-      setTimeout(
-        () =>
-          void this.dropLateCards(
-            userId,
-            chatId,
-            createdCardIds.filter((id) => !visible.has(id)),
-          ),
-        ABORTED_TRACE_GRACE_MS,
-      );
+      setTimeout(() => {
+        void this.dropLateCards(
+          userId,
+          chatId,
+          turnCards.ids.filter((id) => !visible.has(id)),
+        );
+        // F10.9: y las que lleguen después de la gracia, en cuanto lleguen.
+        turnCards.close((id) => void this.dropLateCards(userId, chatId, [id]));
+      }, ABORTED_TRACE_GRACE_MS);
     };
 
     // Promesa que se cumple cuando el stream deja de escribir. Al cortar, eso
@@ -736,7 +748,7 @@ export class ChatService {
               responseMessage,
               failed ? "failed" : "complete",
               trace.runId,
-              createdCardIds,
+              turnCards.ids,
               // Cobro real con el usage real del turno, en la MISMA
               // transacción que el mensaje que cobra (modelo-de-datos.md: "o
               // se cobra y se produce, o ninguna de las dos"). charge() puede
@@ -789,6 +801,7 @@ export class ChatService {
                 chatId,
                 [...history, responseMessage],
                 trace.runId,
+                retitle,
               );
               // F10.8: si el contexto de este turno ya pesa, se resume el tramo
               // viejo en segundo plano para que el siguiente viaje más ligero.
@@ -831,7 +844,7 @@ export class ChatService {
     status: MessageStatus,
     /** null si el turno no llegó a correr: no hay traza que ligar. */
     runId: string | null,
-    createdCardIds: string[],
+    createdCardIds: readonly string[],
     charge?: (tx: Tx, messageId: string) => Promise<unknown>,
   ): Promise<string | null> {
     try {

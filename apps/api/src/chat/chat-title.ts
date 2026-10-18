@@ -30,6 +30,16 @@ Lee el inicio de la conversación y escribe un título en español mexicano que 
 Responde solo con el título.`;
 
 /** Las respuestas del asistente en la conversación (cuenta la que acaba de llegar). */
+/**
+ * Qué títulos puede reemplazar el automático: el de nacimiento siempre, y uno
+ * automático cuando se rehízo el primer turno (F10.9). El que escribió el
+ * creator (`user`), nunca. Lo usan el servicio (para no llamar al modelo en
+ * balde) y el UPDATE (para que un renombrado a media llamada gane).
+ */
+export function replaceableTitleSources(retitle: boolean): ("default" | "auto")[] {
+  return retitle ? ["default", "auto"] : ["default"];
+}
+
 export function assistantTurns(conversation: UIMessage[]): number {
   return conversation.filter((m) => m.role === "assistant").length;
 }

@@ -8,9 +8,10 @@ export interface PublicationCardToolsDeps {
   chatId: string;
   dbService: DbService;
   cardsRepository: CardsRepository;
-  // Closure compartido con streamChat: onEnd hace el backfill de messageId
-  // sobre estos ids una vez que el mensaje assistant existe en DB.
-  createdCardIds: string[];
+  // Closure compartido con el turno (chat/turn-cards.ts): onEnd hace el
+  // backfill de messageId sobre estos ids una vez que el mensaje assistant
+  // existe en DB.
+  turnCards: { add(cardId: string): void };
   /**
    * Un id por turno (no por card) — todas las cards creadas en el mismo
    * turno de chat lo comparten, así el frontend las reconoce como
@@ -31,7 +32,11 @@ export function buildPublicationCardTools(deps: PublicationCardToolsDeps): ToolS
     tools[def.toolName] = tool({
       description: def.description,
       inputSchema: def.inputSchema,
-      execute: async (input) => {
+      execute: async (input, { abortSignal }) => {
+        // F10.9: el turno ya se cortó (Detener, la red): la card no llegaría
+        // a ningún mensaje. Se corta antes de escribirla; una que ya iba en
+        // camino la recoge el colector del turno (chat/turn-cards.ts).
+        abortSignal?.throwIfAborted();
         const content = def.buildContent(input);
         // archetype se deriva de content.archetype dentro de insertCard —
         // nunca se pasa por separado, así es imposible que se desalineen.
@@ -44,7 +49,7 @@ export function buildPublicationCardTools(deps: PublicationCardToolsDeps): ToolS
             groupId: deps.groupId,
           }),
         );
-        deps.createdCardIds.push(card.id);
+        deps.turnCards.add(card.id);
         // content ya está calculado arriba (tipado, sin el roundtrip del
         // jsonb de vuelta) — viaja en el output de la tool para que el
         // frontend pinte la card sin fetch extra (ADR-006 addendum F3 PR3).
