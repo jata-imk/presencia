@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { CardContent } from "@presencia/shared";
 import {
   PublishingRateLimitError,
@@ -490,6 +490,14 @@ describe("PostFastProvider", () => {
     };
 
     it("pide UNA sola request por lote, acotada al rango del lote", async () => {
+      // El reloj fijo una semana después del post: con el de verdad, el post
+      // envejece fuera de la ventana máxima (METRICS_VENTANA_MAXIMA_DIAS) y
+      // el inicio del rango deja de ser el suyo. Solo `Date`: el fetch
+      // simulado y sus promesas siguen con los timers reales.
+      vi.useFakeTimers({ now: new Date("2026-09-17T12:00:00.000Z"), toFake: ["Date"] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
       fetchMock.mockResolvedValueOnce(
         jsonResponse(200, {
           data: [
