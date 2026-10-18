@@ -22,6 +22,12 @@ import {
 //   mano (`title_source = 'user'`) nunca se toca.
 // - Se cobra con la tarifa utility (`chat_title`), una vez por chat.
 //
+// F10.9 (pendiente de F10.8.2): si el creator edita el PRIMER mensaje, el
+// título describía el texto viejo. Ese turno vuelve a titular aunque el chat
+// ya tenga uno automático (`retitle`); el que el creator escribió sigue sin
+// tocarse. Ese cobro referencia al turno, no al chat: el dedup del ledger ya
+// tiene ocupada la referencia del chat con el primer título.
+//
 // Corre fuera del turno, sin que nadie lo espere: el creator ya tiene su
 // respuesta, y el título llega a la pantalla por el stream de eventos
 // (`chat_changed`, F8.6).
@@ -50,13 +56,17 @@ export class ChatTitleService {
     chatId: string,
     conversation: UIMessage[],
     runId?: string,
+    /** Se editó el primer mensaje: también reemplaza un título automático. */
+    retitle = false,
   ): Promise<void> {
     try {
       if (assistantTurns(conversation) > TITLE_ATTEMPTS) return;
       const chat = await this.dbService.runWithTenant(userId, (tx) =>
         this.repo.getChat(tx, chatId),
       );
-      if (!chat || chat.titleSource !== "default") return;
+      const replaceable =
+        chat?.titleSource === "default" || (retitle && chat?.titleSource === "auto");
+      if (!replaceable) return;
       const transcript = transcriptForTitle(conversation);
       if (!transcript) return;
 
@@ -71,19 +81,23 @@ export class ChatTitleService {
 
       if (title) {
         await this.dbService.runWithTenant(userId, async (tx) => {
-          const saved = await this.repo.setAutoTitle(tx, chatId, title);
+          const saved = await this.repo.setAutoTitle(tx, chatId, title, retitle);
           // Lo renombró el creator mientras el modelo pensaba: gana el suyo,
           // y un título que no quedó no se cobra.
           if (!saved) return;
           // En la MISMA transacción que el título que cobra. La referencia es
           // el chat: el dedup del ledger impide cobrar dos títulos al mismo.
+          // Al retitular, el turno (ver la cabecera).
+          const reference =
+            retitle && runId
+              ? { referenceType: "run", referenceId: runId }
+              : { referenceType: "chat", referenceId: chatId };
           await this.credits.charge(tx, {
             userId,
             usage: chargeUsageOf(respuesta.usage),
             taskKind: TASK_KIND,
             reason: "chat_title",
-            referenceType: "chat",
-            referenceId: chatId,
+            ...reference,
           });
         });
       }

@@ -227,6 +227,46 @@ describe("ChatTitleService", { timeout: 30_000 }, () => {
     expect(llamadas.n).toBe(0);
   });
 
+  it("al editar el primer mensaje rehace el título automático y cobra contra el turno", async () => {
+    const chatId = await nuevoChat();
+    const llamadas = { n: 0 };
+    await crear("Post de marquesitas", llamadas).maybeTitle(userId, chatId, primerIntercambio);
+    const runId = randomUUID();
+    await crear("Guion de TikTok de tacos", llamadas).maybeTitle(
+      userId,
+      chatId,
+      [msg("user", "Mejor un guion de TikTok de mis tacos"), msg("assistant", "Va el guion.")],
+      runId,
+      true,
+    );
+    expect(await chatDe(chatId)).toMatchObject({
+      title: "Guion de TikTok de tacos",
+      titleSource: "auto",
+    });
+    // El primero contra el chat, el segundo contra el turno: el dedup del
+    // ledger no se traga el segundo cobro (ni tumba el título con él).
+    expect(await cobrosDe(chatId)).toHaveLength(1);
+    const delTurno = await dbService.runWithTenant(userId, (tx) =>
+      tx
+        .select()
+        .from(creditLedger)
+        .where(and(eq(creditLedger.referenceType, "run"), eq(creditLedger.referenceId, runId))),
+    );
+    expect(delTurno).toHaveLength(1);
+  });
+
+  it("al editar el primer mensaje respeta el título que escribió el creator", async () => {
+    const chatId = await nuevoChat();
+    await dbService.runWithTenant(userId, async (tx) => {
+      const { ChatRepository } = await import("./chat.repository.js");
+      await new ChatRepository().renameChat(tx, chatId, "Mis ideas");
+    });
+    const llamadas = { n: 0 };
+    await crear("Otro", llamadas).maybeTitle(userId, chatId, primerIntercambio, randomUUID(), true);
+    expect(await chatDe(chatId)).toMatchObject({ title: "Mis ideas", titleSource: "user" });
+    expect(llamadas.n).toBe(0);
+  });
+
   it(`después de la respuesta ${String(TITLE_ATTEMPTS)} se rinde: no llama al modelo`, async () => {
     const chatId = await nuevoChat();
     const largo: UIMessage[] = [];

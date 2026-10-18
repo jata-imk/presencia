@@ -15,6 +15,7 @@ import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
 import { ConfirmDeleteModal } from "../components/ui/ConfirmDeleteModal.js";
 import { fetchCardVersions } from "../lib/cards-api.js";
 import { parseApiErrorMessage, parseQuotaExhaustedError } from "../lib/chat-error.js";
+import { fetchChatMessages } from "../lib/chat-messages.js";
 import { isCardToolPart, messageText, type ChatUIMessage } from "../lib/chat-types.js";
 import { turnNotices, type TurnNotice, type TurnStatus } from "../lib/turn-status.js";
 import { useQuota } from "../lib/use-quota.js";
@@ -33,11 +34,9 @@ export function ChatPage() {
   useEffect(() => {
     setInitialMessages(null);
     setLoadError(null);
-    fetch(`/api/chats/${id}/messages`)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        setInitialMessages((await res.json()) as ChatUIMessage[]);
-      })
+    if (!id) return;
+    fetchChatMessages(id)
+      .then(setInitialMessages)
       .catch(() => setLoadError("No se pudo cargar el chat."));
   }, [id]);
 
@@ -124,7 +123,8 @@ function ChatView({
         },
       }),
   );
-  const { messages, sendMessage, regenerate, stop, status, error } = useChat({ chat });
+  const { messages, sendMessage, regenerate, stop, status, error, setMessages, clearError } =
+    useChat({ chat });
   const busy = status === "submitted" || status === "streaming";
   // Auto-scroll (F10.6.2): el chat sigue a la respuesta SOLO si estabas en
   // el final. Antes bajaba en cada mensaje aunque estuvieras leyendo arriba.
@@ -288,8 +288,44 @@ function ChatView({
       behavior: smooth ? "smooth" : "auto",
     });
   }
+  const toast = useToastStore((s) => s.show);
   const quotaExhaustedError = parseQuotaExhaustedError(error);
   const apiErrorMessage = parseApiErrorMessage(error);
+
+  // F10.9 (pendiente de F10.8.2): regenerar o editar quita la respuesta de la
+  // pantalla ANTES de mandar (lo hace el SDK). Si la API lo rechaza (sin
+  // cuota, 409, 413), el servidor conservó la original y la pantalla mentía:
+  // se vuelve a leer lo guardado. El id del mensaje del creator mientras el
+  // pedido no empieza a responder; con el stream en marcha, ya se aceptó.
+  const resyncOnReject = useRef<string | null>(null);
+  useEffect(() => {
+    if (status === "streaming") resyncOnReject.current = null;
+  }, [status]);
+  useEffect(() => {
+    const userId = resyncOnReject.current;
+    if (!userId || status !== "error") return;
+    // Otro error (la red, un 500): no se sabe qué guardó el servidor, y la
+    // card de estado ofrece reintentar.
+    if (!quotaExhaustedError && !apiErrorMessage) return;
+    resyncOnReject.current = null;
+    fetchChatMessages(chatId)
+      .then((saved) => {
+        setMessages(saved);
+        markTurn(userId, null);
+        retryingId.current = null;
+        setFailedAgain(false);
+        // Sin cuota se queda el error: lo muestran el modal y el aviso. Los
+        // demás ya no tienen card de estado donde verse (la respuesta volvió).
+        if (apiErrorMessage) {
+          toast({ title: "No se pudo completar", description: apiErrorMessage });
+          clearError();
+        }
+      })
+      .catch((err: unknown) => {
+        // Se queda la card de estado con el rechazo: al menos dice qué pasó.
+        console.error("[chat] No se pudo releer el chat tras el rechazo:", err);
+      });
+  }, [status, error]);
 
   // Regenerar (y desde F10.8.2, editar el último mensaje) borra las cards de
   // la respuesta (ADR-006). Desde F10.5 una card puede traer trabajo del
@@ -297,7 +333,6 @@ function ChatView({
   // una que ya salió a la red no se toca (la API también lo impide): borrarla
   // dejaría un post programado sin card. `go` corre solo si de verdad se
   // reemplaza, no si el creator cancela la confirmación.
-  const toast = useToastStore((s) => s.show);
   // Los errores del stream los muestra el SDK en `error` (y su card de estado);
   // lo que rechaza la promesa es otra cosa: desde ai 7.0.1xx, un messageId que
   // ya no existe (la lista cambió entre el render y el clic). Sin esto sería
@@ -356,6 +391,7 @@ function ChatView({
     void confirmReplace("regenerar", () => {
       setEditingId(null);
       onGo?.();
+      resyncOnReject.current = latestRef.current.lastUserId ?? null;
       enviar(regenerate());
     });
   }
@@ -378,6 +414,7 @@ function ChatView({
       retryingId.current = null;
       setFailedAgain(false);
       scrollToEnd(false);
+      resyncOnReject.current = userId;
       enviar(sendMessage({ text, messageId: userId }));
     }).finally(() => {
       replacing.current = false;
@@ -421,8 +458,9 @@ function ChatView({
         failedAgain={failedAgain && notice.actionable}
         apiError={notice.actionable ? turnApiError : null}
         onRetry={() => retryTurn(userId, notice)}
-        // Sin cuota, editar daría el mismo rechazo.
+        // Sin cuota, editar o continuar darían el mismo rechazo.
         onEdit={quotaExhaustedError ? undefined : () => setEditingId(userId)}
+        onContinue={quotaExhaustedError ? undefined : continueTurn}
       />
     );
   }
@@ -432,6 +470,18 @@ function ChatView({
     const text = input.trim();
     if (!text || busy) return;
     setInput("");
+    send(text);
+  }
+
+  // F10.9: "Continuar" en una respuesta detenida es escribir "Continúa" (como
+  // en Claude): un mensaje visible más, con su respuesta. El modelo ve la
+  // respuesta detenida marcada como tal (context-builder, F10.8.2) y retoma.
+  function continueTurn() {
+    if (busy) return;
+    send("Continúa");
+  }
+
+  function send(text: string) {
     setModalDismissed(false);
     setFailedAgain(false);
     retryingId.current = null;

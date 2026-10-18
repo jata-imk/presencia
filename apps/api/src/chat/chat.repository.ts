@@ -5,6 +5,7 @@ import {
   cosineDistance,
   desc,
   eq,
+  inArray,
   isNotNull,
   isNull,
   lt,
@@ -275,11 +276,20 @@ export class ChatRepository {
    * si el creator lo renombra mientras el modelo pensaba, gana el creator.
    * `undefined` si no se escribió (ya tenía título).
    */
-  async setAutoTitle(tx: Tx, chatId: string, title: string): Promise<ChatRow | undefined> {
+  async setAutoTitle(
+    tx: Tx,
+    chatId: string,
+    title: string,
+    /** F10.9: también sobre un título automático (se editó el primer mensaje). */
+    retitle = false,
+  ): Promise<ChatRow | undefined> {
+    const replaceable = retitle
+      ? inArray(chats.titleSource, ["default", "auto"])
+      : eq(chats.titleSource, "default");
     const [chat] = await tx
       .update(chats)
       .set({ title, titleSource: "auto", updatedAt: sql`now()` })
-      .where(and(eq(chats.id, chatId), eq(chats.titleSource, "default")))
+      .where(and(eq(chats.id, chatId), replaceable))
       .returning();
     if (chat) await this.notifyChanged(tx, chat);
     return chat;

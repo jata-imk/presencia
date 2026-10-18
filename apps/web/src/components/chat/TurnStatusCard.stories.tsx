@@ -14,6 +14,7 @@ const meta = {
     apiError: null,
     onRetry: fn(),
     onEdit: fn(),
+    onContinue: fn(),
   },
   decorators: [
     (Story) => (
@@ -29,8 +30,14 @@ type Story = StoryObj<typeof meta>;
 
 export const DetenidaAntesDeEmpezar: Story = {};
 
+/** F10.9: con algo que seguir, la pastilla ofrece Continuar además de Reintentar. */
 export const DetenidaConTexto: Story = {
   args: { notice: notice({ content: "text", hasReply: true }) },
+};
+
+export const DetenidaConTextoSinCuota: Story = {
+  name: "Detenida con texto, sin cuota (no ofrece Continuar)",
+  args: { notice: notice({ content: "text", hasReply: true }), onContinue: undefined },
 };
 
 export const Fallo: Story = {
