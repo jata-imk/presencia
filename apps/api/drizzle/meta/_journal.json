@@ -386,6 +386,13 @@
       "when": 1791949788627,
       "tag": "0054_borrar_resumen_viejo",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1792302958223,
+      "tag": "0055_adjuntos_del_chat",
+      "breakpoints": true
     }
   ]
 }

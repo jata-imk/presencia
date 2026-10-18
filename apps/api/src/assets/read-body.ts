@@ -52,3 +52,17 @@ export function readRawBody(req: Request, max: number): Promise<Uint8Array> {
     req.on("error", reject);
   });
 }
+
+/**
+ * El nombre original del archivo, que viaja URI-encoded en `X-File-Name`
+ * (un header no admite acentos). `undefined` si no viene o no decodifica.
+ */
+export function fileNameFrom(req: Request): string | undefined {
+  const raw = req.headers["x-file-name"];
+  if (typeof raw !== "string" || raw.length === 0) return undefined;
+  try {
+    return decodeURIComponent(raw).slice(0, 255);
+  } catch {
+    return undefined;
+  }
+}

@@ -17,7 +17,7 @@ import {
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { MESSAGE_STATUSES, MODOS_ESTRATEGIA } from "@presencia/shared";
+import { MESSAGE_STATUSES, MODOS_ESTRATEGIA, ATTACHMENT_KINDS } from "@presencia/shared";
 import { AI_TASK_KINDS, EMBEDDING_DIMENSIONS } from "../ai/provider-registry.js";
 
 // Implementa docs/reference/modelo-de-datos.md (aprobado 2026-07-18).
@@ -70,6 +70,9 @@ export const cardStatus = pgEnum("card_status", [
 ]);
 
 export const assetSource = pgEnum("asset_source", ["generated", "uploaded"]);
+
+// F10.9: lo que el creator adjunta a un mensaje del chat.
+export const attachmentKind = pgEnum("attachment_kind", ATTACHMENT_KINDS);
 
 // F10: una imagen pedida a un generador (ADR-025).
 export const imageGenerationKind = pgEnum("image_generation_kind", ["generate", "edit"]);
@@ -613,6 +616,57 @@ export const assets = pgTable("assets", {
   metadata: jsonb("metadata").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// F10.9: lo que el creator adjunta a un mensaje del chat (ADR-011, addendum
+// F10.9). NO es un asset: es de la conversación y muere con ella (`chat_id`
+// cascade), mientras que un asset es material publicable que sobrevive a su
+// chat. Usar una imagen adjunta en una card la copia a `assets`.
+//
+// Se sube al adjuntar, antes de enviar (y en la pantalla de chat nuevo, antes
+// de que exista el chat): `chat_id` y `message_id` llegan al enviar. Uno que
+// nunca se envió lo borra el cron `attachments.cleanup` a las 24 h.
+// `message_id` es SET NULL y no cascade: reintentar o editar el último mensaje
+// borra la fila del mensaje y la vuelve a insertar con el mismo id, en la
+// misma transacción, y el adjunto se vuelve a ligar.
+export const messageAttachments = pgTable(
+  "message_attachments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    chatId: uuid("chat_id").references(() => chats.id, { onDelete: "cascade" }),
+    messageId: uuid("message_id").references(() => messages.id, { onDelete: "set null" }),
+    kind: attachmentKind("kind").notNull(),
+    filename: text("filename").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    // El archivo como se guardó: una imagen ya normalizada (sin EXIF, ≤2048
+    // px), el texto o el PDF tal cual.
+    storageKey: text("storage_key").notNull(),
+    // Solo imágenes: la variante para el modelo (≤1568 px).
+    modelStorageKey: text("model_storage_key"),
+    width: integer("width"),
+    height: integer("height"),
+    pages: integer("pages"),
+    // PDF sin texto: viaja nativo (como imágenes) y cuesta por página.
+    scanned: boolean("scanned").notNull().default(false),
+    // El texto que viaja al modelo (.md/.txt/.csv/.json, PDF con texto).
+    extractedText: text("extracted_text"),
+    truncated: boolean("truncated").notNull().default(false),
+    tokenEstimate: integer("token_estimate").notNull(),
+    // F10.9 PR4: lo que viaja en vez del adjunto cuando ya quedó atrás.
+    description: text("description"),
+    describedAt: timestamp("described_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("attachments_by_message").on(t.messageId),
+    index("attachments_by_chat").on(t.chatId),
+    // El barrido de los que nunca se enviaron.
+    index("attachments_unsent").on(t.createdAt).where(sql`${t.messageId} is null`),
+  ],
+);
 
 // ── Canales y cuentas ────────────────────────────────────────────────
 
