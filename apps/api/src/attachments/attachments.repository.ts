@@ -80,6 +80,19 @@ export class AttachmentsRepository {
     return linked.length;
   }
 
+  /**
+   * F10.9: guarda la descripción si todavía no la tiene. Devuelve si la
+   * escribió: un job repetido no la pisa ni la vuelve a cobrar.
+   */
+  async setDescription(tx: Tx, id: string, description: string): Promise<boolean> {
+    const updated = await tx
+      .update(messageAttachments)
+      .set({ description, describedAt: new Date() })
+      .where(and(eq(messageAttachments.id, id), isNull(messageAttachments.description)))
+      .returning({ id: messageAttachments.id });
+    return updated.length > 0;
+  }
+
   /** Las llaves de los adjuntos de un chat: para borrar sus bytes al borrar el chat. */
   keysByChat(tx: Tx, chatId: string): Promise<AttachmentKeys[]> {
     return tx.select(KEYS).from(messageAttachments).where(eq(messageAttachments.chatId, chatId));

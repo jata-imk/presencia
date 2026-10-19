@@ -297,7 +297,7 @@ export class AttachmentsService {
    * 25 MB). Los bytes de un adjunto nunca cambian, así que la caché no se
    * invalida: solo se acota por tamaño.
    */
-  private async modelDataUrl(row: AttachmentRow): Promise<string> {
+  async modelDataUrl(row: AttachmentRow): Promise<string> {
     const cached = this.dataUrls.get(row.id);
     if (cached) {
       // Al final: el más usado es el último en salir.

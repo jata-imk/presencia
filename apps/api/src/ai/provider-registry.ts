@@ -113,6 +113,10 @@ export const AI_TASK_KINDS = [
   // cada turno y la búsqueda solo cuando el chat la pide.
   "memory_index",
   "memory_search",
+  // F10.9: describir una vez lo que se leyó (un adjunto del chat; en F10.10,
+  // una página) para que viaje como descripción cuando ya quedó atrás.
+  // Genérica a propósito: el contenido cambia, la tarea es la misma.
+  "content_digest",
 ] as const;
 export type AiTaskKind = (typeof AI_TASK_KINDS)[number];
 
@@ -155,6 +159,8 @@ export const MODEL_BY_TASK: Record<RoutedTaskKind, ModelTierEnvVar> = {
   voice_distill: "AI_MODEL_ADAPT",
   analytics_narration: "AI_MODEL_UTILITY",
   trends_structure: "AI_MODEL_UTILITY",
+  // Utility tiene que leer imágenes y PDF: los dos de la cadena lo hacen.
+  content_digest: "AI_MODEL_UTILITY",
   // El tier del chat y no utility: lo que el usuario está probando es si
   // SUENA a él, y eso lo decide el modelo que después le escribe los posts.
   // Un ejemplo con un modelo más barato mentiría sobre el resultado real.

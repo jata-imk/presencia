@@ -75,6 +75,7 @@ const PER_THOUSAND_TOKENS: Record<TokenBilledTaskKind, TokenRate> = {
   chat_title: UTILITY_RATE,
   history_compaction: UTILITY_RATE,
   analytics_narration: UTILITY_RATE,
+  content_digest: UTILITY_RATE,
   post_adapt: ADAPT_RATE,
   voice_distill: ADAPT_RATE,
   // Mismo modelo que el chat (MODEL_BY_TASK), misma tarifa.

@@ -129,6 +129,9 @@ export const creditReason = pgEnum("credit_reason", [
   // utility; cada compactación es un asiento (referencia: el último mensaje
   // que cubre).
   "history_compaction",
+  // F10.9: describir un adjunto del chat (en F10.10, una página leída). Por
+  // tokens, con la tarifa utility; un asiento por adjunto.
+  "content_digest",
   "refund",
   "adjustment",
 ]);

@@ -19,6 +19,7 @@ import type { ServerResponse } from "node:http";
 import { AiUsageService } from "../ai/ai-usage.service.js";
 import { RunTrace } from "../ai/run-trace.js";
 import { AiService } from "../ai/ai.service.js";
+import { AttachmentDigestService } from "../attachments/attachment-digest.service.js";
 import { AttachmentsService } from "../attachments/attachments.service.js";
 import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
 import { CardsRepository } from "../cards/cards.repository.js";
@@ -72,6 +73,7 @@ export class ChatService {
     @Inject(HistoryCompactionService) private readonly compaction: HistoryCompactionService,
     @Inject(MemoryService) private readonly memory: MemoryService,
     @Inject(AttachmentsService) private readonly attachments: AttachmentsService,
+    @Inject(AttachmentDigestService) private readonly attachmentDigests: AttachmentDigestService,
   ) {}
 
   /**
@@ -293,7 +295,7 @@ export class ChatService {
       return;
     }
     try {
-      const { history, summary, retitle } = await this.dbService
+      const { history, summary, retitle, attachmentIds } = await this.dbService
         .runWithTenant(userId, async (tx) => {
           const chat = await this.repo.getChat(tx, chatId);
           if (!chat) throw new NotFoundException("Ese chat no existe.");
@@ -344,6 +346,7 @@ export class ChatService {
             history: [...previous, saved].map((row) => toUIMessage(row)),
             summary: await this.repo.getSummary(tx, chatId),
             retitle,
+            attachmentIds: attached.ids,
           };
         })
         .catch((error: unknown) => {
@@ -354,6 +357,10 @@ export class ChatService {
           throw error;
         });
 
+      // F10.9: la descripción de cada adjunto, en segundo plano y ya con el
+      // mensaje guardado. Para cuando el adjunto deje la ventana de recientes
+      // (attachment-context.ts), viaja ella en lugar del archivo.
+      void this.attachmentDigests.enqueue(userId, chatId, attachmentIds);
       await this.runAgentTurn(
         userId,
         chatId,
