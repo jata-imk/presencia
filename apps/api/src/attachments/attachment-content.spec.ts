@@ -129,9 +129,17 @@ describe("processAttachment", () => {
   });
 
   it("un PDF con texto se lee como texto, con sus páginas marcadas", async () => {
-    const pdf = pdfWithPages([LARGO, "Horario de martes a domingo, de 6 a 11 de la noche, en el centro."]);
+    const pdf = pdfWithPages([
+      LARGO,
+      "Horario de martes a domingo, de 6 a 11 de la noche, en el centro.",
+    ]);
     const out = await processAttachment(pdf, "menu.pdf");
-    expect(out).toMatchObject({ kind: "pdf", mimeType: "application/pdf", pages: 2, scanned: false });
+    expect(out).toMatchObject({
+      kind: "pdf",
+      mimeType: "application/pdf",
+      pages: 2,
+      scanned: false,
+    });
     expect(out.extractedText).toContain("[Página 1]");
     expect(out.extractedText).toContain("[Página 2]");
     expect(out.extractedText).toContain("martes a domingo");

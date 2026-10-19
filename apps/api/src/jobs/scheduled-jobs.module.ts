@@ -33,6 +33,15 @@ import { JobsModule } from "./jobs.module.js";
     ChatModule,
     AttachmentsModule,
   ],
-  providers: [CardsJobs, CreditsJobs, BackupsJobs, MetricsJobs, TrendsJobs, ImagesJobs, ChatJobs, AttachmentsJobs],
+  providers: [
+    CardsJobs,
+    CreditsJobs,
+    BackupsJobs,
+    MetricsJobs,
+    TrendsJobs,
+    ImagesJobs,
+    ChatJobs,
+    AttachmentsJobs,
+  ],
 })
 export class ScheduledJobsModule {}

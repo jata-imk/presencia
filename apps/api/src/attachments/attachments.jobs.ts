@@ -30,7 +30,10 @@ export class AttachmentsJobs implements OnApplicationBootstrap {
       });
     } catch (error) {
       if (enProcesoWorker()) throw error;
-      console.error(`[jobs] ${ATTACHMENTS_CLEANUP_QUEUE} no se agendó; la API sigue sin él:`, error);
+      console.error(
+        `[jobs] ${ATTACHMENTS_CLEANUP_QUEUE} no se agendó; la API sigue sin él:`,
+        error,
+      );
     }
   }
 }

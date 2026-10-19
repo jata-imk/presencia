@@ -664,7 +664,9 @@ export const messageAttachments = pgTable(
     index("attachments_by_message").on(t.messageId),
     index("attachments_by_chat").on(t.chatId),
     // El barrido de los que nunca se enviaron.
-    index("attachments_unsent").on(t.createdAt).where(sql`${t.messageId} is null`),
+    index("attachments_unsent")
+      .on(t.createdAt)
+      .where(sql`${t.messageId} is null`),
   ],
 );
 

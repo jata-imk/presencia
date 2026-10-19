@@ -16,7 +16,15 @@ import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
 
 @Module({
-  imports: [AiModule, AttachmentsModule, CardsModule, BrandVoiceModule, CreditsModule, FoldersModule, JobsModule],
+  imports: [
+    AiModule,
+    AttachmentsModule,
+    CardsModule,
+    BrandVoiceModule,
+    CreditsModule,
+    FoldersModule,
+    JobsModule,
+  ],
   controllers: [ChatController, CardRewriteController],
   providers: [
     ChatService,
