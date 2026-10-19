@@ -238,17 +238,22 @@ Medido en el primer deploy: el bundle pasa de 1,001 KB a 308 KB (70%), el CSS de
 
 **3. Tamaño de las subidas (F10.9).** Los adjuntos del chat llegan hasta 25 MB (la imagen de una card,
 10 MB), y nginx rechaza con su propio 413 lo que pase de `client_max_body_size`: el creator vería un
-error genérico en vez del "tu archivo pesa…" de la app. Revisar el valor que trae la plantilla:
+error genérico en vez del "tu archivo pesa…" de la app. En el VPS, CloudPanel lo fija en **64M a nivel
+global** (`/etc/nginx/nginx.conf`, bloque `http`), y los sitios lo heredan; el `5048M` de
+`sites-enabled/custom-domain.conf` es de otro `server` (el del panel) y no aplica a Presencia. Para
+revisarlo:
 
 ```bash
-grep -rn client_max_body_size /etc/nginx/
+sudo grep -rn client_max_body_size /etc/nginx/
 ```
 
-Si es menor a 26 MB (o no aparece: el default de nginx es 1 MB), a nivel de `server`:
+64M ya alcanza, pero va explícito en el vhost de Presencia, a nivel de `server` (verificado con Jose el
+2026-10-18): así no depende de un default que una actualización de CloudPanel podría cambiar, y una
+subida enorme se corta en nginx en vez de cruzar hasta Node, que la leería para tirarla.
 
 ```nginx
-  # Presencia: adjuntos del chat de hasta 25 MB, más el margen del request.
-  client_max_body_size 26m;
+  # --- Presencia: adjuntos del chat de hasta 25 MB (la app tiene su propio tope). ---
+  client_max_body_size 30m;
 ```
 
 La app además emite `X-Accel-Buffering: no` en el stream del chat y en `GET /api/stream`, así que el

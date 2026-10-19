@@ -35,7 +35,7 @@ import { blocksOf, contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
 import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
-import { assembleContext, cardIdsForContext } from "./context-builder.js";
+import { assembleContext, attachmentIdsForContext, cardIdsForContext } from "./context-builder.js";
 import { ChatRepository, type ChatSummaryRow, type MessageRow } from "./chat.repository.js";
 import { cardIdsIn, type CompressedCardOutput, type LiveCard } from "./context-diet.js";
 import { sanitizeInterruptedParts } from "./interrupted-turn.js";
@@ -317,15 +317,28 @@ export class ChatService {
             await this.repo.deleteMessage(tx, userMessage.id);
             previous = all.slice(0, last.index);
           }
+          // F10.9: los adjuntos se validan aquí, en la transacción del envío
+          // (suyos, de este chat o de ninguno, del peso permitido), y el
+          // mensaje se guarda con el tipo y el nombre que dicen sus filas.
+          const messageId = storableMessageId(userMessage);
+          const attached = await this.attachments.resolveForMessage(
+            tx,
+            chatId,
+            messageId,
+            userMessage,
+          );
           // Con el id del cliente (F10.8.2): web y base nombran igual al mensaje,
           // y "Regenerar" lo encuentra sin recargar la página.
           const saved = await this.repo.insertMessage(tx, {
-            id: storableMessageId(userMessage),
+            id: messageId,
             chatId,
             userId,
             role: "user",
-            parts: userMessage.parts,
+            parts: attached.parts,
           });
+          // Ya con el id guardado. Un reintento o una edición borraron el
+          // mensaje arriba, y el SET NULL de la FK los dejó sueltos un instante.
+          await this.attachments.linkToMessage(tx, attached.ids, chatId, saved.id);
           await this.repo.touchChat(tx, chatId);
           return {
             history: [...previous, saved].map((row) => toUIMessage(row)),
@@ -546,11 +559,17 @@ export class ChatService {
     // del resumen y las de la ventana se leen de una sola vez. `history` no
     // se toca: la UI y lo que se persiste siguen siendo la conversación
     // completa.
+    const [liveCards, attachmentRows] = await Promise.all([
+      this.loadLiveCardsByIds(userId, cardIdsForContext(history, summary)),
+      // F10.9: las filas de los adjuntos de la ventana (sin bytes todavía).
+      this.attachments.forContext(userId, attachmentIdsForContext(history, summary)),
+    ]);
     const context = assembleContext(
       history,
       summary,
-      await this.loadLiveCardsByIds(userId, cardIdsForContext(history, summary)),
+      liveCards,
       env.CHAT_HISTORY_CAP_TOKENS,
+      attachmentRows,
     );
     const modelHistory = context.messages;
     const tools = {
@@ -585,7 +604,10 @@ export class ChatService {
     // loadVoiceForPrompt. buildSystemPrompt cae al prompt base en ese caso,
     // el chat nunca se bloquea por esto.
     const voice = await voicePromise;
-    const modelMessages = await convertToModelMessages(modelHistory);
+    // F10.9: los bytes de los adjuntos que sobrevivieron al techo, al final.
+    const modelMessages = await convertToModelMessages(
+      await this.attachments.materialize(modelHistory, attachmentRows),
+    );
 
     // Cortado mientras se armaba el turno (F10.8.2): no hay a quién responder.
     // Después del último `await`: de aquí al pipe todo es síncrono, así que un

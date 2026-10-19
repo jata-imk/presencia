@@ -1,6 +1,12 @@
 import { BadRequestException, PayloadTooLargeException } from "@nestjs/common";
-import { MAX_MESSAGE_CHARS } from "@presencia/shared";
+import { randomUUID } from "node:crypto";
+import {
+  ATTACHMENTS_PER_MESSAGE,
+  MAX_MESSAGE_CHARS,
+  attachmentContentUrl,
+} from "@presencia/shared";
 import { describe, expect, it } from "vitest";
+import { attachmentIdsIn } from "./attachment-context.js";
 import { lastTurnOf, parseLastUserMessage, storableMessageId } from "./last-user-message.js";
 
 const ID = "6f1c2b9e-3a4d-4e5f-8a7b-1c2d3e4f5a6b";
@@ -24,18 +30,49 @@ describe("parseLastUserMessage", () => {
     );
   });
 
-  // El tope se mide en texto: otra parte lo esquivaría.
-  it("rechaza partes que no son texto", async () => {
-    const conArchivo = {
+  // El tope se mide en texto: un archivo en línea lo esquivaría (F10.9: los
+  // adjuntos se suben antes y viajan como referencia).
+  it("rechaza un archivo en línea (data:) y cualquier otra parte", async () => {
+    const enLinea = {
       ...user(ID, "hola"),
       parts: [
         { type: "text", text: "hola" },
         { type: "file", mediaType: "text/plain", url: "data:text/plain;base64,aG9sYQ==" },
       ],
     };
-    await expect(parseLastUserMessage({ messages: [conArchivo] })).rejects.toThrow(
+    await expect(parseLastUserMessage({ messages: [enLinea] })).rejects.toThrow(
       BadRequestException,
     );
+    const ajena = {
+      ...user(ID, "hola"),
+      parts: [{ type: "file", mediaType: "image/png", url: "https://ejemplo.com/a.png" }],
+    };
+    await expect(parseLastUserMessage({ messages: [ajena] })).rejects.toThrow(BadRequestException);
+  });
+
+  it("acepta adjuntos ya subidos, también sin texto", async () => {
+    const adjunto = attachmentContentUrl(ID);
+    const message = await parseLastUserMessage({
+      messages: [
+        {
+          id: ID,
+          role: "user",
+          parts: [{ type: "file", mediaType: "image/png", filename: "a.png", url: adjunto }],
+        },
+      ],
+    });
+    expect(attachmentIdsIn([message])).toEqual([ID]);
+  });
+
+  it(`rechaza más de ${ATTACHMENTS_PER_MESSAGE} adjuntos`, async () => {
+    const parts = Array.from({ length: ATTACHMENTS_PER_MESSAGE + 1 }, () => ({
+      type: "file",
+      mediaType: "image/png",
+      url: attachmentContentUrl(randomUUID()),
+    }));
+    await expect(
+      parseLastUserMessage({ messages: [{ id: ID, role: "user", parts }] }),
+    ).rejects.toThrow(/hasta 10 archivos/);
   });
 
   it("acepta un mensaje justo en el tope y rechaza uno que lo pasa, con 413", async () => {

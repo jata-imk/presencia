@@ -43,6 +43,43 @@ export class AttachmentsRepository {
     return row;
   }
 
+  /** Varios por id, en la transacción del llamador (RLS: los ajenos no vienen). */
+  findByIds(tx: Tx, ids: readonly string[]): Promise<AttachmentRow[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return tx.select().from(messageAttachments).where(inArray(messageAttachments.id, ids));
+  }
+
+  /**
+   * F10.9: los de un envío, con sus filas bloqueadas hasta el final de la
+   * transacción: otro envío del mismo adjunto (otra pestaña, otro chat) o el
+   * barrido esperan a que este termine, y para entonces ven que ya tiene
+   * mensaje.
+   */
+  findByIdsForSend(tx: Tx, ids: readonly string[]): Promise<AttachmentRow[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return tx
+      .select()
+      .from(messageAttachments)
+      .where(inArray(messageAttachments.id, ids))
+      .for("update");
+  }
+
+  /** F10.9: los liga al mensaje (y al chat, si se subieron sin él) al enviar. Cuántos ligó. */
+  async linkToMessage(
+    tx: Tx,
+    ids: readonly string[],
+    chatId: string,
+    messageId: string,
+  ): Promise<number> {
+    if (ids.length === 0) return 0;
+    const linked = await tx
+      .update(messageAttachments)
+      .set({ chatId, messageId })
+      .where(inArray(messageAttachments.id, ids))
+      .returning({ id: messageAttachments.id });
+    return linked.length;
+  }
+
   /** Las llaves de los adjuntos de un chat: para borrar sus bytes al borrar el chat. */
   keysByChat(tx: Tx, chatId: string): Promise<AttachmentKeys[]> {
     return tx.select(KEYS).from(messageAttachments).where(eq(messageAttachments.chatId, chatId));

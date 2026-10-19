@@ -166,19 +166,34 @@ export function compactableCut(pending: UIMessage[]): number {
  * sí estable y suficiente para un tope de seguridad. Del razonamiento solo se
  * cuenta el texto: su metadata (el contenido cifrado de OpenAI, varios KB por
  * mensaje) inflaría la cuenta y el techo recortaría historia de más.
+ *
+ * F10.9: un adjunto (parte `file`) no se cuenta por su JSON (una URL corta, o
+ * megas de base64): pesa lo que estimó la subida, que la dieta de adjuntos
+ * deja en la parte; sin ese dato, lo de una imagen.
  */
 export function estimateTokens(messages: UIMessage[]): number {
+  let fileTokens = 0;
   const chars = messages.reduce(
     (total, m) =>
       total +
-      m.parts.reduce(
-        (sum, part) =>
-          sum + (part.type === "reasoning" ? part.text.length : JSON.stringify(part).length),
-        0,
-      ),
+      m.parts.reduce((sum, part) => {
+        if (part.type === "file") {
+          fileTokens += fileTokensOf(part);
+          return sum;
+        }
+        return sum + (part.type === "reasoning" ? part.text.length : JSON.stringify(part).length);
+      }, 0),
     0,
   );
-  return estimateTextTokens(chars);
+  return estimateTextTokens(chars) + fileTokens;
+}
+
+/** Lo que una imagen a 1568 px le cuesta al modelo más caro de la cadena (ADR-006, F10.9). */
+const DEFAULT_FILE_TOKENS = 1_600;
+
+function fileTokensOf(part: Extract<UIMessage["parts"][number], { type: "file" }>): number {
+  const tokens = (part.providerMetadata?.presencia as { tokens?: unknown } | undefined)?.tokens;
+  return typeof tokens === "number" ? tokens : DEFAULT_FILE_TOKENS;
 }
 
 /**

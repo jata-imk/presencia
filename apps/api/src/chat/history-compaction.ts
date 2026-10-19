@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { attachmentLines } from "./attachment-context.js";
 import { z } from "zod";
 import { cardSummariesIn, type CompressedCardOutput } from "./context-diet.js";
 import { estimateTextTokens } from "./text-tokens.js";
@@ -106,6 +107,7 @@ export function transcriptForSummary(messages: UIMessage[]): string {
       const lines: string[] = [];
       const text = textOf(message).slice(0, MAX_CHARS_PER_MESSAGE);
       if (text) lines.push(`${message.role === "user" ? "Creator" : "Presencia"}: ${text}`);
+      lines.push(...attachmentLines(message));
       for (const card of cardSummariesIn([message])) {
         lines.push(
           `[Presencia creó o actualizó una publicación de ${card.network}: ${card.resumen}]`,

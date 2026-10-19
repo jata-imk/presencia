@@ -14,6 +14,11 @@ import {
   type HistorySummary,
 } from "./history-window.js";
 import { markUnansweredTurns } from "./unanswered-turns.js";
+import {
+  attachmentIdsIn,
+  dietAttachments,
+  type AttachmentForContext,
+} from "./attachment-context.js";
 
 // Lo que el modelo ve en cada turno (F10.8.1, ADR-026: "guardar ≠ recordar ≠
 // mandar al modelo"). Puro: recibe el historial completo, el resumen y las
@@ -23,9 +28,11 @@ import { markUnansweredTurns } from "./unanswered-turns.js";
 // 1. El resumen sustituye al tramo viejo (history-window.ts), y los turnos que
 //    se quedaron sin respuesta completa van marcados (unanswered-turns.ts).
 // 2. Las cards se describen como son HOY, no como quedaron en messages.parts.
-// 3. Dieta: las cards viejas y los recuerdos de turnos pasados viajan cortos
-//    (context-diet.ts).
-// 4. El techo mecánico, medido sobre lo que de verdad viaja.
+// 3. Dieta: los adjuntos viejos viajan como su descripción (F10.9,
+//    attachment-context.ts), y las cards viejas y los recuerdos de turnos
+//    pasados, cortos (context-diet.ts).
+// 4. El techo mecánico, medido sobre lo que de verdad viaja. Los bytes de los
+//    adjuntos que sobreviven se cargan después (AttachmentsService.materialize).
 
 export interface ModelContext {
   messages: UIMessage[];
@@ -49,6 +56,17 @@ export function cardIdsForContext(history: UIMessage[], summary: HistorySummary 
 }
 
 /**
+ * F10.9: los adjuntos cuyas filas hacen falta: los que cita la ventana (lo
+ * resumido ya no los nombra).
+ */
+export function attachmentIdsForContext(
+  history: UIMessage[],
+  summary: HistorySummary | null,
+): string[] {
+  return attachmentIdsIn(pendingAfterSummary(history, summary));
+}
+
+/**
  * `live` es `null` si la lectura de las cards falló: la lista del resumen se
  * queda con su foto y las de la ventana con lo que guardó el mensaje. Peor
  * contexto, pero nunca un turno caído.
@@ -58,13 +76,17 @@ export function assembleContext(
   summary: HistorySummary | null,
   live: ReadonlyMap<string, LiveCard> | null,
   capTokens: number,
+  /** F10.9: las filas de los adjuntos citados; `null` si la lectura falló. */
+  attachments: ReadonlyMap<string, AttachmentForContext> | null = new Map(),
 ): ModelContext {
   // Después del resumen: un turno sin respuesta que ya quedó resumido no se
   // marca, y la marca no puede quedar pegada al acuse sintético del resumen.
   const windowed = markUnansweredTurns(applySummary(history, summary, live));
   const messages = capHistory(
     trimMemoryOutputsForModel(
-      compressToolOutputsForModel(withLiveCards(windowed, live ?? new Map())),
+      compressToolOutputsForModel(
+        dietAttachments(withLiveCards(windowed, live ?? new Map()), attachments),
+      ),
     ),
     capTokens,
   );
