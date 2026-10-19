@@ -138,6 +138,20 @@ describe("AttachmentDigestService", { timeout: 30_000 }, () => {
     expect(await cobrosDe(dto.id)).toHaveLength(1);
   });
 
+  it("una respuesta vacía no guarda ni cobra, y lanza para que pg-boss reintente", async () => {
+    const dto = await attachments.upload({
+      userId,
+      chatId,
+      data: new TextEncoder().encode("algo"),
+      filename: "vacio.txt",
+    });
+    await expect(
+      crear("   ", []).describe({ userId, attachmentId: dto.id, chatId }),
+    ).rejects.toThrow(/no describió/);
+    expect((await rowOf(dto.id)).description).toBeNull();
+    expect(await cobrosDe(dto.id)).toHaveLength(0);
+  });
+
   it("una imagen viaja como archivo al modelo que la describe", async () => {
     const { solidPng } = await import("../images/fake-image.provider.js");
     const dto = await attachments.upload({

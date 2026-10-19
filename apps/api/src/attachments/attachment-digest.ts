@@ -16,5 +16,12 @@ export function cleanDescription(raw: string): string | null {
     .replace(/^\s*(descripci[oó]n|description)\s*:\s*/i, "")
     .replace(/\s+/g, " ")
     .trim();
-  return text.length > 0 ? text.slice(0, 1_000) : null;
+  return text.length > 0 ? sliceText(text, 1_000) : null;
+}
+
+/** Los primeros `max` caracteres, sin dejar media pareja de surrogates (un emoji partido). */
+export function sliceText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
 }

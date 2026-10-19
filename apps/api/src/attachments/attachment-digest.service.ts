@@ -8,7 +8,8 @@ import { DbService } from "../db/db.service.js";
 import { BossService } from "../jobs/boss.service.js";
 import { AttachmentsRepository, type AttachmentRow } from "./attachments.repository.js";
 import { AttachmentsService } from "./attachments.service.js";
-import { DIGEST_SYSTEM, cleanDescription } from "./attachment-digest.js";
+import { insideTag, safeName } from "../chat/attachment-context.js";
+import { DIGEST_SYSTEM, cleanDescription, sliceText } from "./attachment-digest.js";
 
 // La descripción de cada adjunto (F10.9, ADR-006 addendum). Cuando un adjunto
 // ya quedó atrás (fuera de los últimos turnos, attachment-context.ts) viaja
@@ -54,24 +55,29 @@ export class AttachmentDigestService {
     attachmentIds: readonly string[],
     runId?: string,
   ): Promise<void> {
-    for (const attachmentId of attachmentIds) {
-      const job: AttachmentDigestJob = { userId, attachmentId, chatId, runId };
-      try {
-        await this.boss.enqueue(ATTACHMENT_DIGEST_QUEUE, job, {
-          singletonKey: attachmentId,
-          expireInSeconds: ATTACHMENT_DIGEST_EXPIRE_SECONDS,
-        });
-      } catch (error) {
-        // Sin descripción, el adjunto viaja como su principio o su nombre.
-        console.error(`[adjuntos] No se encoló la descripción de ${attachmentId}:`, error);
-      }
-    }
+    await Promise.all(
+      attachmentIds.map(async (attachmentId) => {
+        const job: AttachmentDigestJob = { userId, attachmentId, chatId, runId };
+        try {
+          await this.boss.enqueue(ATTACHMENT_DIGEST_QUEUE, job, {
+            singletonKey: attachmentId,
+            expireInSeconds: ATTACHMENT_DIGEST_EXPIRE_SECONDS,
+          });
+        } catch (error) {
+          // Sin descripción, el adjunto viaja como su principio o su nombre;
+          // el siguiente turno la vuelve a pedir (ChatService.runAgentTurn).
+          console.error(`[adjuntos] No se encoló la descripción de ${attachmentId}:`, error);
+        }
+      }),
+    );
   }
 
   /**
    * El handler del job. Idempotente: uno que ya tiene descripción (otro job
    * se adelantó, o un reintento después de guardarla) no vuelve a llamar al
-   * modelo ni a cobrar. Si falla, lanza y pg-boss reintenta.
+   * modelo ni a cobrar. Si falla, lanza y pg-boss reintenta; la llamada que
+   * ya se pagó queda registrada en ai_usage_events aunque lo de después
+   * falle, y una respuesta vacía también se reintenta.
    */
   async describe(job: AttachmentDigestJob): Promise<void> {
     const { userId, attachmentId, chatId, runId } = job;
@@ -90,7 +96,10 @@ export class AttachmentDigestService {
     });
     const description = cleanDescription(respuesta.text);
 
-    if (description) {
+    try {
+      if (!description) {
+        throw new Error(`El modelo no describió el adjunto ${attachmentId}`);
+      }
       await this.dbService.runWithTenant(userId, async (tx) => {
         const saved = await this.repo.setDescription(tx, attachmentId, description);
         if (!saved) return;
@@ -105,36 +114,41 @@ export class AttachmentDigestService {
           referenceId: attachmentId,
         });
       });
+    } finally {
+      // Siempre que hubo llamada: los tokens se pagaron aunque no quedara
+      // descripción (ai_usage_events es gasto, no cobro). Nunca lanza.
+      await this.aiUsage.registrar({
+        userId,
+        chatId,
+        task: TASK_KIND,
+        modelo,
+        usage: respuesta.usage,
+        stepsCount: 1,
+        arranque,
+        runId,
+        providerRaw: { usage: respuesta.usage, finishReason: respuesta.finishReason },
+      });
     }
-
-    await this.aiUsage.registrar({
-      userId,
-      chatId,
-      task: TASK_KIND,
-      modelo,
-      usage: respuesta.usage,
-      stepsCount: 1,
-      arranque,
-      runId,
-      providerRaw: { usage: respuesta.usage, finishReason: respuesta.finishReason },
-    });
   }
 
   /** Lo que lee el modelo: la imagen o el PDF escaneado, o el principio del texto. */
   private async digestInput(row: AttachmentRow): Promise<ModelMessage[]> {
-    const intro = `Archivo: "${row.filename}" (${row.mimeType}${row.pages ? `, ${row.pages} páginas` : ""}).`;
+    // El nombre y el texto los escribió quien subió el archivo: escapados
+    // igual que en el contexto del chat (attachment-context.ts).
+    const intro = `Archivo: "${safeName(row.filename)}" (${row.mimeType}${row.pages ? `, ${row.pages} páginas` : ""}).`;
     if (row.extractedText !== null) {
-      const text = row.extractedText.slice(0, DIGEST_SOURCE_CHARS);
+      const text = insideTag(sliceText(row.extractedText, DIGEST_SOURCE_CHARS));
       return [{ role: "user", content: `${intro}\n\n<adjunto>\n${text}\n</adjunto>` }];
     }
-    const url = await this.attachments.modelDataUrl(row);
+    // Los bytes directo del bucket, sin la caché del chat: en el worker nadie
+    // la volvería a leer.
+    const data = await this.attachments.readModelBytes(row);
     return [
       {
         role: "user",
         content: [
           { type: "text", text: intro },
-          // El base64 sin el prefijo `data:`: un string se lee como bytes.
-          { type: "file", mediaType: row.mimeType, data: url.slice(url.indexOf(",") + 1) },
+          { type: "file", mediaType: row.mimeType, data },
         ],
       },
     ];

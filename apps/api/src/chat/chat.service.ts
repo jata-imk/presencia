@@ -295,7 +295,7 @@ export class ChatService {
       return;
     }
     try {
-      const { history, summary, retitle, attachmentIds } = await this.dbService
+      const { history, summary, retitle } = await this.dbService
         .runWithTenant(userId, async (tx) => {
           const chat = await this.repo.getChat(tx, chatId);
           if (!chat) throw new NotFoundException("Ese chat no existe.");
@@ -346,7 +346,6 @@ export class ChatService {
             history: [...previous, saved].map((row) => toUIMessage(row)),
             summary: await this.repo.getSummary(tx, chatId),
             retitle,
-            attachmentIds: attached.ids,
           };
         })
         .catch((error: unknown) => {
@@ -357,10 +356,6 @@ export class ChatService {
           throw error;
         });
 
-      // F10.9: la descripción de cada adjunto, en segundo plano y ya con el
-      // mensaje guardado. Para cuando el adjunto deje la ventana de recientes
-      // (attachment-context.ts), viaja ella en lugar del archivo.
-      void this.attachmentDigests.enqueue(userId, chatId, attachmentIds);
       await this.runAgentTurn(
         userId,
         chatId,
@@ -577,6 +572,19 @@ export class ChatService {
       liveCards,
       env.CHAT_HISTORY_CAP_TOKENS,
       attachmentRows,
+    );
+    // F10.9: la descripción de los adjuntos de la ventana que no la tienen, en
+    // segundo plano (el mensaje ya está guardado). Para cuando un adjunto deje
+    // la ventana de recientes (attachment-context.ts) viaja ella en lugar del
+    // archivo. Cada turno la vuelve a pedir si falta: un encolado que falló o
+    // un job que agotó sus reintentos se recuperan solos; el job no hace nada
+    // con uno ya descrito.
+    const undescribed = [...(attachmentRows?.values() ?? [])].filter((row) => !row.description);
+    void this.attachmentDigests.enqueue(
+      userId,
+      chatId,
+      undescribed.map((row) => row.id),
+      trace.runId,
     );
     const modelHistory = context.messages;
     const tools = {
