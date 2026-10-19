@@ -236,7 +236,8 @@ export class ChatService {
   // lo originó.
   async deleteChat(userId: string, chatId: string): Promise<void> {
     const attachmentKeys = await this.dbService.runWithTenant(userId, async (tx) => {
-      const chat = await this.repo.getChat(tx, chatId);
+      // Con la fila bloqueada: ver getChatForDelete (F10.9).
+      const chat = await this.repo.getChatForDelete(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const hasScheduled = await this.cardsRepo.hasScheduledCards(tx, chatId);
       if (hasScheduled) {

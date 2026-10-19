@@ -627,7 +627,9 @@ export const assets = pgTable("assets", {
 // nunca se envió lo borra el cron `attachments.cleanup` a las 24 h.
 // `message_id` es SET NULL y no cascade: reintentar o editar el último mensaje
 // borra la fila del mensaje y la vuelve a insertar con el mismo id, en la
-// misma transacción, y el adjunto se vuelve a ligar.
+// misma transacción. El DELETE deja el adjunto sin mensaje en ese instante;
+// el envío (F10.9 PR3) lo vuelve a ligar en la misma transacción. Un adjunto
+// que el creator quitó al editar se queda sin mensaje y lo recoge el barrido.
 export const messageAttachments = pgTable(
   "message_attachments",
   {

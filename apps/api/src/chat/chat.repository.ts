@@ -70,6 +70,17 @@ export class ChatRepository {
     return chat;
   }
 
+  /**
+   * F10.9: el chat con su fila bloqueada hasta el final de la transacción.
+   * Lo usa el borrado: una subida a este chat que llegue a media
+   * transacción espera (su FK pide un lock que choca con este) y luego falla,
+   * en vez de colarse entre la lectura de las llaves y el DELETE.
+   */
+  async getChatForDelete(tx: Tx, chatId: string): Promise<ChatRow | undefined> {
+    const [chat] = await tx.select().from(chats).where(eq(chats.id, chatId)).for("update");
+    return chat;
+  }
+
   listMessages(tx: Tx, chatId: string): Promise<MessageRow[]> {
     return tx
       .select()

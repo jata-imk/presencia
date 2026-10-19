@@ -36,10 +36,12 @@ export class AttachmentsController {
     @Query("chatId") chatId: string | undefined,
     @Req() req: Request,
   ): Promise<AttachmentDto> {
+    // El cuerpo primero: rechazar antes de leerlo corta la subida en el proxy
+    // y el navegador ve un error de red en vez del motivo (read-body.ts).
+    const data = await readRawBody(req, ATTACHMENT_MAX_BYTES);
     if (chatId !== undefined && !uuidSchema.safeParse(chatId).success) {
       throw new BadRequestException("El id del chat no es válido.");
     }
-    const data = await readRawBody(req, ATTACHMENT_MAX_BYTES);
     if (data.byteLength === 0) throw new BadRequestException("No llegó ningún archivo.");
     return this.service.upload({
       userId: user.id,

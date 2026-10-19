@@ -9,6 +9,7 @@ import {
 import { attachmentContentUrl, type AttachmentDto } from "@presencia/shared";
 import { ASSET_STORAGE, type AssetDelivery, type AssetStorage } from "../assets/asset-storage.js";
 import { DbService, type Tx } from "../db/db.service.js";
+import { isForeignKeyViolation } from "../db/pg-error.js";
 import {
   RejectedAttachmentError,
   UnsupportedAttachmentError,
@@ -82,26 +83,37 @@ export class AttachmentsService {
       await this.storage.put(modelStorageKey, processed.modelData, processed.mimeType);
     }
 
-    const row = await this.dbService.runWithTenant(userId, (tx) =>
-      this.repo.insert(tx, {
-        id,
-        userId,
-        chatId,
-        kind: processed.kind,
-        filename: cleanFilename(input.filename, `archivo.${processed.extension}`),
-        mimeType: processed.mimeType,
-        sizeBytes: processed.data.byteLength,
-        storageKey,
-        modelStorageKey,
-        width: processed.width,
-        height: processed.height,
-        pages: processed.pages,
-        scanned: processed.scanned,
-        extractedText: processed.extractedText,
-        truncated: processed.truncated,
-        tokenEstimate: processed.tokenEstimate,
-      }),
-    );
+    const keys = { id, userId, storageKey, modelStorageKey };
+    const row = await this.dbService
+      .runWithTenant(userId, (tx) =>
+        this.repo.insert(tx, {
+          id,
+          userId,
+          chatId,
+          kind: processed.kind,
+          filename: cleanFilename(input.filename, `archivo.${processed.extension}`),
+          mimeType: processed.mimeType,
+          sizeBytes: processed.data.byteLength,
+          storageKey,
+          modelStorageKey,
+          width: processed.width,
+          height: processed.height,
+          pages: processed.pages,
+          scanned: processed.scanned,
+          extractedText: processed.extractedText,
+          truncated: processed.truncated,
+          tokenEstimate: processed.tokenEstimate,
+        }),
+      )
+      .catch(async (error: unknown) => {
+        // Sin fila, los bytes no los encontraría nadie (el barrido lee filas).
+        await this.deleteObjects([keys]);
+        // El chat se borró mientras subía (otra pestaña).
+        if (isForeignKeyViolation(error, "message_attachments_chat_id_chats_id_fk")) {
+          throw new NotFoundException("Ese chat no existe.");
+        }
+        throw error;
+      });
     return toAttachmentDto(row);
   }
 

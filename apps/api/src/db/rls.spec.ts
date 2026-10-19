@@ -937,8 +937,8 @@ describe("RLS tenant_isolation", () => {
     });
   });
 
-  // F10.8.1: la traza de un turno. Append-only como ai_usage_events: los
-  // pasos de un turno no se reescriben.
+  // F10.9: los adjuntos del chat. Además del aislamiento, la policy del
+  // barrido: sin tenant solo se ven los que no se enviaron.
   describe("message_attachments", () => {
     let unsent: string;
     let sent: string;
@@ -1010,6 +1010,8 @@ describe("RLS tenant_isolation", () => {
     });
   });
 
+  // F10.8.1: la traza de un turno. Append-only como ai_usage_events: los
+  // pasos de un turno no se reescriben.
   describe("ai_run_steps", () => {
     const runId = randomUUID();
 

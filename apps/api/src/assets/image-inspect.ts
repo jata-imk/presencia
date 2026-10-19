@@ -42,6 +42,7 @@ export async function inspectImage(data: Uint8Array): Promise<InspectedImage> {
   };
 }
 
+/** La extensión de la llave en el storage (también la de los adjuntos, F10.9). */
 export function extensionFor(mimeType: AssetUploadMimeType): string {
   return mimeType === "image/jpeg" ? "jpg" : mimeType.slice("image/".length);
 }

@@ -31,7 +31,7 @@ import type { Tx } from "../db/db.service.js";
 import type { AssetMetadata } from "../assets/assets.repository.js";
 import { fitToAspect, matchesAspect, nearestAspect } from "../images/image-fit.js";
 import { AssetsService } from "../assets/assets.service.js";
-import { InvalidImageError, inspectImage } from "../assets/image-inspect.js";
+import { InvalidImageError } from "../assets/image-inspect.js";
 import { normalizeImage } from "../assets/image-normalize.js";
 import { DbService } from "../db/db.service.js";
 import { CardsRepository, EDITABLE_CARD_STATUSES, type CardRow } from "./cards.repository.js";
@@ -81,9 +81,9 @@ export class CardMediaService {
     let stored;
     try {
       // F10.9: sin EXIF (la ubicación GPS de una foto del celular) y con la
-      // orientación aplicada, igual que los adjuntos del chat. Solo después de
-      // saber que es un formato que las redes aceptan (un GIF se rechaza aquí).
-      await inspectImage(data);
+      // orientación aplicada, igual que los adjuntos del chat. Una sin
+      // metadata se queda con sus bytes; un GIF se rechaza aquí (las redes no
+      // lo publican como imagen).
       const clean = (await normalizeImage(data)).data;
       original = await this.assets.storeImage({
         userId,

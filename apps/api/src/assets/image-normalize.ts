@@ -8,9 +8,13 @@ import { InvalidImageError } from "./image-inspect.js";
 //   metadata al recodificar (salvo que se le pida `keepMetadata`), así que
 //   basta con pasar la imagen por él. La orientación EXIF se aplica antes
 //   (`rotate()`): sin ella, una foto vertical quedaría acostada.
-// - **Un tope de lado**, opcional: lo que se guarda (2048 px) y lo que viaja al
-//   modelo (1568 px: ahí Anthropic deja de reescalar y una foto completa del
-//   celular costaría varias veces más tokens sin leerse mejor).
+// - **Un tope de lado**, opcional: lo que se guarda de un adjunto (2048 px) y lo
+//   que viaja al modelo (1568 px: ahí Anthropic deja de reescalar y una foto
+//   completa del celular costaría varias veces más tokens sin leerse mejor).
+//
+// Una imagen sin metadata que ya cabe se devuelve tal cual: recodificar un JPEG
+// exportado con cuidado le suma una generación de compresión antes de que la
+// red lo recomprima otra vez, y un WebP sin pérdida se volvería con pérdida.
 //
 // El formato se conserva (una captura sigue en PNG y su texto, nítido). Un GIF
 // queda en PNG con su primer cuadro: ni el modelo ni las redes lo animan aquí.
@@ -27,15 +31,39 @@ export interface NormalizedImage {
 /** Calidad de JPEG y WebP al recodificar: alta, porque puede terminar publicada. */
 const QUALITY = 90;
 
+const MIME_BY_FORMAT: Record<string, NormalizedMimeType> = {
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/png",
+};
+
 export async function normalizeImage(
   data: Uint8Array,
-  options: { maxEdge?: number } = {},
+  options: {
+    maxEdge?: number;
+    /** La card no acepta GIF (las redes no lo publican como imagen). */
+    allowGif?: boolean;
+  } = {},
 ): Promise<NormalizedImage> {
-  let format: string | undefined;
+  let metadata: sharp.Metadata;
   try {
-    ({ format } = await sharp(data).metadata());
+    metadata = await sharp(data).metadata();
   } catch (error) {
     throw new InvalidImageError("El archivo no es una imagen que se pueda leer", { cause: error });
+  }
+  const { format, width, height } = metadata;
+  const mimeType = format ? MIME_BY_FORMAT[format] : undefined;
+  if (!mimeType || !width || !height || (format === "gif" && !options.allowGif)) {
+    throw new InvalidImageError(`Formato no admitido: ${format ?? "desconocido"}`);
+  }
+
+  const carriesMetadata = Boolean(
+    metadata.exif || metadata.xmp || metadata.iptc || (metadata.orientation ?? 1) !== 1,
+  );
+  const fits = !options.maxEdge || Math.max(width, height) <= options.maxEdge;
+  if (!carriesMetadata && fits && format !== "gif") {
+    return { data, mimeType, width, height };
   }
 
   // `animated: false` (el default) lee solo el primer cuadro de un GIF.
@@ -48,19 +76,9 @@ export async function normalizeImage(
       withoutEnlargement: true,
     });
   }
-  let mimeType: NormalizedMimeType;
-  if (format === "jpeg") {
-    image = image.jpeg({ quality: QUALITY });
-    mimeType = "image/jpeg";
-  } else if (format === "webp") {
-    image = image.webp({ quality: QUALITY });
-    mimeType = "image/webp";
-  } else if (format === "png" || format === "gif") {
-    image = image.png();
-    mimeType = "image/png";
-  } else {
-    throw new InvalidImageError(`Formato no admitido: ${format ?? "desconocido"}`);
-  }
+  if (mimeType === "image/jpeg") image = image.jpeg({ quality: QUALITY });
+  else if (mimeType === "image/webp") image = image.webp({ quality: QUALITY });
+  else image = image.png();
 
   const { data: out, info } = await image.toBuffer({ resolveWithObject: true });
   return { data: new Uint8Array(out), mimeType, width: info.width, height: info.height };

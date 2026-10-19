@@ -5,8 +5,8 @@ import {
   fileExtension,
   type AttachmentKind,
 } from "@presencia/shared";
-import { extractText } from "unpdf";
-import { InvalidImageError } from "../assets/image-inspect.js";
+import { getDocumentProxy } from "unpdf";
+import { InvalidImageError, extensionFor } from "../assets/image-inspect.js";
 import { normalizeImage } from "../assets/image-normalize.js";
 
 // F10.9: qué es un archivo adjunto y qué se guarda de él. Lo que diga el
@@ -14,9 +14,10 @@ import { normalizeImage } from "../assets/image-normalize.js";
 //
 //  - **Imagen** (sharp la lee): se guarda sin EXIF y a ≤2048 px, más una
 //    variante de ≤1568 px para el modelo.
-//  - **PDF** (`%PDF-`): se extrae su texto (unpdf, el pdf.js sin worker). Si casi
-//    no tiene texto, es escaneado: viaja nativo al modelo, que lo lee como
-//    imágenes, y por eso tiene tope de páginas.
+//  - **PDF** (`%PDF-`): se extrae su texto (unpdf, el pdf.js sin worker), página
+//    por página y solo hasta el tope de caracteres. Si una parte importante de
+//    sus páginas no tiene texto, es escaneado: viaja nativo al modelo, que lo
+//    lee como imágenes, y por eso tiene tope de páginas.
 //  - **Texto** (.md, .txt, .csv, .json): UTF-8 válido, sin bytes nulos.
 //
 // Las estimaciones de tokens alimentan el presupuesto por mensaje y el techo
@@ -37,10 +38,19 @@ export const PDF_PAGE_TOKEN_ESTIMATE = 1_800;
 const CHARS_PER_TOKEN = 3.5;
 
 /**
- * Menos caracteres que esto por página, en promedio, es un PDF escaneado: lo
- * que trae es el número de página, un pie, una marca de agua.
+ * Una página con menos caracteres que esto no tiene texto que leer: trae el
+ * número de página, un pie, una marca de agua. Es una imagen (un escaneo, una
+ * foto, una portada).
  */
-const SCANNED_CHARS_PER_PAGE = 50;
+const IMAGE_PAGE_MAX_CHARS = 50;
+
+/**
+ * Si más de esta fracción de las páginas leídas son imágenes, el PDF es
+ * escaneado: sacar solo el texto dejaría fuera una parte que importa. Debajo
+ * (una portada con foto en un menú de diez páginas) se lee como texto, que
+ * cuesta mucho menos.
+ */
+const SCANNED_PAGE_SHARE = 0.2;
 
 const TEXT_MIME_BY_EXTENSION: Record<string, string> = {
   ".md": "text/markdown",
@@ -98,7 +108,7 @@ function isPdf(data: Uint8Array): boolean {
 }
 
 async function processImage(data: Uint8Array): Promise<ProcessedAttachment> {
-  const stored = await normalizeImage(data, { maxEdge: STORED_IMAGE_MAX_EDGE });
+  const stored = await normalizeImage(data, { maxEdge: STORED_IMAGE_MAX_EDGE, allowGif: true });
   const needsModelCopy = Math.max(stored.width, stored.height) > MODEL_IMAGE_MAX_EDGE;
   const model = needsModelCopy
     ? await normalizeImage(stored.data, { maxEdge: MODEL_IMAGE_MAX_EDGE })
@@ -106,7 +116,7 @@ async function processImage(data: Uint8Array): Promise<ProcessedAttachment> {
   return {
     kind: "image",
     mimeType: stored.mimeType,
-    extension: stored.mimeType === "image/jpeg" ? "jpg" : stored.mimeType.slice("image/".length),
+    extension: extensionFor(stored.mimeType),
     data: stored.data,
     modelData: model?.data ?? null,
     width: stored.width,
@@ -121,19 +131,43 @@ async function processImage(data: Uint8Array): Promise<ProcessedAttachment> {
 
 async function processPdf(data: Uint8Array): Promise<ProcessedAttachment> {
   let pages: number;
-  let text: string[];
+  const texts: string[] = [];
+  let truncated = false;
   try {
     // Una copia: pdf.js se queda con el buffer que recibe (lo transfiere), y
     // los bytes originales todavía se guardan después.
-    ({ totalPages: pages, text } = await extractText(new Uint8Array(data), { mergePages: false }));
+    const doc = await getDocumentProxy(new Uint8Array(data));
+    pages = doc.numPages;
+    // Página por página y con tope: el parseo es JavaScript en el proceso de
+    // la API (el mismo que sirve los streams del chat), y de un PDF de mil
+    // páginas solo se guardan los primeros 100k caracteres. Cada `await` le
+    // devuelve el turno al resto de los requests.
+    let chars = 0;
+    for (let n = 1; n <= pages; n++) {
+      const page = await doc.getPage(n);
+      const content = await page.getTextContent();
+      const text = content.items
+        .map((item) => ("str" in item ? item.str : ""))
+        .join(" ")
+        .replace(/[ \t]+/g, " ")
+        .trim();
+      texts.push(text);
+      chars += text.length;
+      if (chars > ATTACHMENT_TEXT_MAX_CHARS) {
+        truncated = n < pages;
+        break;
+      }
+    }
+    await doc.cleanup();
   } catch (error) {
     throw new RejectedAttachmentError(
       "No pudimos leer este PDF. Puede estar dañado o protegido con contraseña.",
       { cause: error },
     );
   }
-  const visible = text.reduce((total, page) => total + page.replace(/\s/g, "").length, 0);
-  const scanned = pages === 0 || visible / pages < SCANNED_CHARS_PER_PAGE;
+
+  const imagePages = texts.filter((t) => t.replace(/\s/g, "").length < IMAGE_PAGE_MAX_CHARS).length;
+  const scanned = pages === 0 || imagePages / texts.length > SCANNED_PAGE_SHARE;
   const base = {
     kind: "pdf" as const,
     mimeType: "application/pdf",
@@ -161,18 +195,18 @@ async function processPdf(data: Uint8Array): Promise<ProcessedAttachment> {
   }
 
   // Con la página marcada: el creator dice "lo de la página 3", y el modelo
-  // tiene que poder ubicarlo.
-  const full = text
-    .map((page, i) => `[Página ${i + 1}]\n${page.trim()}`)
+  // tiene que poder ubicarlo. Una página sin texto (la portada) no se lista.
+  const full = texts
+    .map((text, i) => (text ? `[Página ${i + 1}]\n${text}` : ""))
     .filter((page) => page.length > 0)
     .join("\n\n");
-  const { text: kept, truncated } = capText(full);
+  const capped = capText(full);
   return {
     ...base,
     scanned: false,
-    extractedText: kept,
-    truncated,
-    tokenEstimate: estimateTextTokens(kept),
+    extractedText: capped.text,
+    truncated: truncated || capped.truncated,
+    tokenEstimate: estimateTextTokens(capped.text),
   };
 }
 

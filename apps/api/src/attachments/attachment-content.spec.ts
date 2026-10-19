@@ -156,6 +156,19 @@ describe("processAttachment", () => {
     });
   });
 
+  it("una portada sin texto en un menú de texto no lo vuelve escaneado", async () => {
+    const pages = ["", ...Array.from({ length: 9 }, () => LARGO)];
+    const out = await processAttachment(pdfWithPages(pages), "menu.pdf");
+    expect(out).toMatchObject({ scanned: false, pages: 10 });
+    expect(out.extractedText).not.toContain("[Página 1]");
+    expect(out.extractedText).toContain("[Página 2]");
+  });
+
+  it("un PDF con buena parte escaneada viaja nativo, aunque traiga algo de texto", async () => {
+    const out = await processAttachment(pdfWithPages([LARGO, LARGO, "", "", ""]), "mixto.pdf");
+    expect(out).toMatchObject({ scanned: true, pages: 5, extractedText: null });
+  });
+
   it("un PDF escaneado de más de 20 páginas se rechaza: súbelo en partes", async () => {
     const pages = Array.from({ length: 21 }, () => "");
     await expect(processAttachment(pdfWithPages(pages), "contrato.pdf")).rejects.toThrow(
