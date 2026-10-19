@@ -112,12 +112,8 @@
           "name": "accounts_user_id_users_id_fk",
           "tableFrom": "accounts",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -270,12 +266,8 @@
           "name": "ai_run_steps_user_id_users_id_fk",
           "tableFrom": "ai_run_steps",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -283,12 +275,8 @@
           "name": "ai_run_steps_chat_id_chats_id_fk",
           "tableFrom": "ai_run_steps",
           "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -452,12 +440,8 @@
           "name": "ai_usage_events_user_id_users_id_fk",
           "tableFrom": "ai_usage_events",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -465,12 +449,8 @@
           "name": "ai_usage_events_chat_id_chats_id_fk",
           "tableFrom": "ai_usage_events",
           "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -562,12 +542,8 @@
           "name": "assets_user_id_users_id_fk",
           "tableFrom": "assets",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -575,12 +551,8 @@
           "name": "assets_chat_id_chats_id_fk",
           "tableFrom": "assets",
           "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -588,12 +560,8 @@
           "name": "assets_card_id_publication_cards_id_fk",
           "tableFrom": "assets",
           "tableTo": "publication_cards",
-          "columnsFrom": [
-            "card_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["card_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -800,12 +768,8 @@
           "name": "brand_voices_user_id_users_id_fk",
           "tableFrom": "brand_voices",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -894,12 +858,8 @@
           "name": "cadence_targets_user_id_users_id_fk",
           "tableFrom": "cadence_targets",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1013,12 +973,8 @@
           "name": "card_versions_user_id_users_id_fk",
           "tableFrom": "card_versions",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1026,12 +982,8 @@
           "name": "card_versions_card_id_publication_cards_id_fk",
           "tableFrom": "card_versions",
           "tableTo": "publication_cards",
-          "columnsFrom": [
-            "card_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["card_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1122,12 +1074,8 @@
           "name": "channel_links_user_id_users_id_fk",
           "tableFrom": "channel_links",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1200,12 +1148,8 @@
           "name": "chat_summaries_chat_id_chats_id_fk",
           "tableFrom": "chat_summaries",
           "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1213,12 +1157,8 @@
           "name": "chat_summaries_user_id_users_id_fk",
           "tableFrom": "chat_summaries",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1328,12 +1268,8 @@
           "name": "chats_user_id_users_id_fk",
           "tableFrom": "chats",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1341,12 +1277,8 @@
           "name": "chats_folder_id_folders_id_fk",
           "tableFrom": "chats",
           "tableTo": "folders",
-          "columnsFrom": [
-            "folder_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["folder_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1491,12 +1423,8 @@
           "name": "credit_ledger_user_id_users_id_fk",
           "tableFrom": "credit_ledger",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1570,12 +1498,8 @@
           "name": "folders_user_id_users_id_fk",
           "tableFrom": "folders",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1583,12 +1507,8 @@
           "name": "folders_brand_voice_id_brand_voices_id_fk",
           "tableFrom": "folders",
           "tableTo": "brand_voices",
-          "columnsFrom": [
-            "brand_voice_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["brand_voice_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1754,12 +1674,8 @@
           "name": "image_generations_user_id_users_id_fk",
           "tableFrom": "image_generations",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1767,12 +1683,8 @@
           "name": "image_generations_card_id_publication_cards_id_fk",
           "tableFrom": "image_generations",
           "tableTo": "publication_cards",
-          "columnsFrom": [
-            "card_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["card_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -1780,12 +1692,8 @@
           "name": "image_generations_parent_asset_id_assets_id_fk",
           "tableFrom": "image_generations",
           "tableTo": "assets",
-          "columnsFrom": [
-            "parent_asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["parent_asset_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -1793,12 +1701,8 @@
           "name": "image_generations_asset_id_assets_id_fk",
           "tableFrom": "image_generations",
           "tableTo": "assets",
-          "columnsFrom": [
-            "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["asset_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1917,12 +1821,8 @@
           "name": "memory_chunks_user_id_users_id_fk",
           "tableFrom": "memory_chunks",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1930,12 +1830,8 @@
           "name": "memory_chunks_chat_id_chats_id_fk",
           "tableFrom": "memory_chunks",
           "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1943,12 +1839,8 @@
           "name": "memory_chunks_message_id_messages_id_fk",
           "tableFrom": "memory_chunks",
           "tableTo": "messages",
-          "columnsFrom": [
-            "message_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["message_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2142,12 +2034,8 @@
           "name": "message_attachments_user_id_users_id_fk",
           "tableFrom": "message_attachments",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2155,12 +2043,8 @@
           "name": "message_attachments_chat_id_chats_id_fk",
           "tableFrom": "message_attachments",
           "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2168,12 +2052,8 @@
           "name": "message_attachments_message_id_messages_id_fk",
           "tableFrom": "message_attachments",
           "tableTo": "messages",
-          "columnsFrom": [
-            "message_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["message_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -2278,12 +2158,8 @@
           "name": "messages_chat_id_chats_id_fk",
           "tableFrom": "messages",
           "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2291,12 +2167,8 @@
           "name": "messages_user_id_users_id_fk",
           "tableFrom": "messages",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2479,12 +2351,8 @@
           "name": "post_metrics_user_id_users_id_fk",
           "tableFrom": "post_metrics",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2492,12 +2360,8 @@
           "name": "post_metrics_social_account_id_social_accounts_id_fk",
           "tableFrom": "post_metrics",
           "tableTo": "social_accounts",
-          "columnsFrom": [
-            "social_account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["social_account_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -2505,12 +2369,8 @@
           "name": "post_metrics_card_id_publication_cards_id_fk",
           "tableFrom": "post_metrics",
           "tableTo": "publication_cards",
-          "columnsFrom": [
-            "card_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["card_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -2690,12 +2550,8 @@
           "name": "publication_cards_user_id_users_id_fk",
           "tableFrom": "publication_cards",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2703,12 +2559,8 @@
           "name": "publication_cards_chat_id_chats_id_fk",
           "tableFrom": "publication_cards",
           "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -2716,12 +2568,8 @@
           "name": "publication_cards_message_id_messages_id_fk",
           "tableFrom": "publication_cards",
           "tableTo": "messages",
-          "columnsFrom": [
-            "message_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["message_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -2729,12 +2577,8 @@
           "name": "publication_cards_social_account_id_social_accounts_id_fk",
           "tableFrom": "publication_cards",
           "tableTo": "social_accounts",
-          "columnsFrom": [
-            "social_account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["social_account_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -2816,12 +2660,8 @@
           "name": "ritmo_narrations_user_id_users_id_fk",
           "tableFrom": "ritmo_narrations",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2910,12 +2750,8 @@
           "name": "sessions_user_id_users_id_fk",
           "tableFrom": "sessions",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2925,9 +2761,7 @@
         "sessions_token_unique": {
           "name": "sessions_token_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "token"
-          ]
+          "columns": ["token"]
         }
       },
       "policies": {},
@@ -3015,12 +2849,8 @@
           "name": "social_accounts_user_id_users_id_fk",
           "tableFrom": "social_accounts",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3080,12 +2910,8 @@
           "name": "social_connect_intents_user_id_users_id_fk",
           "tableFrom": "social_connect_intents",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3183,12 +3009,8 @@
           "name": "trend_refreshes_user_id_users_id_fk",
           "tableFrom": "trend_refreshes",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3258,12 +3080,8 @@
           "name": "trend_sources_user_id_users_id_fk",
           "tableFrom": "trend_sources",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3379,12 +3197,8 @@
           "name": "user_trends_user_id_users_id_fk",
           "tableFrom": "user_trends",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -3480,9 +3294,7 @@
         "users_email_unique": {
           "name": "users_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         }
       },
       "policies": {},
@@ -3562,19 +3374,12 @@
     "public.ai_run_step_kind": {
       "name": "ai_run_step_kind",
       "schema": "public",
-      "values": [
-        "model",
-        "tool"
-      ]
+      "values": ["model", "tool"]
     },
     "public.ai_run_step_status": {
       "name": "ai_run_step_status",
       "schema": "public",
-      "values": [
-        "ok",
-        "error",
-        "aborted"
-      ]
+      "values": ["ok", "error", "aborted"]
     },
     "public.ai_task_kind": {
       "name": "ai_task_kind",
@@ -3598,67 +3403,37 @@
     "public.asset_source": {
       "name": "asset_source",
       "schema": "public",
-      "values": [
-        "generated",
-        "uploaded"
-      ]
+      "values": ["generated", "uploaded"]
     },
     "public.attachment_kind": {
       "name": "attachment_kind",
       "schema": "public",
-      "values": [
-        "image",
-        "text",
-        "pdf"
-      ]
+      "values": ["image", "text", "pdf"]
     },
     "public.card_status": {
       "name": "card_status",
       "schema": "public",
-      "values": [
-        "draft",
-        "scheduled",
-        "published",
-        "canceled",
-        "failed"
-      ]
+      "values": ["draft", "scheduled", "published", "canceled", "failed"]
     },
     "public.card_version_source": {
       "name": "card_version_source",
       "schema": "public",
-      "values": [
-        "chat",
-        "manual",
-        "ai",
-        "restore"
-      ]
+      "values": ["chat", "manual", "ai", "restore"]
     },
     "public.channel": {
       "name": "channel",
       "schema": "public",
-      "values": [
-        "web",
-        "telegram",
-        "whatsapp"
-      ]
+      "values": ["web", "telegram", "whatsapp"]
     },
     "public.channel_link_status": {
       "name": "channel_link_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "active",
-        "revoked"
-      ]
+      "values": ["pending", "active", "revoked"]
     },
     "public.chat_title_source": {
       "name": "chat_title_source",
       "schema": "public",
-      "values": [
-        "default",
-        "auto",
-        "user"
-      ]
+      "values": ["default", "auto", "user"]
     },
     "public.credit_reason": {
       "name": "credit_reason",
@@ -3684,99 +3459,52 @@
     "public.image_generation_kind": {
       "name": "image_generation_kind",
       "schema": "public",
-      "values": [
-        "generate",
-        "edit"
-      ]
+      "values": ["generate", "edit"]
     },
     "public.image_generation_status": {
       "name": "image_generation_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "succeeded",
-        "failed",
-        "blocked"
-      ]
+      "values": ["pending", "succeeded", "failed", "blocked"]
     },
     "public.message_role": {
       "name": "message_role",
       "schema": "public",
-      "values": [
-        "user",
-        "assistant",
-        "system",
-        "tool"
-      ]
+      "values": ["user", "assistant", "system", "tool"]
     },
     "public.message_status": {
       "name": "message_status",
       "schema": "public",
-      "values": [
-        "complete",
-        "stopped",
-        "failed"
-      ]
+      "values": ["complete", "stopped", "failed"]
     },
     "public.plan_tier": {
       "name": "plan_tier",
       "schema": "public",
-      "values": [
-        "creator",
-        "pro",
-        "agencia"
-      ]
+      "values": ["creator", "pro", "agencia"]
     },
     "public.publication_archetype": {
       "name": "publication_archetype",
       "schema": "public",
-      "values": [
-        "visual_first",
-        "video_script",
-        "text_first"
-      ]
+      "values": ["visual_first", "video_script", "text_first"]
     },
     "public.social_account_status": {
       "name": "social_account_status",
       "schema": "public",
-      "values": [
-        "active",
-        "disconnected",
-        "error"
-      ]
+      "values": ["active", "disconnected", "error"]
     },
     "public.social_network": {
       "name": "social_network",
       "schema": "public",
-      "values": [
-        "instagram",
-        "facebook",
-        "tiktok",
-        "linkedin",
-        "youtube",
-        "threads",
-        "x"
-      ]
+      "values": ["instagram", "facebook", "tiktok", "linkedin", "youtube", "threads", "x"]
     },
     "public.strategy_mode": {
       "name": "strategy_mode",
       "schema": "public",
-      "values": [
-        "crecer",
-        "mantener",
-        "lanzar"
-      ]
+      "values": ["crecer", "mantener", "lanzar"]
     },
     "public.voice_register": {
       "name": "voice_register",
       "schema": "public",
-      "values": [
-        "neutro_profesional",
-        "informal",
-        "de_barrio",
-        "tecnico",
-        "profesional"
-      ]
+      "values": ["neutro_profesional", "informal", "de_barrio", "tecnico", "profesional"]
     }
   },
   "schemas": {},
