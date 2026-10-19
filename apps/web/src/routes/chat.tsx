@@ -1,8 +1,12 @@
 import { Chat, useChat } from "@ai-sdk/react";
+import type { FileUIPart } from "ai";
 import { ArrowDown } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { Composer } from "../components/chat/Composer.js";
+import { DropOverlay } from "../components/chat/DropOverlay.js";
+import { attachmentsState, useAttachments } from "../lib/attachments/use-attachments.js";
+import { useFileDrop } from "../lib/attachments/use-file-drop.js";
 import { PublicationPanel } from "../components/panel/PublicationPanel.js";
 import { SelectionBar } from "../components/chat/SelectionBar.js";
 import { AssistantMessage } from "../components/chat/AssistantMessage.js";
@@ -179,13 +183,16 @@ function ChatView({
   // a mitad del stream.
   const location = useLocation();
   const navigate = useNavigate();
-  const initialPrompt = (location.state as { initialPrompt?: string } | null)?.initialPrompt;
+  const initial = location.state as { initialPrompt?: string; initialFiles?: FileUIPart[] } | null;
+  const initialPrompt = initial?.initialPrompt ?? "";
+  // F10.9: los adjuntos que se subieron en la pantalla de chat nuevo.
+  const initialFiles = initial?.initialFiles ?? [];
   const sentInitialPrompt = useRef(false);
   useEffect(() => {
-    if (!initialPrompt || sentInitialPrompt.current) return;
+    if ((!initialPrompt && initialFiles.length === 0) || sentInitialPrompt.current) return;
     sentInitialPrompt.current = true;
     void navigate(location.pathname, { replace: true, state: null });
-    enviar(sendMessage({ text: initialPrompt }));
+    enviar(sendMessage(messageOf(initialPrompt, initialFiles)));
   }, []);
 
   // F5: % de cuota + traducción a publicaciones, nunca un número crudo de
@@ -482,12 +489,23 @@ function ChatView({
     );
   }
 
+  // F10.9: los adjuntos del composer. Se suben al adjuntar (con este chat) y
+  // viajan como partes `file` al enviar.
+  const attachments = useAttachments(chatId);
+  const pending = attachmentsState(attachments.items);
+  const { drag, handlers: dropHandlers } = useFileDrop({
+    current: attachments.items.length,
+    onFiles: attachments.add,
+  });
+
   function handleSubmit(e?: FormEvent) {
     e?.preventDefault();
     const text = input.trim();
-    if (!text || busy) return;
+    if ((!text && pending.parts.length === 0) || busy) return;
+    if (pending.uploading || pending.blocked) return;
     setInput("");
-    send(text);
+    send(text, pending.parts);
+    attachments.clear();
   }
 
   // F10.9: "Continuar" en una respuesta detenida es escribir "Continúa" (como
@@ -498,7 +516,7 @@ function ChatView({
     send("Continúa");
   }
 
-  function send(text: string) {
+  function send(text: string, files: FileUIPart[] = []) {
     // Un mensaje nuevo no es el regenerar o editar de antes: su rechazo no
     // repone nada.
     resyncOnReject.current = null;
@@ -508,7 +526,7 @@ function ChatView({
     setEditingId(null);
     // Lo que tú mandas siempre se ve, aunque estuvieras leyendo arriba.
     scrollToEnd(false);
-    enviar(sendMessage({ text }));
+    enviar(sendMessage(messageOf(text, files)));
   }
 
   const lastMessage = messages.at(-1);
@@ -518,7 +536,10 @@ function ChatView({
     // El panel de publicación (F10.5) es hermano del chat: en escritorio lo
     // empuja, abajo de 1024 se superpone dentro de esta misma caja (relative).
     <div className="relative flex h-full">
-      <div className="relative flex h-full min-w-0 flex-1 flex-col">
+      {/* La columna del chat es la zona donde se sueltan archivos (F10.9): no
+          el sidebar ni el panel de la card. */}
+      <div className="relative flex h-full min-w-0 flex-1 flex-col" {...dropHandlers}>
+        {drag && <DropOverlay verdict={drag.verdict} count={drag.count} />}
         <SelectionBar chatId={chatId} />
         {/* El título y el menú del chat viven en la Topbar (ChatCrumb, F10.6.2). */}
 
@@ -630,6 +651,12 @@ function ChatView({
               busy={busy}
               onStop={() => void stop()}
               inputRef={composerRef}
+              attachments={{
+                items: attachments.items,
+                onAdd: attachments.add,
+                onRemove: attachments.remove,
+                onRetry: attachments.retry,
+              }}
             />
           </div>
         </div>
@@ -637,6 +664,12 @@ function ChatView({
       <PublicationPanel chatId={chatId} onAdapt={prefillComposer} />
     </div>
   );
+}
+
+/** Lo que se manda: texto, adjuntos o los dos (F10.9: un mensaje puede ser solo adjuntos). */
+function messageOf(text: string, files: FileUIPart[]) {
+  if (files.length === 0) return { text };
+  return text ? { text, files } : { files };
 }
 
 /** Lo que reemplaza la última respuesta (F10.8.2): mismas guardas de cards. */
