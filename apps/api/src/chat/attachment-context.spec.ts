@@ -106,6 +106,42 @@ describe("dietAttachments", () => {
     );
   });
 
+  it("un documento grande viaja completo solo en su turno; una foto, sus tres turnos", () => {
+    const documento = attachment({
+      kind: "text",
+      filename: "catalogo.csv",
+      extractedText: "producto,precio",
+      tokenEstimate: 30_000,
+    });
+    const foto = attachment({ tokenEstimate: 1_600 });
+    const enSuTurno = dietAttachments(
+      [user("aquí va", [foto]), reply("ok"), user("y el catálogo", [documento])],
+      new Map([
+        [foto.id, foto],
+        [documento.id, documento],
+      ]),
+    );
+    expect(textOf(enSuTurno[2]!)).toContain("<adjunto");
+    expect(enSuTurno[0]!.parts.some((p) => p.type === "file")).toBe(true);
+
+    const despues = dietAttachments(
+      [
+        user("aquí va", [foto]),
+        reply("ok"),
+        user("y el catálogo", [documento]),
+        reply("va"),
+        user("¿y?"),
+      ],
+      new Map([
+        [foto.id, foto],
+        [documento.id, documento],
+      ]),
+    );
+    expect(textOf(despues[2]!)).toContain("Adjunto de antes");
+    // La foto, más vieja pero chica, sigue completa: el documento no le gana el lugar.
+    expect(despues[0]!.parts.some((p) => p.type === "file")).toBe(true);
+  });
+
   it("sin descripción todavía, un texto viejo viaja como su principio", () => {
     const viejo = attachment({ kind: "text", extractedText: "Horario: martes a domingo." });
     const chat = [user("ten", [viejo]), reply("ok"), user("2"), reply("b"), user("3")];

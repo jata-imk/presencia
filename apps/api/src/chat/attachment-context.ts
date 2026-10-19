@@ -8,7 +8,13 @@ import { attachmentIdFromUrl, type AttachmentKind } from "@presencia/shared";
 // todo el historial se reenvía en cada turno. Así que:
 //
 //  - **Recientes** (los mensajes de los últimos KEEP_ATTACHMENT_USER_TURNS
-//    turnos del creator): completos. El texto de un .md o de un PDF con texto
+//    turnos del creator, mientras quepan en RECENT_ATTACHMENT_TOKENS sumando
+//    del más nuevo al más viejo): completos. Los del mensaje de este turno van
+//    completos siempre, fuera de esa cuenta. Así una foto (~1,600 tokens) se queda sus tres turnos
+//    —el ida y vuelta sobre la misma foto es el caso común— y un documento
+//    grande (~30k) viaja completo solo en el turno en que se mandó (decisión
+//    de Jose, F10.9: los turnos extra de un documento grande eran el único
+//    costo que pesaba). El texto de un .md o de un PDF con texto
 //    viaja como parte de texto, envuelto en <adjunto>; una imagen o un PDF
 //    escaneado se queda como parte `file`, que `materialize` llena de bytes al
 //    final.
@@ -25,6 +31,13 @@ import { attachmentIdFromUrl, type AttachmentKind } from "@presencia/shared";
 
 /** Cuántos turnos del creator, contando el actual, ven sus adjuntos completos. */
 export const KEEP_ATTACHMENT_USER_TURNS = 3;
+
+/**
+ * Cuánto pesan, juntos, los adjuntos de turnos anteriores que siguen viajando
+ * completos. Los del turno actual no cuentan aquí: van siempre (su tope es el
+ * presupuesto por mensaje del envío, 60k).
+ */
+export const RECENT_ATTACHMENT_TOKENS = 12_000;
 
 /** Lo que el contexto necesita de un adjunto (una fila de message_attachments). */
 export interface AttachmentForContext {
@@ -74,11 +87,11 @@ export function dietAttachments(
   messages: UIMessage[],
   attachments: ReadonlyMap<string, AttachmentForContext> | null,
   keep = KEEP_ATTACHMENT_USER_TURNS,
+  budget = RECENT_ATTACHMENT_TOKENS,
 ): UIMessage[] {
-  const start = recentTurnsStart(messages, keep);
-  return messages.map((message, index) => {
+  const full = fullAttachmentIds(messages, attachments, keep, budget);
+  return messages.map((message) => {
     if (!message.parts.some((part) => part.type === "file")) return message;
-    const recent = index >= start;
     return {
       ...message,
       parts: message.parts.flatMap((part): UIMessage["parts"] => {
@@ -95,10 +108,48 @@ export function dietAttachments(
             },
           ];
         }
-        return recent ? fullAttachment(part, row) : [{ type: "text", text: digestLine(row) }];
+        return full.has(row.id)
+          ? fullAttachment(part, row)
+          : [{ type: "text", text: digestLine(row) }];
       }),
     };
   });
+}
+
+/**
+ * Los adjuntos que viajan completos: los del último mensaje del creator,
+ * siempre (fuera del presupuesto), y de ahí hacia atrás, dentro de la ventana
+ * de turnos, los que quepan en `budget`. Uno que no cabe no detiene la cuenta: uno más viejo y
+ * más chico (una foto detrás de un documento grande) todavía puede entrar.
+ */
+function fullAttachmentIds(
+  messages: UIMessage[],
+  attachments: ReadonlyMap<string, AttachmentForContext> | null,
+  keep: number,
+  budget: number,
+): Set<string> {
+  const full = new Set<string>();
+  if (!attachments) return full;
+  const start = recentTurnsStart(messages, keep);
+  let current = messages.length - 1;
+  while (current >= 0 && messages[current]!.role !== "user") current--;
+  let used = 0;
+  for (let index = messages.length - 1; index >= start; index--) {
+    for (const id of attachmentIdsIn([messages[index]!])) {
+      const row = attachments.get(id);
+      if (!row || full.has(id)) continue;
+      if (index === current) {
+        // Los de este turno van siempre y no gastan el presupuesto de los de
+        // antes: mandar un documento grande no le quita su lugar a la foto
+        // del turno anterior.
+        full.add(id);
+      } else if (used + row.tokenEstimate <= budget) {
+        full.add(id);
+        used += row.tokenEstimate;
+      }
+    }
+  }
+  return full;
 }
 
 function fullAttachment(
