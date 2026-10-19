@@ -15,6 +15,7 @@ import {
   attachmentIdFromUrl,
   type AttachmentDto,
 } from "@presencia/shared";
+import { attachmentIdsIn } from "../chat/attachment-context.js";
 import { ASSET_STORAGE, type AssetDelivery, type AssetStorage } from "../assets/asset-storage.js";
 import { DbService, type Tx } from "../db/db.service.js";
 import { isForeignKeyViolation } from "../db/pg-error.js";
@@ -35,6 +36,12 @@ export const UNSENT_ATTACHMENT_TTL_MS = 24 * 60 * 60 * 1000;
 /** Cuántos borra el barrido por pasada: el siguiente tick sigue con el resto. */
 const CLEANUP_BATCH = 200;
 
+/**
+ * Tope de la caché de bytes para el modelo (en caracteres de base64, ~1 byte
+ * cada uno): ~64 MB del proceso de la API, unas 200 imágenes a 1568 px.
+ */
+const DATA_URL_CACHE_CHARS = 64 * 1024 * 1024;
+
 // Los adjuntos del chat (F10.9, ADR-011 addendum). Se suben al adjuntar, no al
 // enviar: el chip muestra el progreso y el envío sale inmediato. Se guardan en
 // el mismo storage que Biblioteca, en su propia carpeta del usuario
@@ -47,6 +54,10 @@ export class AttachmentsService {
     @Inject(AttachmentsRepository) private readonly repo: AttachmentsRepository,
     @Inject(ASSET_STORAGE) private readonly storage: AssetStorage,
   ) {}
+
+  /** Ver modelDataUrl: id → `data:` de los últimos adjuntos que viajaron. */
+  private readonly dataUrls = new Map<string, string>();
+  private dataUrlChars = 0;
 
   /**
    * Sube un archivo. `chatId` es null en la pantalla de chat nuevo: el chat
@@ -153,17 +164,10 @@ export class AttachmentsService {
     messageId: string | undefined,
     message: UIMessage,
   ): Promise<{ parts: UIMessage["parts"]; ids: string[] }> {
-    const ids = [
-      ...new Set(
-        message.parts.flatMap((part) => {
-          const id = part.type === "file" ? attachmentIdFromUrl(part.url) : null;
-          return id ? [id] : [];
-        }),
-      ),
-    ];
+    const ids = attachmentIdsIn([message]);
     if (ids.length === 0) return { parts: message.parts, ids };
 
-    const rows = new Map((await this.repo.findByIds(tx, ids)).map((row) => [row.id, row]));
+    const rows = new Map((await this.repo.findByIdsForSend(tx, ids)).map((row) => [row.id, row]));
     for (const id of ids) {
       const row = rows.get(id);
       const usable =
@@ -202,8 +206,20 @@ export class AttachmentsService {
   }
 
   /** El segundo paso del envío: ya con el id del mensaje guardado. */
-  linkToMessage(tx: Tx, ids: readonly string[], chatId: string, messageId: string): Promise<void> {
-    return this.repo.linkToMessage(tx, ids, chatId, messageId);
+  async linkToMessage(
+    tx: Tx,
+    ids: readonly string[],
+    chatId: string,
+    messageId: string,
+  ): Promise<void> {
+    // Con las filas bloqueadas desde resolveForMessage, ninguna puede haber
+    // desaparecido; si pasara, el mensaje citaría un archivo que no existe.
+    const linked = await this.repo.linkToMessage(tx, ids, chatId, messageId);
+    if (linked !== ids.length) {
+      throw new BadRequestException(
+        "Uno de los archivos ya no está disponible. Quítalo y vuelve a adjuntarlo.",
+      );
+    }
   }
 
   /**
@@ -237,23 +253,15 @@ export class AttachmentsService {
     messages: UIMessage[],
     rows: ReadonlyMap<string, AttachmentRow> | null,
   ): Promise<UIMessage[]> {
-    const wanted = new Map<string, AttachmentRow>();
-    for (const message of messages) {
-      for (const part of message.parts) {
-        const id = part.type === "file" ? attachmentIdFromUrl(part.url) : null;
-        const row = id ? rows?.get(id) : undefined;
-        if (row) wanted.set(row.id, row);
-      }
-    }
+    const wanted = attachmentIdsIn(messages).flatMap((id) => {
+      const row = rows?.get(id);
+      return row ? [row] : [];
+    });
     const loaded = new Map<string, string | null>();
     await Promise.all(
-      [...wanted.values()].map(async (row) => {
+      wanted.map(async (row) => {
         try {
-          const bytes = await this.storage.get(row.modelStorageKey ?? row.storageKey);
-          loaded.set(
-            row.id,
-            `data:${row.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,
-          );
+          loaded.set(row.id, await this.modelDataUrl(row));
         } catch (error) {
           console.error(`[adjuntos] No se pudo leer ${row.id} para el modelo:`, error);
           loaded.set(row.id, null);
@@ -280,6 +288,33 @@ export class AttachmentsService {
         }),
       };
     });
+  }
+
+  /**
+   * Los bytes de un adjunto para el modelo, como `data:`. Con caché en
+   * memoria: un adjunto reciente viaja en varios turnos seguidos, y sin ella
+   * cada turno lo volvería a bajar del bucket (un PDF escaneado puede pesar
+   * 25 MB). Los bytes de un adjunto nunca cambian, así que la caché no se
+   * invalida: solo se acota por tamaño.
+   */
+  private async modelDataUrl(row: AttachmentRow): Promise<string> {
+    const cached = this.dataUrls.get(row.id);
+    if (cached) {
+      // Al final: el más usado es el último en salir.
+      this.dataUrls.delete(row.id);
+      this.dataUrls.set(row.id, cached);
+      return cached;
+    }
+    const bytes = await this.storage.get(row.modelStorageKey ?? row.storageKey);
+    const url = `data:${row.mimeType};base64,${Buffer.from(bytes).toString("base64")}`;
+    this.dataUrls.set(row.id, url);
+    this.dataUrlChars += url.length;
+    for (const [id, old] of this.dataUrls) {
+      if (this.dataUrlChars <= DATA_URL_CACHE_CHARS) break;
+      this.dataUrls.delete(id);
+      this.dataUrlChars -= old.length;
+    }
+    return url;
   }
 
   /** Las llaves de un chat, en la transacción de quien lo borra. */

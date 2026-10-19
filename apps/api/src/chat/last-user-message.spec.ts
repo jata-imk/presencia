@@ -6,12 +6,8 @@ import {
   attachmentContentUrl,
 } from "@presencia/shared";
 import { describe, expect, it } from "vitest";
-import {
-  attachmentIdsOf,
-  lastTurnOf,
-  parseLastUserMessage,
-  storableMessageId,
-} from "./last-user-message.js";
+import { attachmentIdsIn } from "./attachment-context.js";
+import { lastTurnOf, parseLastUserMessage, storableMessageId } from "./last-user-message.js";
 
 const ID = "6f1c2b9e-3a4d-4e5f-8a7b-1c2d3e4f5a6b";
 
@@ -65,7 +61,7 @@ describe("parseLastUserMessage", () => {
         },
       ],
     });
-    expect(attachmentIdsOf(message)).toEqual([ID]);
+    expect(attachmentIdsIn([message])).toEqual([ID]);
   });
 
   it(`rechaza más de ${ATTACHMENTS_PER_MESSAGE} adjuntos`, async () => {

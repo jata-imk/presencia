@@ -134,6 +134,41 @@ describe("AttachmentsService", { timeout: 30_000 }, () => {
     expect(propio).toMatchObject({ mimeType: "text/plain", filename: "p.txt" });
   });
 
+  it("un adjunto ya ligado a un mensaje no se puede mandar en otro chat", async () => {
+    const { messages } = await import("../db/schema.js");
+    const dto = await service.upload({
+      userId: userA,
+      chatId: null,
+      data: new TextEncoder().encode("una sola vez"),
+      filename: "u.txt",
+    });
+    const otroChat = await dbService.runWithTenant(userA, async (tx) => {
+      const [chat] = await tx.insert(chats).values({ userId: userA }).returning({ id: chats.id });
+      return chat!.id;
+    });
+    const mensaje = () => ({
+      id: randomUUID(),
+      role: "user" as const,
+      parts: [{ type: "file" as const, mediaType: "text/plain", url: dto.url }],
+    });
+    // Primer envío: se liga a chatA.
+    await dbService.runWithTenant(userA, async (tx) => {
+      const message = mensaje();
+      const { ids } = await service.resolveForMessage(tx, chatA, message.id, message);
+      await tx
+        .insert(messages)
+        .values({ id: message.id, chatId: chatA, userId: userA, role: "user", parts: [] });
+      await service.linkToMessage(tx, ids, chatA, message.id);
+    });
+    // Segundo envío del mismo adjunto, en otro chat: ya no está disponible.
+    const segundo = mensaje();
+    await expect(
+      dbService.runWithTenant(userA, (tx) =>
+        service.resolveForMessage(tx, otroChat, segundo.id, segundo),
+      ),
+    ).rejects.toThrow(/ya no está disponible/);
+  });
+
   it("el barrido borra los que llevan más de un día sin enviarse, con sus bytes", async () => {
     const data = new TextEncoder().encode("viejo");
     const viejo = await service.upload({ userId: userA, chatId: chatA, data, filename: "v.txt" });

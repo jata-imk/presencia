@@ -1,5 +1,8 @@
 import type { UIMessage } from "ai";
 import { attachmentIdFromUrl, type AttachmentKind } from "@presencia/shared";
+// Solo funciones: el ciclo history-window → history-compaction → aquí no
+// toca nada al cargar el módulo.
+import { isSyntheticMessage } from "./history-window.js";
 
 // Lo que el modelo ve de los adjuntos (F10.9, ADR-006 addendum). Puro: recibe
 // las filas ya leídas y decide qué viaja de cada uno.
@@ -9,8 +12,10 @@ import { attachmentIdFromUrl, type AttachmentKind } from "@presencia/shared";
 //
 //  - **Recientes** (los mensajes de los últimos KEEP_ATTACHMENT_USER_TURNS
 //    turnos del creator, mientras quepan en RECENT_ATTACHMENT_TOKENS sumando
-//    del más nuevo al más viejo): completos. Los del mensaje de este turno van
-//    completos siempre, fuera de esa cuenta. Así una foto (~1,600 tokens) se queda sus tres turnos
+//    del más nuevo al más viejo): completos. Los del mensaje de este turno, y
+//    los de un turno que nunca terminó (se cortó, falló: "Continuar" lo
+//    retoma), van completos siempre, fuera de esa cuenta. Así una foto
+//    (~1,600 tokens) se queda sus tres turnos
 //    —el ida y vuelta sobre la misma foto es el caso común— y un documento
 //    grande (~30k) viaja completo solo en el turno en que se mandó (decisión
 //    de Jose, F10.9: los turnos extra de un documento grande eran el único
@@ -69,14 +74,33 @@ export function attachmentIdsIn(messages: UIMessage[]): string[] {
 /**
  * El índice del primer mensaje de la ventana de recientes: el mensaje del
  * creator que abre el `keep`-ésimo turno contando desde el final. 0 si el
- * chat tiene menos turnos.
+ * chat tiene menos turnos. Los mensajes que arma Presencia (el resumen, la
+ * nota del techo) no son turnos del creator.
  */
 export function recentTurnsStart(messages: UIMessage[], keep = KEEP_ATTACHMENT_USER_TURNS): number {
   let seen = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]!.role === "user" && ++seen === keep) return i;
+    if (isCreatorTurn(messages[i]!) && ++seen === keep) return i;
   }
   return 0;
+}
+
+function isCreatorTurn(message: UIMessage): boolean {
+  return message.role === "user" && !isSyntheticMessage(message);
+}
+
+/**
+ * Un turno del creator que no terminó: el último (el de ahora), o uno cuya
+ * respuesta se cortó, falló o no llegó. Sus adjuntos siguen en juego: el
+ * "Continúa" de después habla de ellos.
+ */
+function isOpenTurn(messages: UIMessage[], index: number): boolean {
+  const next = messages[index + 1];
+  if (!next) return true;
+  if (next.role !== "assistant") return false;
+  if (isSyntheticMessage(next)) return true;
+  const status = (next.metadata as { status?: unknown } | undefined)?.status;
+  return status === "stopped" || status === "failed";
 }
 
 /**
@@ -99,7 +123,7 @@ export function dietAttachments(
         const id = attachmentIdFromUrl(part.url);
         if (!id) return [part];
         const row = attachments?.get(id);
-        const name = row?.filename ?? part.filename ?? "archivo";
+        const name = safeName(row?.filename ?? part.filename ?? "archivo");
         if (!row) {
           return [
             {
@@ -117,10 +141,11 @@ export function dietAttachments(
 }
 
 /**
- * Los adjuntos que viajan completos: los del último mensaje del creator,
- * siempre (fuera del presupuesto), y de ahí hacia atrás, dentro de la ventana
- * de turnos, los que quepan en `budget`. Uno que no cabe no detiene la cuenta: uno más viejo y
- * más chico (una foto detrás de un documento grande) todavía puede entrar.
+ * Los adjuntos que viajan completos: los de un turno abierto (el de ahora, o
+ * uno que se cortó), siempre y fuera del presupuesto; de ahí hacia atrás,
+ * dentro de la ventana de turnos, los que quepan en `budget`. Uno que no cabe
+ * no detiene la cuenta: uno más viejo y más chico (una foto detrás de un
+ * documento grande) todavía puede entrar.
  */
 function fullAttachmentIds(
   messages: UIMessage[],
@@ -131,17 +156,15 @@ function fullAttachmentIds(
   const full = new Set<string>();
   if (!attachments) return full;
   const start = recentTurnsStart(messages, keep);
-  let current = messages.length - 1;
-  while (current >= 0 && messages[current]!.role !== "user") current--;
   let used = 0;
   for (let index = messages.length - 1; index >= start; index--) {
+    const open = isCreatorTurn(messages[index]!) && isOpenTurn(messages, index);
     for (const id of attachmentIdsIn([messages[index]!])) {
       const row = attachments.get(id);
       if (!row || full.has(id)) continue;
-      if (index === current) {
-        // Los de este turno van siempre y no gastan el presupuesto de los de
-        // antes: mandar un documento grande no le quita su lugar a la foto
-        // del turno anterior.
+      if (open) {
+        // Van siempre y no gastan el presupuesto de los de antes: mandar un
+        // documento grande no le quita su lugar a la foto del turno anterior.
         full.add(id);
       } else if (used + row.tokenEstimate <= budget) {
         full.add(id);
@@ -164,14 +187,14 @@ function fullAttachment(
     return [
       {
         type: "text",
-        text: `<adjunto nombre="${quoted(row.filename)}" tipo="${what}">\n${row.extractedText}\n</adjunto>${note}`,
+        text: `<adjunto nombre="${safeName(row.filename)}" tipo="${what}">\n${insideTag(row.extractedText)}\n</adjunto>${note}`,
       },
     ];
   }
   const label =
     row.kind === "pdf"
-      ? `[Adjunto: "${row.filename}", PDF escaneado de ${row.pages ?? "?"} páginas, que ves como imágenes]`
-      : `[Adjunto: imagen "${row.filename}"]`;
+      ? `[Adjunto: "${safeName(row.filename)}", PDF escaneado de ${row.pages ?? "?"} páginas, que ves como imágenes]`
+      : `[Adjunto: imagen "${safeName(row.filename)}"]`;
   return [
     { type: "text", text: label },
     // El estimado viaja en la parte para el techo del contexto
@@ -187,13 +210,27 @@ export function digestLine(row: AttachmentForContext): string {
   const about =
     row.description ??
     (row.extractedText
-      ? `empieza así: "${row.extractedText.slice(0, EXCERPT_CHARS).replace(/\s+/g, " ").trim()}…"`
+      ? `empieza así: "${safeName(row.extractedText.slice(0, EXCERPT_CHARS)).trim()}…"`
       : "ya no lo ves");
-  return `[Adjunto de antes (${what} "${row.filename}"): ${about}. Si necesitas el detalle, pídele al creator que lo vuelva a adjuntar.]`;
+  return `[Adjunto de antes (${what} "${safeName(row.filename)}"): ${about}. Si necesitas el detalle, pídele al creator que lo vuelva a adjuntar.]`;
 }
 
-function quoted(text: string): string {
-  return text.replace(/"/g, "'");
+/**
+ * Un nombre de archivo (o un extracto) dentro de una etiqueta o una línea: sin
+ * comillas que la cierren, sin saltos ni `<>`. Lo escribe quien sube el
+ * archivo, así que no puede salirse de su lugar.
+ */
+function safeName(name: string): string {
+  return name.replace(/["<>]/g, "'").replace(/\s+/g, " ").slice(0, 300);
+}
+
+/**
+ * El contenido dentro de <adjunto>: un archivo de terceros que trae
+ * "</adjunto>" no puede cerrar la etiqueta y seguir como si lo dijera el
+ * creator (el prompt de sistema trata lo de adentro como datos).
+ */
+function insideTag(text: string): string {
+  return text.replace(/<(\/?)adjunto/gi, "‹$1adjunto");
 }
 
 /**
@@ -203,9 +240,15 @@ function quoted(text: string): string {
  * son puras y no leen filas.
  */
 export function attachmentLines(message: UIMessage): string[] {
-  return message.parts.flatMap((part) =>
-    part.type === "file" && attachmentIdFromUrl(part.url)
-      ? [`[El creator adjuntó "${part.filename ?? "un archivo"}"]`]
-      : [],
-  );
+  return message.parts.flatMap((part) => {
+    const line = attachmentLine(part);
+    return line ? [line] : [];
+  });
+}
+
+/** La línea de una parte, o null si no es un adjunto. */
+export function attachmentLine(part: UIMessage["parts"][number]): string | null {
+  return part.type === "file" && attachmentIdFromUrl(part.url)
+    ? `[El creator adjuntó "${safeName(part.filename ?? "un archivo")}"]`
+    : null;
 }

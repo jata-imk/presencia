@@ -5,7 +5,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { attachmentLines } from "./attachment-context.js";
+import { attachmentLine } from "./attachment-context.js";
 import {
   generateObject,
   NoObjectGeneratedError,
@@ -308,8 +308,9 @@ export function transcriptOf(history: UIMessage[]): string {
         continue;
       }
       // F10.9: el adjunto, por su nombre (el contenido no viaja aquí).
-      if (part.type === "file") {
-        lines.push(...attachmentLines({ ...message, parts: [part] }));
+      const attached = attachmentLine(part);
+      if (attached) {
+        lines.push(attached);
         continue;
       }
       const output = (

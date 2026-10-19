@@ -2,6 +2,7 @@ import { BadRequestException, PayloadTooLargeException } from "@nestjs/common";
 import { ATTACHMENTS_PER_MESSAGE, MAX_MESSAGE_CHARS, attachmentIdFromUrl } from "@presencia/shared";
 import { safeValidateUIMessages, type UIMessage } from "ai";
 import { z } from "zod";
+import { attachmentIdsIn } from "./attachment-context.js";
 
 const uuidSchema = z.uuid();
 
@@ -32,7 +33,7 @@ export async function parseLastUserMessage(body: unknown): Promise<UIMessage> {
   ) {
     throw new BadRequestException("El mensaje no es válido.");
   }
-  if (attachmentIdsOf(message).length > ATTACHMENTS_PER_MESSAGE) {
+  if (attachmentIdsIn([message]).length > ATTACHMENTS_PER_MESSAGE) {
     throw new BadRequestException(
       `Puedes adjuntar hasta ${ATTACHMENTS_PER_MESSAGE} archivos por mensaje.`,
     );
@@ -55,15 +56,6 @@ export async function parseLastUserMessage(body: unknown): Promise<UIMessage> {
  */
 export function storableMessageId(message: UIMessage): string | undefined {
   return uuidSchema.safeParse(message.id).success ? message.id : undefined;
-}
-
-/** Los ids de los adjuntos de un mensaje, sin repetir, en orden. */
-export function attachmentIdsOf(message: UIMessage): string[] {
-  const ids = message.parts.flatMap((part) => {
-    const id = part.type === "file" ? attachmentIdFromUrl(part.url) : null;
-    return id ? [id] : [];
-  });
-  return [...new Set(ids)];
 }
 
 function textLengthOf(message: UIMessage): number {
