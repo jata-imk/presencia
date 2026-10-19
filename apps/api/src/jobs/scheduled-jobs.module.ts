@@ -1,4 +1,6 @@
 import { Module } from "@nestjs/common";
+import { AttachmentsJobs } from "../attachments/attachments.jobs.js";
+import { AttachmentsModule } from "../attachments/attachments.module.js";
 import { BackupsJobs } from "../backups/backups.jobs.js";
 import { BackupsModule } from "../backups/backups.module.js";
 import { CardsJobs } from "../cards/cards.jobs.js";
@@ -29,7 +31,17 @@ import { JobsModule } from "./jobs.module.js";
     TrendsModule,
     ImagesModule,
     ChatModule,
+    AttachmentsModule,
   ],
-  providers: [CardsJobs, CreditsJobs, BackupsJobs, MetricsJobs, TrendsJobs, ImagesJobs, ChatJobs],
+  providers: [
+    CardsJobs,
+    CreditsJobs,
+    BackupsJobs,
+    MetricsJobs,
+    TrendsJobs,
+    ImagesJobs,
+    ChatJobs,
+    AttachmentsJobs,
+  ],
 })
 export class ScheduledJobsModule {}

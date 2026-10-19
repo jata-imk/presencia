@@ -9,6 +9,7 @@ import {
   chats,
   folders,
   memoryChunks,
+  messageAttachments,
   messages,
   cadenceTargets,
   postMetrics,
@@ -933,6 +934,79 @@ describe("RLS tenant_isolation", () => {
           (e: unknown) => e,
         );
       expect(error).toBeInstanceOf(Error);
+    });
+  });
+
+  // F10.9: los adjuntos del chat. Además del aislamiento, la policy del
+  // barrido: sin tenant solo se ven los que no se enviaron.
+  describe("message_attachments", () => {
+    let unsent: string;
+    let sent: string;
+
+    beforeAll(async () => {
+      [unsent, sent] = await dbService.runWithTenant(userA, async (tx) => {
+        const [message] = await tx
+          .select({ id: messages.id })
+          .from(messages)
+          .where(eq(messages.chatId, chatA));
+        const base = {
+          userId: userA,
+          chatId: chatA,
+          kind: "text" as const,
+          filename: "menu.md",
+          mimeType: "text/markdown",
+          sizeBytes: 10,
+          storageKey: `${userA}/adjuntos/x.md`,
+          tokenEstimate: 3,
+        };
+        const rows = await tx
+          .insert(messageAttachments)
+          .values([base, { ...base, messageId: message!.id }])
+          .returning({ id: messageAttachments.id });
+        return [rows[0]!.id, rows[1]!.id];
+      });
+    }, 15_000);
+
+    it("el dueño ve sus adjuntos; otro tenant no", { timeout: 15_000 }, async () => {
+      const ids = [unsent, sent];
+      const mios = await dbService.runWithTenant(userA, (tx) =>
+        tx.select().from(messageAttachments).where(inArray(messageAttachments.id, ids)),
+      );
+      const ajenos = await dbService.runWithTenant(userB, (tx) =>
+        tx.select().from(messageAttachments).where(inArray(messageAttachments.id, ids)),
+      );
+      expect(mios).toHaveLength(2);
+      expect(ajenos).toHaveLength(0);
+    });
+
+    it("otro tenant no puede insertar a nombre del dueño", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx.insert(messageAttachments).values({
+            userId: userA,
+            kind: "text",
+            filename: "x.txt",
+            mimeType: "text/plain",
+            sizeBytes: 1,
+            storageKey: "x",
+            tokenEstimate: 1,
+          }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(String((error as Error).cause)).toMatch(/row-level security/);
+    });
+
+    it("el barrido (sin tenant) solo ve los que no se enviaron", { timeout: 15_000 }, async () => {
+      const visibles = await dbService.runWorkerScan((tx) =>
+        tx
+          .select({ id: messageAttachments.id })
+          .from(messageAttachments)
+          .where(inArray(messageAttachments.id, [unsent, sent])),
+      );
+      expect(visibles.map((r) => r.id)).toEqual([unsent]);
     });
   });
 

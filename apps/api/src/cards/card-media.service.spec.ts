@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -138,7 +139,7 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
         chatId: chatA,
         source: "uploaded",
         mimeType: "image/png",
-        sizeBytes: PNG.byteLength,
+        // F10.9: se guarda recodificada (sin metadata), no los bytes tal cual.
         metadata: { width: 40, height: 50, originalName: "mi foto.png" },
       });
       expect(row?.storageKey).toBe(`${userA}/${assetId}.png`);
@@ -265,8 +266,29 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     expect(propio?.mimeType).toBe("image/png");
     expect(propio?.delivery).toMatchObject({ kind: "bytes" });
     if (propio?.delivery.kind === "bytes") {
-      expect(Buffer.from(propio.delivery.data).equals(Buffer.from(PNG))).toBe(true);
+      expect(await sharp(propio.delivery.data).metadata()).toMatchObject({ width: 40, height: 50 });
     }
+  });
+
+  it("guarda la foto sin EXIF (la ubicación GPS) y con la orientación aplicada", async () => {
+    const cardId = await createCard(VISUAL);
+    // 40×20 guardada con orientación 6 (girar 90°): se ve vertical, 20×40.
+    const foto = await sharp({
+      create: { width: 40, height: 20, channels: 3, background: { r: 9, g: 9, b: 9 } },
+    })
+      .jpeg()
+      .withMetadata({ orientation: 6 })
+      .withExif({ IFD0: { Copyright: "secreto", Artist: "GPS 20.97,-89.62" } })
+      .toBuffer();
+    expect((await sharp(foto).metadata()).exif).toBeDefined();
+
+    const dto = await media.attachUpload(userA, cardId, new Uint8Array(foto));
+    const guardada = await assetsService.deliver(userA, dto.content.assetIds[0]!);
+    if (guardada?.delivery.kind !== "bytes") throw new Error("se esperaban los bytes");
+    const meta = await sharp(guardada.delivery.data).metadata();
+    expect(meta.exif).toBeUndefined();
+    expect(meta.orientation).toBeUndefined();
+    expect(meta).toMatchObject({ width: 20, height: 40 });
   });
 
   // ── selectImage ──

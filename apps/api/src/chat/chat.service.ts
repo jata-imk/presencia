@@ -19,6 +19,7 @@ import type { ServerResponse } from "node:http";
 import { AiUsageService } from "../ai/ai-usage.service.js";
 import { RunTrace } from "../ai/run-trace.js";
 import { AiService } from "../ai/ai.service.js";
+import { AttachmentsService } from "../attachments/attachments.service.js";
 import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
 import { CardsRepository } from "../cards/cards.repository.js";
 import { buildPublicationCardTools } from "../cards/publication-card.tools.js";
@@ -70,6 +71,7 @@ export class ChatService {
     @Inject(ChatTitleService) private readonly chatTitle: ChatTitleService,
     @Inject(HistoryCompactionService) private readonly compaction: HistoryCompactionService,
     @Inject(MemoryService) private readonly memory: MemoryService,
+    @Inject(AttachmentsService) private readonly attachments: AttachmentsService,
   ) {}
 
   /**
@@ -232,9 +234,10 @@ export class ChatService {
   // sobreviven huérfanas (chatId → null, ver schema.ts) — no se destruye
   // el historial de algo que ya se publicó por borrar la conversación que
   // lo originó.
-  deleteChat(userId: string, chatId: string): Promise<void> {
-    return this.dbService.runWithTenant(userId, async (tx) => {
-      const chat = await this.repo.getChat(tx, chatId);
+  async deleteChat(userId: string, chatId: string): Promise<void> {
+    const attachmentKeys = await this.dbService.runWithTenant(userId, async (tx) => {
+      // Con la fila bloqueada: ver getChatForDelete (F10.9).
+      const chat = await this.repo.getChatForDelete(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const hasScheduled = await this.cardsRepo.hasScheduledCards(tx, chatId);
       if (hasScheduled) {
@@ -245,8 +248,15 @@ export class ChatService {
       // Antes del DELETE y en la misma transacción: el SET NULL del FK no avisa
       // a las otras pestañas (F8.6).
       await this.cardsRepo.detachFromChat(tx, chatId);
+      // F10.9: los adjuntos se van con el chat (sus filas, por el cascade).
+      // Sus llaves se leen antes, para borrar los bytes después del commit.
+      const keys = await this.attachments.keysByChat(tx, chatId);
       await this.repo.deleteChat(tx, chatId);
+      return keys;
     });
+    // Al instante, no en un barrido (decisión de Jose, F10.9): borrar el chat
+    // es borrar lo que adjuntaste en él.
+    await this.attachments.deleteObjects(attachmentKeys);
   }
 
   /**

@@ -203,7 +203,7 @@ Sitio tipo **Reverse Proxy** hacia `http://127.0.0.1:3001`, y certificado de Let
 que resolver antes de pedirlo).
 
 Después hay que editar el vhost (**Sites → el sitio → Vhost**). CloudPanel no genera un `location /api/`:
-manda todo a una _named location_ con placeholders que él rellena, y ahí van los dos ajustes. **No tocar
+manda todo a una _named location_ con placeholders que él rellena, y ahí van los ajustes. **No tocar
 los `{{placeholders}}`**; los comentarios con `#` sí sobreviven a guardar y a renovar el certificado.
 
 **1. Apagar el buffering.** nginx acumula la respuesta por default —la plantilla incluso trae
@@ -235,6 +235,21 @@ viene en `off`), y el SPA sale de ahí. A nivel de `server`:
 ```
 
 Medido en el primer deploy: el bundle pasa de 1,001 KB a 308 KB (70%), el CSS de 49.6 KB a 10.1 KB.
+
+**3. Tamaño de las subidas (F10.9).** Los adjuntos del chat llegan hasta 25 MB (la imagen de una card,
+10 MB), y nginx rechaza con su propio 413 lo que pase de `client_max_body_size`: el creator vería un
+error genérico en vez del "tu archivo pesa…" de la app. Revisar el valor que trae la plantilla:
+
+```bash
+grep -rn client_max_body_size /etc/nginx/
+```
+
+Si es menor a 26 MB (o no aparece: el default de nginx es 1 MB), a nivel de `server`:
+
+```nginx
+  # Presencia: adjuntos del chat de hasta 25 MB, más el margen del request.
+  client_max_body_size 26m;
+```
 
 La app además emite `X-Accel-Buffering: no` en el stream del chat y en `GET /api/stream`, así que el
 buffering queda apagado por los dos lados aunque el vhost cambie.

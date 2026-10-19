@@ -1,4 +1,5 @@
 export * from "./assets.js";
+export * from "./attachments.js";
 export * from "./brand-voice.js";
 export * from "./card-versions.js";
 export * from "./carousel.js";

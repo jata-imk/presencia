@@ -1,6 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // Dónde viven los bytes de Biblioteca (F10, ADR-011). La fila de `assets`
@@ -20,6 +25,11 @@ export interface AssetStorage {
   /** Los bytes tal cual: para editar una imagen o subirla a un proveedor. */
   get(key: string): Promise<Uint8Array>;
   deliver(key: string, mimeType: string): Promise<AssetDelivery>;
+  /**
+   * F10.9: borra el archivo. Idempotente: uno que ya no está no es error
+   * (el cron que limpia adjuntos puede repetir una pasada a medias).
+   */
+  delete(key: string): Promise<void>;
 }
 
 export const ASSET_STORAGE = Symbol("ASSET_STORAGE");
@@ -66,6 +76,11 @@ export class R2AssetStorage implements AssetStorage {
     );
     return { kind: "redirect", url };
   }
+
+  async delete(key: string): Promise<void> {
+    // S3 (y R2) responden 204 aunque la llave no exista: ya es idempotente.
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
 }
 
 /**
@@ -101,5 +116,9 @@ export class LocalAssetStorage implements AssetStorage {
 
   async deliver(key: string): Promise<AssetDelivery> {
     return { kind: "bytes", data: await this.get(key) };
+  }
+
+  async delete(key: string): Promise<void> {
+    await rm(this.pathFor(key), { force: true });
   }
 }

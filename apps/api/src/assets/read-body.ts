@@ -28,6 +28,10 @@ export function fileTooLarge(size: number, max: number): HttpException {
 export function readRawBody(req: Request, max: number): Promise<Uint8Array> {
   const declared = Number(req.headers["content-length"]);
   if (Number.isFinite(declared) && declared > max) {
+    // Se tira lo que siga llegando, como abajo (F10.9): sin leerlo, el proxy
+    // (Vite en dev, nginx en prod) corta la subida y el navegador ve un error
+    // de red en vez del 413 con el peso.
+    req.resume();
     return Promise.reject(fileTooLarge(declared, max));
   }
 
@@ -51,4 +55,18 @@ export function readRawBody(req: Request, max: number): Promise<Uint8Array> {
     });
     req.on("error", reject);
   });
+}
+
+/**
+ * El nombre original del archivo, que viaja URI-encoded en `X-File-Name`
+ * (un header no admite acentos). `undefined` si no viene o no decodifica.
+ */
+export function fileNameFrom(req: Request): string | undefined {
+  const raw = req.headers["x-file-name"];
+  if (typeof raw !== "string" || raw.length === 0) return undefined;
+  try {
+    return decodeURIComponent(raw).slice(0, 255);
+  } catch {
+    return undefined;
+  }
 }

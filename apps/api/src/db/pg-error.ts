@@ -17,3 +17,9 @@ export function isUniqueViolation(error: unknown, constraint: string): boolean {
   const pgError = extractPgError(error);
   return pgError?.code === "23505" && pgError.constraint === constraint;
 }
+
+/** SQLSTATE 23503 (foreign_key_violation) sobre el constraint dado. */
+export function isForeignKeyViolation(error: unknown, constraint: string): boolean {
+  const pgError = extractPgError(error);
+  return pgError?.code === "23503" && pgError.constraint === constraint;
+}

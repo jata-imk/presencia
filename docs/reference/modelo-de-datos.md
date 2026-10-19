@@ -93,6 +93,14 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 - **Del chat actual** solo entra lo anterior al mensaje más viejo que el modelo ve completo (F10.8.1, `oldestVisibleMessageId` del ContextBuilder): la parte que ya solo ve resumida. Sin esa frontera, el chat actual queda fuera entero. Cada resultado dice si es del mismo chat (`mismoChat`).
 - **Deuda (review de cierre de F10.8):** el índice HNSW es uno para todos los usuarios y RLS filtra después. El scan iterativo se detiene en `hnsw.max_scan_tuples` (20 000 por defecto): cuando la tabla sea grande y un creator tenga una fracción mínima de ella, podría recibir "sin coincidencias" aunque tenga recuerdos relevantes. En V1 no alcanza a pasar. Cuando la tabla pase de ~100k filas: búsqueda exacta (sin índice) para usuarios con pocos fragmentos, o subir `max_scan_tuples` midiendo la latencia.
 
+**`message_attachments`** (F10.9, migración `0055`): lo que el creator adjunta a un mensaje del chat (imágenes, `.md`/`.txt`/`.csv`/`.json`, PDF). **No es un asset**: es de la conversación y muere con ella, mientras que `assets` es material publicable que sobrevive a su chat. Usar una imagen adjunta en una card la copia a `assets` (ADR-011, addendum F10.9).
+
+- `id`, `user_id` (RLS), `chat_id` (nullable y cascade: en la pantalla de chat nuevo se sube antes de que exista el chat), `message_id` (nullable, FK `SET NULL`), `kind` (`image` | `text` | `pdf`), `filename`, `mime_type` (el real, por contenido), `size_bytes`, `storage_key`, `model_storage_key` (solo imágenes de más de 1568 px: la variante que viaja al modelo), `width`, `height`, `pages`, `scanned` (PDF sin texto: viaja nativo y cuesta por página), `extracted_text` (lo que viaja al modelo de un texto o un PDF con texto, máximo 100k caracteres), `truncated`, `token_estimate`, `description` y `described_at` (F10.9 PR4: lo que viaja en lugar del adjunto cuando ya quedó atrás), `created_at`.
+- **Se sube al adjuntar, no al enviar**: `chat_id` y `message_id` llegan al enviar. Uno que nunca se envió (o que quedó fuera de un mensaje editado) lo borra el cron `attachments.cleanup` a las 24 h, con sus bytes.
+- **`message_id` es `SET NULL` y no cascade** a propósito: reintentar o editar el último mensaje borra su fila y la vuelve a insertar con el mismo id, en la misma transacción, y el adjunto se vuelve a ligar ahí.
+- **Borrar el chat** borra las filas (cascade de `chat_id`) y, después del commit, los bytes (`ChatService.deleteChat`): al instante, no en el barrido (decisión de Jose, F10.9).
+- Índices: por `message_id`, por `chat_id`, y parcial por `created_at` donde `message_id IS NULL` (el barrido).
+
 - Sin `updated_at`: los mensajes son inmutables (append-only). Editar = nuevo mensaje.
 - `parts` persiste el **shape `UIMessage` del AI SDK tal cual** (decisión 2026-07-18): productor (stream del SDK) y consumidor (`useChat`) son el mismo SDK, un formato neutro traduciría ida y vuelta sin ganancia. Telegram solo extrae las parts de texto. Mitigaciones: versión del paquete `ai` pineada exacta y la misma en la API y la web (`7.0.127` desde F10.8.4; el shape `UIMessage` vive ahí — los paquetes de proveedor como `@ai-sdk/google` pueden ir con caret) con upgrades deliberados y script de migración del JSONB si un major cambia el shape, y acceso a `messages` encapsulado en el repository del módulo chat.
 
@@ -267,7 +275,7 @@ Con una sola fila por día —como estaba hasta `0027`— medir un post ocho vec
 
 Sin RLS ahí — no es superficie de la API. Regla: los payloads de jobs llevan `user_id` explícito y el worker lo fija en su transacción (ver abajo).
 
-Colas agendadas hoy: `cards.reconcile` (cada minuto), `credits.cycle` (diaria, 09:00 UTC), `backups.daily` (diaria, 08:00 UTC) y `metrics.ingest` (cada 6 h, F8.7). La cadencia de esta última la fijan las redes, no nosotros: reportan con horas de retraso y los proveedores refrescan cada 6 h por su cuenta, así que preguntar más seguido gasta cuota para traer el mismo número.
+Colas agendadas hoy: `cards.reconcile` (cada minuto), `credits.cycle` (diaria, 09:00 UTC), `backups.daily` (diaria, 08:00 UTC), `metrics.ingest` (cada 6 h, F8.7) y `attachments.cleanup` (cada hora, al minuto 17, F10.9: adjuntos de más de un día sin mensaje). La cadencia de esta última la fijan las redes, no nosotros: reportan con horas de retraso y los proveedores refrescan cada 6 h por su cuenta, así que preguntar más seguido gasta cuota para traer el mismo número.
 
 ## Dónde muerde el RLS
 
@@ -367,7 +375,11 @@ Existe por tres razones, y ninguna es "guardar historial":
 
 **Se cobra solo adelantar tendencias que el usuario ya tiene.** Sin tanda, con la tanda vencida o con una vacía —lo que deja una búsqueda que no encontró nada citable— el refresco es gratis: cobrar por la primera entrega, o por reintentar lo que no dio resultados, es cobrar por lo que no se recibió. La regla vive sola en `apps/api/src/trends/cobro.ts` y tiene su propio spec.
 
-RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`, `post_metrics`, `cadence_targets`, `ritmo_narrations`, `user_trends`, `trend_sources`, `trend_refreshes`, `image_generations`, `card_versions`. **Ya no hay excepciones**: `niche_trends` era la única tabla del dominio sin `user_id` —una caché compartida por `(vertical, país, macro-región)`, justificada en ADR-023— y se eliminó en F9.6 al pasar las tendencias a ser por usuario (ADR-024). `user_trends` lleva además una policy de worker acotada a `SELECT` y al centinela del barrido, con el mismo patrón que `worker_metrics_scan`: el barrido necesita preguntar cross-tenant a quién le toca refresco, y sin esa policy devolvería cero filas y las tendencias no se refrescarían nunca, sin un solo error. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
+RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `message_attachments`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`, `post_metrics`, `cadence_targets`, `ritmo_narrations`, `user_trends`, `trend_sources`, `trend_refreshes`, `image_generations`, `card_versions`. **Ya no hay excepciones**: `niche_trends` era la única tabla del dominio sin `user_id` —una caché compartida por `(vertical, país, macro-región)`, justificada en ADR-023— y se eliminó en F9.6 al pasar las tendencias a ser por usuario (ADR-024). `user_trends` lleva además una policy de worker acotada a `SELECT` y al centinela del barrido, con el mismo patrón que `worker_metrics_scan`: el barrido necesita preguntar cross-tenant a quién le toca refresco, y sin esa policy devolvería cero filas y las tendencias no se refrescarían nunca, sin un solo error. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
+
+### La tercera del worker: `worker_scan` sobre `message_attachments` (F10.9)
+
+El barrido de adjuntos sin enviar pregunta cross-tenant por las filas **sin mensaje**: la policy (migración `0055`) es solo `SELECT`, solo con el centinela nil y solo `message_id IS NULL`. Un adjunto ya enviado es invisible fuera de su tenant, también para el barrido. El borrado entra por `runWithTenant`, y vuelve a exigir `message_id IS NULL`: uno que se envió entre el barrido y el borrado se queda.
 
 ## Diagrama ER
 
@@ -387,6 +399,8 @@ erDiagram
     messages |o--o{ publication_cards : "tool call crea"
     publication_cards |o--o{ assets : usa
     chats |o--o{ assets : "genera en"
+    chats ||--o{ message_attachments : "adjunta en"
+    messages |o--o{ message_attachments : lleva
     publication_cards }o--|| social_accounts : "publica via"
     users ||--o{ post_metrics : acumula
     publication_cards |o--o{ post_metrics : "mide (opcional)"

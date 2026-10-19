@@ -32,6 +32,7 @@ import type { AssetMetadata } from "../assets/assets.repository.js";
 import { fitToAspect, matchesAspect, nearestAspect } from "../images/image-fit.js";
 import { AssetsService } from "../assets/assets.service.js";
 import { InvalidImageError } from "../assets/image-inspect.js";
+import { normalizeImage } from "../assets/image-normalize.js";
 import { DbService } from "../db/db.service.js";
 import { CardsRepository, EDITABLE_CARD_STATUSES, type CardRow } from "./cards.repository.js";
 import { toDto } from "./cards.service.js";
@@ -79,11 +80,16 @@ export class CardMediaService {
     let original;
     let stored;
     try {
+      // F10.9: sin EXIF (la ubicación GPS de una foto del celular) y con la
+      // orientación aplicada, igual que los adjuntos del chat. Una sin
+      // metadata se queda con sus bytes; un GIF se rechaza aquí (las redes no
+      // lo publican como imagen).
+      const clean = (await normalizeImage(data)).data;
       original = await this.assets.storeImage({
         userId,
         cardId,
         chatId: card.chatId,
-        data,
+        data: clean,
         source: "uploaded",
         metadata: originalName ? { originalName } : {},
         slideId: targetSlide,
@@ -95,8 +101,8 @@ export class CardMediaService {
       // después parte de la original.
       const current = card.content as CardContent;
       if (current.archetype !== "video_script" && current.slides) {
-        const cropped = await fitToAspect(data, carouselAspect(current, card.network));
-        if (cropped !== data) {
+        const cropped = await fitToAspect(clean, carouselAspect(current, card.network));
+        if (cropped !== clean) {
           stored = await this.assets.storeImage({
             userId,
             cardId,

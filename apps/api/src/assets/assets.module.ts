@@ -28,6 +28,7 @@ export function buildAssetStorage() {
     AssetsService,
     { provide: ASSET_STORAGE, useFactory: buildAssetStorage },
   ],
-  exports: [AssetsService],
+  // F10.9: el storage también guarda los adjuntos del chat (AttachmentsModule).
+  exports: [AssetsService, ASSET_STORAGE],
 })
 export class AssetsModule {}

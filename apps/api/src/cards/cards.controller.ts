@@ -36,7 +36,7 @@ import {
 } from "@presencia/shared";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { SessionUser } from "../auth/auth.js";
-import { readRawBody } from "../assets/read-body.js";
+import { fileNameFrom, readRawBody } from "../assets/read-body.js";
 import { CardContentService } from "./card-content.service.js";
 import { CardMediaService } from "./card-media.service.js";
 import { CardsService } from "./cards.service.js";
@@ -284,16 +284,5 @@ export class CardsController {
     const parsed = slideParamSchema.safeParse({ id, slideId });
     if (!parsed.success) throw new BadRequestException("El id del slide no es válido.");
     return parsed.data.slideId;
-  }
-}
-
-/** El nombre original del archivo, o nada si no vino o no se puede leer. */
-function fileNameFrom(req: Request): string | undefined {
-  const raw = req.headers["x-file-name"];
-  if (typeof raw !== "string" || raw.length === 0) return undefined;
-  try {
-    return decodeURIComponent(raw).slice(0, 255);
-  } catch {
-    return undefined;
   }
 }
