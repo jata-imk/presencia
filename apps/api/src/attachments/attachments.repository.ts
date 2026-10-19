@@ -43,6 +43,26 @@ export class AttachmentsRepository {
     return row;
   }
 
+  /** Varios por id, en la transacción del llamador (RLS: los ajenos no vienen). */
+  findByIds(tx: Tx, ids: readonly string[]): Promise<AttachmentRow[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return tx.select().from(messageAttachments).where(inArray(messageAttachments.id, ids));
+  }
+
+  /** F10.9: los liga al mensaje (y al chat, si se subieron sin él) al enviar. */
+  async linkToMessage(
+    tx: Tx,
+    ids: readonly string[],
+    chatId: string,
+    messageId: string,
+  ): Promise<void> {
+    if (ids.length === 0) return;
+    await tx
+      .update(messageAttachments)
+      .set({ chatId, messageId })
+      .where(inArray(messageAttachments.id, ids));
+  }
+
   /** Las llaves de los adjuntos de un chat: para borrar sus bytes al borrar el chat. */
   keysByChat(tx: Tx, chatId: string): Promise<AttachmentKeys[]> {
     return tx.select(KEYS).from(messageAttachments).where(eq(messageAttachments.chatId, chatId));

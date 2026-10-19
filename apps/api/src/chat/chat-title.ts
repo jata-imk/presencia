@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import { attachmentLines } from "./attachment-context.js";
 import { textOf } from "./history-compaction.js";
 
 // Lo puro del título automático (F10.8): qué lee el modelo y cómo se limpia lo
@@ -53,8 +54,10 @@ export function transcriptForTitle(conversation: UIMessage[]): string {
     .slice(0, 2 * TITLE_ATTEMPTS)
     .flatMap((message) => {
       const text = textOf(message).slice(0, MAX_CHARS_PER_MESSAGE);
-      if (!text) return [];
-      return [`${message.role === "user" ? "Creator" : "Presencia"}: ${text}`];
+      // F10.9: un mensaje que es solo un adjunto también cuenta qué se mandó.
+      const lines = attachmentLines(message);
+      if (text) lines.unshift(`${message.role === "user" ? "Creator" : "Presencia"}: ${text}`);
+      return lines;
     })
     .join("\n\n");
 }

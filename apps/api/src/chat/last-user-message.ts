@@ -1,5 +1,5 @@
 import { BadRequestException, PayloadTooLargeException } from "@nestjs/common";
-import { MAX_MESSAGE_CHARS } from "@presencia/shared";
+import { ATTACHMENTS_PER_MESSAGE, MAX_MESSAGE_CHARS, attachmentIdFromUrl } from "@presencia/shared";
 import { safeValidateUIMessages, type UIMessage } from "ai";
 import { z } from "zod";
 
@@ -9,8 +9,11 @@ const uuidSchema = z.uuid();
  * El mensaje del creator al que hay que responder: el último del body. El
  * resto del historial se reconstruye desde la DB (fuente de verdad única).
  *
- * Solo texto: el chat no adjunta nada todavía, y una parte de otro tipo
- * esquivaría el tope (que se mide en caracteres de texto).
+ * Texto y, desde F10.9, adjuntos: partes `file` cuya URL es la de un adjunto
+ * ya subido (`/api/attachments/:id/content`), nunca bytes en línea. El tope de
+ * caracteres mide el texto; los adjuntos tienen el suyo (cuántos aquí, cuánto
+ * pesan en ChatService, que lee sus filas). Cualquier otra parte se rechaza:
+ * esquivaría los dos.
  */
 export async function parseLastUserMessage(body: unknown): Promise<UIMessage> {
   const messages = (body as { messages?: unknown })?.messages;
@@ -23,9 +26,16 @@ export async function parseLastUserMessage(body: unknown): Promise<UIMessage> {
     !message ||
     message.role !== "user" ||
     message.parts.length === 0 ||
-    message.parts.some((part) => part.type !== "text")
+    message.parts.some(
+      (part) => part.type !== "text" && !(part.type === "file" && attachmentIdFromUrl(part.url)),
+    )
   ) {
     throw new BadRequestException("El mensaje no es válido.");
+  }
+  if (attachmentIdsOf(message).length > ATTACHMENTS_PER_MESSAGE) {
+    throw new BadRequestException(
+      `Puedes adjuntar hasta ${ATTACHMENTS_PER_MESSAGE} archivos por mensaje.`,
+    );
   }
   if (textLengthOf(message) > MAX_MESSAGE_CHARS) {
     throw new PayloadTooLargeException(
@@ -45,6 +55,15 @@ export async function parseLastUserMessage(body: unknown): Promise<UIMessage> {
  */
 export function storableMessageId(message: UIMessage): string | undefined {
   return uuidSchema.safeParse(message.id).success ? message.id : undefined;
+}
+
+/** Los ids de los adjuntos de un mensaje, sin repetir, en orden. */
+export function attachmentIdsOf(message: UIMessage): string[] {
+  const ids = message.parts.flatMap((part) => {
+    const id = part.type === "file" ? attachmentIdFromUrl(part.url) : null;
+    return id ? [id] : [];
+  });
+  return [...new Set(ids)];
 }
 
 function textLengthOf(message: UIMessage): number {
