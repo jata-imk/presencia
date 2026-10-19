@@ -297,6 +297,11 @@ export class AttachmentsService {
    * 25 MB). Los bytes de un adjunto nunca cambian, así que la caché no se
    * invalida: solo se acota por tamaño.
    */
+  /** Los bytes que ve el modelo (la variante chica de una imagen), sin caché. */
+  readModelBytes(row: AttachmentRow): Promise<Uint8Array> {
+    return this.storage.get(row.modelStorageKey ?? row.storageKey);
+  }
+
   private async modelDataUrl(row: AttachmentRow): Promise<string> {
     const cached = this.dataUrls.get(row.id);
     if (cached) {
@@ -305,7 +310,7 @@ export class AttachmentsService {
       this.dataUrls.set(row.id, cached);
       return cached;
     }
-    const bytes = await this.storage.get(row.modelStorageKey ?? row.storageKey);
+    const bytes = await this.readModelBytes(row);
     const url = `data:${row.mimeType};base64,${Buffer.from(bytes).toString("base64")}`;
     this.dataUrls.set(row.id, url);
     this.dataUrlChars += url.length;

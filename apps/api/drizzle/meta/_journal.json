@@ -393,6 +393,13 @@
       "when": 1792302958223,
       "tag": "0055_adjuntos_del_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1792384961678,
+      "tag": "0056_describir_adjuntos",
+      "breakpoints": true
     }
   ]
 }

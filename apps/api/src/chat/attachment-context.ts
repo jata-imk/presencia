@@ -208,7 +208,7 @@ function fullAttachment(
 export function digestLine(row: AttachmentForContext): string {
   const what = row.kind === "image" ? "imagen" : row.kind === "pdf" ? "PDF" : "archivo de texto";
   const about =
-    row.description ??
+    (row.description && safeName(row.description, 1_000)) ??
     (row.extractedText
       ? `empieza así: "${safeName(row.extractedText.slice(0, EXCERPT_CHARS)).trim()}…"`
       : "ya no lo ves");
@@ -220,8 +220,12 @@ export function digestLine(row: AttachmentForContext): string {
  * comillas que la cierren, sin saltos ni `<>`. Lo escribe quien sube el
  * archivo, así que no puede salirse de su lugar.
  */
-function safeName(name: string): string {
-  return name.replace(/["<>]/g, "'").replace(/\s+/g, " ").slice(0, 300);
+export function safeName(name: string, max = 300): string {
+  return name
+    .replace(/["<>]/g, "'")
+    .replace(/[[\]]/g, (c) => (c === "[" ? "(" : ")"))
+    .replace(/\s+/g, " ")
+    .slice(0, max);
 }
 
 /**
@@ -229,7 +233,7 @@ function safeName(name: string): string {
  * "</adjunto>" no puede cerrar la etiqueta y seguir como si lo dijera el
  * creator (el prompt de sistema trata lo de adentro como datos).
  */
-function insideTag(text: string): string {
+export function insideTag(text: string): string {
   return text.replace(/<(\/?)adjunto/gi, "‹$1adjunto");
 }
 
