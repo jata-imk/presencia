@@ -130,13 +130,15 @@ export class AttachmentsService {
    * bytes sin fila, invisibles (la misma basura barata de ADR-011).
    */
   async deleteObjects(keys: readonly AttachmentKeys[]): Promise<void> {
-    const objects = keys.flatMap((k) => (k.modelStorageKey ? [k.storageKey, k.modelStorageKey] : [k.storageKey]));
+    const objects = keys.flatMap((k) =>
+      k.modelStorageKey ? [k.storageKey, k.modelStorageKey] : [k.storageKey],
+    );
     const results = await Promise.allSettled(objects.map((key) => this.storage.delete(key)));
-    const failed = results.filter((r) => r.status === "rejected");
-    if (failed.length > 0) {
+    const reasons = results.flatMap((r) => (r.status === "rejected" ? [r.reason as unknown] : []));
+    if (reasons.length > 0) {
       console.error(
-        `[adjuntos] No se pudieron borrar ${failed.length} de ${objects.length} archivos:`,
-        failed.map((r) => (r as PromiseRejectedResult).reason),
+        `[adjuntos] No se pudieron borrar ${reasons.length} de ${objects.length} archivos:`,
+        reasons,
       );
     }
   }

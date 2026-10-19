@@ -28,6 +28,10 @@ export function fileTooLarge(size: number, max: number): HttpException {
 export function readRawBody(req: Request, max: number): Promise<Uint8Array> {
   const declared = Number(req.headers["content-length"]);
   if (Number.isFinite(declared) && declared > max) {
+    // Se tira lo que siga llegando, como abajo (F10.9): sin leerlo, el proxy
+    // (Vite en dev, nginx en prod) corta la subida y el navegador ve un error
+    // de red en vez del 413 con el peso.
+    req.resume();
     return Promise.reject(fileTooLarge(declared, max));
   }
 

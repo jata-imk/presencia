@@ -99,3 +99,15 @@ se limpia con un barrido.
 **Sin lifecycle en este bucket, y no se borra lo descartado.** Biblioteca es el repositorio total (una
 variante que no se eligió se guarda), y a ~1.5 MB por imagen, cien imágenes al mes son ~$0.002 por
 usuario al mes en R2. El borrado llega con la pantalla de Biblioteca (F12).
+
+## Addendum (F10.9, 2026-10-18) — los adjuntos del chat
+
+El creator adjunta imágenes, archivos de texto y PDF a un mensaje del chat. Van al **mismo bucket**, en la carpeta del usuario (`userId/adjuntos/id.ext`), pero **no a la tabla `assets`**: tienen la suya, `message_attachments` (modelo-de-datos.md).
+
+- **Por qué otra tabla.** Un adjunto es de la conversación y muere con ella (borrar el chat lo borra); un asset es material publicable que sobrevive a su chat y que Biblioteca va a mostrar. Mezclarlos obligaría a cada consulta de assets (historial de la card, Biblioteca) a filtrar adjuntos, y a cada borrado de chat a distinguir qué assets se van. Usar una imagen adjunta en una card la **copia** a `assets` (F10.9 PR7): un objeto más en el bucket, a cambio de una sola fuente de verdad por concepto.
+- **Se sube al adjuntar** (`POST /api/attachments`, cuerpo crudo como "Subir propia", tope de 25 MB): el envío sale inmediato y el chip muestra el progreso. Un adjunto que nunca se envía lo borra el cron `attachments.cleanup` (cada hora, los de más de 24 h sin mensaje). Es el primer borrado del bucket: `AssetStorage` gana `delete`, idempotente.
+- **El tipo lo decide el contenido**: sharp para imágenes (JPG, PNG, WebP, GIF → su primer cuadro en PNG), `%PDF-` para PDF, y UTF-8 válido para `.md`/`.txt`/`.csv`/`.json`. Lo demás es 415; un PDF escaneado de más de 20 páginas o un texto que no es UTF-8, 422 con el motivo.
+- **Las imágenes se guardan sin metadata.** Las fotos del celular traen EXIF con la ubicación GPS; sharp la tira al recodificar, después de aplicar la orientación. Se guarda a ≤2048 px (alcanza para publicar en cualquier red) y, si es más grande, una variante de ≤1568 px para el modelo (donde Anthropic deja de reescalar; más píxeles cuestan tokens sin leerse mejor). Desde aquí, **"Subir propia" de la card también recodifica sin EXIF** (sin reescalar): antes guardaba los bytes tal cual, ubicación incluida.
+- **PDF con `unpdf`** (pdf.js en su build sin worker, ESM, sin binarios). Se extrae el texto por página; menos de 50 caracteres por página en promedio es un escaneo, que viaja nativo al modelo.
+- **Borrar el chat borra los bytes al instante**, después del commit. Si el bucket falla en ese momento, el error se registra y quedan bytes sin fila: la misma basura barata que ya se acepta arriba, sin cola de reintentos (YAGNI).
+- **Límite del proxy.** El nginx de CloudPanel tiene que aceptar cuerpos de al menos 26 MB (`client_max_body_size`, docs/how-to/desplegar.md). Si el servidor rechaza antes de leer todo el cuerpo, Chrome muestra un error de red en vez del 413: por eso la web valida el peso antes de subir, y el servidor drena lo que sobra en vez de cortar.
