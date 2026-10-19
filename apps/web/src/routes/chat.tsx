@@ -20,7 +20,12 @@ import { ConfirmDeleteModal } from "../components/ui/ConfirmDeleteModal.js";
 import { fetchCardVersions } from "../lib/cards-api.js";
 import { parseApiErrorMessage, parseQuotaExhaustedError } from "../lib/chat-error.js";
 import { fetchChatMessages } from "../lib/chat-messages.js";
-import { isCardToolPart, messageText, type ChatUIMessage } from "../lib/chat-types.js";
+import {
+  isCardToolPart,
+  messageFiles,
+  messageText,
+  type ChatUIMessage,
+} from "../lib/chat-types.js";
 import { turnNotices, type TurnNotice, type TurnStatus } from "../lib/turn-status.js";
 import { useQuota } from "../lib/use-quota.js";
 import { uuid } from "../lib/uuid.js";
@@ -439,7 +444,10 @@ function ChatView({
       setFailedAgain(false);
       scrollToEnd(false);
       resyncOnReject.current = userId;
-      enviar(sendMessage({ text, messageId: userId }));
+      // F10.9: editar cambia el texto, no los adjuntos: viajan los mismos.
+      const original = messages.find((m) => m.id === userId);
+      const files = original ? messageFiles(original) : [];
+      enviar(sendMessage({ ...messageOf(text, files), messageId: userId }));
     }).finally(() => {
       replacing.current = false;
     });
@@ -467,10 +475,12 @@ function ChatView({
       return;
     }
     const message = messages.find((m) => m.id === userId);
-    const text = message ? messageText(message) : "";
-    if (!text) return;
+    if (!message) return;
+    const text = messageText(message);
+    const files = messageFiles(message);
+    if (!text && files.length === 0) return;
     go();
-    enviar(sendMessage({ text, messageId: userId }));
+    enviar(sendMessage({ ...messageOf(text, files), messageId: userId }));
   }
 
   function renderNotice(userId: string | undefined) {

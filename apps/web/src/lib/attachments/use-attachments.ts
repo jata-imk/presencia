@@ -1,4 +1,5 @@
-import { attachmentKindFor } from "@presencia/shared";
+import { ATTACHMENTS_PER_MESSAGE, attachmentKindFor } from "@presencia/shared";
+import { showToast } from "../../stores/toast-store.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { uuid } from "../uuid.js";
 import { filePartsOf, preflightError, room, type PendingAttachment } from "./attachments.js";
@@ -40,7 +41,11 @@ export function useAttachments(chatId: string | null): AttachmentsController {
       });
       aborts.current.set(key, upload.abort);
       upload.promise
-        .then((dto) => patch(key, { status: "ready", progress: 100, dto, error: null }))
+        .then((dto) => {
+          // Ya no hace falta para reintentar: se suelta (diez de 25 MB pesan).
+          files.current.delete(key);
+          patch(key, { status: "ready", progress: 100, dto, error: null });
+        })
         .catch((error: unknown) => {
           // Quitado mientras subía: el chip ya no existe.
           if (!aborts.current.has(key)) return;
@@ -55,8 +60,19 @@ export function useAttachments(chatId: string | null): AttachmentsController {
 
   const add = useCallback(
     (incoming: File[]) => {
-      // Lo que no cabe en el mensaje no entra: el composer ya avisa que son 10.
+      // Lo que no cabe en el mensaje no entra, y se dice: con el botón o al
+      // pegar no hay overlay que lo advierta antes.
       const accepted = incoming.slice(0, room(count.current));
+      const left = incoming.length - accepted.length;
+      if (left > 0) {
+        showToast({
+          title: `Puedes adjuntar hasta ${String(ATTACHMENTS_PER_MESSAGE)} archivos por mensaje`,
+          description:
+            left === 1
+              ? "Uno no se agregó: mándalo en el siguiente mensaje."
+              : `${String(left)} no se agregaron: mándalos en el siguiente mensaje.`,
+        });
+      }
       if (accepted.length === 0) return;
       const fresh = accepted.map((file): PendingAttachment => {
         const key = uuid();

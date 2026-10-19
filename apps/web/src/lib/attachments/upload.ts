@@ -39,7 +39,13 @@ export function uploadAttachment(
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(JSON.parse(xhr.responseText) as AttachmentDto);
+        // Un 200 que no es JSON (un proxy que devolvió la página de la app):
+        // sin esto el chip se quedaría en "Subiendo… 100%" para siempre.
+        try {
+          resolve(JSON.parse(xhr.responseText) as AttachmentDto);
+        } catch {
+          reject(new UploadError("No se pudo subir", true));
+        }
         return;
       }
       // Los rechazos de la API traen su motivo en español (413, 415, 422).

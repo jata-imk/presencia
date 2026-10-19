@@ -7,15 +7,25 @@ import {
   type KeyboardEvent,
   type Ref,
 } from "react";
-import { ATTACHMENTS_PER_MESSAGE, MAX_MESSAGE_CHARS } from "@presencia/shared";
+import {
+  ATTACHMENTS_PER_MESSAGE,
+  ATTACHMENT_IMAGE_MIME_TYPES,
+  ATTACHMENT_TEXT_EXTENSIONS,
+  MAX_MESSAGE_CHARS,
+} from "@presencia/shared";
 import { pastedName, type PendingAttachment } from "../../lib/attachments/attachments.js";
 import { attachmentsState } from "../../lib/attachments/use-attachments.js";
 import { isSubmitKey, measureMessage, useAutoGrow } from "../../lib/use-message-input.js";
 import { Tooltip } from "../ui/Tooltip.js";
 import { AttachmentChip } from "./AttachmentChip.js";
 
-/** Lo que el selector de archivos ofrece: lo mismo que acepta la API. */
-const ACCEPT = "image/jpeg,image/png,image/webp,image/gif,application/pdf,.md,.txt,.csv,.json";
+/** Lo que el selector de archivos ofrece: lo mismo que acepta la API (@presencia/shared). */
+const ACCEPT = [
+  ...ATTACHMENT_IMAGE_MIME_TYPES,
+  "application/pdf",
+  ".pdf",
+  ...ATTACHMENT_TEXT_EXTENSIONS,
+].join(",");
 
 /** Los adjuntos del composer y sus acciones (lib/attachments/use-attachments.ts). */
 export interface ComposerAttachments {

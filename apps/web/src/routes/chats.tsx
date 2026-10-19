@@ -181,7 +181,7 @@ export function ChatsPage() {
     // márgenes automáticos se resuelven a cero cuando no hay espacio, así que
     // el contenido arranca arriba y se scrollea completo.
     <div className="relative flex min-h-full flex-col items-center px-8 py-8" {...dropHandlers}>
-      {drag && <DropOverlay verdict={drag.verdict} count={drag.count} />}
+      {drag && <DropOverlay verdict={drag.verdict} count={drag.count} tall />}
       <div className="my-auto w-full max-w-[680px]">
         <div className="mb-6 text-center">
           <h1 className="font-display text-[38px] font-semibold tracking-tight text-fg">

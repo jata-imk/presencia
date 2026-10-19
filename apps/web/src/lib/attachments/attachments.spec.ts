@@ -54,6 +54,9 @@ describe("room y dropVerdict", () => {
     expect(dropVerdict(["application/pdf"], 2)).toBe("accept");
     expect(dropVerdict([""], 2)).toBe("accept");
     expect(dropVerdict(["video/quicktime"], 2)).toBe("type");
+    // El tipo de un .csv depende del sistema (Excel instalado): no se rechaza.
+    expect(dropVerdict(["application/vnd.ms-excel"], 2)).toBe("accept");
+    expect(dropVerdict(["application/zip"], 2)).toBe("type");
     expect(dropVerdict(["image/png"], 10)).toBe("limit");
   });
 });
