@@ -140,14 +140,35 @@ export class AttachmentsService {
   async deliver(
     userId: string,
     id: string,
+    download = false,
   ): Promise<{ delivery: AssetDelivery; mimeType: string; filename: string } | null> {
     const row = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, id));
     if (!row) return null;
     return {
-      delivery: await this.storage.deliver(row.storageKey, row.mimeType),
+      delivery: await this.storage.deliver(
+        row.storageKey,
+        row.mimeType,
+        download ? row.filename : undefined,
+      ),
       mimeType: row.mimeType,
       filename: row.filename,
     };
+  }
+
+  /**
+   * F10.9: el texto de un adjunto, para verlo en el chat: el que se extrajo al
+   * subirlo (UTF-8, sin BOM y con el tope de lo que leyó el modelo). Sale de
+   * la base y no del bucket: mismo dominio (sin CORS contra R2), sin
+   * adivinar codificaciones y sin bajar 25 MB para mostrar 100k caracteres.
+   * `null` si no existe, no es suyo o no tiene texto (una imagen, un escaneo).
+   */
+  async readText(
+    userId: string,
+    id: string,
+  ): Promise<{ text: string; truncated: boolean; filename: string } | null> {
+    const row = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, id));
+    if (!row || row.extractedText === null) return null;
+    return { text: row.extractedText, truncated: row.truncated, filename: row.filename };
   }
 
   /**

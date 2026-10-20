@@ -570,6 +570,7 @@ function ChatView({
                     <div key={message.id} className="flex flex-col gap-[18px]">
                       <MessageUser
                         text={messageText(message)}
+                        files={messageFiles(message)}
                         // Sin cuota, editar daría el mismo rechazo.
                         canEdit={isLastUser && !busy && !quotaExhaustedError}
                         editing={isLastUser && editingId === message.id && !busy}

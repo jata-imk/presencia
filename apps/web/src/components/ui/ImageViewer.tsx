@@ -1,5 +1,5 @@
 import { FloatingFocusManager, FloatingOverlay, FloatingPortal } from "@floating-ui/react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { assetContentUrl } from "@presencia/shared";
 import { useDialog } from "../../lib/floating/use-dialog.js";
@@ -15,20 +15,31 @@ import { useDialog } from "../../lib/floating/use-dialog.js";
 // que lo abrió al cerrar (FloatingFocusManager).
 
 export interface ViewerItem {
+  /** El id que la sigue entre renders (un asset; desde F10.9, también un adjunto). */
   assetId: string;
   alt: string;
   /** Lo que se lee arriba: "Portada", "Slide 3"… */
   label?: string;
+  /** F10.9: la URL de la imagen si no es un asset (un adjunto del chat). */
+  src?: string;
 }
+
+const srcOf = (item: ViewerItem) => item.src ?? assetContentUrl(item.assetId);
 
 export function ImageViewer({
   items,
   startIndex = 0,
   onClose,
+  subtitle,
+  downloadable = false,
 }: {
   items: ViewerItem[];
   startIndex?: number;
   onClose: () => void;
+  /** F10.9: la línea bajo el título ("de tu mensaje"). */
+  subtitle?: string;
+  /** F10.9: ofrece descargar la imagen (un adjunto: es del creator). */
+  downloadable?: boolean;
 }) {
   const { refs, context, getFloatingProps } = useDialog({ onClose });
   // Se sigue la imagen por su id, no por su posición: la lista puede crecer
@@ -75,13 +86,27 @@ export function ImageViewer({
             className="flex size-full flex-col outline-none"
           >
             <div className="flex shrink-0 items-center gap-3 px-4 py-3 text-on-viewer">
-              <span className="font-display text-sm font-semibold">{title}</span>
+              <div className="min-w-0">
+                <span className="block truncate font-display text-sm font-semibold">{title}</span>
+                {subtitle && <span className="block text-xs opacity-65">{subtitle}</span>}
+              </div>
               {many && (
                 <span className="rounded-full bg-on-viewer-faint px-2 py-0.5 text-xs font-semibold">
                   {index + 1} / {items.length}
                 </span>
               )}
               <div className="flex-1" />
+              {downloadable && (
+                <a
+                  // La API lo sirve para guardar (Content-Disposition): un
+                  // `download` no sirve si redirige al bucket, en otro dominio.
+                  href={`${srcOf(item)}?download=1`}
+                  aria-label="Descargar"
+                  className="flex size-9 items-center justify-center rounded-full text-on-viewer hover:bg-on-viewer-soft"
+                >
+                  <Download size={18} aria-hidden />
+                </a>
+              )}
               <button
                 type="button"
                 aria-label="Cerrar"
@@ -101,7 +126,7 @@ export function ImageViewer({
             >
               <img
                 key={item.assetId}
-                src={assetContentUrl(item.assetId)}
+                src={srcOf(item)}
                 alt={item.alt}
                 className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
               />
@@ -124,11 +149,7 @@ export function ImageViewer({
                       i === index ? "ring-2 ring-on-viewer" : "opacity-55 hover:opacity-90"
                     }`}
                   >
-                    <img
-                      src={assetContentUrl(thumb.assetId)}
-                      alt=""
-                      className="size-full object-cover"
-                    />
+                    <img src={srcOf(thumb)} alt="" className="size-full object-cover" />
                   </button>
                 ))}
               </div>

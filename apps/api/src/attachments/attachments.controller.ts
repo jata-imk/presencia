@@ -15,6 +15,7 @@ import { z } from "zod";
 import { ATTACHMENT_MAX_BYTES, type AttachmentDto } from "@presencia/shared";
 import type { SessionUser } from "../auth/auth.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
+import { attachmentDisposition } from "../assets/asset-storage.js";
 import { fileNameFrom, readRawBody } from "../assets/read-body.js";
 import { AttachmentsService } from "./attachments.service.js";
 
@@ -51,20 +52,43 @@ export class AttachmentsController {
     });
   }
 
+  /**
+   * F10.9: el texto extraído de un adjunto (.md, .txt, .csv, .json, PDF con
+   * texto), para la vista del chat. Ver AttachmentsService.readText.
+   */
+  @Get(":id/text")
+  async text(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+  ): Promise<{ text: string; truncated: boolean; filename: string }> {
+    if (!uuidSchema.safeParse(id).success) {
+      throw new BadRequestException("El id del archivo no es válido.");
+    }
+    const found = await this.service.readText(user.id, id);
+    if (!found) throw new NotFoundException("No encontramos el texto de ese archivo.");
+    return found;
+  }
+
   /** El archivo, para la miniatura del mensaje o para abrirlo (ver AssetsController). */
   @Get(":id/content")
   async content(
     @CurrentUser() user: SessionUser,
     @Param("id") id: string,
+    @Query("download") download: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
     if (!uuidSchema.safeParse(id).success) {
       throw new BadRequestException("El id del archivo no es válido.");
     }
-    const found = await this.service.deliver(user.id, id);
+    // `?download=1`: para guardarlo (el botón Descargar), no para mostrarlo.
+    const toSave = download === "1";
+    const found = await this.service.deliver(user.id, id, toSave);
     if (!found) throw new NotFoundException("No encontramos ese archivo.");
 
-    const { delivery, mimeType } = found;
+    const { delivery, mimeType, filename } = found;
+    if (toSave && delivery.kind === "bytes") {
+      res.setHeader("Content-Disposition", attachmentDisposition(filename));
+    }
     if (delivery.kind === "redirect") {
       // Menos que lo que dura la URL firmada (10 min), como en assets.
       res.setHeader("Cache-Control", "private, max-age=300");
