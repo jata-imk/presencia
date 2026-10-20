@@ -21,6 +21,7 @@ import {
   type SocialNetwork,
 } from "@presencia/shared";
 import { randomUUID } from "node:crypto";
+import { isMissingObject } from "../assets/asset-storage.js";
 import { AssetsService } from "../assets/assets.service.js";
 import { ChannelsRepository } from "../channels/channels.repository.js";
 import { DbService } from "../db/db.service.js";
@@ -834,13 +835,6 @@ function errorMessageFrom(errorDetail: unknown): string | null {
 
 const MISSING_IMAGE_MESSAGE =
   "La imagen de esta publicación ya no está en tu Biblioteca. Sube o genera otra.";
-
-/** El archivo no existe en el storage: `NoSuchKey` de R2/S3, `ENOENT` del disco local. */
-function isMissingObject(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const { name, code } = error as { name?: unknown; code?: unknown };
-  return name === "NoSuchKey" || code === "ENOENT";
-}
 
 /**
  * Las imágenes que se publican, en orden: la elegida, o las del carrusel

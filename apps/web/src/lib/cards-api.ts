@@ -12,6 +12,7 @@ import type {
   ScheduleGroupResultItem,
   SocialNetwork,
   ImageAspectRatio,
+  SentImageDto,
 } from "@presencia/shared";
 import { ApiError, apiFetch } from "./api.js";
 
@@ -124,6 +125,25 @@ export function selectCardImage(
   return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/image`, {
     method: "PATCH",
     body: slideId ? { assetId, slideId } : { assetId },
+  });
+}
+
+/** F10.9: las imágenes que el creator mandó en un chat, la más nueva primero. */
+export function fetchChatImages(chatId: string): Promise<SentImageDto[]> {
+  return apiFetch<SentImageDto[]>(
+    `/api/attachments?chatId=${encodeURIComponent(chatId)}&kind=image`,
+  );
+}
+
+/** F10.9: "Usar una que adjuntaste": la copia a la card y la deja elegida. */
+export function cardImageFromAttachment(
+  cardId: string,
+  attachmentId: string,
+  slideId?: string,
+): Promise<PublicationCardDto> {
+  return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/image/from-attachment`, {
+    method: "POST",
+    body: slideId ? { attachmentId, slideId } : { attachmentId },
   });
 }
 

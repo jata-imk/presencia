@@ -797,6 +797,16 @@ ChatGPT y Claude.ai mantienen input simple por algo.
 >
 > Editar el mensaje cambia el texto, no los adjuntos: se
 > quedan igual, y la caja lo dice.
+>
+> **Una imagen adjunta puede ser la de la publicación.** En
+> la imagen de la card, junto a "Subir la mía" (y en el ⋯
+> cuando ya tiene una), "Usar una que adjuntaste" abre las
+> imágenes que el creator mandó en ese chat, la más nueva
+> primero. La elegida se copia a la card sin costo de cuota;
+> en un carrusel, recortada a su proporción. La elige el
+> creator: el modelo puede sugerirlo, pero no la pone él
+> (ADR-005). Sin imágenes en el chat, el selector lo dice y
+> ofrece subir una directo.
 
 - **Transcribir audio:** para usuarios que prefieren dictar
 - **Estilo de respuesta:** selector tipo Claude (Conciso,

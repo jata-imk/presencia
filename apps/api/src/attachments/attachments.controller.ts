@@ -12,7 +12,7 @@ import {
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { ATTACHMENT_MAX_BYTES, type AttachmentDto } from "@presencia/shared";
+import { ATTACHMENT_MAX_BYTES, type AttachmentDto, type SentImageDto } from "@presencia/shared";
 import type { SessionUser } from "../auth/auth.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import { attachmentDisposition } from "../assets/asset-storage.js";
@@ -50,6 +50,22 @@ export class AttachmentsController {
       data,
       filename: fileNameFrom(req),
     });
+  }
+
+  /**
+   * F10.9: las imágenes que el creator ya envió en un chat
+   * (`?chatId=…&kind=image`): el selector "Usar una que adjuntaste" de la card.
+   */
+  @Get()
+  async list(
+    @CurrentUser() user: SessionUser,
+    @Query("chatId") chatId: string | undefined,
+    @Query("kind") kind: string | undefined,
+  ): Promise<SentImageDto[]> {
+    if (!chatId || !uuidSchema.safeParse(chatId).success || kind !== "image") {
+      throw new BadRequestException("Pide las imágenes de un chat: ?chatId=…&kind=image.");
+    }
+    return this.service.sentImagesOfChat(user.id, chatId);
   }
 
   /**

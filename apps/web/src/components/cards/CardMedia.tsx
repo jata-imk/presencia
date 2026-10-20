@@ -11,6 +11,7 @@ import {
   Maximize2,
   MoreHorizontal,
   Palette,
+  Paperclip,
   Pencil,
   RefreshCw,
   Shuffle,
@@ -36,6 +37,7 @@ import { useToastStore } from "../../stores/toast-store.js";
 import { ImageViewer } from "../ui/ImageViewer.js";
 import { Menu, MENU_CONTENT_CLASS, MENU_ITEM_CLASS } from "../ui/Menu.js";
 import { Tooltip } from "../ui/Tooltip.js";
+import { ChatImagePicker, type ChatImageSource } from "./ChatImagePicker.js";
 import { StyleChip } from "./StyleChip.js";
 
 // La imagen de una card y lo que se puede hacer con ella (F10). Presentación
@@ -97,6 +99,8 @@ export interface CardImageGeneration {
 export interface CardMediaActions {
   upload: (file: File) => void;
   uploading: boolean;
+  /** F10.9: "Usar una que adjuntaste". Ausente si la card no salió de un chat. */
+  fromChat?: ChatImageSource;
   /** Ausente mientras no llega el precio: sin precio no se ofrece generar. */
   generation?: CardImageGeneration;
 }
@@ -400,6 +404,33 @@ export function UploadImageButton({
         spinning={media.uploading}
         primary={primary}
       />
+    </>
+  );
+}
+
+/**
+ * F10.9: "Usar una que adjuntaste", junto a "Subir": abre el selector con las
+ * imágenes del chat. Nada si la card no tiene de dónde.
+ */
+export function FromChatButton({ media }: { media: CardMediaActions }) {
+  const [open, setOpen] = useState(false);
+  if (!media.fromChat) return null;
+  return (
+    <>
+      <ActionButton
+        Icon={Paperclip}
+        label="Usar una que adjuntaste"
+        onClick={() => setOpen(true)}
+        disabled={media.uploading || isBusy(media.generation)}
+      />
+      {open && (
+        <ChatImagePicker
+          source={media.fromChat}
+          busy={media.uploading || isBusy(media.generation)}
+          onUploadOwn={media.upload}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </>
   );
 }
@@ -728,6 +759,7 @@ export function ImageActionStrip({
   const busy = isBusy(generation);
   const canRegenerate = generation && prompt && aspectRatio;
   const fileInput = useRef<HTMLInputElement>(null);
+  const [picking, setPicking] = useState(false);
   const regenerate = (generator: number) => {
     if (!canRegenerate) return;
     void generation.generate({
@@ -820,12 +852,33 @@ export function ImageActionStrip({
                 <Upload size={14} aria-hidden />
                 Subir otra imagen
               </Menu.Item>
+              {media.fromChat && (
+                <Menu.Item
+                  className={MENU_ITEM_CLASS}
+                  disabled={busy}
+                  onClick={() => setPicking(true)}
+                >
+                  <Paperclip size={14} aria-hidden />
+                  Usar una que adjuntaste
+                </Menu.Item>
+              )}
             </Menu.Content>
           </Menu>
         ) : (
-          <UploadImageButton media={media} label="Subir otra" />
+          <>
+            <UploadImageButton media={media} label="Subir otra" />
+            <FromChatButton media={media} />
+          </>
         )}
       </div>
+      {picking && media.fromChat && (
+        <ChatImagePicker
+          source={media.fromChat}
+          busy={busy || media.uploading}
+          onUploadOwn={media.upload}
+          onClose={() => setPicking(false)}
+        />
+      )}
     </section>
   );
 }
@@ -960,7 +1013,10 @@ function ImageComposer({
             Cancelar
           </button>
         ) : (
-          <UploadImageButton media={media} label="Subir la mía" />
+          <>
+            <UploadImageButton media={media} label="Subir la mía" />
+            <FromChatButton media={media} />
+          </>
         )}
       </div>
       <p className="text-[11px] text-fg-muted">
@@ -1020,8 +1076,9 @@ export function EmptyImageState({
             </div>
           )}
           {media && (
-            <div className="mt-1">
+            <div className="mt-1 flex flex-wrap justify-center gap-1.5">
               <UploadImageButton media={media} label="Subir imagen" primary />
+              <FromChatButton media={media} />
             </div>
           )}
         </>

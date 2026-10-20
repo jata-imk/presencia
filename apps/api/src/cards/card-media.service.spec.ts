@@ -15,12 +15,20 @@ import {
   type CardImageJob,
   type SocialNetwork,
 } from "@presencia/shared";
-import { assets, chats, publicationCards, users } from "../db/schema.js";
+import {
+  assets,
+  chats,
+  messageAttachments,
+  messages,
+  publicationCards,
+  users,
+} from "../db/schema.js";
 import { solidPng } from "../images/fake-image.provider.js";
 import { LocalAssetStorage } from "../assets/asset-storage.js";
 import { readRawBody } from "../assets/read-body.js";
 import type { DbService as DbServiceType } from "../db/db.service.js";
 import type { AssetsService as AssetsServiceType } from "../assets/assets.service.js";
+import type { AttachmentsService as AttachmentsServiceType } from "../attachments/attachments.service.js";
 import type { CardMediaService as CardMediaServiceType } from "./card-media.service.js";
 
 // "Subir propia" (F10 PR2) contra Postgres real: lo que se prueba es que la
@@ -30,6 +38,7 @@ import type { CardMediaService as CardMediaServiceType } from "./card-media.serv
 
 let dbService: DbServiceType;
 let assetsService: AssetsServiceType;
+let attachmentsService: AttachmentsServiceType;
 let media: CardMediaServiceType;
 let storageDir: string;
 let userA: string;
@@ -84,6 +93,8 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     const { AssetsRepository } = await import("../assets/assets.repository.js");
     const { AssetsService } = await import("../assets/assets.service.js");
     const { CardMediaService } = await import("./card-media.service.js");
+    const { AttachmentsRepository } = await import("../attachments/attachments.repository.js");
+    const { AttachmentsService } = await import("../attachments/attachments.service.js");
 
     storageDir = await mkdtemp(path.join(tmpdir(), "presencia-assets-"));
     dbService = new DbService();
@@ -92,7 +103,14 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
       new AssetsRepository(),
       new LocalAssetStorage(storageDir),
     );
-    media = new CardMediaService(dbService, new CardsRepository(), assetsService);
+    const storage = new LocalAssetStorage(storageDir);
+    attachmentsService = new AttachmentsService(dbService, new AttachmentsRepository(), storage);
+    media = new CardMediaService(
+      dbService,
+      new CardsRepository(),
+      assetsService,
+      attachmentsService,
+    );
 
     const [a, b] = await dbService.db
       .insert(users)
@@ -576,6 +594,135 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     await expect(media.addSlide(userB, cardId, {})).rejects.toThrow(/No encontramos/);
     const scheduled = await createCard(VISUAL, "scheduled");
     await expect(media.addSlide(userA, scheduled, {})).rejects.toThrow(/programada/);
+  });
+
+  // ── F10.9: "Usar una que adjuntaste" ──────────────────────────────
+
+  /** Sube una imagen al chat y, si `sent`, la deja enviada en un mensaje. */
+  async function attachToChat(chatId: string, sent = true): Promise<string> {
+    const dto = await attachmentsService.upload({
+      userId: userA,
+      chatId,
+      data: PNG,
+      filename: "del chat.png",
+    });
+    if (sent) {
+      await dbService.runWithTenant(userA, async (tx) => {
+        const messageId = randomUUID();
+        await tx
+          .insert(messages)
+          .values({ id: messageId, chatId, userId: userA, role: "user", parts: [] });
+        await tx
+          .update(messageAttachments)
+          .set({ messageId })
+          .where(eq(messageAttachments.id, dto.id));
+      });
+    }
+    return dto.id;
+  }
+
+  it("una imagen enviada en el chat se copia a assets y queda como la de la card", async () => {
+    const cardId = await createCard(VISUAL);
+    const attachmentId = await attachToChat(chatA);
+
+    const dto = await media.attachFromAttachment(userA, cardId, attachmentId);
+
+    const assetId = dto.content.assetIds[0]!;
+    expect(assetId).not.toBe(attachmentId);
+    const row = await dbService.runWithTenant(userA, async (tx) => {
+      const [found] = await tx.select().from(assets).where(eq(assets.id, assetId));
+      return found;
+    });
+    expect(row).toMatchObject({
+      cardId,
+      source: "uploaded",
+      metadata: { originalName: "del chat.png", fromAttachmentId: attachmentId },
+    });
+    // Es una copia: el adjunto sigue en el chat.
+    await expect(attachmentsService.sentImagesOfChat(userA, chatA)).resolves.toContainEqual(
+      expect.objectContaining({ id: attachmentId }),
+    );
+  });
+
+  it("el selector lista solo las imágenes enviadas del chat, la más nueva primero", async () => {
+    const chatId = await dbService.runWithTenant(userA, async (tx) => {
+      const [chat] = await tx.insert(chats).values({ userId: userA }).returning({ id: chats.id });
+      return chat!.id;
+    });
+    const vieja = await attachToChat(chatId);
+    const nueva = await attachToChat(chatId);
+    await attachToChat(chatId, false); // en el composer: todavía no es del chat
+    await attachmentsService.upload({
+      userId: userA,
+      chatId,
+      data: new TextEncoder().encode("texto"),
+      filename: "n.txt",
+    });
+
+    const list = await attachmentsService.sentImagesOfChat(userA, chatId);
+    expect(list.map((a) => a.id)).toEqual([nueva, vieja]);
+    await expect(attachmentsService.sentImagesOfChat(userB, chatId)).resolves.toEqual([]);
+  });
+
+  it("una imagen cuyos bytes ya no están es 404, no un 500", async () => {
+    const cardId = await createCard(VISUAL);
+    const attachmentId = await attachToChat(chatA);
+    const key = await dbService.runWithTenant(userA, async (tx) => {
+      const [row] = await tx
+        .select({ key: messageAttachments.storageKey })
+        .from(messageAttachments)
+        .where(eq(messageAttachments.id, attachmentId));
+      return row!.key;
+    });
+    await rm(path.join(storageDir, key));
+    await expect(media.attachFromAttachment(userA, cardId, attachmentId)).rejects.toThrow(
+      /ya no está en este chat/,
+    );
+  });
+
+  it("una card programada no cambia de imagen desde el chat", async () => {
+    const scheduled = await createCard(VISUAL, "scheduled");
+    const attachmentId = await attachToChat(chatA);
+    await expect(media.attachFromAttachment(userA, scheduled, attachmentId)).rejects.toThrow(
+      /programada/,
+    );
+  });
+
+  it("no usa una imagen sin enviar, de otro chat o ajena", async () => {
+    const cardId = await createCard(VISUAL);
+    const sinEnviar = await attachToChat(chatA, false);
+    await expect(media.attachFromAttachment(userA, cardId, sinEnviar)).rejects.toThrow(
+      /ya no está en este chat/,
+    );
+
+    const otroChat = await dbService.runWithTenant(userA, async (tx) => {
+      const [chat] = await tx.insert(chats).values({ userId: userA }).returning({ id: chats.id });
+      return chat!.id;
+    });
+    const deOtroChat = await attachToChat(otroChat);
+    await expect(media.attachFromAttachment(userA, cardId, deOtroChat)).rejects.toThrow(
+      /ya no está en este chat/,
+    );
+
+    const propia = await attachToChat(chatA);
+    await expect(media.attachFromAttachment(userB, cardId, propia)).rejects.toThrow(
+      /No encontramos/,
+    );
+
+    // Una imagen de otro usuario no existe para él, ni con su id.
+    const chatB = await dbService.runWithTenant(userB, async (tx) => {
+      const [chat] = await tx.insert(chats).values({ userId: userB }).returning({ id: chats.id });
+      return chat!.id;
+    });
+    const ajena = await attachmentsService.upload({
+      userId: userB,
+      chatId: chatB,
+      data: PNG,
+      filename: "ajena.png",
+    });
+    await expect(media.attachFromAttachment(userA, cardId, ajena.id)).rejects.toThrow(
+      /ya no está en este chat/,
+    );
   });
 });
 

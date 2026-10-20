@@ -146,3 +146,10 @@ export function attachmentDisposition(name: string): string {
     .replace(/["\\]/g, "_");
   return `attachment; filename="${ascii || "archivo"}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
+
+/** El archivo no existe en el storage: `NoSuchKey` de R2/S3, `ENOENT` del disco local. */
+export function isMissingObject(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { name, code } = error as { name?: unknown; code?: unknown };
+  return name === "NoSuchKey" || code === "ENOENT";
+}

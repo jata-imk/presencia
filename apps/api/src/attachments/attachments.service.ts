@@ -14,9 +14,15 @@ import {
   attachmentContentUrl,
   attachmentIdFromUrl,
   type AttachmentDto,
+  type SentImageDto,
 } from "@presencia/shared";
 import { attachmentIdsIn } from "../chat/attachment-context.js";
-import { ASSET_STORAGE, type AssetDelivery, type AssetStorage } from "../assets/asset-storage.js";
+import {
+  ASSET_STORAGE,
+  isMissingObject,
+  type AssetDelivery,
+  type AssetStorage,
+} from "../assets/asset-storage.js";
 import { DbService, type Tx } from "../db/db.service.js";
 import { isForeignKeyViolation } from "../db/pg-error.js";
 import {
@@ -341,6 +347,41 @@ export class AttachmentsService {
       this.dataUrlChars -= old.length;
     }
     return url;
+  }
+
+  /** F10.9: las imágenes enviadas en un chat, para el selector de la card. */
+  async sentImagesOfChat(userId: string, chatId: string): Promise<SentImageDto[]> {
+    const rows = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.sentImagesOfChat(tx, chatId),
+    );
+    return rows.map(({ row, sentAt }) => ({
+      ...toAttachmentDto(row),
+      sentAt: sentAt.toISOString(),
+    }));
+  }
+
+  /**
+   * F10.9: los bytes de una imagen adjunta para copiarla a una card (la
+   * versión guardada, ≤2048 px y sin EXIF). Tiene que ser una imagen enviada
+   * en el mismo chat de la card. `null` si no lo es, no es suya o sus bytes
+   * ya no están (el borrado del storage es best-effort, ver deleteObjects).
+   */
+  async imageForCard(
+    userId: string,
+    attachmentId: string,
+    chatId: string,
+  ): Promise<{ data: Uint8Array; filename: string } | null> {
+    const row = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.findById(tx, attachmentId),
+    );
+    if (!row || row.kind !== "image" || row.chatId !== chatId || row.messageId === null)
+      return null;
+    try {
+      return { data: await this.storage.get(row.storageKey), filename: row.filename };
+    } catch (error) {
+      if (isMissingObject(error)) return null;
+      throw error;
+    }
   }
 
   /** Las llaves de un chat, en la transacción de quien lo borra. */
