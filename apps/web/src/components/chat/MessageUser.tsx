@@ -1,7 +1,9 @@
 import { MAX_MESSAGE_CHARS } from "@presencia/shared";
-import { Copy, Pencil } from "lucide-react";
+import type { FileUIPart } from "ai";
+import { Copy, Paperclip, Pencil } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { isSubmitKey, measureMessage, useAutoGrow } from "../../lib/use-message-input.js";
+import { MessageAttachments } from "./MessageAttachments.js";
 
 // Burbuja del usuario (Chat Conversation.html, MessageUser). Plum con texto
 // blanco en claro; en oscuro el mockup invierte a Blush Pop con texto plum
@@ -18,8 +20,12 @@ import { isSubmitKey, measureMessage, useAutoGrow } from "../../lib/use-message-
 // ChatGPT y Claude). Enviar reemplaza el mensaje y su respuesta: es ese turno
 // de nuevo, no uno más. Los anteriores no: editarlos borraría todo lo que vino
 // después.
+//
+// F10.9: un mensaje puede traer adjuntos (y nada de texto): van arriba, dentro
+// de la misma burbuja (Claude Design "Chat Adjuntos" §4).
 export function MessageUser({
   text,
+  files = [],
   canEdit = false,
   editing = false,
   onEdit,
@@ -27,6 +33,8 @@ export function MessageUser({
   onSubmitEdit,
 }: {
   text: string;
+  /** F10.9: los adjuntos del mensaje (partes `file`). */
+  files?: FileUIPart[];
   /** El último mensaje y sin turno en curso. */
   canEdit?: boolean;
   editing?: boolean;
@@ -45,20 +53,46 @@ export function MessageUser({
   }
 
   if (editing && onCancelEdit && onSubmitEdit) {
-    return <EditBubble initial={text} onCancel={onCancelEdit} onSubmit={onSubmitEdit} />;
+    return (
+      <EditBubble
+        initial={text}
+        attachments={files.length}
+        onCancel={onCancelEdit}
+        onSubmit={onSubmitEdit}
+      />
+    );
   }
+
+  const hasFiles = files.length > 0;
 
   return (
     <div className="group flex flex-col items-end gap-1">
-      <div className="relative max-w-[88%] sm:max-w-[72%]">
-        <div className="rounded-[12px_12px_3px_12px] bg-primary px-[15px] py-[11px] shadow-sm">
-          <p className="text-[14px] leading-[1.55] whitespace-pre-wrap text-primary-fg">{text}</p>
+      <div
+        className={`relative max-w-[88%] sm:max-w-[72%] ${hasFiles ? "w-[248px] sm:w-[348px]" : ""}`}
+      >
+        <div
+          className={`rounded-[12px_12px_3px_12px] bg-primary shadow-sm ${
+            hasFiles ? "flex flex-col gap-1 p-1" : "px-[15px] py-[11px]"
+          }`}
+        >
+          {hasFiles && <MessageAttachments files={files} />}
+          {text && (
+            <p
+              className={`text-[14px] leading-[1.55] whitespace-pre-wrap text-primary-fg ${
+                hasFiles ? "px-[11px] pt-1.5 pb-[7px]" : ""
+              }`}
+            >
+              {text}
+            </p>
+          )}
         </div>
         {/* Con mouse y espacio, en hover a la izquierda de la burbuja. */}
         <div className="absolute top-1 right-full mr-2 hidden gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 sm:pointer-fine:flex">
-          <BubbleAction label={copied ? "Copiado" : "Copiar mensaje"} onClick={handleCopy}>
-            <Copy size={12} strokeWidth={1.75} />
-          </BubbleAction>
+          {text && (
+            <BubbleAction label={copied ? "Copiado" : "Copiar mensaje"} onClick={handleCopy}>
+              <Copy size={12} strokeWidth={1.75} />
+            </BubbleAction>
+          )}
           {editable && (
             <BubbleAction label="Editar mensaje" onClick={onEdit}>
               <Pencil size={12} strokeWidth={1.75} />
@@ -74,9 +108,11 @@ export function MessageUser({
           editable ? "" : "opacity-0"
         }`}
       >
-        <BelowAction label={copied ? "Copiado" : "Copiar"} onClick={handleCopy}>
-          <Copy size={12} strokeWidth={1.75} aria-hidden />
-        </BelowAction>
+        {text && (
+          <BelowAction label={copied ? "Copiado" : "Copiar"} onClick={handleCopy}>
+            <Copy size={12} strokeWidth={1.75} aria-hidden />
+          </BelowAction>
+        )}
         {editable && (
           <BelowAction label="Editar" onClick={onEdit}>
             <Pencil size={12} strokeWidth={1.75} aria-hidden />
@@ -133,16 +169,22 @@ function BelowAction({
 /** La burbuja en modo edición: Enter envía, Shift+Enter es salto de línea, Esc cancela. */
 function EditBubble({
   initial,
+  attachments,
   onCancel,
   onSubmit,
 }: {
   initial: string;
+  /** F10.9: cuántos adjuntos tiene el mensaje: se quedan igual al editar. */
+  attachments: number;
   onCancel: () => void;
   onSubmit: (text: string) => void;
 }) {
   const [value, setValue] = useState(initial);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const { tooLong, canSend } = measureMessage(value);
+  const measured = measureMessage(value);
+  const { tooLong } = measured;
+  // Con adjuntos, el texto puede quedar vacío: el mensaje sigue teniendo algo.
+  const canSend = measured.canSend || (attachments > 0 && !tooLong);
   useAutoGrow(ref, value);
 
   useEffect(() => {
@@ -183,6 +225,14 @@ function EditBubble({
           className="w-full resize-none bg-transparent text-[14px] leading-[1.55] text-fg outline-none"
         />
         <div className="mt-2 flex items-center justify-end gap-2">
+          {attachments > 0 && !tooLong && (
+            <span className="mr-auto inline-flex items-center gap-1 text-xs text-fg-muted">
+              <Paperclip size={12} aria-hidden />
+              {attachments === 1
+                ? "El adjunto se queda igual"
+                : `Los ${String(attachments)} adjuntos se quedan igual`}
+            </span>
+          )}
           {tooLong && (
             <span className="mr-auto text-xs text-error">
               Te pasas del máximo de {MAX_MESSAGE_CHARS.toLocaleString("es-MX")} caracteres

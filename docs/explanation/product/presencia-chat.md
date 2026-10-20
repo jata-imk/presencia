@@ -783,6 +783,20 @@ ChatGPT y Claude.ai mantienen input simple por algo.
 > En móvil los chips van en una sola fila con scroll. En la
 > pantalla de chat nuevo también se adjunta: los archivos se
 > ligan al chat cuando sale el primer mensaje.
+>
+> **El mensaje enviado** lleva sus adjuntos dentro de la
+> misma burbuja, arriba del texto:
+>
+> - **Imágenes:** en grilla (una, dos, tres, y cuatro con
+>   "+N" si hay más). Un clic abre el visor a pantalla
+>   completa, con descarga.
+> - **Archivos:** como tarjetas con su ícono. Un clic abre su
+>   vista: un texto con sus números de línea y "Copiar", o un
+>   PDF en el visor del navegador (páginas, zoom y búsqueda
+>   sin meter un lector propio).
+>
+> Editar el mensaje cambia el texto, no los adjuntos: se
+> quedan igual, y la caja lo dice.
 
 - **Transcribir audio:** para usuarios que prefieren dictar
 - **Estilo de respuesta:** selector tipo Claude (Conciso,
