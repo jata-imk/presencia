@@ -5,12 +5,12 @@ import path from "node:path";
 import { and, eq, inArray } from "drizzle-orm";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { chats, creditLedger, messageAttachments, users } from "../db/schema.js";
+import { chats, creditLedger, messageAttachments, messages, users } from "../db/schema.js";
 import { LocalAssetStorage } from "../assets/asset-storage.js";
 import type { DbService as DbServiceType } from "../db/db.service.js";
 import type { AttachmentsService as AttachmentsServiceType } from "./attachments.service.js";
 import type { AttachmentDigestService as DigestServiceType } from "./attachment-digest.service.js";
-import { cleanDescription } from "./attachment-digest.js";
+import { cleanDescription, DIGEST_RETRY_AFTER_MS, digestDue } from "./attachment-digest.js";
 
 // La descripción de un adjunto (F10.9 PR4) contra Postgres real y el modelo
 // simulado: que la guarde, que la cobre una vez, que no la repita y qué lee.
@@ -102,6 +102,19 @@ describe("AttachmentDigestService", { timeout: 30_000 }, () => {
       const [row] = await tx.select().from(messageAttachments).where(eq(messageAttachments.id, id));
       return row!;
     });
+  /** Sube un adjunto y lo deja enviado en un mensaje, como lo encola el chat. */
+  const enviado = async (input: { data: Uint8Array; filename: string }) => {
+    const dto = await attachments.upload({ userId, chatId, ...input });
+    await dbService.runWithTenant(userId, async (tx) => {
+      const messageId = randomUUID();
+      await tx.insert(messages).values({ id: messageId, chatId, userId, role: "user", parts: [] });
+      await tx
+        .update(messageAttachments)
+        .set({ messageId })
+        .where(eq(messageAttachments.id, dto.id));
+    });
+    return dto;
+  };
   const cobrosDe = (id: string) =>
     dbService.runWithTenant(userId, (tx) =>
       tx
@@ -111,9 +124,7 @@ describe("AttachmentDigestService", { timeout: 30_000 }, () => {
     );
 
   it("describe un texto con su principio, la guarda, la cobra una vez y no la repite", async () => {
-    const dto = await attachments.upload({
-      userId,
-      chatId,
+    const dto = await enviado({
       data: new TextEncoder().encode("# Menú\n- Marquesita de queso: $45"),
       filename: "menu.md",
     });
@@ -139,24 +150,37 @@ describe("AttachmentDigestService", { timeout: 30_000 }, () => {
   });
 
   it("una respuesta vacía no guarda ni cobra, y lanza para que pg-boss reintente", async () => {
-    const dto = await attachments.upload({
-      userId,
-      chatId,
+    const dto = await enviado({
       data: new TextEncoder().encode("algo"),
       filename: "vacio.txt",
     });
     await expect(
       crear("   ", []).describe({ userId, attachmentId: dto.id, chatId }),
     ).rejects.toThrow(/no describió/);
-    expect((await rowOf(dto.id)).description).toBeNull();
+    const row = await rowOf(dto.id);
+    expect(row.description).toBeNull();
+    expect(await cobrosDe(dto.id)).toHaveLength(0);
+    // El intento queda anotado: el chat no la vuelve a pedir en un día.
+    expect(row.describedAt).toBeInstanceOf(Date);
+    expect(digestDue(row)).toBe(false);
+  });
+
+  it("uno que ya no está en ningún mensaje (se quitó al editar) no se describe", async () => {
+    const dto = await attachments.upload({
+      userId,
+      chatId,
+      data: new TextEncoder().encode("quitado"),
+      filename: "quitado.txt",
+    });
+    const vistos: unknown[] = [];
+    await crear("No debería", vistos).describe({ userId, attachmentId: dto.id, chatId });
+    expect(vistos).toHaveLength(0);
     expect(await cobrosDe(dto.id)).toHaveLength(0);
   });
 
   it("una imagen viaja como archivo al modelo que la describe", async () => {
     const { solidPng } = await import("../images/fake-image.provider.js");
-    const dto = await attachments.upload({
-      userId,
-      chatId,
+    const dto = await enviado({
       data: solidPng(40, 30, [10, 120, 200]),
       filename: "azul.png",
     });
@@ -168,6 +192,18 @@ describe("AttachmentDigestService", { timeout: 30_000 }, () => {
     });
     expect(JSON.stringify(vistos[0])).toContain('"mediaType":"image/png"');
     expect((await rowOf(dto.id)).description).toBe("Un rectángulo azul liso.");
+  });
+});
+
+describe("digestDue", () => {
+  it("se pide si no tiene descripción ni un intento del último día", () => {
+    const now = Date.now();
+    expect(digestDue({ description: null, describedAt: null }, now)).toBe(true);
+    expect(digestDue({ description: "Una foto", describedAt: new Date(now) }, now)).toBe(false);
+    expect(digestDue({ description: null, describedAt: new Date(now - 1000) }, now)).toBe(false);
+    expect(
+      digestDue({ description: null, describedAt: new Date(now - DIGEST_RETRY_AFTER_MS) }, now),
+    ).toBe(true);
   });
 });
 

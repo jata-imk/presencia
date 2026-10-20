@@ -81,6 +81,18 @@ export class AttachmentsRepository {
   }
 
   /**
+   * F10.9: anota un intento de descripción que no salió (`described_at` sin
+   * `description`): el chat no la vuelve a pedir hasta un día después
+   * (attachment-digest.ts, digestDue).
+   */
+  async markDescribeAttempt(tx: Tx, id: string): Promise<void> {
+    await tx
+      .update(messageAttachments)
+      .set({ describedAt: new Date() })
+      .where(and(eq(messageAttachments.id, id), isNull(messageAttachments.description)));
+  }
+
+  /**
    * F10.9: guarda la descripción si todavía no la tiene. Devuelve si la
    * escribió: un job repetido no la pisa ni la vuelve a cobrar.
    */

@@ -20,6 +20,7 @@ import { AiUsageService } from "../ai/ai-usage.service.js";
 import { RunTrace } from "../ai/run-trace.js";
 import { AiService } from "../ai/ai.service.js";
 import { AttachmentDigestService } from "../attachments/attachment-digest.service.js";
+import { digestDue } from "../attachments/attachment-digest.js";
 import { AttachmentsService } from "../attachments/attachments.service.js";
 import { BrandVoiceService } from "../brand-voice/brand-voice.service.js";
 import { CardsRepository } from "../cards/cards.repository.js";
@@ -576,10 +577,11 @@ export class ChatService {
     // F10.9: la descripción de los adjuntos de la ventana que no la tienen, en
     // segundo plano (el mensaje ya está guardado). Para cuando un adjunto deje
     // la ventana de recientes (attachment-context.ts) viaja ella en lugar del
-    // archivo. Cada turno la vuelve a pedir si falta: un encolado que falló o
-    // un job que agotó sus reintentos se recuperan solos; el job no hace nada
-    // con uno ya descrito.
-    const undescribed = [...(attachmentRows?.values() ?? [])].filter((row) => !row.description);
+    // archivo. Un turno la vuelve a pedir si falta (un encolado que falló se
+    // recupera solo), pero no si se intentó en el último día y no salió:
+    // un adjunto que el proveedor rechaza siempre no se paga en cada turno
+    // (digestDue). El job no hace nada con uno ya descrito.
+    const undescribed = [...(attachmentRows?.values() ?? [])].filter((row) => digestDue(row));
     void this.attachmentDigests.enqueue(
       userId,
       chatId,

@@ -283,7 +283,7 @@ export function withAttachmentBytes(
         if (!url) {
           return {
             type: "text" as const,
-            text: `[Adjunto: ${part.filename ?? "archivo"} — no se pudo cargar; pídele al creator que lo vuelva a adjuntar si lo necesitas]`,
+            text: `[Adjunto: "${safeName(part.filename ?? "archivo")}" — no se pudo cargar; pídele al creator que lo vuelva a adjuntar si lo necesitas]`,
           };
         }
         return { type: "file" as const, mediaType: part.mediaType, filename: part.filename, url };

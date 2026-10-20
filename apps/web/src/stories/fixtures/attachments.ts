@@ -110,6 +110,17 @@ export const LARGO = listo("Reporte-anual-industria-creators.pdf", 15_309_209, {
   truncated: true,
 });
 
+/** Tres documentos que juntos pasan del presupuesto de un mensaje (60k tokens). */
+export const TRES_LARGOS: PendingAttachment[] = [1, 2, 3].map((n) =>
+  listo(`reporte-trimestre-${String(n)}.pdf`, 9_437_184, {
+    kind: "pdf",
+    mediaType: "application/pdf",
+    pages: 60,
+    truncated: true,
+    tokenEstimate: 28_572,
+  }),
+);
+
 export const ESCANEADO_LARGO: PendingAttachment = {
   ...MUY_GRANDE,
   key: "err-escaneado",

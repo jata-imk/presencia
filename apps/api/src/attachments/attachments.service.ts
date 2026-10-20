@@ -103,12 +103,18 @@ export class AttachmentsService {
     const modelStorageKey = processed.modelData
       ? `${userId}/adjuntos/${id}-modelo.${processed.extension}`
       : null;
+    const keys = { id, userId, storageKey, modelStorageKey };
     await this.storage.put(storageKey, processed.data, processed.mimeType);
     if (modelStorageKey && processed.modelData) {
-      await this.storage.put(modelStorageKey, processed.modelData, processed.mimeType);
+      try {
+        await this.storage.put(modelStorageKey, processed.modelData, processed.mimeType);
+      } catch (error) {
+        // La primera ya está arriba y todavía no tiene fila: nadie la borraría.
+        await this.deleteObjects([{ ...keys, modelStorageKey: null }]);
+        throw error;
+      }
     }
 
-    const keys = { id, userId, storageKey, modelStorageKey };
     const row = await this.dbService
       .runWithTenant(userId, (tx) =>
         this.repo.insert(tx, {
@@ -321,6 +327,10 @@ export class AttachmentsService {
     }
     const bytes = await this.readModelBytes(row);
     const url = `data:${row.mimeType};base64,${Buffer.from(bytes).toString("base64")}`;
+    // Dos turnos que fallan la caché a la vez guardan el mismo id dos veces:
+    // el que se reemplaza deja de contar.
+    const replaced = this.dataUrls.get(row.id);
+    if (replaced) this.dataUrlChars -= replaced.length;
     this.dataUrls.set(row.id, url);
     this.dataUrlChars += url.length;
     for (const [id, old] of this.dataUrls) {

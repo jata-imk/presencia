@@ -86,18 +86,21 @@ export function Composer({
   const { length, tooLong } = measureMessage(value);
   const hasText = length > 0;
   const items = attachments?.items ?? [];
-  const { parts, uploading, blocked } = attachmentsState(items);
+  const { parts, uploading, blocked: withErrors, tooHeavy } = attachmentsState(items);
+  const blocked = withErrors || tooHeavy;
   const full = items.length >= ATTACHMENTS_PER_MESSAGE;
   // Se puede mandar solo con adjuntos, pero no mientras suben o con uno en
   // error: el envío saldría sin él y el creator creería que lo mandó.
   const canSend = (hasText || parts.length > 0) && !tooLong && !uploading && !blocked;
-  const hint = blocked
+  const hint = withErrors
     ? "Quita los archivos con error para enviar"
-    : uploading
-      ? "Esperando a que terminen de subir…"
-      : !hasText && parts.length > 0
-        ? "Puedes enviar solo los archivos"
-        : null;
+    : tooHeavy
+      ? "Estos archivos juntos son demasiado largos: quita alguno o mándalo en otro mensaje"
+      : uploading
+        ? "Esperando a que terminen de subir…"
+        : !hasText && parts.length > 0
+          ? "Puedes enviar solo los archivos"
+          : null;
 
   function addFiles(files: File[]) {
     if (files.length > 0) attachments?.onAdd(files);
