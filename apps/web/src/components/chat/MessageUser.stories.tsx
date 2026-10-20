@@ -54,11 +54,12 @@ const imagen = (n: number): FileUIPart => ({
   filename: `slide-${String(n).padStart(2, "0")}.png`,
   url: `/api/assets/${IMAGEN_DEMO}/content?${String(n)}`,
 });
+let archivos = 0;
 const archivo = (filename: string, mediaType: string): FileUIPart => ({
   type: "file",
   mediaType,
   filename,
-  url: `/api/attachments/00000000-0000-4000-8000-00000000000${String(filename.length % 9)}/content`,
+  url: `/api/attachments/00000000-0000-4000-8000-${String(++archivos).padStart(12, "0")}/content`,
 });
 const imagenes = (n: number) => Array.from({ length: n }, (_, i) => imagen(i + 1));
 

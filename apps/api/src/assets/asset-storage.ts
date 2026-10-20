@@ -24,7 +24,12 @@ export interface AssetStorage {
   put(key: string, data: Uint8Array, mimeType: string): Promise<void>;
   /** Los bytes tal cual: para editar una imagen o subirla a un proveedor. */
   get(key: string): Promise<Uint8Array>;
-  deliver(key: string, mimeType: string): Promise<AssetDelivery>;
+  /**
+   * F10.9: con `downloadName`, para guardar y no para mostrar: la URL firmada
+   * lleva su Content-Disposition (el atributo `download` de un enlace no sirve
+   * cuando la API redirige a otro dominio, el del bucket).
+   */
+  deliver(key: string, mimeType: string, downloadName?: string): Promise<AssetDelivery>;
   /**
    * F10.9: borra el archivo. Idempotente: uno que ya no está no es error
    * (el cron que limpia adjuntos puede repetir una pasada a medias).
@@ -68,10 +73,16 @@ export class R2AssetStorage implements AssetStorage {
     return result.Body.transformToByteArray();
   }
 
-  async deliver(key: string): Promise<AssetDelivery> {
+  async deliver(key: string, _mimeType?: string, downloadName?: string): Promise<AssetDelivery> {
     const url = await getSignedUrl(
       this.client,
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ...(downloadName
+          ? { ResponseContentDisposition: attachmentDisposition(downloadName) }
+          : {}),
+      }),
       { expiresIn: SIGNED_URL_SECONDS },
     );
     return { kind: "redirect", url };
@@ -121,4 +132,17 @@ export class LocalAssetStorage implements AssetStorage {
   async delete(key: string): Promise<void> {
     await rm(this.pathFor(key), { force: true });
   }
+}
+
+/**
+ * El Content-Disposition para guardar un archivo con su nombre, acentos
+ * incluidos (RFC 6266/5987): un `filename` ASCII de respaldo y el real en
+ * `filename*`.
+ */
+export function attachmentDisposition(name: string): string {
+  const ascii = name
+    .normalize("NFD")
+    .replace(/[^\x20-\x7e]/g, "")
+    .replace(/["\\]/g, "_");
+  return `attachment; filename="${ascii || "archivo"}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }

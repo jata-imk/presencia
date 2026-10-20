@@ -98,8 +98,9 @@ export function ImageViewer({
               <div className="flex-1" />
               {downloadable && (
                 <a
-                  href={srcOf(item)}
-                  download={item.label ?? true}
+                  // La API lo sirve para guardar (Content-Disposition): un
+                  // `download` no sirve si redirige al bucket, en otro dominio.
+                  href={`${srcOf(item)}?download=1`}
                   aria-label="Descargar"
                   className="flex size-9 items-center justify-center rounded-full text-on-viewer hover:bg-on-viewer-soft"
                 >

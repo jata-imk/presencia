@@ -1,29 +1,50 @@
+import { attachmentIdFromUrl } from "@presencia/shared";
 import type { FileUIPart } from "ai";
-import { Copy, Download, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Copy, Download, ExternalLink, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { apiFetch } from "../../lib/api.js";
 import { Modal } from "../ui/Modal.js";
 import { FileTile } from "./FileTile.js";
 
 // La vista de un archivo adjunto (F10.9, Claude Design "Chat Adjuntos" §4.4 y
 // §4.5): un texto con sus números de línea y "Copiar", o un PDF. El PDF va en
 // el visor del navegador (un iframe): ya trae páginas, zoom y búsqueda, y uno
-// propio sería pdf.js entero en la web para lo mismo.
+// propio sería pdf.js entero en la web para lo mismo. Donde el navegador no lo
+// muestra dentro de un iframe (casi todos los móviles), "Abrir en otra
+// pestaña" lo abre con su visor.
+//
+// El texto sale de la API (`/text`, el que se extrajo al subirlo) y no del
+// archivo: en prod el archivo redirige al bucket, en otro dominio, y un
+// fetch ahí no pasa CORS; además ya viene en UTF-8 y con su tope.
 
 export function AttachmentDocViewer({ part, onClose }: { part: FileUIPart; onClose: () => void }) {
   const pdf = part.mediaType === "application/pdf";
   const name = part.filename ?? "archivo";
+  const id = attachmentIdFromUrl(part.url);
   const [text, setText] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [failed, setFailed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (pdf) return;
+    if (!id) {
+      setFailed(true);
+      return;
+    }
     let alive = true;
-    fetch(part.url)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${String(res.status)}`);
-        const body = await res.text();
-        if (alive) setText(body);
+    apiFetch<{ text: string; truncated: boolean }>(`/api/attachments/${id}/text`)
+      .then((body) => {
+        if (!alive) return;
+        setText(body.text);
+        setTruncated(body.truncated);
       })
       .catch(() => {
         if (alive) setFailed(true);
@@ -31,13 +52,14 @@ export function AttachmentDocViewer({ part, onClose }: { part: FileUIPart; onClo
     return () => {
       alive = false;
     };
-  }, [part.url, pdf]);
+  }, [id, pdf]);
 
   function copy() {
     if (text === null) return;
     void navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 1500);
     });
   }
 
@@ -71,9 +93,20 @@ export function AttachmentDocViewer({ part, onClose }: { part: FileUIPart; onClo
             {copied ? "Copiado" : "Copiar"}
           </button>
         )}
+        {pdf && (
+          <a
+            href={part.url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Abrir en otra pestaña"
+            title="Abrir en otra pestaña"
+            className="flex size-8 items-center justify-center rounded-md text-fg-secondary hover:bg-surface hover:text-fg"
+          >
+            <ExternalLink size={15} aria-hidden />
+          </a>
+        )}
         <a
-          href={part.url}
-          download={name}
+          href={`${part.url}?download=1`}
           aria-label="Descargar"
           className="flex size-8 items-center justify-center rounded-md text-fg-secondary hover:bg-surface hover:text-fg"
         >
@@ -97,6 +130,11 @@ export function AttachmentDocViewer({ part, onClose }: { part: FileUIPart; onClo
         <p className="p-6 text-sm text-fg-muted">Abriendo…</p>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto py-4 font-mono text-[13px] leading-[1.75] text-fg">
+          {truncated && (
+            <p className="mx-4 mb-3 rounded-md bg-warning-bg px-3 py-2 font-sans text-xs text-warning-fg">
+              Es un archivo largo: aquí está la parte que se leyó. Descárgalo para verlo completo.
+            </p>
+          )}
           {lines.map((line, i) => (
             <div key={i} className="flex">
               <span className="w-12 shrink-0 pr-4 text-right text-fg-muted select-none">

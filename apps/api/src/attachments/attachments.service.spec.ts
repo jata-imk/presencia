@@ -126,6 +126,33 @@ describe("AttachmentsService", { timeout: 30_000 }, () => {
     ).rejects.toMatchObject({ status: 415 });
   });
 
+  it("el texto para verlo sale de la base; una imagen no tiene", async () => {
+    const md = await service.upload({
+      userId: userA,
+      chatId: chatA,
+      data: new TextEncoder().encode("\uFEFF# Menú\n- Café de olla: $35"),
+      filename: "menú.md",
+    });
+    await expect(service.readText(userA, md.id)).resolves.toEqual({
+      text: "# Menú\n- Café de olla: $35",
+      truncated: false,
+      filename: "menú.md",
+    });
+    await expect(service.readText(userB, md.id)).resolves.toBeNull();
+    const foto = await sharp({
+      create: { width: 20, height: 20, channels: 3, background: "#fff" },
+    })
+      .png()
+      .toBuffer();
+    const img = await service.upload({
+      userId: userA,
+      chatId: chatA,
+      data: new Uint8Array(foto),
+      filename: "f.png",
+    });
+    await expect(service.readText(userA, img.id)).resolves.toBeNull();
+  });
+
   it("lo ajeno no se entrega", async () => {
     const md = new TextEncoder().encode("privado");
     const dto = await service.upload({ userId: userA, chatId: chatA, data: md, filename: "p.txt" });

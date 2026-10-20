@@ -1,4 +1,4 @@
-import { attachmentIdFromUrl, type AttachmentKind } from "@presencia/shared";
+import { attachmentIdFromUrl, attachmentKindFor, type AttachmentKind } from "@presencia/shared";
 import type { FileUIPart } from "ai";
 import { useState } from "react";
 import { middleEllipsis } from "../../lib/attachments/attachments.js";
@@ -11,11 +11,13 @@ import { FileTile } from "./FileTile.js";
 // si hay más) y los archivos como tarjetas. Clic en una imagen abre el visor a
 // pantalla completa; en un archivo, su vista (el texto, o el PDF).
 
-/** Qué es un adjunto, por su tipo (el que guardó la API, no el del navegador). */
+/**
+ * Qué es un adjunto, por el tipo que guardó la API: la misma regla que acepta
+ * al subir (@presencia/shared). Un mensaje guardado solo trae tipos que pasaron
+ * esa regla; si algún día no, se trata como texto.
+ */
 export function kindOfPart(part: FileUIPart): AttachmentKind {
-  if (part.mediaType.startsWith("image/")) return "image";
-  if (part.mediaType === "application/pdf") return "pdf";
-  return "text";
+  return attachmentKindFor({ name: part.filename ?? "", type: part.mediaType }) ?? "text";
 }
 
 const TYPE_LABEL: Record<AttachmentKind, string> = {
@@ -35,9 +37,9 @@ export function MessageAttachments({ files }: { files: FileUIPart[] }) {
       {images.length > 0 && <ImageGrid images={images} onOpen={setViewing} />}
       {docs.length > 0 && (
         <div className="flex flex-col gap-1">
-          {docs.map((part) => (
+          {docs.map((part, i) => (
             <button
-              key={part.url}
+              key={`${part.url}-${String(i)}`}
               type="button"
               onClick={() => setDoc(part)}
               className="flex items-center gap-2.5 rounded-[11px] bg-primary-fg/12 px-2.5 py-2 text-left text-primary-fg transition-colors hover:bg-primary-fg/20"
@@ -59,7 +61,8 @@ export function MessageAttachments({ files }: { files: FileUIPart[] }) {
       {viewing !== null && (
         <ImageViewer
           items={images.map((part, i) => ({
-            assetId: attachmentIdFromUrl(part.url) ?? part.url,
+            // Con la posición: el mismo adjunto dos veces no debe trabar el visor.
+            assetId: `${attachmentIdFromUrl(part.url) ?? part.url}-${String(i)}`,
             src: part.url,
             alt: part.filename ?? `Imagen ${String(i + 1)}`,
             label: part.filename,
@@ -89,7 +92,7 @@ function ImageGrid({ images, onOpen }: { images: FileUIPart[]; onOpen: (index: n
     <div className={`grid w-full gap-[3px] overflow-hidden rounded-[14px] ${layout}`}>
       {shown.map((part, i) => (
         <button
-          key={part.url}
+          key={`${part.url}-${String(i)}`}
           type="button"
           onClick={() => onOpen(i)}
           aria-label={`Ver ${part.filename ?? `imagen ${String(i + 1)}`}`}
