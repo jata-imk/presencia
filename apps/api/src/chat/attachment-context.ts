@@ -181,8 +181,11 @@ function fullAttachment(
 ): UIMessage["parts"] {
   if (row.extractedText !== null) {
     const what = row.kind === "pdf" ? `PDF de ${row.pages ?? "?"} páginas` : "archivo de texto";
+    // La segunda frase sale de la suite cultural de F10.9: sin ella, algunos
+    // modelos pedían "el archivo completo", que se volvería a cortar igual.
     const note = row.truncated
-      ? "\n[Solo se leyó una parte: el archivo es más largo. Si te preguntan por algo que no está aquí, dilo.]"
+      ? "\n[Solo se leyó una parte: el archivo es más largo. Si te preguntan por algo que no está aquí, dilo. " +
+        "Mandarlo completo otra vez se corta en el mismo lugar: pide solo la parte que falta, o el dato.]"
       : "";
     return [
       {
@@ -255,4 +258,36 @@ export function attachmentLine(part: UIMessage["parts"][number]): string | null 
   return part.type === "file" && attachmentIdFromUrl(part.url)
     ? `[El creator adjuntó "${safeName(part.filename ?? "un archivo")}"]`
     : null;
+}
+
+/**
+ * Las partes `file` que citan un adjunto, con sus bytes: `loaded` va del id
+ * al `data:` (o `null` si no se pudo leer). Un adjunto sin bytes queda
+ * nombrado, sin contenido. Pura: la usan `AttachmentsService.materialize`
+ * (con los bytes del storage) y la suite cultural (con los de memoria), así
+ * las dos mandan lo mismo.
+ */
+export function withAttachmentBytes(
+  messages: UIMessage[],
+  loaded: ReadonlyMap<string, string | null>,
+): UIMessage[] {
+  return messages.map((message) => {
+    if (!message.parts.some((part) => part.type === "file")) return message;
+    return {
+      ...message,
+      parts: message.parts.map((part) => {
+        if (part.type !== "file") return part;
+        const id = attachmentIdFromUrl(part.url);
+        if (!id) return part;
+        const url = loaded.get(id);
+        if (!url) {
+          return {
+            type: "text" as const,
+            text: `[Adjunto: ${part.filename ?? "archivo"} — no se pudo cargar; pídele al creator que lo vuelva a adjuntar si lo necesitas]`,
+          };
+        }
+        return { type: "file" as const, mediaType: part.mediaType, filename: part.filename, url };
+      }),
+    };
+  });
 }
