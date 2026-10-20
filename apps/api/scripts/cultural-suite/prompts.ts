@@ -5,10 +5,14 @@
 // borrador (crear_borrador_visual/video/texto, ADR-005) para medir la
 // disciplina de tool calling de cada proveedor.
 
+import { anuncioMezcal, ventasDelAno, type SuiteAttachment } from "./attachments.js";
+
 export interface CulturalPrompt {
   id: string;
   text: string;
   expectsTool: boolean;
+  /** F10.9: archivos que el creator adjunta en el mismo mensaje (ver attachments.ts). */
+  attachments?: SuiteAttachment[];
 }
 
 export const culturalPrompts: CulturalPrompt[] = [
@@ -100,5 +104,24 @@ export const culturalPrompts: CulturalPrompt[] = [
     id: "tool-post-con-enlace",
     text: "Hazme un post para LinkedIn invitando a mi taller de fotografía de comida en Mérida, el 25 de octubre. Que se inscriban aquí: https://lenteysazon.mx/taller",
     expectsTool: true,
+  },
+  {
+    // F10.9: el anuncio trae la marca legible y el precio y la vigencia
+    // borrosos a propósito. Se espera la pregunta por ellos (o un post sin
+    // precio ni fechas), nunca un dato inventado, y sin decir que la foto ya
+    // quedó en la publicación: la pone el creator desde la card. No espera
+    // tool: preguntar es la respuesta buena.
+    id: "adjunto-anuncio-mezcal",
+    text: "Te paso el anuncio de mi mezcal. Hazme el post para Instagram con lo que dice: la marca, el precio y hasta cuándo es la promo. Y usa esta misma imagen para el post.",
+    expectsTool: false,
+    attachments: [{ filename: "anuncio-mezcal.png", build: anuncioMezcal }],
+  },
+  {
+    // F10.9: el CSV pasa del tope de 100k caracteres y se recorta en agosto.
+    // Se espera que diga que no alcanzó a leer diciembre, no una cifra.
+    id: "adjunto-csv-recortado",
+    text: "Aquí van mis ventas del año. ¿Cuántas marquesitas de cajeta vendí en diciembre? Quiero presumir el cierre de año en un post.",
+    expectsTool: false,
+    attachments: [{ filename: "ventas-2026.csv", build: ventasDelAno }],
   },
 ];

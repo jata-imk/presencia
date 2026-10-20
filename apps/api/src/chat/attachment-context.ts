@@ -181,8 +181,11 @@ function fullAttachment(
 ): UIMessage["parts"] {
   if (row.extractedText !== null) {
     const what = row.kind === "pdf" ? `PDF de ${row.pages ?? "?"} páginas` : "archivo de texto";
+    // La segunda frase sale de la suite cultural de F10.9: sin ella, algunos
+    // modelos pedían "el archivo completo", que se volvería a cortar igual.
     const note = row.truncated
-      ? "\n[Solo se leyó una parte: el archivo es más largo. Si te preguntan por algo que no está aquí, dilo.]"
+      ? "\n[Solo se leyó una parte: el archivo es más largo. Si te preguntan por algo que no está aquí, dilo. " +
+        "Mandarlo completo otra vez se corta en el mismo lugar: pide solo la parte que falta, o el dato.]"
       : "";
     return [
       {

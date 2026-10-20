@@ -317,6 +317,11 @@ export class AttachmentsService {
     });
   }
 
+  /** Los bytes que ve el modelo (la variante chica de una imagen), sin caché. */
+  readModelBytes(row: AttachmentRow): Promise<Uint8Array> {
+    return this.storage.get(row.modelStorageKey ?? row.storageKey);
+  }
+
   /**
    * Los bytes de un adjunto para el modelo, como `data:`. Con caché en
    * memoria: un adjunto reciente viaja en varios turnos seguidos, y sin ella
@@ -324,11 +329,6 @@ export class AttachmentsService {
    * 25 MB). Los bytes de un adjunto nunca cambian, así que la caché no se
    * invalida: solo se acota por tamaño.
    */
-  /** Los bytes que ve el modelo (la variante chica de una imagen), sin caché. */
-  readModelBytes(row: AttachmentRow): Promise<Uint8Array> {
-    return this.storage.get(row.modelStorageKey ?? row.storageKey);
-  }
-
   private async modelDataUrl(row: AttachmentRow): Promise<string> {
     const cached = this.dataUrls.get(row.id);
     if (cached) {

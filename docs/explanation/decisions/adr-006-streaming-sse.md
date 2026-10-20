@@ -216,3 +216,10 @@ Cómo lo resuelven otros (regla dura #8):
 - **Para F10.10** (anotado): en lugar de una ventana, la descripción siempre más una herramienta para volver a ver el adjunto cuando haga falta (como Claude Code relee archivos). Necesita medir cuántas veces los modelos la llaman cuando deben, y cómo cada proveedor de la cadena acepta una imagen como resultado de herramienta.
 
 Fuentes: [Claude: vision](https://platform.claude.com/docs/en/build-with-claude/vision); [Claude PDF: tokens por página](https://fast.io/resources/claude-pdf-limit/) (secundaria, cita los docs); [LangChain multi-modal RAG (multi-vector retriever)](https://codelabs.developers.google.com/multimodal-rag-gemini).
+
+**Addendum (F10.9 PR8, 2026-10-20) — la suite cultural con adjuntos.** La suite (`apps/api/scripts/cultural-suite`) arma ahora mensajes con adjuntos por el mismo camino que el chat: `processAttachment` → `dietAttachments` → `data:` → `convertToModelMessages` (`attachments.ts`). Dos casos, con los tres modelos de la cadena (Luna, Gemini 3.8 Flash, Sonnet 5.5):
+
+- **Un anuncio de mezcal con el precio y la vigencia borrosos** (`adjunto-anuncio-mezcal`). Ninguno inventó el precio ni las fechas: los tres leyeron la marca y la presentación, pidieron lo que no se lee y explicaron que la imagen la pone el creator con "Usar una que adjuntaste" (`2026-10-20-reporte-parcial.md`).
+- **Un CSV de ventas del año que se recorta en agosto** (`adjunto-csv-recortado`). Ninguno inventó diciembre, pero Luna y Gemini pidieron "el archivo completo", que se volvería a cortar en el mismo lugar. La nota de recorte de `<adjunto>` ahora lo dice ("mandarlo completo otra vez se corta en el mismo lugar: pide solo la parte que falta, o el dato"), y en la segunda corrida los tres piden solo diciembre o el total (`2026-10-20-reporte-parcial-2.md`).
+
+DoD con el respaldo forzado (`AI_FALLBACK_SIMULATE=openai`): una imagen enviada desde un chat nuevo la describió Gemini, y el turno, la descripción del adjunto (`content_digest`) y el título quedaron con `fallback_from = openai:gpt-6-luna`. Las imágenes viajan como `data:`, así que el respaldo no depende de que el proveedor pueda bajar una URL.

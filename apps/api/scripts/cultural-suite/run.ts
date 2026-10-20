@@ -17,7 +17,7 @@
 // AI_SUITE_DELAY_MS pausa entre llamadas (default 10000 — el free tier de
 // Gemini limita requests por minuto y cada prompt puede usar varios steps).
 
-import { stepCountIs, streamText, tool, type ToolSet } from "ai";
+import { stepCountIs, streamText, tool, type ModelMessage, type ToolSet } from "ai";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -29,7 +29,8 @@ import {
   parseModelEntry,
 } from "../../src/ai/provider-registry.js";
 import { buildSystemPrompt } from "../../src/chat/system-prompt.js";
-import { culturalPrompts } from "./prompts.js";
+import { messagesWithAttachments } from "./attachments.js";
+import { culturalPrompts, type CulturalPrompt } from "./prompts.js";
 import { CULTURAL_SUITE_VOICES, type VoiceFixture } from "./voices.js";
 import { registrarGasto, splitModelId } from "../gasto-local.js";
 
@@ -92,7 +93,7 @@ interface RunResult {
 // algo — eso solo se mide leyendo el stream.
 async function runPrompt(
   modelEntry: string,
-  promptText: string,
+  input: { prompt: string } | { messages: ModelMessage[] },
   system: string,
 ): Promise<RunResult> {
   const startedAt = Date.now();
@@ -100,7 +101,7 @@ async function runPrompt(
     const result = streamText({
       model: resolveModel(modelEntry),
       system,
-      prompt: promptText,
+      ...input,
       tools: culturalSuiteTools,
       stopWhen: stepCountIs(3),
     });
@@ -229,6 +230,13 @@ interface ModelTotals {
   costUsd: number | null;
 }
 
+async function promptInput(
+  prompt: CulturalPrompt,
+): Promise<{ prompt: string } | { messages: ModelMessage[] }> {
+  if (!prompt.attachments) return { prompt: prompt.text };
+  return { messages: await messagesWithAttachments(prompt.text, prompt.attachments) };
+}
+
 function formatMs(ms: number | null): string {
   return ms === null ? "—" : `${(ms / 1000).toFixed(1)} s`;
 }
@@ -350,6 +358,12 @@ async function main(): Promise<void> {
     console.log(`\n▶ ${prompt.id}`);
     lines.push(`## ${prompt.id}${prompt.expectsTool ? " (espera tool call)" : ""}`, "");
     lines.push(`> ${prompt.text}`, "");
+    if (prompt.attachments) {
+      lines.push(`Adjuntos: ${prompt.attachments.map((a) => `\`${a.filename}\``).join(", ")}.`, "");
+    }
+    // F10.9: con adjuntos, el mensaje se arma una vez (los mismos bytes para
+    // cada modelo) por el camino del chat real.
+    const input = await promptInput(prompt);
 
     for (const modelId of models) {
       lines.push(`### ${modelId}`, "");
@@ -361,7 +375,7 @@ async function main(): Promise<void> {
       for (const voiceFixture of passes) {
         console.log(`  · ${modelId}${voiceFixture ? ` [${voiceFixture.id}]` : ""}...`);
         const system = buildSystemPrompt(voiceFixture?.voice ?? null);
-        const result = await runPrompt(modelId, prompt.text, system);
+        const result = await runPrompt(modelId, input, system);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
 
         const totals = tokensByModel.get(modelId);
