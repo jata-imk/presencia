@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
-import type { AttachmentDto } from "@presencia/shared";
+import type { SentImageDto } from "@presencia/shared";
 import { IMAGEN_DEMO } from "../../stories/fixtures/cards.js";
 import { ChatImagePicker, type ChatImageSource } from "./ChatImagePicker.js";
 
@@ -11,7 +11,7 @@ import { ChatImagePicker, type ChatImageSource } from "./ChatImagePicker.js";
 const hoy = new Date();
 const ayer = new Date(hoy.getTime() - 86_400_000);
 
-function imagen(n: number, filename: string, at: Date): AttachmentDto {
+function imagen(n: number, filename: string, at: Date): SentImageDto {
   return {
     id: `00000000-0000-4000-8000-${String(900 + n).padStart(12, "0")}`,
     kind: "image",
@@ -25,7 +25,7 @@ function imagen(n: number, filename: string, at: Date): AttachmentDto {
     scanned: false,
     truncated: false,
     tokenEstimate: 1600,
-    createdAt: at.toISOString(),
+    sentAt: at.toISOString(),
   };
 }
 
@@ -37,7 +37,7 @@ const CINCO = [
   imagen(5, "foto-setup-escritorio.jpg", ayer),
 ];
 
-const fuente = (list: () => Promise<AttachmentDto[]>, note?: string): ChatImageSource => ({
+const fuente = (list: () => Promise<SentImageDto[]>, note?: string): ChatImageSource => ({
   list,
   use: () => new Promise(() => {}),
   note,
@@ -66,6 +66,11 @@ export const UnaSola: Story = {
 /** En un slide del carrusel: el pie dice que se recorta a su proporción. */
 export const EnUnCarrusel: Story = {
   args: { source: fuente(() => Promise.resolve(CINCO), "Se recorta a 4:5 si hace falta") },
+};
+
+/** La card está generando: se ve, pero no se puede usar todavía. */
+export const CardOcupada: Story = {
+  args: { busy: true },
 };
 
 export const Vacio: Story = {

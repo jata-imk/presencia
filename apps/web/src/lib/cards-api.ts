@@ -1,5 +1,4 @@
 import type {
-  AttachmentDto,
   CardContentChangeDto,
   CardImageVersionDto,
   CardVersionDto,
@@ -13,6 +12,7 @@ import type {
   ScheduleGroupResultItem,
   SocialNetwork,
   ImageAspectRatio,
+  SentImageDto,
 } from "@presencia/shared";
 import { ApiError, apiFetch } from "./api.js";
 
@@ -129,8 +129,8 @@ export function selectCardImage(
 }
 
 /** F10.9: las imágenes que el creator mandó en un chat, la más nueva primero. */
-export function fetchChatImages(chatId: string): Promise<AttachmentDto[]> {
-  return apiFetch<AttachmentDto[]>(
+export function fetchChatImages(chatId: string): Promise<SentImageDto[]> {
+  return apiFetch<SentImageDto[]>(
     `/api/attachments?chatId=${encodeURIComponent(chatId)}&kind=image`,
   );
 }

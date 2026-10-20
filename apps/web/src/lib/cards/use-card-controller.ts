@@ -311,7 +311,12 @@ export function useCardController(
       ? {
           upload: (file) => void handleUpload(card.id, file),
           uploading,
-          fromChat: fromChatOf(card),
+          // En un carrusel, sin slide va a la portada, y se recorta igual.
+          fromChat: fromChatOf(
+            card,
+            undefined,
+            card.content.slides ? carouselAspect(card.content, card.network) : undefined,
+          ),
           generation: imagesConfig
             ? {
                 generate: (input: GenerateInput) => handleGenerate(card.id, input),

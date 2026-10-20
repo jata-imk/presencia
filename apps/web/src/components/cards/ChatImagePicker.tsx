@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { toCalendarDate } from "@internationalized/date";
 import { Check, ImageIcon, Loader2, Upload, X } from "lucide-react";
-import { ASSET_UPLOAD_MIME_TYPES, type AttachmentDto } from "@presencia/shared";
+import { ASSET_UPLOAD_MIME_TYPES, type SentImageDto } from "@presencia/shared";
 import { middleEllipsis } from "../../lib/attachments/attachments.js";
 import { formatTime, todayIn, zonedFromIso } from "../../lib/calendar/tz.js";
 import { useTimezone } from "../../lib/calendar/use-timezone.js";
@@ -17,37 +17,49 @@ import { Modal } from "../ui/Modal.js";
 /** Lo que la card ofrece para traer una imagen del chat. */
 export interface ChatImageSource {
   /** Las imágenes enviadas en el chat, la más nueva primero. */
-  list: () => Promise<AttachmentDto[]>;
+  list: () => Promise<SentImageDto[]>;
   /** Resuelve `true` si quedó como la imagen (el toast ya avisó si no). */
   use: (attachmentId: string) => Promise<boolean>;
   /** Una línea para el pie: qué le pasa a la imagen (el recorte de un carrusel). */
   note?: string;
 }
 
-/** "Hoy 10:42", "Ayer 18:05", "12 oct": cuándo se mandó, en la zona del creator. */
+/**
+ * "Hoy 10:42", "Ayer 18:05", "12 oct", "12 oct 2025": cuándo se mandó, en la
+ * zona del creator. El año solo si no es este: un chat largo puede tener la
+ * foto de hace un año junto a la de la semana pasada.
+ */
 export function sentAtLabel(iso: string, timeZone: string): string {
   const at = zonedFromIso(iso, timeZone);
-  const days = toCalendarDate(at).compare(todayIn(timeZone));
+  const today = todayIn(timeZone);
+  const days = toCalendarDate(at).compare(today);
   if (days === 0) return `Hoy ${formatTime(at)}`;
   if (days === -1) return `Ayer ${formatTime(at)}`;
-  return new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", timeZone })
+  const date = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", timeZone })
     .format(at.toDate())
     .replace(/\.$/, "");
+  return at.year === today.year ? date : `${date} ${String(at.year)}`;
 }
 
 export function ChatImagePicker({
   source,
+  busy = false,
   onUploadOwn,
   onClose,
 }: {
   source: ChatImageSource;
+  /**
+   * La card está ocupada (generando, subiendo): no se puede cambiar la imagen
+   * ahora. Un trabajo que termina después pisaría la que se eligió aquí.
+   */
+  busy?: boolean;
   /** El estado vacío ofrece subir la propia, con el mismo camino que "Subir la mía". */
   onUploadOwn: (file: File) => void;
   onClose: () => void;
 }) {
   const titleId = useId();
   const timeZone = useTimezone();
-  const [images, setImages] = useState<AttachmentDto[] | null>(null);
+  const [images, setImages] = useState<SentImageDto[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [using, setUsing] = useState(false);
@@ -75,7 +87,7 @@ export function ChatImagePicker({
   }, [attempt]);
 
   function pick(id = selected) {
-    if (!id || using) return;
+    if (!id || using || busy) return;
     setUsing(true);
     void source.use(id).then((ok) => {
       setUsing(false);
@@ -202,7 +214,7 @@ export function ChatImagePicker({
                     {middleEllipsis(image.filename, 18)}
                   </span>
                   <span className="-mt-1 text-[10.5px] text-fg-muted">
-                    {sentAtLabel(image.createdAt, timeZone)}
+                    {sentAtLabel(image.sentAt, timeZone)}
                   </span>
                 </button>
               );
@@ -210,12 +222,16 @@ export function ChatImagePicker({
           </div>
           <div className="mt-2.5 flex items-center gap-2 border-t border-line px-4 pt-3">
             <span className="flex-1 text-[11.5px] leading-snug text-fg-muted">
-              {source.note ? `${source.note} · sin costo de cuota` : "Sin costo de cuota"}
+              {busy
+                ? "Espera a que termine la imagen que se está generando"
+                : source.note
+                  ? `${source.note} · sin costo de cuota`
+                  : "Sin costo de cuota"}
             </span>
             <button
               type="button"
               onClick={() => pick()}
-              disabled={!selected || using}
+              disabled={!selected || using || busy}
               className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-fg disabled:cursor-not-allowed disabled:opacity-50"
             >
               {using && <Loader2 size={13} className="animate-spin" aria-hidden />}

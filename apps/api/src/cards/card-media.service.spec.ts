@@ -664,6 +664,30 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     await expect(attachmentsService.sentImagesOfChat(userB, chatId)).resolves.toEqual([]);
   });
 
+  it("una imagen cuyos bytes ya no están es 404, no un 500", async () => {
+    const cardId = await createCard(VISUAL);
+    const attachmentId = await attachToChat(chatA);
+    const key = await dbService.runWithTenant(userA, async (tx) => {
+      const [row] = await tx
+        .select({ key: messageAttachments.storageKey })
+        .from(messageAttachments)
+        .where(eq(messageAttachments.id, attachmentId));
+      return row!.key;
+    });
+    await rm(path.join(storageDir, key));
+    await expect(media.attachFromAttachment(userA, cardId, attachmentId)).rejects.toThrow(
+      /ya no está en este chat/,
+    );
+  });
+
+  it("una card programada no cambia de imagen desde el chat", async () => {
+    const scheduled = await createCard(VISUAL, "scheduled");
+    const attachmentId = await attachToChat(chatA);
+    await expect(media.attachFromAttachment(userA, scheduled, attachmentId)).rejects.toThrow(
+      /programada/,
+    );
+  });
+
   it("no usa una imagen sin enviar, de otro chat o ajena", async () => {
     const cardId = await createCard(VISUAL);
     const sinEnviar = await attachToChat(chatA, false);
@@ -683,6 +707,21 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     const propia = await attachToChat(chatA);
     await expect(media.attachFromAttachment(userB, cardId, propia)).rejects.toThrow(
       /No encontramos/,
+    );
+
+    // Una imagen de otro usuario no existe para él, ni con su id.
+    const chatB = await dbService.runWithTenant(userB, async (tx) => {
+      const [chat] = await tx.insert(chats).values({ userId: userB }).returning({ id: chats.id });
+      return chat!.id;
+    });
+    const ajena = await attachmentsService.upload({
+      userId: userB,
+      chatId: chatB,
+      data: PNG,
+      filename: "ajena.png",
+    });
+    await expect(media.attachFromAttachment(userA, cardId, ajena.id)).rejects.toThrow(
+      /ya no está en este chat/,
     );
   });
 });

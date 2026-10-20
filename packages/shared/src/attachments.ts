@@ -69,8 +69,15 @@ export interface AttachmentDto {
   /** Se leyó solo una parte del texto (ATTACHMENT_TEXT_MAX_CHARS). */
   truncated: boolean;
   tokenEstimate: number;
-  /** Cuándo se subió (ISO): el selector de la card lo muestra. */
-  createdAt: string;
+}
+
+/**
+ * F10.9: una imagen enviada en el chat, para el selector "Usar una que
+ * adjuntaste" de la card. `sentAt` es la hora del mensaje (ISO), no la de la
+ * subida: se pudo quedar un rato en el composer.
+ */
+export interface SentImageDto extends AttachmentDto {
+  sentAt: string;
 }
 
 /** La URL que sirve un adjunto. Relativa: web y API comparten origen (ADR-020). */

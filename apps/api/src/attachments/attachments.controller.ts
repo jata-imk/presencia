@@ -12,7 +12,7 @@ import {
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { ATTACHMENT_MAX_BYTES, type AttachmentDto } from "@presencia/shared";
+import { ATTACHMENT_MAX_BYTES, type AttachmentDto, type SentImageDto } from "@presencia/shared";
 import type { SessionUser } from "../auth/auth.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import { attachmentDisposition } from "../assets/asset-storage.js";
@@ -61,7 +61,7 @@ export class AttachmentsController {
     @CurrentUser() user: SessionUser,
     @Query("chatId") chatId: string | undefined,
     @Query("kind") kind: string | undefined,
-  ): Promise<AttachmentDto[]> {
+  ): Promise<SentImageDto[]> {
     if (!chatId || !uuidSchema.safeParse(chatId).success || kind !== "image") {
       throw new BadRequestException("Pide las imágenes de un chat: ?chatId=…&kind=image.");
     }

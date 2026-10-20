@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
-import { chats, messageAttachments } from "../db/schema.js";
+import { chats, messageAttachments, messages } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
 // Todo acceso a `message_attachments` vive aquí (F10.9). Sin filtro por
@@ -95,13 +95,15 @@ export class AttachmentsRepository {
 
   /**
    * F10.9: las imágenes que el creator ya envió en un chat, de la más nueva a
-   * la más vieja (el selector "Usar una que adjuntaste" de la card). Solo las
-   * enviadas: una que está en el composer todavía no es parte del chat.
+   * la más vieja por la hora de su mensaje (el selector "Usar una que
+   * adjuntaste" de la card). Solo las enviadas: una que está en el composer
+   * todavía no es parte del chat.
    */
-  sentImagesOfChat(tx: Tx, chatId: string): Promise<AttachmentRow[]> {
+  sentImagesOfChat(tx: Tx, chatId: string): Promise<{ row: AttachmentRow; sentAt: Date }[]> {
     return tx
-      .select()
+      .select({ row: messageAttachments, sentAt: messages.createdAt })
       .from(messageAttachments)
+      .innerJoin(messages, eq(messages.id, messageAttachments.messageId))
       .where(
         and(
           eq(messageAttachments.chatId, chatId),
@@ -109,7 +111,7 @@ export class AttachmentsRepository {
           isNotNull(messageAttachments.messageId),
         ),
       )
-      .orderBy(desc(messageAttachments.createdAt));
+      .orderBy(desc(messages.createdAt), desc(messageAttachments.createdAt));
   }
 
   /** Las llaves de los adjuntos de un chat: para borrar sus bytes al borrar el chat. */

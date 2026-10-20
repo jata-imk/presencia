@@ -83,7 +83,6 @@ describe("filePartsOf y attachmentWarning", () => {
       scanned: true,
       truncated: false,
       tokenEstimate: 5400,
-      createdAt: "2026-10-19T16:42:00.000Z",
     },
     error: null,
     retryable: false,

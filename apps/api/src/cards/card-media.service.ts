@@ -73,6 +73,9 @@ export class CardMediaService {
   ): Promise<PublicationCardDto> {
     const card = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, cardId));
     if (!card) throw new NotFoundException("No encontramos esa publicación.");
+    // Antes de bajar la imagen: una card programada no cambia (attachUpload
+    // lo vuelve a revisar, y adentro de su transacción también).
+    this.assertCanChangeImage(card);
     // Solo una de este chat: el selector no ofrece otras, y una card sin chat
     // no tiene de dónde.
     const image = card.chatId

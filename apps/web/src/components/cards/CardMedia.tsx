@@ -426,6 +426,7 @@ export function FromChatButton({ media }: { media: CardMediaActions }) {
       {open && (
         <ChatImagePicker
           source={media.fromChat}
+          busy={media.uploading || isBusy(media.generation)}
           onUploadOwn={media.upload}
           onClose={() => setOpen(false)}
         />
@@ -852,7 +853,11 @@ export function ImageActionStrip({
                 Subir otra imagen
               </Menu.Item>
               {media.fromChat && (
-                <Menu.Item className={MENU_ITEM_CLASS} onClick={() => setPicking(true)}>
+                <Menu.Item
+                  className={MENU_ITEM_CLASS}
+                  disabled={busy}
+                  onClick={() => setPicking(true)}
+                >
                   <Paperclip size={14} aria-hidden />
                   Usar una que adjuntaste
                 </Menu.Item>
@@ -869,6 +874,7 @@ export function ImageActionStrip({
       {picking && media.fromChat && (
         <ChatImagePicker
           source={media.fromChat}
+          busy={busy || media.uploading}
           onUploadOwn={media.upload}
           onClose={() => setPicking(false)}
         />

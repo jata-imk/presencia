@@ -14,7 +14,9 @@ describe("sentAtLabel", () => {
     vi.useFakeTimers({ now, toFake: ["Date"] });
     expect(sentAtLabel("2026-10-19T16:42:00.000Z", zone)).toBe("Hoy 10:42");
     expect(sentAtLabel("2026-10-19T00:05:00.000Z", zone)).toBe("Ayer 18:05");
-    expect(sentAtLabel("2026-10-12T18:00:00.000Z", zone)).toMatch(/^12 oct/);
+    expect(sentAtLabel("2026-10-12T18:00:00.000Z", zone)).toMatch(/^12 oct$/);
+    // De otro año, con el año: si no, se confunde con la de la semana pasada.
+    expect(sentAtLabel("2025-10-12T18:00:00.000Z", zone)).toMatch(/^12 oct 2025$/);
   });
 
   it("el día es el de la zona del creator, no el de UTC", () => {
