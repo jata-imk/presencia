@@ -25,3 +25,24 @@ export function sliceText(text: string, max: number): string {
   const cut = text.slice(0, max);
   return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
 }
+
+/**
+ * Cuánto esperar para volver a pedir una descripción que no salió. Sin esto,
+ * un adjunto que el proveedor rechaza siempre (un filtro de contenido) se
+ * volvería a pagar en cada turno: hasta tres llamadas por turno con los
+ * reintentos del job.
+ */
+export const DIGEST_RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Si un adjunto necesita que se pida su descripción: no la tiene, y no hubo
+ * un intento en el último día (`described_at` es el último intento, salga
+ * o no).
+ */
+export function digestDue(
+  row: { description: string | null; describedAt: Date | null },
+  now = Date.now(),
+): boolean {
+  if (row.description) return false;
+  return !row.describedAt || now - row.describedAt.getTime() >= DIGEST_RETRY_AFTER_MS;
+}

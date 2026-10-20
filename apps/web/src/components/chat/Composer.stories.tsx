@@ -8,6 +8,7 @@ import {
   DIEZ,
   ESCANEADO,
   ESCANEADO_LARGO,
+  TRES_LARGOS,
   GUIA_MD,
   IMAGEN,
   KIT_PDF,
@@ -100,6 +101,11 @@ export const AdjuntosSinTexto: Story = {
 export const AdjuntosConErrores: Story = {
   name: "Adjuntos · errores",
   args: conAdjuntos([IMAGEN, MUY_GRANDE, TIPO_NO, SIN_RED], "Revisa estos archivos"),
+};
+
+export const AdjuntosDemasiadoLargos: Story = {
+  name: "Adjuntos · juntos pasan del presupuesto (bloquea)",
+  args: conAdjuntos(TRES_LARGOS, "Compárame los tres trimestres"),
 };
 
 export const AdjuntosAvisosPdf: Story = {

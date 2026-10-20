@@ -75,29 +75,38 @@ export class AttachmentDigestService {
   /**
    * El handler del job. Idempotente: uno que ya tiene descripción (otro job
    * se adelantó, o un reintento después de guardarla) no vuelve a llamar al
-   * modelo ni a cobrar. Si falla, lanza y pg-boss reintenta; la llamada que
-   * ya se pagó queda registrada en ai_usage_events aunque lo de después
-   * falle, y una respuesta vacía también se reintenta.
+   * modelo ni a cobrar. Uno que ya no está en ningún mensaje (se quitó al
+   * editar) tampoco: nadie lo va a volver a ver. Si falla, anota el intento
+   * (el chat no la vuelve a pedir en un día) y lanza para que pg-boss
+   * reintente; la llamada que ya se pagó queda registrada en ai_usage_events
+   * aunque lo de después falle, y una respuesta vacía también se reintenta.
    */
   async describe(job: AttachmentDigestJob): Promise<void> {
     const { userId, attachmentId, chatId, runId } = job;
     const row = await this.dbService.runWithTenant(userId, (tx) =>
       this.repo.findById(tx, attachmentId),
     );
-    if (!row || row.description !== null) return;
+    if (!row || row.description !== null || row.messageId === null) return;
 
     const modelo = this.ai.resolveForTask(TASK_KIND);
     const arranque = Date.now();
-    const respuesta = await generateText({
-      model: modelo.model,
-      system: DIGEST_SYSTEM,
-      messages: await this.digestInput(row),
-      maxOutputTokens: 400,
-    });
+    let respuesta;
+    try {
+      respuesta = await generateText({
+        model: modelo.model,
+        system: DIGEST_SYSTEM,
+        messages: await this.digestInput(row),
+        maxOutputTokens: 400,
+      });
+    } catch (error) {
+      await this.markAttempt(userId, attachmentId);
+      throw error;
+    }
     const description = cleanDescription(respuesta.text);
 
     try {
       if (!description) {
+        await this.markAttempt(userId, attachmentId);
         throw new Error(`El modelo no describió el adjunto ${attachmentId}`);
       }
       await this.dbService.runWithTenant(userId, async (tx) => {
@@ -128,6 +137,17 @@ export class AttachmentDigestService {
         runId,
         providerRaw: { usage: respuesta.usage, finishReason: respuesta.finishReason },
       });
+    }
+  }
+
+  /** Anota un intento que no salió. Nunca lanza: el error que importa es el del intento. */
+  private async markAttempt(userId: string, attachmentId: string): Promise<void> {
+    try {
+      await this.dbService.runWithTenant(userId, (tx) =>
+        this.repo.markDescribeAttempt(tx, attachmentId),
+      );
+    } catch (error) {
+      console.error(`[adjuntos] No se anotó el intento de describir ${attachmentId}:`, error);
     }
   }
 

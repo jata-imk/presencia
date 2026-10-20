@@ -1,4 +1,8 @@
-import { ATTACHMENTS_PER_MESSAGE, attachmentKindFor } from "@presencia/shared";
+import {
+  ATTACHMENT_MESSAGE_TOKEN_BUDGET,
+  ATTACHMENTS_PER_MESSAGE,
+  attachmentKindFor,
+} from "@presencia/shared";
 import { showToast } from "../../stores/toast-store.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { uuid } from "../uuid.js";
@@ -151,9 +155,14 @@ export function useAttachments(chatId: string | null): AttachmentsController {
 
 /** Lo que el composer necesita saber para dejar enviar. */
 export function attachmentsState(items: readonly PendingAttachment[]) {
+  const tokens = items.reduce((total, item) => total + (item.dto?.tokenEstimate ?? 0), 0);
   return {
     parts: filePartsOf(items),
     uploading: items.some((item) => item.status === "uploading"),
     blocked: items.some((item) => item.status === "error"),
+    // La misma cuenta que hace la API al enviar (413): aquí se ve antes de
+    // mandar. Después, reintentar o editar reenvían los mismos archivos y
+    // no habría cómo quitar uno.
+    tooHeavy: tokens > ATTACHMENT_MESSAGE_TOKEN_BUDGET,
   };
 }
