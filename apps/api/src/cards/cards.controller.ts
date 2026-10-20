@@ -16,6 +16,7 @@ import {
   addSlideBodySchema,
   ASSET_UPLOAD_MAX_BYTES,
   cardIdParamSchema,
+  cardImageFromAttachmentBodySchema,
   cardVersionParamSchema,
   chatIdParamSchema,
   conflictsQuerySchema,
@@ -171,6 +172,27 @@ export class CardsController {
     const parsed = selectCardImageBodySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("El id de la imagen no es válido.");
     return this.media.selectImage(user.id, cardId, parsed.data.assetId, parsed.data.slideId);
+  }
+
+  /**
+   * F10.9: "Usar una que adjuntaste": copia una imagen enviada en el chat de
+   * la card y la deja como su imagen (o la del slide). Sin costo de cuota.
+   */
+  @Post("cards/:id/image/from-attachment")
+  imageFromAttachment(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<PublicationCardDto> {
+    const cardId = this.parseCardId(id);
+    const parsed = cardImageFromAttachmentBodySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("El id de la imagen no es válido.");
+    return this.media.attachFromAttachment(
+      user.id,
+      cardId,
+      parsed.data.attachmentId,
+      parsed.data.slideId,
+    );
   }
 
   // ── F10.6: slides del carrusel ─────────────────────────────────────

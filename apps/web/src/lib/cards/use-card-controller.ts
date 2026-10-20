@@ -22,6 +22,7 @@ import {
   deleteCardSlide,
   editCardImage,
   fetchCardImageVersions,
+  fetchChatImages,
   generateCardImage,
   reorderCardSlides,
   rescheduleCard,
@@ -30,6 +31,7 @@ import {
   updateAssetAlt,
   updateCardSlide,
   uploadCardImage,
+  cardImageFromAttachment,
 } from "../cards-api.js";
 import { cuotaAgotadaDe } from "../cuota-agotada.js";
 import { useImagesConfig } from "../use-images-config.js";
@@ -249,6 +251,25 @@ export function useCardController(
     }
   }
 
+  // F10.9: "Usar una que adjuntaste". Comparte el "subiendo" con la subida:
+  // mientras se copia, nada más de la imagen se puede tocar.
+  async function handleFromAttachment(
+    id: string,
+    attachmentId: string,
+    slideId?: string,
+  ): Promise<boolean> {
+    setUploading(true);
+    try {
+      applyCards(await cardImageFromAttachment(id, attachmentId, slideId));
+      return true;
+    } catch (err) {
+      failToast("No se pudo usar esa imagen", err);
+      return false;
+    } finally {
+      setUploading(false);
+    }
+  }
+
   /** Un cambio de estructura del carrusel: uno a la vez, y la card nueva al store. */
   async function changeSlides(
     title: string,
@@ -266,6 +287,22 @@ export function useCardController(
     }
   }
 
+  /** F10.9: de dónde trae la card una imagen del chat (sin chat, de ningún lado). */
+  function fromChatOf(
+    target: PublicationCardDto,
+    slideId?: string,
+    aspect?: ImageAspectRatio,
+  ): CardMediaActions["fromChat"] {
+    const chatId = target.chatId;
+    if (!chatId) return undefined;
+    return {
+      list: () => fetchChatImages(chatId),
+      use: (attachmentId) => handleFromAttachment(target.id, attachmentId, slideId),
+      // En un carrusel va en su proporción (Instagram recorta a la del primero).
+      note: aspect ? `Se recorta a ${aspect} si hace falta` : undefined,
+    };
+  }
+
   // Las acciones de imagen solo existen mientras la card se puede editar: una
   // card programada ya viajó al proveedor con su imagen (la API lo impide
   // igual, esto es para no ofrecer lo que va a fallar).
@@ -274,6 +311,7 @@ export function useCardController(
       ? {
           upload: (file) => void handleUpload(card.id, file),
           uploading,
+          fromChat: fromChatOf(card),
           generation: imagesConfig
             ? {
                 generate: (input: GenerateInput) => handleGenerate(card.id, input),
@@ -313,6 +351,7 @@ export function useCardController(
     return {
       upload: (file) => void handleUpload(card.id, file, slide.id),
       uploading,
+      fromChat: fromChatOf(card, slide.id, aspect),
       generation:
         base && imagesConfig
           ? {

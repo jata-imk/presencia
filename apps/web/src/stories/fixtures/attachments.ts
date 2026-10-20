@@ -24,6 +24,7 @@ function dto(over: Partial<AttachmentDto>): AttachmentDto {
     scanned: false,
     truncated: false,
     tokenEstimate: 100,
+    createdAt: "2026-10-19T16:42:00.000Z",
     ...over,
   };
 }

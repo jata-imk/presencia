@@ -31,6 +31,7 @@ import type { Tx } from "../db/db.service.js";
 import type { AssetMetadata } from "../assets/assets.repository.js";
 import { fitToAspect, matchesAspect, nearestAspect } from "../images/image-fit.js";
 import { AssetsService } from "../assets/assets.service.js";
+import { AttachmentsService } from "../attachments/attachments.service.js";
 import { InvalidImageError } from "../assets/image-inspect.js";
 import { normalizeImage } from "../assets/image-normalize.js";
 import { DbService } from "../db/db.service.js";
@@ -55,7 +56,33 @@ export class CardMediaService {
     @Inject(DbService) private readonly dbService: DbService,
     @Inject(CardsRepository) private readonly repo: CardsRepository,
     @Inject(AssetsService) private readonly assets: AssetsService,
+    @Inject(AttachmentsService) private readonly attachments: AttachmentsService,
   ) {}
+
+  /**
+   * F10.9: "Usar una que adjuntaste". La imagen del chat se copia a `assets`
+   * (la de la card sobrevive al chat y es material de Biblioteca; el adjunto
+   * muere con el chat) y sigue el mismo camino que una subida. El modelo no
+   * llega aquí: lo elige el creator (ADR-005).
+   */
+  async attachFromAttachment(
+    userId: string,
+    cardId: string,
+    attachmentId: string,
+    slideId?: string,
+  ): Promise<PublicationCardDto> {
+    const card = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, cardId));
+    if (!card) throw new NotFoundException("No encontramos esa publicación.");
+    // Solo una de este chat: el selector no ofrece otras, y una card sin chat
+    // no tiene de dónde.
+    const image = card.chatId
+      ? await this.attachments.imageForCard(userId, attachmentId, card.chatId)
+      : null;
+    if (!image) throw new NotFoundException("Esa imagen ya no está en este chat.");
+    return this.attachUpload(userId, cardId, image.data, image.filename, slideId, {
+      fromAttachmentId: attachmentId,
+    });
+  }
 
   /**
    * "Subir propia": guarda la imagen y la deja como la imagen de la card. Es
@@ -68,6 +95,8 @@ export class CardMediaService {
     originalName?: string,
     /** F10.6: en un carrusel, el slide al que va (sin él, la portada). */
     slideId?: string,
+    /** F10.9: de dónde salió, si no la subió de su equipo. */
+    origin: Pick<AssetMetadata, "fromAttachmentId"> = {},
   ): Promise<PublicationCardDto> {
     const card = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, cardId));
     if (!card) throw new NotFoundException("No encontramos esa publicación.");
@@ -91,7 +120,7 @@ export class CardMediaService {
         chatId: card.chatId,
         data: clean,
         source: "uploaded",
-        metadata: originalName ? { originalName } : {},
+        metadata: { ...(originalName ? { originalName } : {}), ...origin },
         slideId: targetSlide,
       });
       stored = original;
@@ -111,6 +140,7 @@ export class CardMediaService {
             source: "uploaded",
             metadata: {
               ...(originalName ? { originalName } : {}),
+              ...origin,
               croppedFrom: original.id,
             },
             slideId: targetSlide,

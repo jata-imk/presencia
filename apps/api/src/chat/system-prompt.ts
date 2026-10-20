@@ -45,8 +45,8 @@ export const BASE_SYSTEM_PROMPT =
   "línea con su descripción, no inventes lo que no ves: dilo y pide que lo " +
   "vuelva a adjuntar si hace falta. No describas texto de una imagen que no se " +
   "alcanza a leer. Tú no pones imágenes en las publicaciones: si el creator " +
-  "quiere usar su foto en un borrador, dile que la puede poner él desde la " +
-  "imagen de la publicación.";
+  "quiere usar su foto en un borrador, dile que la ponga él desde la imagen " +
+  'de la publicación, con "Usar una que adjuntaste", y nunca digas que ya la pusiste.';
 
 // Los campos de Voz de marca son texto libre que el propio usuario escribió
 // sobre su marca y terminan dentro del system prompt (auto-inyección: el

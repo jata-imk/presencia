@@ -343,6 +343,32 @@ export class AttachmentsService {
     return url;
   }
 
+  /** F10.9: las imágenes enviadas en un chat, para el selector de la card. */
+  async sentImagesOfChat(userId: string, chatId: string): Promise<AttachmentDto[]> {
+    const rows = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.sentImagesOfChat(tx, chatId),
+    );
+    return rows.map(toAttachmentDto);
+  }
+
+  /**
+   * F10.9: los bytes de una imagen adjunta para copiarla a una card (la
+   * versión guardada, ≤2048 px y sin EXIF). Tiene que ser una imagen enviada
+   * en el mismo chat de la card. `null` si no lo es o no es suya.
+   */
+  async imageForCard(
+    userId: string,
+    attachmentId: string,
+    chatId: string,
+  ): Promise<{ data: Uint8Array; filename: string } | null> {
+    const row = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.findById(tx, attachmentId),
+    );
+    if (!row || row.kind !== "image" || row.chatId !== chatId || row.messageId === null)
+      return null;
+    return { data: await this.storage.get(row.storageKey), filename: row.filename };
+  }
+
   /** Las llaves de un chat, en la transacción de quien lo borra. */
   keysByChat(tx: Tx, chatId: string): Promise<AttachmentKeys[]> {
     return this.repo.keysByChat(tx, chatId);
@@ -406,5 +432,6 @@ export function toAttachmentDto(row: AttachmentRow): AttachmentDto {
     scanned: row.scanned,
     truncated: row.truncated,
     tokenEstimate: row.tokenEstimate,
+    createdAt: row.createdAt.toISOString(),
   };
 }

@@ -28,6 +28,8 @@ export interface AssetMetadata {
    * 4:5 → 1:1 → 4:5 regresa a la original en vez de cortar dos veces.
    */
   croppedFrom?: string;
+  /** F10.9: copiada de una imagen que el creator adjuntó en el chat. */
+  fromAttachmentId?: string;
 }
 
 /** Un asset con lo que se sabe de cómo nació (si lo dibujó un generador). */

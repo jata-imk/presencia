@@ -111,6 +111,16 @@ export const selectCardImageBodySchema = z.object({
 export type SelectCardImageBody = z.infer<typeof selectCardImageBodySchema>;
 
 /**
+ * F10.9: "Usar una que adjuntaste": una imagen que el creator envió en el chat
+ * de la card pasa a ser la imagen de la card (o la de ese slide).
+ */
+export const cardImageFromAttachmentBodySchema = z.object({
+  attachmentId: z.uuid(),
+  slideId: z.uuid().optional(),
+});
+export type CardImageFromAttachmentBody = z.infer<typeof cardImageFromAttachmentBodySchema>;
+
+/**
  * El último trabajo de imagen de la card, tal como lo ve el navegador.
  *
  * - `generating`: el job está corriendo (10 a 60 s).

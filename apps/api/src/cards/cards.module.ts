@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AssetsModule } from "../assets/assets.module.js";
+import { AttachmentsModule } from "../attachments/attachments.module.js";
 import { ChannelsModule } from "../channels/channels.module.js";
 import { PublishingModule } from "../publishing/publishing.module.js";
 import { CardContentService } from "./card-content.service.js";
@@ -10,7 +11,7 @@ import { CardsRepository } from "./cards.repository.js";
 import { CardsService } from "./cards.service.js";
 
 @Module({
-  imports: [PublishingModule, ChannelsModule, AssetsModule],
+  imports: [PublishingModule, ChannelsModule, AssetsModule, AttachmentsModule],
   controllers: [CardsController],
   providers: [
     CardsRepository,

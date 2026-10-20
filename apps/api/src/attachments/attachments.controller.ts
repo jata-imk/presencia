@@ -53,6 +53,22 @@ export class AttachmentsController {
   }
 
   /**
+   * F10.9: las imágenes que el creator ya envió en un chat
+   * (`?chatId=…&kind=image`): el selector "Usar una que adjuntaste" de la card.
+   */
+  @Get()
+  async list(
+    @CurrentUser() user: SessionUser,
+    @Query("chatId") chatId: string | undefined,
+    @Query("kind") kind: string | undefined,
+  ): Promise<AttachmentDto[]> {
+    if (!chatId || !uuidSchema.safeParse(chatId).success || kind !== "image") {
+      throw new BadRequestException("Pide las imágenes de un chat: ?chatId=…&kind=image.");
+    }
+    return this.service.sentImagesOfChat(user.id, chatId);
+  }
+
+  /**
    * F10.9: el texto extraído de un adjunto (.md, .txt, .csv, .json, PDF con
    * texto), para la vista del chat. Ver AttachmentsService.readText.
    */

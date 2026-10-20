@@ -69,6 +69,8 @@ export interface AttachmentDto {
   /** Se leyó solo una parte del texto (ATTACHMENT_TEXT_MAX_CHARS). */
   truncated: boolean;
   tokenEstimate: number;
+  /** Cuándo se subió (ISO): el selector de la card lo muestra. */
+  createdAt: string;
 }
 
 /** La URL que sirve un adjunto. Relativa: web y API comparten origen (ADR-020). */
