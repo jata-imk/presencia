@@ -230,11 +230,13 @@ interface ModelTotals {
   costUsd: number | null;
 }
 
-async function promptInput(
-  prompt: CulturalPrompt,
-): Promise<{ prompt: string } | { messages: ModelMessage[] }> {
-  if (!prompt.attachments) return { prompt: prompt.text };
-  return { messages: await messagesWithAttachments(prompt.text, prompt.attachments) };
+async function promptInput(prompt: CulturalPrompt): Promise<{
+  input: { prompt: string } | { messages: ModelMessage[] };
+  notes: string[];
+}> {
+  if (!prompt.attachments) return { input: { prompt: prompt.text }, notes: [] };
+  const { messages, notes } = await messagesWithAttachments(prompt.text, prompt.attachments);
+  return { input: { messages }, notes };
 }
 
 function formatMs(ms: number | null): string {
@@ -362,8 +364,20 @@ async function main(): Promise<void> {
       lines.push(`Adjuntos: ${prompt.attachments.map((a) => `\`${a.filename}\``).join(", ")}.`, "");
     }
     // F10.9: con adjuntos, el mensaje se arma una vez (los mismos bytes para
-    // cada modelo) por el camino del chat real.
-    const input = await promptInput(prompt);
+    // cada modelo) por el camino del chat real. Si no se puede armar, el caso
+    // queda con el error en el reporte y la suite sigue: las corridas de
+    // antes ya se pagaron.
+    let input: { prompt: string } | { messages: ModelMessage[] };
+    try {
+      const built = await promptInput(prompt);
+      input = built.input;
+      for (const note of built.notes) lines.push(`- ${note}`, "");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`  ⚠ no se pudo armar el mensaje: ${message}`);
+      lines.push(`**Error al armar el mensaje:** \`${message}\``, "");
+      continue;
+    }
 
     for (const modelId of models) {
       lines.push(`### ${modelId}`, "");

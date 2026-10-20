@@ -16,7 +16,7 @@ import {
   type AttachmentDto,
   type SentImageDto,
 } from "@presencia/shared";
-import { attachmentIdsIn } from "../chat/attachment-context.js";
+import { attachmentIdsIn, withAttachmentBytes } from "../chat/attachment-context.js";
 import {
   ASSET_STORAGE,
   isMissingObject,
@@ -296,25 +296,7 @@ export class AttachmentsService {
       }),
     );
 
-    return messages.map((message) => {
-      if (!message.parts.some((part) => part.type === "file")) return message;
-      return {
-        ...message,
-        parts: message.parts.map((part) => {
-          if (part.type !== "file") return part;
-          const id = attachmentIdFromUrl(part.url);
-          if (!id) return part;
-          const url = loaded.get(id);
-          if (!url) {
-            return {
-              type: "text" as const,
-              text: `[Adjunto: ${part.filename ?? "archivo"} — no se pudo cargar; pídele al creator que lo vuelva a adjuntar si lo necesitas]`,
-            };
-          }
-          return { type: "file" as const, mediaType: part.mediaType, filename: part.filename, url };
-        }),
-      };
-    });
+    return withAttachmentBytes(messages, loaded);
   }
 
   /** Los bytes que ve el modelo (la variante chica de una imagen), sin caché. */

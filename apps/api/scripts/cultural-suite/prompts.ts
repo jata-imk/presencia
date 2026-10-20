@@ -5,7 +5,12 @@
 // borrador (crear_borrador_visual/video/texto, ADR-005) para medir la
 // disciplina de tool calling de cada proveedor.
 
-import { anuncioMezcal, ventasDelAno, type SuiteAttachment } from "./attachments.js";
+import {
+  anuncioMezcal,
+  cortaAntesDeDiciembre,
+  ventasDelAno,
+  type SuiteAttachment,
+} from "./attachments.js";
 
 export interface CulturalPrompt {
   id: string;
@@ -122,6 +127,8 @@ export const culturalPrompts: CulturalPrompt[] = [
     id: "adjunto-csv-recortado",
     text: "Aquí van mis ventas del año. ¿Cuántas marquesitas de cajeta vendí en diciembre? Quiero presumir el cierre de año en un post.",
     expectsTool: false,
-    attachments: [{ filename: "ventas-2026.csv", build: ventasDelAno }],
+    attachments: [
+      { filename: "ventas-2026.csv", build: ventasDelAno, premise: cortaAntesDeDiciembre },
+    ],
   },
 ];

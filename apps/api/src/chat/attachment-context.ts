@@ -259,3 +259,35 @@ export function attachmentLine(part: UIMessage["parts"][number]): string | null 
     ? `[El creator adjuntó "${safeName(part.filename ?? "un archivo")}"]`
     : null;
 }
+
+/**
+ * Las partes `file` que citan un adjunto, con sus bytes: `loaded` va del id
+ * al `data:` (o `null` si no se pudo leer). Un adjunto sin bytes queda
+ * nombrado, sin contenido. Pura: la usan `AttachmentsService.materialize`
+ * (con los bytes del storage) y la suite cultural (con los de memoria), así
+ * las dos mandan lo mismo.
+ */
+export function withAttachmentBytes(
+  messages: UIMessage[],
+  loaded: ReadonlyMap<string, string | null>,
+): UIMessage[] {
+  return messages.map((message) => {
+    if (!message.parts.some((part) => part.type === "file")) return message;
+    return {
+      ...message,
+      parts: message.parts.map((part) => {
+        if (part.type !== "file") return part;
+        const id = attachmentIdFromUrl(part.url);
+        if (!id) return part;
+        const url = loaded.get(id);
+        if (!url) {
+          return {
+            type: "text" as const,
+            text: `[Adjunto: ${part.filename ?? "archivo"} — no se pudo cargar; pídele al creator que lo vuelva a adjuntar si lo necesitas]`,
+          };
+        }
+        return { type: "file" as const, mediaType: part.mediaType, filename: part.filename, url };
+      }),
+    };
+  });
+}

@@ -8,13 +8,26 @@
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { convertToModelMessages, type ModelMessage, type UIMessage } from "ai";
-import { attachmentContentUrl, attachmentIdFromUrl } from "@presencia/shared";
-import { processAttachment } from "../../src/attachments/attachment-content.js";
-import { dietAttachments, type AttachmentForContext } from "../../src/chat/attachment-context.js";
+import { attachmentContentUrl } from "@presencia/shared";
+import {
+  processAttachment,
+  type ProcessedAttachment,
+} from "../../src/attachments/attachment-content.js";
+import {
+  dietAttachments,
+  withAttachmentBytes,
+  type AttachmentForContext,
+} from "../../src/chat/attachment-context.js";
 
 export interface SuiteAttachment {
   filename: string;
   build: () => Promise<Uint8Array>;
+  /**
+   * Lo que el caso da por hecho del archivo ya procesado. Lanza si no se
+   * cumple (el caso dejaría de medir lo que dice) y si sí, devuelve una
+   * línea para el reporte.
+   */
+  premise?: (processed: ProcessedAttachment) => string;
 }
 
 /**
@@ -60,9 +73,13 @@ export function ventasDelAno(): Promise<Uint8Array> {
     "esquite",
   ];
   const sucursales = ["Centro", "Montejo"];
-  // Pseudoaleatorio con semilla fija: el mismo CSV en cada corrida.
+  // Pseudoaleatorio con semilla fija: el mismo CSV en cada corrida. LCG de
+  // 32 bits exacto (Math.imul): una multiplicación en float64 pasaría de 2^53.
   let seed = 20261019;
-  const next = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+  const next = () => {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    return seed / 2 ** 32;
+  };
   const lines = ["fecha,sucursal,producto,piezas,total_mxn"];
   for (let d = new Date(Date.UTC(2026, 0, 1)); d.getUTCFullYear() === 2026;) {
     const fecha = d.toISOString().slice(0, 10);
@@ -78,18 +95,35 @@ export function ventasDelAno(): Promise<Uint8Array> {
 }
 
 /**
- * El mensaje del creator con sus adjuntos, ya como lo recibe el modelo. Un
- * solo turno: todos son del turno abierto y viajan completos.
+ * La premisa de `ventasDelAno`: el recorte deja fuera diciembre. Devuelve la
+ * última fecha completa que sí llega, para el reporte.
+ */
+export function cortaAntesDeDiciembre(processed: ProcessedAttachment): string {
+  const text = processed.extractedText ?? "";
+  if (!processed.truncated || text.includes("2026-12-")) {
+    throw new Error("El CSV de la suite ya no se recorta antes de diciembre: ajusta ventasDelAno.");
+  }
+  // La última fila llega cortada a la mitad: la fecha completa es la de antes.
+  const rows = text.split("\n").slice(1, -1);
+  return `El texto que lee el modelo llega hasta ${rows.at(-1)?.slice(0, 10) ?? "?"} (la fila siguiente, cortada).`;
+}
+
+/**
+ * El mensaje del creator con sus adjuntos, ya como lo recibe el modelo, y
+ * las notas de las premisas para el reporte. Un solo turno: todos son del
+ * turno abierto y viajan completos.
  */
 export async function messagesWithAttachments(
   text: string,
   attachments: SuiteAttachment[],
-): Promise<ModelMessage[]> {
+): Promise<{ messages: ModelMessage[]; notes: string[] }> {
   const rows = new Map<string, AttachmentForContext>();
-  const bytes = new Map<string, { data: Uint8Array; mimeType: string }>();
+  const loaded = new Map<string, string | null>();
+  const notes: string[] = [];
   const parts: UIMessage["parts"] = [];
   for (const attachment of attachments) {
     const processed = await processAttachment(await attachment.build(), attachment.filename);
+    if (attachment.premise) notes.push(attachment.premise(processed));
     const id = randomUUID();
     rows.set(id, {
       id,
@@ -102,10 +136,12 @@ export async function messagesWithAttachments(
       tokenEstimate: processed.tokenEstimate,
       description: null,
     });
-    bytes.set(id, {
-      data: processed.modelData ?? processed.data,
-      mimeType: processed.mimeType,
-    });
+    // Lo que hace `modelDataUrl` en producción: la variante del modelo si
+    // la hay, con el tipo de la fila.
+    loaded.set(
+      id,
+      `data:${processed.mimeType};base64,${Buffer.from(processed.modelData ?? processed.data).toString("base64")}`,
+    );
     parts.push({
       type: "file",
       mediaType: processed.mimeType,
@@ -115,21 +151,9 @@ export async function messagesWithAttachments(
   }
   parts.push({ type: "text", text });
 
-  const [dieted] = dietAttachments([{ id: randomUUID(), role: "user", parts }], rows);
-  const materialized: UIMessage = {
-    ...dieted!,
-    parts: dieted!.parts.map((part) => {
-      if (part.type !== "file") return part;
-      const id = attachmentIdFromUrl(part.url);
-      const found = id ? bytes.get(id) : undefined;
-      if (!found) return part;
-      return {
-        type: "file" as const,
-        mediaType: found.mimeType,
-        filename: part.filename,
-        url: `data:${found.mimeType};base64,${Buffer.from(found.data).toString("base64")}`,
-      };
-    }),
+  const dieted = dietAttachments([{ id: randomUUID(), role: "user", parts }], rows);
+  return {
+    messages: await convertToModelMessages(withAttachmentBytes(dieted, loaded)),
+    notes,
   };
-  return convertToModelMessages([materialized]);
 }
