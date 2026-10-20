@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { parseDate } from "@internationalized/date";
 import { Composer } from "../components/chat/Composer.js";
+import { DropOverlay } from "../components/chat/DropOverlay.js";
+import { attachmentsState, useAttachments } from "../lib/attachments/use-attachments.js";
+import { useFileDrop } from "../lib/attachments/use-file-drop.js";
 import { ContextChip } from "../components/chat/ContextChip.js";
 import { SuggestionCard, SuggestionCardSkeleton } from "../components/chat/SuggestionCard.js";
 import type { TrendSignal } from "@presencia/shared";
@@ -144,14 +147,26 @@ export function ChatsPage() {
     // cambian lo que hay que hacer.
   }, [propuesta]);
 
+  // F10.9: se puede adjuntar antes de que exista el chat. Los archivos suben
+  // sin chat y se le ligan al enviar el primer mensaje (en chat.tsx).
+  const attachments = useAttachments(null);
+  const pending = attachmentsState(attachments.items);
+  const { drag, handlers: dropHandlers } = useFileDrop({
+    current: attachments.items.length,
+    onFiles: attachments.add,
+  });
+
   async function startChat(prompt: string) {
     const trimmed = prompt.trim();
-    if (!trimmed || starting) return;
+    if ((!trimmed && pending.parts.length === 0) || starting) return;
+    if (pending.uploading || pending.blocked) return;
     setError(null);
     setStarting(true);
     try {
       const chat = await createChat();
-      void navigate(`/chats/${chat.id}`, { state: { initialPrompt: trimmed } });
+      void navigate(`/chats/${chat.id}`, {
+        state: { initialPrompt: trimmed, initialFiles: pending.parts },
+      });
     } catch {
       setError("No se pudo crear el chat. Inténtalo de nuevo.");
       setStarting(false);
@@ -165,7 +180,8 @@ export function ChatsPage() {
     // — en una pantalla baja el saludo se corta y no hay forma de subir. Los
     // márgenes automáticos se resuelven a cero cuando no hay espacio, así que
     // el contenido arranca arriba y se scrollea completo.
-    <div className="flex min-h-full flex-col items-center px-8 py-8">
+    <div className="relative flex min-h-full flex-col items-center px-8 py-8" {...dropHandlers}>
+      {drag && <DropOverlay verdict={drag.verdict} count={drag.count} tall />}
       <div className="my-auto w-full max-w-[680px]">
         <div className="mb-6 text-center">
           <h1 className="font-display text-[38px] font-semibold tracking-tight text-fg">
@@ -188,6 +204,12 @@ export function ChatsPage() {
             }
             large
             inputRef={composerRef}
+            attachments={{
+              items: attachments.items,
+              onAdd: attachments.add,
+              onRemove: attachments.remove,
+              onRetry: attachments.retry,
+            }}
           />
           {error && <p className="mt-2 text-center text-sm text-error">{error}</p>}
         </div>

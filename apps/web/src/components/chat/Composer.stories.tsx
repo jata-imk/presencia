@@ -3,6 +3,22 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useArgs } from "storybook/preview-api";
 import { fn } from "storybook/test";
 import { PEDIDO } from "../../stories/fixtures/chat.js";
+import {
+  CAPTURA,
+  DIEZ,
+  ESCANEADO,
+  ESCANEADO_LARGO,
+  GUIA_MD,
+  IMAGEN,
+  KIT_PDF,
+  LARGO,
+  METRICAS_CSV,
+  MUY_GRANDE,
+  SIN_RED,
+  TIPO_NO,
+  subiendo,
+} from "../../stories/fixtures/attachments.js";
+import type { PendingAttachment } from "../../lib/attachments/attachments.js";
 import { Composer } from "./Composer.js";
 
 const meta = {
@@ -59,4 +75,44 @@ export const Ocupado: Story = {
 export const Grande: Story = {
   name: "Grande (nuevo chat)",
   args: { large: true, placeholder: "¿Qué quieres publicar hoy?" },
+};
+
+// F10.9: los adjuntos (Claude Design "Chat Adjuntos" §1-2). Los chips se pintan
+// con estados fijos: subir de verdad necesita la API.
+const conAdjuntos = (items: PendingAttachment[], value = "") => ({
+  value,
+  attachments: { items, onAdd: fn(), onRemove: fn(), onRetry: fn() },
+});
+
+export const AdjuntosSubiendo: Story = {
+  name: "Adjuntos · subiendo (envío en espera)",
+  args: conAdjuntos(
+    [subiendo(IMAGEN, 64), GUIA_MD, subiendo(KIT_PDF, 22)],
+    "Usa esto para el carrusel",
+  ),
+};
+
+export const AdjuntosSinTexto: Story = {
+  name: "Adjuntos · listos, sin texto",
+  args: conAdjuntos([IMAGEN, CAPTURA, METRICAS_CSV]),
+};
+
+export const AdjuntosConErrores: Story = {
+  name: "Adjuntos · errores",
+  args: conAdjuntos([IMAGEN, MUY_GRANDE, TIPO_NO, SIN_RED], "Revisa estos archivos"),
+};
+
+export const AdjuntosAvisosPdf: Story = {
+  name: "Adjuntos · avisos de PDF (no bloquean)",
+  args: conAdjuntos([ESCANEADO, LARGO], "Resúmeme estos dos documentos"),
+};
+
+export const AdjuntosPdfEscaneadoLargo: Story = {
+  name: "Adjuntos · PDF escaneado de más (bloquea)",
+  args: conAdjuntos([IMAGEN, ESCANEADO_LARGO], "Saca los gastos de este año"),
+};
+
+export const AdjuntosDiez: Story = {
+  name: "Adjuntos · 10 de 10 (límite)",
+  args: conAdjuntos(DIEZ, "Todo lo de la campaña de octubre"),
 };

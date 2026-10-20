@@ -754,6 +754,36 @@ ChatGPT y Claude.ai mantienen input simple por algo.
 
 - **Adjuntar archivo:** para mandar referencias (imágenes,
   PDFs, docs)
+
+> **Implementado en F10.9** (Claude Design "Chat Adjuntos").
+> Se adjuntan imágenes, PDF y archivos `.md`, `.txt`, `.csv`
+> y `.json`, hasta 10 por mensaje y 25 MB cada uno. Hay tres
+> caminos que terminan en lo mismo:
+>
+> - el 📎;
+> - pegar (Ctrl/Cmd+V; una captura sin nombre se llama
+>   `captura-AAAAMMDD-HHMM.png`);
+> - soltar sobre la columna del chat (la conversación y la
+>   caja; ni el sidebar ni el panel de la card). Al arrastrar,
+>   un overlay dice "Suelta para adjuntar", o el porqué si no
+>   se puede: un tipo que no se acepta, o que ya hay 10.
+>
+> **Los archivos suben al adjuntarlos**, no al enviar. Cada
+> uno es un chip arriba de la caja, con su miniatura o
+> ícono, su peso, una barra de progreso mientras sube y una ×
+> para quitarlo. **Se puede enviar solo con archivos.** No se
+> puede mientras suben, ni con uno en error: el composer dice
+> por qué ("Esperando a que terminen de subir…", "Quita los
+> archivos con error para enviar").
+>
+> Un PDF escaneado o un archivo largo avisan en su chip sin
+> bloquear ("Este PDF es escaneado: leerlo consume más de tu
+> cuota", "Archivo largo: solo se leyó una parte").
+>
+> En móvil los chips van en una sola fila con scroll. En la
+> pantalla de chat nuevo también se adjunta: los archivos se
+> ligan al chat cuando sale el primer mensaje.
+
 - **Transcribir audio:** para usuarios que prefieren dictar
 - **Estilo de respuesta:** selector tipo Claude (Conciso,
   Explicativo, Creativo, etc.). Esto es DISTINTO de la voz
@@ -1394,6 +1424,12 @@ oportunidad de configurar. No solo decir "no se puede",
 sino "no se puede pero acá está cómo solucionarlo".
 
 ### Adjunto muy grande
+
+> **F10.9: en el chip, no en un toast.** El aviso queda pegado
+> al archivo que lo causó y no se pierde a los 5 segundos:
+> "Muy grande: el límite es 25 MB", con el nombre y el peso a
+> un lado. Mientras esté, el envío espera; quitarlo con la ×
+> lo resuelve.
 
 **El estado:** El usuario intenta adjuntar un archivo que
 excede el límite (ej: 25 MB).

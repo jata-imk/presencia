@@ -1,4 +1,4 @@
-import { isStaticToolUIPart, type ToolUIPart, type UIMessage } from "ai";
+import { isStaticToolUIPart, type FileUIPart, type ToolUIPart, type UIMessage } from "ai";
 import {
   CARD_ARCHETYPE_TOOLS,
   type ChatMessageMetadata,
@@ -43,6 +43,15 @@ const CARD_TOOL_TYPES: ReadonlySet<string> = new Set(
 /** El texto de un mensaje del creator, como se muestra, se reintenta y se edita. */
 export function messageText(message: ChatUIMessage): string {
   return message.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n");
+}
+
+/**
+ * F10.9: los adjuntos de un mensaje del creator, tal cual se guardaron. Un
+ * reintento o una edición los vuelven a mandar: sin ellos, el turno se
+ * repetiría sin los archivos que la burbuja sigue mostrando.
+ */
+export function messageFiles(message: ChatUIMessage): FileUIPart[] {
+  return message.parts.filter((part): part is FileUIPart => part.type === "file");
 }
 
 /**
