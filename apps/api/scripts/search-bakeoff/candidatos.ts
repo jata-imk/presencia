@@ -61,8 +61,26 @@ function dominioDe(url: string, titulo?: string | null): string {
   return host;
 }
 
+const ENTIDADES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  "#39": "'",
+  nbsp: " ",
+};
+
+/**
+ * Texto plano de un fragmento, recortado. Brave marca la coincidencia con
+ * `<strong>` y algunos traen entidades: en la galería se verían como
+ * etiquetas y delatarían al candidato.
+ */
 function recorta(texto: string | null | undefined, max = 400): string {
-  const limpio = (texto ?? "").replace(/\s+/g, " ").trim();
+  const limpio = (texto ?? "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_, e: string) => ENTIDADES[e] ?? " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return limpio.length > max ? `${limpio.slice(0, max)}…` : limpio;
 }
 
@@ -76,7 +94,9 @@ async function pedir(url: string, init: RequestInit): Promise<unknown> {
 /**
  * El costo de una búsqueda de API, de la tabla de precios (o el que reporta
  * el servicio), y su línea en el gasto local: sin ella, `pnpm gasto` no vería
- * lo que cuesta el bake-off.
+ * lo que cuesta el bake-off. El gasto local no guarda dólares, solo la
+ * búsqueda, así que `pnpm gasto` siempre la valúa con la tabla: con Exa, que
+ * reporta su costo real, los dos reportes pueden diferir por centavos.
  */
 async function costoApi(modelId: string, reportado?: number): Promise<number | null> {
   const id = splitModelId(modelId);
@@ -271,7 +291,9 @@ function nativa(
         model: resolveModel(modelId),
         tools,
         stopWhen: stepCountIs(3),
-        abortSignal: AbortSignal.timeout(TIMEOUT_MS * 2),
+        // Holgado: si se corta, el SDK no entrega el usage de lo ya cobrado y
+        // ese gasto no llegaría al registro local.
+        abortSignal: AbortSignal.timeout(TIMEOUT_MS * 4),
         prompt:
           `Busca en la web: "${consulta}". Usa la herramienta de búsqueda aunque creas saberlo. ` +
           "Contesta en dos o tres frases en español de México con lo que encontraste, con fechas si las hay.",

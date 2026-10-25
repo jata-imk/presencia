@@ -17,8 +17,8 @@
 //
 // Cuesta dinero de verdad, poco: 16 consultas × 7 candidatos ≈ $0.80 (lo caro
 // son las nativas). Las APIs tienen tier gratis que lo cubre. La galería no se
-// versiona (out/ está en .gitignore); el reporte sí, en
-// docs/reference/bakeoff-busqueda/.
+// versiona (out/ está en .gitignore); el reporte de una corrida completa sí,
+// en docs/reference/bakeoff-busqueda/ (el de una parcial queda en out/).
 
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -97,8 +97,11 @@ async function correrCandidato(
         console.warn(`${etiqueta}: no se guardó en el caché (${String(error)})`);
       }
     } catch (error) {
-      const nota =
-        error instanceof Error ? error.message.replace(/\|/g, "/").slice(0, 200) : String(error);
+      // En una sola línea: va en una fila de tabla del reporte.
+      const nota = (error instanceof Error ? error.message : String(error))
+        .replace(/\|/g, "/")
+        .replace(/\s+/g, " ")
+        .slice(0, 200);
       piezas.push({
         consultaId: q.id,
         candidato: c.id,
@@ -114,6 +117,18 @@ async function correrCandidato(
   return piezas;
 }
 
+function mediana(ordenados: number[]): number | null {
+  const n = ordenados.length;
+  if (n === 0) return null;
+  const mitad = Math.floor(n / 2);
+  return n % 2 === 1 ? ordenados[mitad]! : (ordenados[mitad - 1]! + ordenados[mitad]!) / 2;
+}
+
+/** El día en Mérida (YYYY-MM-DD), no en UTC: a las 18:00 de aquí, en UTC ya es mañana. */
+function hoyEnMerida(ahora: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Merida" }).format(ahora);
+}
+
 /** Un dominio mexicano: .mx, o .com.mx/.org.mx/.gob.mx, que también terminan en .mx. */
 const esMx = (dominio: string) => dominio.endsWith(".mx");
 
@@ -127,10 +142,9 @@ function metricas(piezas: Pieza[]) {
   return {
     ok: ok.length,
     errores: piezas.length - ok.length,
-    latencia: lat.length > 0 ? lat[Math.floor(lat.length / 2)]! : null,
+    latencia: mediana(lat),
     latenciaDelCache: nuevas.length === 0 && ok.length > 0,
     costo,
-    pagado: nuevas.reduce((s, p) => s + (p.costUsd ?? 0), 0),
     porMil: ok.length > 0 ? (costo / ok.length) * 1000 : null,
     resultadosPorConsulta: ok.length > 0 ? resultados.length / ok.length : 0,
     pctMx:
@@ -309,22 +323,26 @@ async function main() {
     );
   }
 
-  const fecha = new Date().toISOString().slice(0, 10);
-  const hora = new Date().toISOString().slice(11, 19).replaceAll(":", "");
+  const ahora = new Date();
+  const fecha = hoyEnMerida(ahora);
+  const hora = ahora.toISOString().slice(11, 19).replaceAll(":", "");
   const runId = `${fecha}-${hora}`;
   const runDir = path.join(OUT_ROOT, runId);
   await mkdir(runDir, { recursive: true });
-  await mkdir(REPORT_DIR, { recursive: true });
 
   const piezas = (
     await Promise.all(candidatos.map((c) => correrCandidato(c, consultas, fecha, fresh)))
   ).flat();
 
   await writeFile(path.join(runDir, "index.html"), galeria(runId, consultas, piezas));
-  // Nunca pisa un reporte: el de una corrida completa es la evidencia que cita
-  // ADR-028.
-  const parcial = soloCandidatos || soloConsultas ? "-parcial" : "";
-  const reportFile = path.join(REPORT_DIR, `${runId}-reporte${parcial}.md`);
+  // Solo una corrida completa deja reporte versionado: es la evidencia que
+  // cita ADR-028, y nunca se pisa. Una parcial (probar un candidato, repetir
+  // una consulta) lo deja junto a su galería, fuera de git.
+  const parcial = Boolean(soloCandidatos ?? soloConsultas);
+  if (!parcial) await mkdir(REPORT_DIR, { recursive: true });
+  const reportFile = parcial
+    ? path.join(runDir, "reporte-parcial.md")
+    : path.join(REPORT_DIR, `${runId}-reporte.md`);
   await writeFile(reportFile, reporte(fecha, runId, consultas, candidatos, piezas), { flag: "wx" });
   await writeFile(path.join(runDir, "piezas.json"), JSON.stringify(piezas, null, 1));
   console.log(`\nGalería: ${path.join(runDir, "index.html")}\nReporte: ${reportFile}`);
