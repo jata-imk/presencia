@@ -38,44 +38,51 @@ export function DropOverlay({
         ? `Solo imágenes, PDF y archivos de texto (${ATTACHMENT_TEXT_EXTENSIONS.join(", ")})`
         : `Imágenes, PDF y archivos de texto · hasta ${formatSize(ATTACHMENT_MAX_BYTES)}`;
 
+  // El velo cubre la columna completa y el borde punteado va adentro, con su
+  // margen: si el velo tuviera el margen del borde, la conversación se
+  // asomaría sin velo por esa franja (QA de Jose, 2026-10-20).
   return (
     <div
-      className={`pointer-events-none absolute inset-2 z-30 rounded-[20px] border-2 border-dashed bg-app/95 p-6 text-center sm:inset-3.5 ${
-        reject ? "border-error" : "border-line-focus"
-      }`}
+      className="pointer-events-none absolute inset-0 z-30 bg-app/95"
       role="status"
       aria-live="polite"
     >
       <div
-        className={`flex flex-col items-center justify-center gap-3 ${
-          tall ? "sticky top-[30vh]" : "h-full"
+        className={`absolute inset-2 rounded-[20px] border-2 border-dashed p-6 text-center sm:inset-3.5 ${
+          reject ? "border-error" : "border-line-focus"
         }`}
       >
-        <span
-          className={`inline-flex size-[60px] items-center justify-center rounded-[18px] ${
-            reject ? "bg-error-bg text-error-fg" : "bg-tint-plum text-brand"
+        <div
+          className={`flex flex-col items-center justify-center gap-3 ${
+            tall ? "sticky top-[30vh]" : "h-full"
           }`}
         >
-          {reject ? <Ban size={26} aria-hidden /> : <Upload size={26} aria-hidden />}
-        </span>
-        <div className="font-display text-xl font-bold tracking-[-0.01em] text-fg">{title}</div>
-        <div
-          className={`max-w-[380px] text-[13.5px] leading-normal ${reject ? "text-error-fg" : "text-fg-secondary"}`}
-        >
-          {detail}
-        </div>
-        {count > 0 && (
-          <div className="mt-1.5 flex -rotate-2 items-center gap-1.5 rounded-[10px] border border-line bg-card py-1.5 pr-2.5 pl-2.5 shadow-lg">
-            <span className="font-display text-xs font-semibold text-fg">
-              {count === 1 ? "1 archivo" : `${String(count)} archivos`}
-            </span>
-            {reject ? (
-              <XCircle size={14} className="text-error" aria-hidden />
-            ) : (
-              <PlusCircle size={14} className="text-brand" aria-hidden />
-            )}
+          <span
+            className={`inline-flex size-[60px] items-center justify-center rounded-[18px] ${
+              reject ? "bg-error-bg text-error-fg" : "bg-tint-plum text-brand"
+            }`}
+          >
+            {reject ? <Ban size={26} aria-hidden /> : <Upload size={26} aria-hidden />}
+          </span>
+          <div className="font-display text-xl font-bold tracking-[-0.01em] text-fg">{title}</div>
+          <div
+            className={`max-w-[380px] text-[13.5px] leading-normal ${reject ? "text-error-fg" : "text-fg-secondary"}`}
+          >
+            {detail}
           </div>
-        )}
+          {count > 0 && (
+            <div className="mt-1.5 flex -rotate-2 items-center gap-1.5 rounded-[10px] border border-line bg-card py-1.5 pr-2.5 pl-2.5 shadow-lg">
+              <span className="font-display text-xs font-semibold text-fg">
+                {count === 1 ? "1 archivo" : `${String(count)} archivos`}
+              </span>
+              {reject ? (
+                <XCircle size={14} className="text-error" aria-hidden />
+              ) : (
+                <PlusCircle size={14} className="text-brand" aria-hidden />
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

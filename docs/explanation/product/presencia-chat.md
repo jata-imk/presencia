@@ -140,10 +140,14 @@ A medida que escribe, varias cosas pasan:
 
 1. El botón de enviar se activa (de disabled a primario)
 2. La toolbar inferior del input muestra los botones disponibles:
-   - 📎 Adjuntar archivo (si quiere mandar referencias visuales)
-   - 🎤 Transcribir audio (si prefiere dictar en lugar de tipear)
-   - 🎨 Estilo de respuesta (selector tipo Claude: Conciso,
-     Explicativo, Creativo, etc.)
+   - ＋ un menú con lo que se agrega al mensaje: subir fotos y
+     archivos (también con Ctrl/⌘+U) y el estilo de respuesta
+     (selector tipo Claude: Conciso, Explicativo, Creativo,
+     etc.). Es donde va a vivir lo que se sume después, como
+     buscar en la web (F10.10).
+   - 🎤 Transcribir audio (si prefiere dictar en lugar de
+     tipear), a la vista junto al ＋: no es algo que se agrega,
+     es otra forma de escribir.
 
 Jose decide pedir el post directamente. Tipea:
 
@@ -760,13 +764,14 @@ ChatGPT y Claude.ai mantienen input simple por algo.
 > y `.json`, hasta 10 por mensaje y 25 MB cada uno. Hay tres
 > caminos que terminan en lo mismo:
 >
-> - el 📎;
+> - "Subir fotos y archivos" en el menú ＋, o Ctrl/⌘+U;
 > - pegar (Ctrl/Cmd+V; una captura sin nombre se llama
 >   `captura-AAAAMMDD-HHMM.png`);
 > - soltar sobre la columna del chat (la conversación y la
 >   caja; ni el sidebar ni el panel de la card). Al arrastrar,
->   un overlay dice "Suelta para adjuntar", o el porqué si no
->   se puede: un tipo que no se acepta, o que ya hay 10.
+>   un velo cubre la columna completa y un borde punteado dice
+>   "Suelta para adjuntar", o el porqué si no se puede: un tipo
+>   que no se acepta, o que ya hay 10.
 >
 > **Los archivos suben al adjuntarlos**, no al enviar. Cada
 > uno es un chip arriba de la caja, con su miniatura o
