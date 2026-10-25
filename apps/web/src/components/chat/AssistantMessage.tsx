@@ -7,6 +7,7 @@ import {
   type ChatUIMessage,
   type MemoryToolPart,
 } from "../../lib/chat-types.js";
+import { withoutCorrectedAttempts } from "../../lib/card-attempts.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
 import { replyContent } from "../../lib/turn-status.js";
 import { useMediaQuery } from "../../lib/use-media-query.js";
@@ -52,6 +53,7 @@ export function AssistantMessage({
   const blocks: Block[] = [];
   const toolParts: CardToolPart[] = [];
   const memoryParts: MemoryToolPart[] = [];
+  const visibleCardParts = new Set(withoutCorrectedAttempts(message.parts.filter(isCardToolPart)));
   message.parts.forEach((part, i) => {
     const isLastPart = isLast && i === message.parts.length - 1;
     if (part.type === "text") {
@@ -68,6 +70,9 @@ export function AssistantMessage({
       return;
     }
     if (isCardToolPart(part)) {
+      // Un intento fallido que el modelo corrigió después en el turno no se
+      // pinta: ni paso con error ni fila roja (lib/card-attempts.ts).
+      if (!visibleCardParts.has(part)) return;
       toolParts.push(part);
       const prev = blocks.at(-1);
       if (prev?.kind === "cards") prev.parts.push(part);

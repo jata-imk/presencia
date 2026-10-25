@@ -195,6 +195,13 @@ Cada step se va marcando como completado con un checkmark.
 > pasos inventados ("Analizando tendencias…") que no ocurren.
 > Si el mensaje trae varias cards seguidas, van bajo un
 > encabezado "3 borradores · Instagram, LinkedIn, X".
+> Un intento fallido que el modelo corrigió en el mismo turno
+> (falló la card de una red y después la creó bien) no se
+> muestra: ni como paso con error ni como fila roja. Pasó en
+> prod el 2026-10-11, cuando el modelo pidió Facebook con la
+> tool de texto y la rehízo con la visual: la card salió
+> bien, pero el chat decía que no. Si nunca se corrige, el
+> error sí se queda a la vista.
 > Esta transparencia es estratégica: comunica que la IA está
 > haciendo trabajo real y diferenciado, no solo generando
 > texto random. Es la diferencia visual entre "ChatGPT

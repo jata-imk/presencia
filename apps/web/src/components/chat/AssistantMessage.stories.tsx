@@ -1,7 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import type { ChatUIMessage } from "../../lib/chat-types.js";
-import { card, cardPart, cardPartNaciendo, CONTENIDO } from "../../stories/fixtures/cards.js";
+import {
+  card,
+  cardPart,
+  cardPartConError,
+  cardPartNaciendo,
+  CONTENIDO,
+} from "../../stories/fixtures/cards.js";
 import { RESPUESTA_PARCIAL } from "../../stories/fixtures/chat.js";
 import { AssistantMessage } from "./AssistantMessage.js";
 
@@ -101,4 +107,33 @@ export const DetenidaConTexto: Story = {
     canRegenerate: false,
   },
   parameters: { cards: [] },
+};
+
+/**
+ * El modelo falló un intento y lo corrigió en el mismo turno (caso de prod,
+ * 2026-10-11): el intento no se pinta, ni en los pasos ni en el grupo. Se ven
+ * "Creé 2 borradores" y las dos cards (lib/card-attempts.ts).
+ */
+export const IntentoCorregido: Story = {
+  name: "Un intento fallido que el modelo corrigió",
+  args: {
+    message: respuesta([
+      cardPart(LI, "linkedin", CONTENIDO.linkedin),
+      cardPartConError("instagram"),
+      cardPart(IG, "instagram", CONTENIDO.instagram),
+      TEXTO,
+    ]),
+  },
+};
+
+/** El contrario: nadie lo corrigió, así que el error se queda a la vista. */
+export const IntentoSinCorregir: Story = {
+  name: "Un intento fallido sin corregir",
+  args: {
+    message: respuesta([
+      cardPart(LI, "linkedin", CONTENIDO.linkedin),
+      cardPartConError("instagram"),
+      TEXTO,
+    ]),
+  },
 };
