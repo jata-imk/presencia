@@ -143,6 +143,7 @@ async function main() {
       entrada: g.inputTokens,
       salida: g.outputTokens,
       imagenes: g.imagesCount,
+      busquedas: g.searchQueries,
     });
   }
 
