@@ -99,7 +99,9 @@ export const MenuAgregar: Story = {
     </div>
   ),
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByLabelText("Agregar archivos y más"));
+    // AllBy…[0]: "Lado a lado" pinta la historia dos veces.
+    const [trigger] = await within(canvasElement).findAllByLabelText("Agregar archivos y más");
+    if (trigger) await userEvent.click(trigger);
   },
 };
 

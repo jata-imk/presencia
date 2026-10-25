@@ -21,11 +21,11 @@ import { Menu, MENU_CONTENT_CLASS, MENU_ITEM_CLASS } from "../ui/Menu.js";
 import { Tooltip } from "../ui/Tooltip.js";
 import { AttachmentChip } from "./AttachmentChip.js";
 
+/** En Mac el atajo es ⌘U: Ctrl+U ahí es de edición de texto (borrar la línea). */
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
+
 /** El atajo de "Subir fotos y archivos", como se escribe en cada sistema. */
-const UPLOAD_SHORTCUT =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "")
-    ? "⌘U"
-    : "Ctrl+U";
+const UPLOAD_SHORTCUT = IS_MAC ? "⌘U" : "Ctrl+U";
 
 /** Lo que el selector de archivos ofrece: lo mismo que acepta la API (@presencia/shared). */
 const ACCEPT = [
@@ -134,14 +134,26 @@ export function Composer({
 
   // Ctrl/⌘+U abre el selector, como en Claude. Con el composer en pantalla y
   // no con el foco en la caja: el atajo sirve también leyendo la conversación.
-  // preventDefault: en Chrome es "ver código fuente".
+  // preventDefault: en Chrome es "ver código fuente", y también con 10
+  // archivos (el atajo no cambia de significado al llegar al límite).
   useEffect(() => {
-    if (!attachments || full) return;
+    if (!attachments) return;
     function onKey(e: globalThis.KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
-      if (e.key.toLowerCase() !== "u") return;
+      if (!(IS_MAC ? e.metaKey : e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (e.key.toLowerCase() !== "u" || e.repeat || e.isComposing) return;
+      // Un modal abierto (programar, una card) o el foco en otro campo (el
+      // renombrar del sidebar): el atajo no es de ahí.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      const active = document.activeElement;
+      if (
+        active !== textareaRef.current &&
+        active instanceof HTMLElement &&
+        (active.isContentEditable || active.tagName === "INPUT" || active.tagName === "TEXTAREA")
+      ) {
+        return;
+      }
       e.preventDefault();
-      fileInputRef.current?.click();
+      if (!full) fileInputRef.current?.click();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -229,20 +241,25 @@ export function Composer({
               >
                 <Plus size={16} strokeWidth={1.75} />
               </Menu.Trigger>
-              <Menu.Content className={`${MENU_CONTENT_CLASS} w-72`}>
+              <Menu.Content className={`${MENU_CONTENT_CLASS} w-80`}>
                 <Menu.Item
-                  className={MENU_ITEM_CLASS}
+                  className={`${MENU_ITEM_CLASS} items-start`}
                   disabled={!attachments || full}
-                  title={
-                    full
-                      ? `Límite: ${String(ATTACHMENTS_PER_MESSAGE)} archivos por mensaje`
-                      : undefined
-                  }
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <Paperclip size={14} aria-hidden />
-                  <span className="flex-1">Subir fotos y archivos</span>
-                  <kbd className="font-display text-[11px] font-medium text-fg-muted">
+                  <Paperclip size={14} className="mt-0.5" aria-hidden />
+                  <span className="flex flex-1 flex-col">
+                    Subir fotos y archivos
+                    {/* Lo único que dice que se puede soltar o pegar; con 10, el
+                        porqué de que esté apagado (un `title` en un botón
+                        deshabilitado no se ve en casi ningún navegador). */}
+                    <span className="text-[11.5px] text-fg-muted">
+                      {full
+                        ? `Ya tienes ${String(ATTACHMENTS_PER_MESSAGE)}: es el límite por mensaje`
+                        : "También puedes arrastrarlos o pegarlos"}
+                    </span>
+                  </span>
+                  <kbd className="mt-0.5 font-display text-[11px] font-medium text-fg-muted">
                     {UPLOAD_SHORTCUT}
                   </kbd>
                 </Menu.Item>
