@@ -1,6 +1,7 @@
 import { AlertCircle, Check, ChevronRight, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { socialNetworkSchema, type SocialNetwork } from "@presencia/shared";
+import type { SocialNetwork } from "@presencia/shared";
+import { networkOfCardPart } from "../../lib/card-attempts.js";
 import type { CardToolPart } from "../../lib/chat-types.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
 
@@ -14,15 +15,6 @@ import { NETWORK_LABELS } from "../../lib/network-labels.js";
 // si el usuario la toca, manda lo que eligió.
 
 type StepState = "live" | "done" | "error" | "stopped";
-
-function networkOf(part: CardToolPart): SocialNetwork | null {
-  if (part.state === "output-available") return part.output.network;
-  // Mientras llega el input, `network` puede no existir todavía o venir a
-  // medias: solo se usa si ya es una red válida.
-  const raw = (part.input as { network?: unknown } | undefined)?.network;
-  const parsed = socialNetworkSchema.safeParse(raw);
-  return parsed.success ? parsed.data : null;
-}
 
 // Un tool call sin output solo sigue "en curso" mientras el turno llega. Si
 // el usuario lo detuvo o el stream se cortó, ese part nunca va a terminar:
@@ -38,7 +30,7 @@ export function Steps({ parts, streaming }: { parts: CardToolPart[]; streaming: 
   if (parts.length === 0) return null;
 
   const items = parts.map((part) => ({
-    network: networkOf(part),
+    network: networkOfCardPart(part),
     state: stateOf(part, streaming),
   }));
   const live = items.some((i) => i.state === "live");

@@ -7,6 +7,7 @@ import {
   type ChatUIMessage,
   type MemoryToolPart,
 } from "../../lib/chat-types.js";
+import { withoutCorrectedAttempts } from "../../lib/card-attempts.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
 import { replyContent } from "../../lib/turn-status.js";
 import { useMediaQuery } from "../../lib/use-media-query.js";
@@ -52,6 +53,10 @@ export function AssistantMessage({
   const blocks: Block[] = [];
   const toolParts: CardToolPart[] = [];
   const memoryParts: MemoryToolPart[] = [];
+  const streaming = isLast && streamingNow;
+  const visibleCardParts = new Set(
+    withoutCorrectedAttempts(message.parts.filter(isCardToolPart), streaming),
+  );
   message.parts.forEach((part, i) => {
     const isLastPart = isLast && i === message.parts.length - 1;
     if (part.type === "text") {
@@ -68,10 +73,19 @@ export function AssistantMessage({
       return;
     }
     if (isCardToolPart(part)) {
-      toolParts.push(part);
+      // Un intento fallido que el modelo corrigió después en el turno no se
+      // pinta: ni paso con error ni fila roja (lib/card-attempts.ts). Pero
+      // sí abre o sigue su bloque: la llave del bloque es el índice de su
+      // primera parte, y si cambiara al esconderlo, el bloque se volvería a
+      // montar (el panel se abriría otra vez y el glow arrancaría de cero).
+      const visible = visibleCardParts.has(part);
+      if (visible) toolParts.push(part);
       const prev = blocks.at(-1);
-      if (prev?.kind === "cards") prev.parts.push(part);
-      else blocks.push({ kind: "cards", index: i, parts: [part] });
+      if (prev?.kind === "cards") {
+        if (visible) prev.parts.push(part);
+      } else {
+        blocks.push({ kind: "cards", index: i, parts: visible ? [part] : [] });
+      }
     }
   });
 
@@ -80,10 +94,10 @@ export function AssistantMessage({
     .map((b) => b.text)
     .join("\n\n")
     .trim();
-  const streaming = isLast && streamingNow;
   // Un turno con texto entre sus cards se parte en varios bloques; solo el
-  // primero abre el panel, los demás suman pestañas (ver CardBlock).
-  const firstCardsIndex = blocks.find((b) => b.kind === "cards")?.index;
+  // primero con algo que pintar abre el panel, los demás suman pestañas (ver
+  // CardBlock).
+  const firstCardsIndex = blocks.find((b) => b.kind === "cards" && b.parts.length > 0)?.index;
 
   // Nada que pintar (F10.8.3): una respuesta cortada antes de la primera
   // palabra se guarda solo con marcas de paso. Un contenedor vacío dejaba un

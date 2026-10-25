@@ -102,3 +102,54 @@ export const DetenidaConTexto: Story = {
   },
   parameters: { cards: [] },
 };
+
+// El caso de prod (2026-10-11): Facebook pedido con la tool de texto, que no
+// lo acepta. El modelo vio el rechazo y lo rehízo con la visual.
+const FB = "card-fb";
+const FACEBOOK_CON_LA_TOOL_DE_TEXTO = {
+  type: "tool-crear_borrador_texto",
+  toolCallId: "call-fb-mal",
+  state: "output-error",
+  input: { network: "facebook", body: "…" },
+  errorText: "Algo salió mal generando la respuesta. Inténtalo de nuevo.",
+};
+const TEXTO_DOS = {
+  type: "text",
+  text: "Listo: preparé los borradores para LinkedIn y Facebook, cada uno con su carrusel.",
+  state: "done",
+};
+
+/**
+ * El intento fallido no se pinta, ni en los pasos ni en el grupo: se ven
+ * "Creé 2 borradores" y las dos cards (lib/card-attempts.ts).
+ */
+export const IntentoCorregido: Story = {
+  name: "Un intento fallido que el modelo corrigió",
+  args: {
+    message: respuesta([
+      cardPart(LI, "linkedin", CONTENIDO.linkedin),
+      FACEBOOK_CON_LA_TOOL_DE_TEXTO,
+      cardPart(FB, "facebook", CONTENIDO.instagram),
+      TEXTO_DOS,
+    ]),
+  },
+  parameters: {
+    cards: [
+      card(LI, { network: "linkedin", content: CONTENIDO.linkedin }),
+      card(FB, { network: "facebook" }),
+    ],
+  },
+};
+
+/** El contrario: nadie lo corrigió, así que el error se queda a la vista. */
+export const IntentoSinCorregir: Story = {
+  name: "Un intento fallido sin corregir",
+  args: {
+    message: respuesta([
+      cardPart(LI, "linkedin", CONTENIDO.linkedin),
+      FACEBOOK_CON_LA_TOOL_DE_TEXTO,
+      TEXTO_DOS,
+    ]),
+  },
+  parameters: { cards: [card(LI, { network: "linkedin", content: CONTENIDO.linkedin })] },
+};
