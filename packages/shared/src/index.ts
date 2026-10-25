@@ -18,3 +18,4 @@ export * from "./search.js";
 export * from "./text.js";
 export * from "./trends.js";
 export * from "./verticals.js";
+export * from "./web.js";
