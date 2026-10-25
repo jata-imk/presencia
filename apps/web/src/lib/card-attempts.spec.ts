@@ -56,6 +56,26 @@ describe("withoutCorrectedAttempts", () => {
     const parts = [fallida("raro", "fb"), creada("fb", "facebook")];
     expect(ids(withoutCorrectedAttempts(parts))).toEqual(["raro", "fb"]);
   });
+
+  it("cada card corrige un solo fallo: dos que fallaron y una que salió deja uno a la vista", () => {
+    // "Tres variantes para Instagram": salió una, faltan dos. Esconder las dos
+    // diría "Creé 1 borrador" sin avisar de las que no están.
+    const parts = [fallida("a", "instagram"), fallida("b", "instagram"), creada("c", "instagram")];
+    expect(ids(withoutCorrectedAttempts(parts))).toEqual(["a", "c"]);
+  });
+
+  it("mientras llega el turno, un reintento en camino ya cuenta: el error no parpadea", () => {
+    const reintento: CardToolPart = {
+      type: "tool-crear_borrador_visual",
+      toolCallId: "fb",
+      state: "input-available",
+      input: { network: "facebook" },
+    };
+    const parts = [fallida("fb-mal", "facebook"), reintento];
+    expect(ids(withoutCorrectedAttempts(parts, true))).toEqual(["fb"]);
+    // Terminado el turno, un reintento que nunca llegó no corrige nada.
+    expect(ids(withoutCorrectedAttempts(parts, false))).toEqual(["fb-mal", "fb"]);
+  });
 });
 
 describe("networkOfCardPart", () => {

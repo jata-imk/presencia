@@ -9,8 +9,10 @@ import type { CardToolPart } from "./chat-types.js";
 // crear el borrador para Facebook" y una fila roja en el grupo: un error que
 // al creator ya no le cuesta nada, mostrado como si sí.
 //
-// Un fallo se esconde solo si DESPUÉS, en el mismo mensaje, se creó una card
-// de esa misma red. Si nunca se creó, el error se queda: ahí sí falta algo.
+// Un fallo se esconde solo si DESPUÉS, en el mismo mensaje, hay una card de
+// esa misma red que lo corrige, y cada card corrige UN fallo: si se pidieron
+// tres variantes y fallaron dos, una card que sí salió no tapa las dos que
+// faltan. Si nunca se corrige, el error se queda: ahí sí falta algo.
 
 /** La red de una card que ya existe, o la que se pidió si es una red válida. */
 export function networkOfCardPart(part: CardToolPart): SocialNetwork | null {
@@ -23,14 +25,29 @@ export function networkOfCardPart(part: CardToolPart): SocialNetwork | null {
   return parsed.success ? parsed.data : null;
 }
 
-/** Las partes sin los intentos fallidos que el modelo corrigió después. */
-export function withoutCorrectedAttempts(parts: CardToolPart[]): CardToolPart[] {
-  return parts.filter((part, index) => {
-    if (part.state !== "output-error") return true;
+/**
+ * Las partes sin los intentos fallidos que el modelo corrigió después. Con
+ * `streaming`, un reintento que todavía se está escribiendo ya cuenta como la
+ * corrección: si no, el error falso se vería un momento y luego se iría.
+ */
+export function withoutCorrectedAttempts(parts: CardToolPart[], streaming = false): CardToolPart[] {
+  // De atrás para adelante: cada card que salió (o que viene en camino)
+  // queda disponible para corregir un solo fallo anterior de su red.
+  const fixes = new Map<SocialNetwork, number>();
+  const hidden = new Set<CardToolPart>();
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i]!;
     const network = networkOfCardPart(part);
-    if (!network) return true;
-    return !parts
-      .slice(index + 1)
-      .some((later) => later.state === "output-available" && later.output.network === network);
-  });
+    if (!network) continue;
+    if (part.state === "output-error") {
+      const available = fixes.get(network) ?? 0;
+      if (available > 0) {
+        hidden.add(part);
+        fixes.set(network, available - 1);
+      }
+    } else if (part.state === "output-available" || streaming) {
+      fixes.set(network, (fixes.get(network) ?? 0) + 1);
+    }
+  }
+  return hidden.size === 0 ? parts : parts.filter((part) => !hidden.has(part));
 }
