@@ -39,7 +39,7 @@ Una tool propia es la misma en los tres modelos, y la suite cultural la prueba i
 - `leer_enlace({ url })` devuelve una **referencia**: `{ readId, url, titulo, dominio, estado, truncado }`. El texto de la página lo recibe el modelo vía `toModelOutput`, dentro de `<pagina …>…</pagina>` y escapado igual que `<adjunto>`. Así el texto no viaja al navegador en el stream ni en cada carga del chat.
 - `buscar_en_web({ consulta })` devuelve 5 resultados `{ titulo, url, dominio, fragmento, fecha? }` y un `searchId`. Los fragmentos son chicos y van en la parte del mensaje.
 
-**Estados de una lectura:** `ok`, `requiere_sesion`, `no_encontrada`, `no_legible`, `bloqueada`, `tiempo`, `muy_grande` y `tipo_no_soportado`. Con cualquiera que no sea `ok`, el modelo dice que no pudo leerla y pide el texto. Nunca inventa el contenido.
+**Estados de una lectura:** `ok`, `requiere_sesion`, `no_encontrada`, `no_legible`, `bloqueada`, `tiempo`, `muy_grande`, `tipo_no_soportado` y `no_disponible` (un 5xx, un 429 o una conexión caída). Viven en `WEB_READ_STATUSES` (`packages/shared/src/web.ts`). Con cualquiera que no sea `ok`, el modelo dice que no pudo leerla y pide el texto. Nunca inventa el contenido.
 
 **Topes** (constantes en código, se ajustan con la suite):
 
@@ -57,12 +57,19 @@ Al llegar al tope, la tool devuelve `estado: "limite"` y el modelo lo dice. No l
 
 - solo `http` y `https` en los puertos 80 y 443;
 - se resuelve el DNS y se rechazan las IPs privadas, loopback, link-local (incluye `169.254.169.254`, los metadatos del VPS), CGNAT, multicast, IPv4 mapeada en IPv6 y las formas decimal u octal;
-- la conexión va **a la IP ya validada**, no a un segundo lookup, contra DNS rebinding;
-- los redirects se siguen a mano y se validan en cada salto;
+- la conexión va **a la IP ya validada**, no a un segundo lookup, contra DNS rebinding: el `lookup` de `https.request` devuelve esa IP, y el certificado TLS se sigue validando contra el nombre;
+- los redirects se siguen a mano y se validan en cada salto, también los de `<meta http-equiv="refresh">` (hay sitios que redirigen así: poresto.net);
 - sin cookies ni credenciales;
 - se lee en stream con corte por bytes y una allowlist de content-type (HTML, XHTML, texto, PDF).
 
-Instagram, TikTok, Facebook, Threads y X no muestran contenido sin sesión: devuelven `requiere_sesion` sin hacer la petición.
+Instagram, TikTok, Facebook, Threads y X no muestran contenido sin sesión: devuelven `requiere_sesion` sin hacer la petición, también si se llega a ellas por un redirect (un `bit.ly` que lleva a un reel).
+
+**Extracción** en `apps/api/src/web/extract.ts`:
+
+- el HTML pasa por Readability (el modo lectura de Firefox) sobre linkedom, un DOM sin navegador;
+- el charset sale del header o de un `<meta>`, porque hay sitios mexicanos que siguen en ISO-8859-1;
+- si no queda cuerpo (una SPA) se usa la descripción `og:`, y si tampoco hay, `no_legible`;
+- el PDF va por el mismo camino que un PDF adjunto (`processAttachment`).
 
 **Inyección de prompt.** La página es texto de un tercero. Entra como dato delimitado, y el prompt de sistema dice que lo que viene dentro de `<pagina>` es dato y no instrucciones: la misma lección del prompt en capas de las tendencias (ADR-024).
 
