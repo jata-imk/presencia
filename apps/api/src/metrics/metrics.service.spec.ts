@@ -44,7 +44,13 @@ let accountA: string;
 // Instante fijo para los casos que dependen del bucket. Un post de una hora
 // vive en el tramo horario de la escalera, así que sin congelar el reloj el
 // resultado cambiaría según el minuto en que corra la suite.
-const AHORA = new Date("2026-09-20T09:30:00.000Z");
+//
+// Fijo, pero relativo a hoy: el minuto 30 de la hora en curso de ayer. Era
+// una fecha literal (2026-09-20) y el 2026-10-25 dejó de pasar: la policy
+// `worker_scan` (0026) solo deja ver lo publicado en los últimos 35 días
+// contra el `now()` real de Postgres, que no se puede congelar desde aquí.
+const HORA_DE_AYER = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 3_600_000) * 3_600_000;
+const AHORA = new Date(HORA_DE_AYER + 30 * 60 * 1000);
 
 /**
  * Números fijos, para poder afirmar sobre ellos; y guarda los lotes pedidos.
@@ -170,7 +176,7 @@ describe("MetricsService.ingestAll", () => {
     // Un post de una hora vive en el tramo horario de la escalera, así que su
     // fila se llavea por la hora en curso — no por el día. Es lo que hace que
     // la serie de las primeras 12 h tenga 12 puntos y no uno.
-    expect(filas[0]?.snapshotAt).toEqual(new Date("2026-09-20T09:00:00.000Z"));
+    expect(filas[0]?.snapshotAt).toEqual(new Date(HORA_DE_AYER));
   });
 
   // El DoD de la fase, de punta a punta y no solo en el repositorio.

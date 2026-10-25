@@ -1,7 +1,7 @@
 import { MAX_MESSAGE_CHARS } from "@presencia/shared";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useArgs } from "storybook/preview-api";
-import { fn } from "storybook/test";
+import { fn, userEvent, within } from "storybook/test";
 import { PEDIDO } from "../../stories/fixtures/chat.js";
 import {
   CAPTURA,
@@ -84,6 +84,26 @@ const conAdjuntos = (items: PendingAttachment[], value = "") => ({
   value,
   attachments: { items, onAdd: fn(), onRemove: fn(), onRetry: fn() },
 });
+
+/**
+ * El ＋ abierto: subir archivos y, deshabilitado con "Pronto", lo que todavía
+ * no tiene backend. El menú va en un portal: "Lado a lado" no lo pinta en los
+ * dos temas (ver preview.tsx), cada tema se revisa con su opción de la barra.
+ */
+export const MenuAgregar: Story = {
+  name: "Menú ＋ abierto",
+  args: conAdjuntos([]),
+  render: (args) => (
+    <div className="max-w-[752px] pt-48">
+      <Composer {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    // AllBy…[0]: "Lado a lado" pinta la historia dos veces.
+    const [trigger] = await within(canvasElement).findAllByLabelText("Agregar archivos y más");
+    if (trigger) await userEvent.click(trigger);
+  },
+};
 
 export const AdjuntosSubiendo: Story = {
   name: "Adjuntos · subiendo (envío en espera)",

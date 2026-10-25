@@ -1,5 +1,6 @@
-import { Mic, Paperclip, Palette, Send, Square } from "lucide-react";
+import { Mic, Paperclip, Palette, Plus, Send, Square } from "lucide-react";
 import {
+  useEffect,
   useImperativeHandle,
   useRef,
   type ChangeEvent,
@@ -16,8 +17,15 @@ import {
 import { pastedName, type PendingAttachment } from "../../lib/attachments/attachments.js";
 import { attachmentsState } from "../../lib/attachments/use-attachments.js";
 import { isSubmitKey, measureMessage, useAutoGrow } from "../../lib/use-message-input.js";
+import { Menu, MENU_CONTENT_CLASS, MENU_ITEM_CLASS } from "../ui/Menu.js";
 import { Tooltip } from "../ui/Tooltip.js";
 import { AttachmentChip } from "./AttachmentChip.js";
+
+/** En Mac el atajo es ⌘U: Ctrl+U ahí es de edición de texto (borrar la línea). */
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
+
+/** El atajo de "Subir fotos y archivos", como se escribe en cada sistema. */
+const UPLOAD_SHORTCUT = IS_MAC ? "⌘U" : "Ctrl+U";
 
 /** Lo que el selector de archivos ofrece: lo mismo que acepta la API (@presencia/shared). */
 const ACCEPT = [
@@ -42,10 +50,11 @@ const COUNTER_FROM = Math.floor(MAX_MESSAGE_CHARS * 0.9);
 // la conversación (`large=false`) y en la pantalla de nuevo chat
 // (`large=true`, ver routes/chats.tsx), como en el mockup.
 //
-// Transcribir audio y Estilo de respuesta se pintan deshabilitados con
-// "Próximamente": no hay backend para ninguno de los dos todavía. Adjuntar
-// (F10.9, Claude Design "Chat Adjuntos" §1) abre el selector de archivos; pegar
-// (Ctrl/Cmd+V) y soltar sobre la columna terminan en el mismo `onAdd`. El
+// El ＋ abre un menú: "Subir fotos y archivos" (F10.9, Claude Design "Chat
+// Adjuntos" §1; también con Ctrl/⌘+U) y, deshabilitado con "Pronto", Estilo
+// de respuesta. Transcribir audio se queda en la barra, también deshabilitado:
+// ninguno de los dos tiene backend todavía.
+// Pegar (Ctrl/Cmd+V) y soltar sobre la columna terminan en el mismo `onAdd`. El
 // estimado "≈ N créditos" del mockup no se pinta — no hay un endpoint de
 // costo estimado antes de enviar (solo se conoce el costo real al terminar
 // el turno, charge() en credits.service.ts, ADR-012); inventar un número
@@ -123,6 +132,33 @@ export function Composer({
     e.target.value = "";
   }
 
+  // Ctrl/⌘+U abre el selector, como en Claude. Con el composer en pantalla y
+  // no con el foco en la caja: el atajo sirve también leyendo la conversación.
+  // preventDefault: en Chrome es "ver código fuente", y también con 10
+  // archivos (el atajo no cambia de significado al llegar al límite).
+  useEffect(() => {
+    if (!attachments) return;
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (!(IS_MAC ? e.metaKey : e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (e.key.toLowerCase() !== "u" || e.repeat || e.isComposing) return;
+      // Un modal abierto (programar, una card) o el foco en otro campo (el
+      // renombrar del sidebar): el atajo no es de ahí.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      const active = document.activeElement;
+      if (
+        active !== textareaRef.current &&
+        active instanceof HTMLElement &&
+        (active.isContentEditable || active.tagName === "INPUT" || active.tagName === "TEXTAREA")
+      ) {
+        return;
+      }
+      e.preventDefault();
+      if (!full) fileInputRef.current?.click();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [attachments, full]);
+
   useImperativeHandle(inputRef, () => textareaRef.current as HTMLTextAreaElement, []);
 
   useAutoGrow(textareaRef, value);
@@ -193,45 +229,75 @@ export function Composer({
         </div>
         <div className="flex items-center gap-0.5 border-t border-line-subtle px-2.5 py-1.5">
           <div className="flex items-center gap-0.5">
-            {attachments ? (
-              <>
-                <Tooltip
-                  label={
-                    full
-                      ? `Límite: ${String(ATTACHMENTS_PER_MESSAGE)} archivos por mensaje`
-                      : "Adjuntar archivos · también puedes arrastrarlos"
-                  }
+            {/* El ＋ abre un menú y no el selector directo: hoy trae los
+                archivos y lo que viene "Pronto", y es donde F10.10 pone
+                "Buscar en la web" (QA de Jose, 2026-10-20). */}
+            {/* Sin tooltip: se quedaba asomado detrás del menú abierto, y el
+                menú ya dice qué hay adentro. */}
+            <Menu placement="top-start">
+              <Menu.Trigger
+                aria-label="Agregar archivos y más"
+                className="flex size-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-secondary-hover hover:text-fg aria-expanded:bg-secondary-hover aria-expanded:text-fg"
+              >
+                <Plus size={16} strokeWidth={1.75} />
+              </Menu.Trigger>
+              <Menu.Content className={`${MENU_CONTENT_CLASS} w-80`}>
+                <Menu.Item
+                  className={`${MENU_ITEM_CLASS} items-start`}
+                  disabled={!attachments || full}
+                  onClick={() => fileInputRef.current?.click()}
                 >
-                  <button
-                    type="button"
-                    aria-label="Adjuntar archivos"
-                    disabled={full}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex size-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-secondary-hover hover:text-fg disabled:opacity-50 disabled:hover:bg-transparent"
-                  >
-                    <Paperclip size={14} strokeWidth={1.5} />
-                  </button>
-                </Tooltip>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept={ACCEPT}
-                  onChange={handlePick}
-                  className="hidden"
-                  tabIndex={-1}
-                  aria-hidden
-                />
-              </>
-            ) : (
-              <DisabledTool icon={Paperclip} label="Adjuntar archivo" />
+                  <Paperclip size={14} className="mt-0.5" aria-hidden />
+                  <span className="flex flex-1 flex-col">
+                    Subir fotos y archivos
+                    {/* Lo único que dice que se puede soltar o pegar; con 10, el
+                        porqué de que esté apagado (un `title` en un botón
+                        deshabilitado no se ve en casi ningún navegador). */}
+                    <span className="text-[11.5px] text-fg-muted">
+                      {full
+                        ? `Ya tienes ${String(ATTACHMENTS_PER_MESSAGE)}: es el límite por mensaje`
+                        : "También puedes arrastrarlos o pegarlos"}
+                    </span>
+                  </span>
+                  <kbd className="mt-0.5 font-display text-[11px] font-medium text-fg-muted">
+                    {UPLOAD_SHORTCUT}
+                  </kbd>
+                </Menu.Item>
+                <div className="mx-1 my-1 border-t border-line-subtle" role="separator" />
+                <Menu.Item className={MENU_ITEM_CLASS} disabled>
+                  <Palette size={14} aria-hidden />
+                  <span className="flex-1">Estilo de respuesta</span>
+                  <span className="rounded-full bg-secondary px-1.5 py-px text-[10.5px] font-medium text-fg-muted">
+                    Pronto
+                  </span>
+                </Menu.Item>
+              </Menu.Content>
+            </Menu>
+            {/* Dictar se queda a la vista, junto al ＋ (como el micrófono de
+                Claude y ChatGPT): no es "algo que se agrega", es otra forma de
+                escribir (Jose, 2026-10-20). */}
+            <Tooltip label="Transcribir audio — próximamente">
+              <button
+                type="button"
+                disabled
+                aria-label="Transcribir audio"
+                className="flex size-7 items-center justify-center rounded-md text-fg-muted opacity-50"
+              >
+                <Mic size={14} strokeWidth={1.5} />
+              </button>
+            </Tooltip>
+            {attachments && (
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={ACCEPT}
+                onChange={handlePick}
+                className="hidden"
+                tabIndex={-1}
+                aria-hidden
+              />
             )}
-            {[
-              { icon: Mic, label: "Transcribir audio" },
-              { icon: Palette, label: "Estilo de respuesta" },
-            ].map(({ icon, label }) => (
-              <DisabledTool key={label} icon={icon} label={label} />
-            ))}
           </div>
           {items.length > 0 && (
             <span
@@ -299,21 +365,6 @@ export function Composer({
         )}
       </div>
     </div>
-  );
-}
-
-function DisabledTool({ icon: Icon, label }: { icon: typeof Mic; label: string }) {
-  return (
-    <Tooltip label={`${label} — próximamente`}>
-      <button
-        type="button"
-        disabled
-        aria-label={label}
-        className="flex size-7 items-center justify-center rounded-md text-fg-muted opacity-50"
-      >
-        <Icon size={14} strokeWidth={1.5} />
-      </button>
-    </Tooltip>
   );
 }
 
