@@ -44,6 +44,8 @@ import { sanitizeInterruptedParts } from "./interrupted-turn.js";
 import { lastTurnOf, storableMessageId } from "./last-user-message.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { TurnCards } from "./turn-cards.js";
+import { buildReadLinkTool } from "../web/read-link.tool.js";
+import { WebReadsService } from "../web/web-reads.service.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
 // Si el modelo agota este presupuesto a mitad de una tool call, onEnd lo
@@ -75,6 +77,7 @@ export class ChatService {
     @Inject(MemoryService) private readonly memory: MemoryService,
     @Inject(AttachmentsService) private readonly attachments: AttachmentsService,
     @Inject(AttachmentDigestService) private readonly attachmentDigests: AttachmentDigestService,
+    @Inject(WebReadsService) private readonly webReads: WebReadsService,
   ) {}
 
   /**
@@ -614,6 +617,9 @@ export class ChatService {
         execute: ({ consulta }) =>
           this.memory.search(userId, chatId, consulta, trace.runId, context.oldestVisibleMessageId),
       }),
+      // F10.10 (ADR-028): leer un enlace. Nunca lanza por la página: lo que
+      // salga mal es un `estado` que el modelo le dice al creator.
+      ...buildReadLinkTool({ userId, chatId, service: this.webReads }),
     };
 
     // Voz de marca del usuario (F4): null durante el onboarding, para
@@ -622,8 +628,12 @@ export class ChatService {
     // el chat nunca se bloquea por esto.
     const voice = await voicePromise;
     // F10.9: los bytes de los adjuntos que sobrevivieron al techo, al final.
+    // F10.10: con las tools, para que las páginas leídas en turnos anteriores
+    // pasen por el `toModelOutput` de leer_enlace (su parte guarda solo la
+    // referencia; el texto sale de `web_reads`).
     const modelMessages = await convertToModelMessages(
       await this.attachments.materialize(modelHistory, attachmentRows),
+      { tools },
     );
 
     // Cortado mientras se armaba el turno (F10.8.2): no hay a quién responder.

@@ -18,6 +18,7 @@ import {
   socialAccounts,
   socialConnectIntents,
   users,
+  webReads,
 } from "./schema.js";
 // Import solo de tipo: el módulo real se carga en beforeAll, después de
 // poblar process.env (env.ts valida el entorno en el import).
@@ -1007,6 +1008,50 @@ describe("RLS tenant_isolation", () => {
           .where(inArray(messageAttachments.id, [unsent, sent])),
       );
       expect(visibles.map((r) => r.id)).toEqual([unsent]);
+    });
+  });
+
+  // F10.10: las páginas que leyó el chat. Mismo tenant_isolation; sin barrido.
+  describe("web_reads", () => {
+    let read: string;
+
+    beforeAll(async () => {
+      read = await dbService.runWithTenant(userA, async (tx) => {
+        const [row] = await tx
+          .insert(webReads)
+          .values({
+            userId: userA,
+            chatId: chatA,
+            url: "https://www.yucatan.com.mx/nota",
+            status: "ok",
+            extractedText: "texto de la nota",
+          })
+          .returning({ id: webReads.id });
+        return row!.id;
+      });
+    }, 15_000);
+
+    it("el dueño ve sus lecturas; otro tenant no", { timeout: 15_000 }, async () => {
+      const mias = await dbService.runWithTenant(userA, (tx) =>
+        tx.select().from(webReads).where(eq(webReads.id, read)),
+      );
+      const ajenas = await dbService.runWithTenant(userB, (tx) =>
+        tx.select().from(webReads).where(eq(webReads.id, read)),
+      );
+      expect(mias).toHaveLength(1);
+      expect(ajenas).toHaveLength(0);
+    });
+
+    it("otro tenant no puede insertar a nombre del dueño", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx.insert(webReads).values({ userId: userA, chatId: chatA, url: "x", status: "ok" }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(String((error as Error).cause)).toMatch(/row-level security/);
     });
   });
 

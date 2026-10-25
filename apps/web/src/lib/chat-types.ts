@@ -7,6 +7,9 @@ import {
   type CardToolOutput,
   type MemorySearchInput,
   type MemorySearchOutput,
+  READ_LINK_TOOL_NAME,
+  type ReadLinkInput,
+  type ReadLinkOutput,
 } from "@presencia/shared";
 
 // Tipado explícito en vez de InferUITools: las tools del backend no
@@ -17,19 +20,25 @@ export type CardArchetypeUITools = {
   [K in CardArchetypeToolName]: { input: unknown; output: CardToolOutput };
 };
 
-/** F10.8: la memoria entre chats, la única tool que no crea una card. */
+/** F10.8: la memoria entre chats, una tool que no crea una card. */
 export type MemoryUITools = {
   [MEMORY_TOOL_NAME]: { input: MemorySearchInput; output: MemorySearchOutput };
+};
+
+/** F10.10: leer un enlace. Su output es una referencia: el texto no llega aquí. */
+export type WebUITools = {
+  [READ_LINK_TOOL_NAME]: { input: ReadLinkInput; output: ReadLinkOutput };
 };
 
 // F10.8.2: `metadata.status` marca una respuesta que se cortó o falló.
 export type ChatUIMessage = UIMessage<
   ChatMessageMetadata,
   never,
-  CardArchetypeUITools & MemoryUITools
+  CardArchetypeUITools & MemoryUITools & WebUITools
 >;
 export type CardToolPart = ToolUIPart<CardArchetypeUITools>;
 export type MemoryToolPart = ToolUIPart<MemoryUITools>;
+export type WebToolPart = ToolUIPart<WebUITools>;
 
 type ChatPart = ChatUIMessage["parts"][number];
 
@@ -65,4 +74,9 @@ export function isCardToolPart(part: ChatPart): part is CardToolPart {
 
 export function isMemoryToolPart(part: ChatPart): part is MemoryToolPart {
   return part.type === `tool-${MEMORY_TOOL_NAME}`;
+}
+
+/** F10.10: una lectura de enlace (la búsqueda web se suma aquí en el PR5). */
+export function isWebToolPart(part: ChatPart): part is WebToolPart {
+  return part.type === `tool-${READ_LINK_TOOL_NAME}`;
 }

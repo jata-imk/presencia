@@ -1,4 +1,9 @@
-import { isCardToolPart, isMemoryToolPart, type ChatUIMessage } from "./chat-types.js";
+import {
+  isCardToolPart,
+  isMemoryToolPart,
+  isWebToolPart,
+  type ChatUIMessage,
+} from "./chat-types.js";
 
 /**
  * Cómo se quedó un turno sin respuesta completa (F10.8.2). `stopped`: se cortó
@@ -75,7 +80,11 @@ export function replyContent(message: ChatUIMessage): ReplyContent {
   if (message.parts.some((part) => part.type === "text" && part.text.trim().length > 0)) {
     return "text";
   }
-  if (message.parts.some((part) => isCardToolPart(part) || isMemoryToolPart(part))) {
+  if (
+    message.parts.some(
+      (part) => isCardToolPart(part) || isMemoryToolPart(part) || isWebToolPart(part),
+    )
+  ) {
     return "tools";
   }
   return "none";

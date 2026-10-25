@@ -98,6 +98,13 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 - `id`, `user_id` (RLS), `chat_id` (nullable y cascade: en la pantalla de chat nuevo se sube antes de que exista el chat), `message_id` (nullable, FK `SET NULL`), `kind` (`image` | `text` | `pdf`), `filename`, `mime_type` (el real, por contenido), `size_bytes`, `storage_key`, `model_storage_key` (solo imágenes de más de 1568 px: la variante que viaja al modelo), `width`, `height`, `pages`, `scanned` (PDF sin texto: viaja nativo y cuesta por página), `extracted_text` (lo que viaja al modelo de un texto o un PDF con texto, máximo 100k caracteres), `truncated`, `token_estimate`, `description` y `described_at` (F10.9 PR4: lo que viaja en lugar del adjunto cuando ya quedó atrás; `described_at` es el último intento, salga o no: con él vacío de descripción, el chat no la vuelve a pedir en un día), `created_at`.
 - **Se sube al adjuntar, no al enviar**: `chat_id` y `message_id` llegan al enviar. Uno que nunca se envió (o que quedó fuera de un mensaje editado) lo borra el cron `attachments.cleanup` a las 24 h, con sus bytes.
 - **`message_id` es `SET NULL` y no cascade** a propósito: reintentar o editar el último mensaje borra su fila y la vuelve a insertar con el mismo id, en la misma transacción, y el adjunto se vuelve a ligar ahí.
+
+**`web_reads`** (F10.10, migración `0057`, ADR-028): las páginas que leyó el chat con la tool `leer_enlace`. La parte del mensaje guarda solo la referencia (`readId`, título, dominio, estado); el texto vive aquí, así no viaja al navegador en el stream ni en cada carga del chat.
+
+- `id`, `user_id` (RLS), `chat_id` (cascade, obligatorio), `url` (la que pidió el modelo, normalizada), `final_url` (después de los redirects), `status` (`web_read_status`: `ok`, `requiere_sesion`, `no_encontrada`, `no_legible`, `bloqueada`, `tiempo`, `muy_grande`, `tipo_no_soportado`, `no_disponible`), `title`, `site_name`, `extracted_text` (máximo 60k caracteres; el modelo ve ~24k), `truncated`, `only_description` (no había cuerpo, solo la descripción `og:`), `token_estimate`, `description` y `described_at` (F10.10 PR4, como en los adjuntos), `created_at`.
+- **Las fallidas también se guardan**, sin texto: la UI y el modelo necesitan el motivo, y contar las `no_legible` dice si hace falta un lector con JavaScript.
+- **Sin `message_id`**: la referencia vive en la parte del mensaje. Una lectura de un turno cortado solo ocupa su fila hasta que se borra el chat.
+- **Es también el caché**: la misma URL (pedida o final) se lee de aquí siempre si es de este chat, y desde otro chat del mismo creator si tiene menos de 24 h; en ese caso se copia a este chat, para que muera con él. Solo las `ok` sirven de caché. Sin caché entre creators.
 - **Borrar el chat** borra las filas (cascade de `chat_id`) y, después del commit, los bytes (`ChatService.deleteChat`): al instante, no en el barrido (decisión de Jose, F10.9).
 - Índices: por `message_id`, por `chat_id`, y parcial por `created_at` donde `message_id IS NULL` (el barrido).
 
@@ -375,7 +382,7 @@ Existe por tres razones, y ninguna es "guardar historial":
 
 **Se cobra solo adelantar tendencias que el usuario ya tiene.** Sin tanda, con la tanda vencida o con una vacía —lo que deja una búsqueda que no encontró nada citable— el refresco es gratis: cobrar por la primera entrega, o por reintentar lo que no dio resultados, es cobrar por lo que no se recibió. La regla vive sola en `apps/api/src/trends/cobro.ts` y tiene su propio spec.
 
-RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `message_attachments`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`, `post_metrics`, `cadence_targets`, `ritmo_narrations`, `user_trends`, `trend_sources`, `trend_refreshes`, `image_generations`, `card_versions`. **Ya no hay excepciones**: `niche_trends` era la única tabla del dominio sin `user_id` —una caché compartida por `(vertical, país, macro-región)`, justificada en ADR-023— y se eliminó en F9.6 al pasar las tendencias a ser por usuario (ADR-024). `user_trends` lleva además una policy de worker acotada a `SELECT` y al centinela del barrido, con el mismo patrón que `worker_metrics_scan`: el barrido necesita preguntar cross-tenant a quién le toca refresco, y sin esa policy devolvería cero filas y las tendencias no se refrescarían nunca, sin un solo error. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
+RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `message_attachments`, `web_reads`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`, `post_metrics`, `cadence_targets`, `ritmo_narrations`, `user_trends`, `trend_sources`, `trend_refreshes`, `image_generations`, `card_versions`. **Ya no hay excepciones**: `niche_trends` era la única tabla del dominio sin `user_id` —una caché compartida por `(vertical, país, macro-región)`, justificada en ADR-023— y se eliminó en F9.6 al pasar las tendencias a ser por usuario (ADR-024). `user_trends` lleva además una policy de worker acotada a `SELECT` y al centinela del barrido, con el mismo patrón que `worker_metrics_scan`: el barrido necesita preguntar cross-tenant a quién le toca refresco, y sin esa policy devolvería cero filas y las tendencias no se refrescarían nunca, sin un solo error. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
 
 ### La tercera del worker: `worker_scan` sobre `message_attachments` (F10.9)
 
@@ -401,6 +408,7 @@ erDiagram
     chats |o--o{ assets : "genera en"
     chats ||--o{ message_attachments : "adjunta en"
     messages |o--o{ message_attachments : lleva
+    chats ||--o{ web_reads : "lee en"
     publication_cards }o--|| social_accounts : "publica via"
     users ||--o{ post_metrics : acumula
     publication_cards |o--o{ post_metrics : "mide (opcional)"
