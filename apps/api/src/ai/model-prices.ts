@@ -49,12 +49,17 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
     inputPerM: 0.1,
     cachedInputPerM: 0.01,
     outputPerM: 0.5,
-    source: "developers.openai.com/api/docs/models/gpt-6-luna, 2026-10-06",
+    // F10.10: su web_search nativa, solo en el bake-off de búsqueda.
+    perSearch: 10 / 1000,
+    source:
+      "developers.openai.com/api/docs/models/gpt-6-luna, 2026-10-06; web_search de fuentes secundarias, 2026-10-25",
   },
   "anthropic:claude-sonnet-5-5": {
     inputPerM: 2,
     cachedInputPerM: 0.2,
     outputPerM: 10,
+    // F10.10: su web_search nativa, solo en el bake-off de búsqueda.
+    perSearch: 10 / 1000,
     source: "platform.claude.com/docs/en/about-claude/pricing, 2026-10-06",
   },
   // F10.8: la memoria entre chats. Solo entrada; el SDK no reporta sus tokens
@@ -111,6 +116,35 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
     inputPerM: 5,
     outputPerM: 38,
     source: "openrouter.ai/microsoft/mai-image-2.6, 2026-10-06",
+  },
+  // F10.10: las APIs de búsqueda del bake-off (ADR-028). No son modelos: no
+  // tienen tokens, solo un precio por búsqueda. El "modelo" es el endpoint.
+  // Fuentes secundarias (las páginas oficiales no se leyeron completas): se
+  // confirman en la consola de cada proveedor antes de elegir.
+  "brave:web-search": {
+    inputPerM: 0,
+    outputPerM: 0,
+    perSearch: 5 / 1000,
+    source: "plan Search de Brave, fuentes secundarias 2026-10-25",
+  },
+  "tavily:search-basic": {
+    inputPerM: 0,
+    outputPerM: 0,
+    perSearch: 8 / 1000,
+    source: "1 crédito a $0.008 (pago por uso), docs.tavily.com y fuentes secundarias 2026-10-25",
+  },
+  "exa:search-auto": {
+    inputPerM: 0,
+    outputPerM: 0,
+    perSearch: 7 / 1000,
+    source:
+      "exa.ai/docs/changelog/pricing-update (2026-03-03), con contents; la respuesta trae costDollars",
+  },
+  "serper:search": {
+    inputPerM: 0,
+    outputPerM: 0,
+    perSearch: 1 / 1000,
+    source: "paquete de $50 (50k consultas), fuentes secundarias 2026-10-25",
   },
   "fake:solid-png": { inputPerM: 0, outputPerM: 0, source: "generador de mentira de dev" },
 };

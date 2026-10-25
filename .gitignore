@@ -37,6 +37,7 @@ test-results/
 
 # Imágenes del bake-off de generadores (F10): pesan MB y se regeneran con el script.
 apps/api/scripts/image-bakeoff/out/
+apps/api/scripts/search-bakeoff/out/
 
 # Assets de Biblioteca en disco (ASSETS_STORAGE=local, solo dev).
 apps/api/.data/

@@ -2,7 +2,7 @@ import { appendFile, readFile } from "node:fs/promises";
 import path from "node:path";
 
 // El gasto de los scripts que llaman a modelos de verdad fuera de la app
-// (bake-off de imágenes, ejemplos de estilos, suite cultural). No pasan por
+// (bake-off de imágenes y de búsqueda, ejemplos de estilos, suite cultural). No pasan por
 // `ai_usage_events` (no son de ningún usuario ni de ningún chat), y sin esto
 // eran gasto invisible: el prepago de Gemini se acababa sin que la base lo
 // explicara.
@@ -17,10 +17,12 @@ export interface GastoLocal {
   script: string;
   provider: string;
   model: string;
-  task: "image_generate" | "image_edit" | "chat";
+  task: "image_generate" | "image_edit" | "chat" | "web_search";
   inputTokens: number;
   outputTokens: number;
   imagesCount?: number;
+  /** Búsquedas web (F10.10): las nativas de un modelo o las de una API de búsqueda. */
+  searchQueries?: number;
 }
 
 // Relativo al cwd: los scripts corren con `pnpm --filter @presencia/api`, que
