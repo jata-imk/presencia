@@ -1,6 +1,11 @@
 import type { WebReadStatus } from "@presencia/shared";
 import { extractPage, metaRefreshTarget } from "./extract.js";
-import { safeFetch, type SafeFetchOptions } from "./safe-fetch.js";
+import {
+  safeFetch,
+  WEB_FETCH_MAX_REDIRECTS,
+  WEB_FETCH_TIMEOUT_MS,
+  type SafeFetchOptions,
+} from "./safe-fetch.js";
 
 // F10.10 (ADR-028): leer una página = descargarla con la guardia SSRF y sacar
 // su texto. Una función pura de red: no guarda nada ni sabe de chats; el caché
@@ -28,7 +33,8 @@ const SESSION_DOMAINS = [
 export function requiresSession(url: string): boolean {
   let host: string;
   try {
-    host = new URL(url).hostname.toLowerCase();
+    // Sin el punto final: `www.instagram.com.` es el mismo host.
+    host = new URL(url).hostname.toLowerCase().replace(/\.$/, "");
   } catch {
     return false;
   }
@@ -59,21 +65,38 @@ export type PageRead =
 const MAX_META_REFRESH = 2;
 
 export async function readPage(url: string, options: SafeFetchOptions = {}): Promise<PageRead> {
-  const fetchOptions: SafeFetchOptions = {
-    ...options,
-    // En cada salto: un acortador (bit.ly) puede llevar a Instagram.
-    refuse: (target) =>
-      requiresSession(target.href)
-        ? { status: "requiere_sesion", detail: `${target.hostname} pide sesión` }
-        : null,
-  };
-  let fetched = await safeFetch(url, fetchOptions);
+  // Un solo reloj y un solo presupuesto de redirects para toda la lectura,
+  // con los <meta refresh> incluidos: si no, cada salto empezaría de cero.
+  const signal = AbortSignal.any(
+    [AbortSignal.timeout(options.timeoutMs ?? WEB_FETCH_TIMEOUT_MS), options.signal].filter(
+      (s): s is AbortSignal => s !== undefined,
+    ),
+  );
+  let redirectsLeft = WEB_FETCH_MAX_REDIRECTS;
+  const fetchOnce = (target: string) =>
+    safeFetch(target, {
+      ...options,
+      signal,
+      maxRedirects: redirectsLeft,
+      // En cada salto: un acortador (bit.ly) puede llevar a Instagram. Primero
+      // lo que pida quien llama.
+      refuse: (next) =>
+        options.refuse?.(next) ??
+        (requiresSession(next.href)
+          ? { status: "requiere_sesion", detail: `${next.hostname} pide sesión` }
+          : null),
+    });
+  let fetched = await fetchOnce(url);
   // Cada salto vuelve a pasar por safeFetch completo: la guardia SSRF no
   // distingue un 3xx de un <meta refresh>.
   for (let hop = 0; hop < MAX_META_REFRESH && fetched.ok && fetched.kind === "html"; hop++) {
     const next = metaRefreshTarget(fetched.body, fetched.finalUrl);
     if (!next || next === fetched.finalUrl) break;
-    fetched = await safeFetch(next, fetchOptions);
+    redirectsLeft -= fetched.redirects + 1;
+    if (redirectsLeft < 0) {
+      return { status: "bloqueada", url, finalUrl: null, detail: "demasiados redirects" };
+    }
+    fetched = await fetchOnce(next);
   }
   if (!fetched.ok) return { status: fetched.status, url, finalUrl: null, detail: fetched.detail };
   const page = await extractPage({ ...fetched, url: fetched.finalUrl });

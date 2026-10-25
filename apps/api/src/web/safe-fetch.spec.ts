@@ -100,6 +100,40 @@ describe("safeFetch — direcciones", () => {
     expect(out).toMatchObject({ ok: false, status: "no_encontrada" });
   });
 
+  it("un DNS que falla por un rato no es 'no existe'", async () => {
+    const out = await safeFetch("http://lento.ejemplo.mx/", {
+      policy: {
+        resolve: () => Promise.reject(Object.assign(new Error("x"), { code: "EAI_AGAIN" })),
+      },
+    });
+    expect(out).toMatchObject({ ok: false, status: "no_disponible" });
+  });
+
+  it("un DNS que no contesta corta con el tiempo total", async () => {
+    const out = await safeFetch("http://mudo.ejemplo.mx/", {
+      timeoutMs: 200,
+      policy: { resolve: () => new Promise(() => undefined) },
+    });
+    expect(out).toMatchObject({ ok: false, status: "tiempo" });
+  });
+
+  it("prueba la IPv4 primero (el VPS no tiene ruta IPv6)", async () => {
+    routes.set("/dual", html("<p>dual</p>"));
+    const out = await safeFetch(`http://dual.invalid:${String(port)}/dual`, {
+      policy: {
+        isAllowedAddress: (ip) => ip === "127.0.0.1" || ip === "2001:db8::1",
+        allowedPorts: new Set([port]),
+        // AAAA primero, como lo devuelve un dual-stack con verbatim.
+        resolve: () =>
+          Promise.resolve([
+            { address: "2001:db8::1", family: 6 },
+            { address: "127.0.0.1", family: 4 },
+          ]),
+      },
+    });
+    expect(out).toMatchObject({ ok: true });
+  });
+
   it("se conecta a la dirección ya validada, no a un lookup nuevo", async () => {
     routes.set("/fijada", html("<p>llegó</p>"));
     // "pagina.invalid" no existe en ningún DNS: si llega, es porque la
@@ -231,6 +265,19 @@ describe("safeFetch — respuestas", () => {
       ok: false,
       status: "tiempo",
     });
+  });
+
+  it("una conexión que se cae a media respuesta comprimida no espera al timeout", async () => {
+    routes.set("/cortada", (_req, res) => {
+      const gz = gzipSync(Buffer.from("x".repeat(200_000)));
+      res.writeHead(200, { "Content-Type": "text/html", "Content-Encoding": "gzip" });
+      res.write(gz.subarray(0, 100));
+      setTimeout(() => res.socket?.destroy(), 20);
+    });
+    const arranque = Date.now();
+    const out = await safeFetch(`${base}/cortada`, { policy: local(), timeoutMs: 5_000 });
+    expect(out).toMatchObject({ ok: false, status: "no_disponible" });
+    expect(Date.now() - arranque).toBeLessThan(2_000);
   });
 
   it("si quien llama cancela, no es un timeout", async () => {

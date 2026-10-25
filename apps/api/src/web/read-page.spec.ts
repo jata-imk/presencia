@@ -17,6 +17,7 @@ describe("requiresSession", () => {
     "https://www.threads.net/@cafe",
     "https://x.com/cafe/status/1",
     "https://twitter.com/cafe/status/1",
+    "https://www.instagram.com./p/xyz",
   ])("%s pide sesión", (url) => {
     expect(requiresSession(url)).toBe(true);
   });
@@ -69,6 +70,15 @@ describe("readPage — <meta refresh>", () => {
 
   it("un <meta refresh> a los metadatos del VPS se bloquea igual que un 3xx", async () => {
     expect(await readPage(`${base}/trampa`, local())).toMatchObject({ status: "bloqueada" });
+  });
+
+  it("el refuse de quien llama se respeta, también tras un <meta refresh>", async () => {
+    const out = await readPage(`${base}/redirigiendo`, {
+      ...local(),
+      refuse: (url) =>
+        url.pathname === "/nota" ? { status: "bloqueada", detail: "de quien llama" } : null,
+    });
+    expect(out).toMatchObject({ status: "bloqueada", detail: "de quien llama" });
   });
 });
 

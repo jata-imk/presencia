@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pdfWithPages } from "../test-support/pdf.js";
-import { extractPage, WEB_READ_MAX_CHARS } from "./extract.js";
+import { extractPage, metaRefreshTarget, WEB_READ_MAX_CHARS } from "./extract.js";
 
 // F10.10: de los bytes de una página al texto que lee el modelo.
 
@@ -136,6 +136,17 @@ describe("extractPage", () => {
     expect(out.ok && out.text).toContain("Hanal Pixan");
   });
 
+  it("una página de error servida como PDF no se intenta leer", async () => {
+    const out = await extractPage({
+      kind: "pdf",
+      body: bytes("<html><body>Error 500</body></html>"),
+      charset: null,
+      url,
+      truncated: false,
+    });
+    expect(out).toEqual({ ok: false, detail: "dice ser PDF y no lo es" });
+  });
+
   it("un PDF escaneado no tiene texto: ilegible", async () => {
     const out = await extractPage({
       kind: "pdf",
@@ -145,5 +156,33 @@ describe("extractPage", () => {
       truncated: false,
     });
     expect(out).toMatchObject({ ok: false });
+  });
+});
+
+describe("metaRefreshTarget", () => {
+  const destino = (meta: string) =>
+    metaRefreshTarget(bytes(`<html><head>${meta}</head></html>`), "https://poresto.net/");
+
+  it("sigue el redirect inmediato, relativo o absoluto", () => {
+    expect(destino(`<meta http-equiv="refresh" content="0; url=https://www.poresto.com/">`)).toBe(
+      "https://www.poresto.com/",
+    );
+    expect(destino(`<meta http-equiv="Refresh" content="0;URL='/nota'">`)).toBe(
+      "https://poresto.net/nota",
+    );
+  });
+
+  it("no sigue una recarga con espera (la de una nota que vuelve a la portada)", () => {
+    expect(destino(`<meta http-equiv="refresh" content="300;url=/portada">`)).toBeNull();
+  });
+
+  it("ignora el que va dentro de <noscript>", () => {
+    expect(
+      destino(`<noscript><meta http-equiv="refresh" content="0;url=/sin-js"></noscript>`),
+    ).toBeNull();
+  });
+
+  it("sin url no hay a dónde ir", () => {
+    expect(destino(`<meta http-equiv="refresh" content="0">`)).toBeNull();
   });
 });

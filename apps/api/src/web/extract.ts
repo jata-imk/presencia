@@ -22,6 +22,8 @@ export const WEB_READ_MAX_CHARS = 60_000;
 const MIN_ARTICLE_CHARS = 200;
 /** Ni la descripción llega a esto: no hay nada que leer. */
 const MIN_READABLE_CHARS = 80;
+/** Un <meta refresh> con más espera que esto no es un redirect: es una recarga. */
+const MAX_REFRESH_DELAY_S = 1;
 
 export type ExtractedPage =
   | {
@@ -63,7 +65,9 @@ function extractHtml(html: string, url: string, downloadTruncated: boolean): Ext
   } catch {
     // Sin <head> no hay a qué colgarla; los links relativos no importan para el texto.
   }
+  // Antes de Readability, que modifica el documento.
   const fallbackTitle = doc.querySelector("title")?.textContent?.trim() || null;
+  const fallbackDescription = metaDescription(doc);
   const article = new Readability(doc, { serializer: textWithBreaks }).parse();
   const title = clean(article?.title) ?? fallbackTitle;
   const siteName = clean(article?.siteName);
@@ -71,7 +75,7 @@ function extractHtml(html: string, url: string, downloadTruncated: boolean): Ext
   if (text.length >= MIN_ARTICLE_CHARS)
     return capped(title, siteName, text, downloadTruncated, false);
 
-  const description = normalize(article?.excerpt ?? metaDescription(html) ?? "");
+  const description = normalize(article?.excerpt ?? fallbackDescription ?? "");
   const best = description.length > text.length ? description : text;
   if (best.length < MIN_READABLE_CHARS) {
     return { ok: false, detail: "la página no tiene texto legible sin JavaScript" };
@@ -80,6 +84,11 @@ function extractHtml(html: string, url: string, downloadTruncated: boolean): Ext
 }
 
 async function extractPdf(body: Uint8Array): Promise<ExtractedPage> {
+  // El Content-Type miente a veces (una página de error servida como PDF): sin
+  // la firma, ni se intenta. processAttachment probaría si es una imagen.
+  if (Buffer.from(body.subarray(0, 5)).toString("latin1") !== "%PDF-") {
+    return { ok: false, detail: "dice ser PDF y no lo es" };
+  }
   try {
     const processed = await processAttachment(body, "pagina.pdf");
     if (!processed.extractedText || processed.scanned) {
@@ -190,12 +199,9 @@ function clean(value: string | null | undefined): string | null {
   return v ? v : null;
 }
 
-function metaDescription(html: string): string | null {
-  const { document } = parseHTML(html);
+function metaDescription(doc: Document): string | null {
   const content = (name: string) =>
-    document
-      .querySelector(`meta[property="${name}"], meta[name="${name}"]`)
-      ?.getAttribute("content");
+    doc.querySelector(`meta[property="${name}"], meta[name="${name}"]`)?.getAttribute("content");
   return content("og:description") ?? content("description") ?? null;
 }
 
@@ -205,9 +211,17 @@ function metaDescription(html: string): string | null {
  * primeros bytes, como un navegador; null si no hay.
  */
 export function metaRefreshTarget(body: Uint8Array, baseUrl: string): string | null {
-  const head = Buffer.from(body.subarray(0, 8192)).toString("latin1");
+  const head = Buffer.from(body.subarray(0, 8192))
+    .toString("latin1")
+    // Un navegador con JavaScript no ve lo que va en <noscript>.
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "");
   const tag = /<meta[^>]+http-equiv\s*=\s*["']?refresh["']?[^>]*>/i.exec(head)?.[0];
-  const target = tag && /url\s*=\s*['"]?([^'">\s]+)/i.exec(tag)?.[1];
+  const content = tag && /content\s*=\s*["']?\s*(\d+)\s*[;,]([^>]*)/i.exec(tag);
+  if (!content) return null;
+  // Solo el redirect inmediato. Un "recarga en 5 minutos" de una nota (que a
+  // veces lleva a la portada) no es a dónde apunta el link.
+  if (Number(content[1]) > MAX_REFRESH_DELAY_S) return null;
+  const target = /url\s*=\s*['"]?([^'">\s]+)/i.exec(content[2] ?? "")?.[1];
   if (!target) return null;
   try {
     return new URL(target, baseUrl).href;

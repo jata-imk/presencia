@@ -3,7 +3,7 @@ import http, { type IncomingMessage } from "node:http";
 import https from "node:https";
 import { isIP, type LookupFunction } from "node:net";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
-import type { Readable } from "node:stream";
+import { pipeline, type Readable } from "node:stream";
 import type { WebReadStatus } from "@presencia/shared";
 import { ALLOWED_PORTS, isPublicAddress } from "./ip-policy.js";
 
@@ -54,6 +54,8 @@ export type SafeFetchResult =
       body: Uint8Array;
       /** Se cortó en WEB_FETCH_MAX_BYTES (solo HTML y texto: un PDF a medias no se lee). */
       truncated: boolean;
+      /** Cuántos redirects siguió para llegar. */
+      redirects: number;
     }
   | { ok: false; status: Exclude<WebReadStatus, "ok" | "no_legible">; detail: string };
 
@@ -69,6 +71,8 @@ export interface SafeFetchOptions {
   refuse?: (url: URL) => Pick<Failure, "status" | "detail"> | null;
   timeoutMs?: number;
   maxBytes?: number;
+  /** Para quien encadena saltos propios (los <meta refresh> de read-page): los que quedan. */
+  maxRedirects?: number;
   /**
    * Solo para tests: el servidor de prueba vive en 127.0.0.1 y en un puerto
    * alto. Producción nunca los pasa, y los defaults son la política real.
@@ -101,17 +105,18 @@ export async function safeFetch(
     ),
   );
 
+  const maxRedirects = options.maxRedirects ?? WEB_FETCH_MAX_REDIRECTS;
   let current = rawUrl;
-  for (let hop = 0; hop <= WEB_FETCH_MAX_REDIRECTS; hop++) {
+  for (let hop = 0; hop <= maxRedirects; hop++) {
     const url = checkUrl(current, allowedPorts, options.refuse);
     if (!(url instanceof URL)) return url;
 
-    const address = await resolveAllowed(url.hostname, resolve, isAllowedAddress);
-    if ("ok" in address) return address;
+    const addresses = await resolveAllowed(url.hostname, resolve, isAllowedAddress, signal);
+    if (!Array.isArray(addresses)) return addresses;
 
     let res: IncomingMessage;
     try {
-      res = await request(url, address, signal);
+      res = await request(url, addresses, signal);
     } catch (error) {
       return networkFailure(error, signal);
     }
@@ -147,7 +152,7 @@ export async function safeFetch(
       const { body, truncated } = await readCapped(decoded(res), maxBytes, signal);
       if (kind === "pdf" && truncated)
         return fail("muy_grande", `más de ${String(maxBytes)} bytes`);
-      return { ok: true, finalUrl: url.href, kind, charset, body, truncated };
+      return { ok: true, finalUrl: url.href, kind, charset, body, truncated, redirects: hop };
     } catch (error) {
       return networkFailure(error, signal);
     } finally {
@@ -156,6 +161,8 @@ export async function safeFetch(
   }
   return fail("bloqueada", `más de ${String(WEB_FETCH_MAX_REDIRECTS)} redirects`);
 }
+
+type Address = { address: string; family: number };
 
 function checkUrl(
   raw: string,
@@ -185,42 +192,70 @@ function bareHost(hostname: string): string {
   return hostname.startsWith("[") ? hostname.slice(1, -1) : hostname;
 }
 
+/**
+ * Las direcciones del host, todas validadas, con las IPv4 primero: el VPS de
+ * OVH no tiene ruta IPv6, y un sitio dual-stack que contesta AAAA primero
+ * fallaría con ENETUNREACH aunque su IPv4 sirva.
+ */
 async function resolveAllowed(
   hostname: string,
   resolve: NonNullable<NonNullable<SafeFetchOptions["policy"]>["resolve"]>,
   isAllowedAddress: (ip: string) => boolean,
-): Promise<{ address: string; family: number } | Failure> {
+  signal: AbortSignal,
+): Promise<Address[] | Failure> {
   const host = bareHost(hostname);
   // `new URL` ya normalizó 2130706433, 0177.0.0.1 y 0x7f.1 a 127.0.0.1.
   const literal = isIP(host);
   if (literal) {
     return isAllowedAddress(host)
-      ? { address: host, family: literal }
+      ? [{ address: host, family: literal }]
       : fail("bloqueada", `dirección ${host}`);
   }
-  let addresses: { address: string; family: number }[];
+  let addresses: Address[];
   try {
-    addresses = await resolve(host);
-  } catch {
-    return fail("no_encontrada", `el dominio ${host} no existe`);
+    // getaddrinfo no se puede cancelar, pero no hay por qué esperarlo: un
+    // nameserver que no contesta tarda ~30 s en rendirse.
+    addresses = await raceAbort(resolve(host), signal);
+  } catch (error) {
+    if (signal.aborted) return networkFailure(error, signal);
+    const code = (error as { code?: string }).code;
+    return code === "ENOTFOUND" || code === "ENODATA"
+      ? fail("no_encontrada", `el dominio ${host} no existe`)
+      : fail("no_disponible", `DNS de ${host}: ${code ?? "sin respuesta"}`);
   }
   if (addresses.length === 0) return fail("no_encontrada", `el dominio ${host} no resuelve`);
   // Si UNA de las direcciones es interna, no se usa ninguna: un dominio que
   // mezcla una pública y una privada está apuntando adonde no debe.
   const bad = addresses.find((a) => !isAllowedAddress(a.address));
   if (bad) return fail("bloqueada", `${host} resuelve a ${bad.address}`);
-  return addresses[0]!;
+  return [...addresses].sort((a, b) => a.family - b.family);
 }
 
-function request(
-  url: URL,
-  address: { address: string; family: number },
-  signal: AbortSignal,
-): Promise<IncomingMessage> {
-  // La conexión va a la dirección ya validada, nunca a un lookup nuevo.
+function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason as Error);
+  return new Promise<T>((resolvePromise, reject) => {
+    const onAbort = () => reject(signal.reason as Error);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolvePromise(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        // Los de DNS son Error con `code`, que resolveAllowed lee.
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+function request(url: URL, addresses: Address[], signal: AbortSignal): Promise<IncomingMessage> {
+  // La conexión va a las direcciones ya validadas, nunca a un lookup nuevo.
+  // Con `all`, Node prueba una tras otra (autoSelectFamily).
   const pinned: LookupFunction = (_hostname, opts, callback) => {
-    if (opts.all) callback(null, [{ address: address.address, family: address.family }]);
-    else callback(null, address.address, address.family);
+    if (opts.all) callback(null, addresses);
+    else callback(null, addresses[0]!.address, addresses[0]!.family);
   };
   const client = url.protocol === "https:" ? https : http;
   return new Promise((resolvePromise, reject) => {
@@ -247,10 +282,20 @@ function request(
 
 function decoded(res: IncomingMessage): Readable {
   const encoding = (res.headers["content-encoding"] ?? "").toLowerCase().trim();
-  if (encoding === "gzip" || encoding === "x-gzip") return res.pipe(createGunzip());
-  if (encoding === "deflate") return res.pipe(createInflate());
-  if (encoding === "br") return res.pipe(createBrotliDecompress());
-  return res;
+  const decompressor =
+    encoding === "gzip" || encoding === "x-gzip"
+      ? createGunzip()
+      : encoding === "deflate"
+        ? createInflate()
+        : encoding === "br"
+          ? createBrotliDecompress()
+          : null;
+  if (!decompressor) return res;
+  // pipeline y no pipe: si la conexión se cae a media respuesta, el error
+  // llega al descompresor y el for-await de readCapped termina ya, en vez de
+  // esperar al timeout. El callback solo evita un error sin manejar: quien
+  // lee ve el mismo error en el stream.
+  return pipeline(res, decompressor, () => undefined);
 }
 
 /** Lee hasta `maxBytes` (ya descomprimidos) y corta ahí. */
