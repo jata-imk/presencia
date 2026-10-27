@@ -17,10 +17,10 @@ import { WebReadsRepository, type WebReadRow } from "./web-reads.repository.js";
 // (`content_digest`, attachment-digest.service.ts), con un prompt para
 // páginas, su propia cola y el mismo cobro (ADR-012).
 //
-// Se pide desde el turno siguiente al de la lectura (ChatService.runAgentTurn
-// encola las de la ventana que no la tienen): una página que se leyó en el
-// último mensaje de un chat no se describe nunca, porque nadie la va a ver
-// salir de la ventana.
+// Se pide solo para las páginas que con un turno más dejarían de viajar
+// completas (webReadIdsToDescribe; ChatService.runAgentTurn las encola): una
+// que sigue completa hasta que el chat termina o se resume no se describe
+// nunca, porque nadie la va a ver como línea.
 
 export const WEB_READ_DIGEST_QUEUE = "web_read.describe";
 export const WEB_READ_DIGEST_EXPIRE_SECONDS = 2 * 60;
@@ -83,6 +83,19 @@ export class WebReadDigestService {
     const row = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, readId));
     if (!row || row.description !== null || row.status !== "ok" || !row.extractedText) return;
 
+    // La misma página ya descrita en otra lectura del creator (la copia de
+    // caché se hizo antes de que la original tuviera descripción): se copia,
+    // sin llamar al modelo ni cobrar otra vez.
+    const twin = await this.dbService.runWithTenant(userId, (tx) =>
+      this.repo.findDescribedTwin(tx, row),
+    );
+    if (twin) {
+      await this.dbService.runWithTenant(userId, (tx) =>
+        this.repo.setDescription(tx, readId, twin),
+      );
+      return;
+    }
+
     const modelo = this.ai.resolveForTask(TASK_KIND);
     const arranque = Date.now();
     let respuesta;
@@ -104,20 +117,27 @@ export class WebReadDigestService {
         await this.markAttempt(userId, readId);
         throw new Error(`El modelo no describió la página ${readId}`);
       }
-      await this.dbService.runWithTenant(userId, async (tx) => {
-        const saved = await this.repo.setDescription(tx, readId, description);
-        if (!saved) return;
-        // En la MISMA transacción que la descripción que cobra; el dedup del
-        // ledger (referencia: la lectura) impide cobrarla dos veces.
-        await this.credits.charge(tx, {
-          userId,
-          usage: chargeUsageOf(respuesta.usage),
-          taskKind: TASK_KIND,
-          reason: "content_digest",
-          referenceType: "web_read",
-          referenceId: readId,
+      try {
+        await this.dbService.runWithTenant(userId, async (tx) => {
+          const saved = await this.repo.setDescription(tx, readId, description);
+          if (!saved) return;
+          // En la MISMA transacción que la descripción que cobra; el dedup del
+          // ledger (referencia: la lectura) impide cobrarla dos veces.
+          await this.credits.charge(tx, {
+            userId,
+            usage: chargeUsageOf(respuesta.usage),
+            taskKind: TASK_KIND,
+            reason: "content_digest",
+            referenceType: "web_read",
+            referenceId: readId,
+          });
         });
-      });
+      } catch (error) {
+        // La transacción se deshizo y la descripción no quedó: sin anotar el
+        // intento, cada turno volvería a pagar la llamada al modelo.
+        await this.markAttempt(userId, readId);
+        throw error;
+      }
     } finally {
       await this.aiUsage.registrar({
         userId,

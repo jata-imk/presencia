@@ -158,15 +158,33 @@ function fullReadIds(
 }
 
 /**
- * Las páginas que se leyeron en un mensaje, como líneas de transcript (resumen
- * de la compactación y memoria entre chats). Solo título y dominio: el texto
- * de un tercero no entra a la memoria (ADR-028), y estas funciones son puras.
+ * Las páginas que se leyeron en un mensaje, como líneas de transcript (título
+ * del chat, resumen de la compactación y memoria entre chats). Solo el
+ * dominio: el título también lo escribió un tercero, y la memoria lo
+ * resucitaría en otros chats (ADR-028: nada de una página entra a la memoria).
+ * Lo que la página decía ya está en lo que el creator y Presencia hablaron.
  */
 export function webReadLines(message: UIMessage): string[] {
   return message.parts.flatMap((part) => {
     if (!isGoodRead(part)) return [];
-    const { titulo, dominio, url } = part.output;
-    const where = dominio ?? url;
-    return [`[Presencia leyó la página ${titulo ? `"${safeName(titulo)}" (${where})` : where}]`];
+    const { dominio, url } = part.output;
+    return [`[Presencia leyó una página de ${dominio ?? safeName(url, 200)}]`];
   });
+}
+
+/**
+ * Las lecturas que vale la pena describir ya: las que con un turno más dejarían
+ * de viajar completas (o ya no viajan así). Una que sigue completa en la
+ * ventana no necesita descripción todavía, y una que se queda completa hasta
+ * que el chat se resume nunca la necesita: el resumen solo nombra su dominio.
+ */
+export function webReadIdsToDescribe(
+  messages: UIMessage[],
+  rows: ReadonlyMap<string, WebReadForContext> | null,
+  keep = KEEP_ATTACHMENT_USER_TURNS,
+  budget = RECENT_WEB_READ_TOKENS,
+): string[] {
+  if (!rows) return [];
+  const stillFull = fullReadIds(messages, rows, keep - 1, budget);
+  return webReadIdsIn(messages).filter((id) => rows.has(id) && !stillFull.has(id));
 }

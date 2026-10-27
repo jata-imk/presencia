@@ -37,6 +37,7 @@ import { blocksOf, contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
 import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
+import { webReadIdsToDescribe } from "./web-read-context.js";
 import {
   assembleContext,
   attachmentIdsForContext,
@@ -601,14 +602,18 @@ export class ChatService {
       undescribed.map((row) => row.id),
       trace.runId,
     );
-    // F10.10: igual con las páginas leídas en turnos anteriores, para cuando
-    // salgan de la ventana (web-read-context.ts). Una leída en el último
-    // mensaje de un chat no se describe nunca: nadie la verá salir.
+    // F10.10: igual con las páginas leídas, pero solo las que con un turno
+    // más dejarían de viajar completas (web-read-context.ts): una que sigue
+    // completa hasta que el chat termina o se resume no se describe ni se
+    // cobra nunca. Las que no tienen texto no tienen nada que describir.
+    const toDescribe = new Set(
+      webReadIdsToDescribe(pendingAfterSummary(history, summary), webReadRows),
+    );
     void this.webReadDigests.enqueue(
       userId,
       chatId,
       [...(webReadRows?.values() ?? [])]
-        .filter((row) => row.status === "ok" && digestDue(row))
+        .filter((row) => toDescribe.has(row.id) && row.extractedText && digestDue(row))
         .map((row) => row.id),
       trace.runId,
     );

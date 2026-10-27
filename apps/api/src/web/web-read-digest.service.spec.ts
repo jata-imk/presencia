@@ -144,6 +144,36 @@ describe("WebReadDigestService", { timeout: 30_000 }, () => {
     expect(await cobrosDe(row.id)).toHaveLength(0);
   });
 
+  it("la copia de caché de una página ya descrita en otra lectura toma esa descripción sin cobrar", async () => {
+    const url = `https://www.yucatan.com.mx/${randomUUID()}`;
+    const original = await leida({ url, description: "Ya descrita antes." });
+    const copia = await leida({ url, finalUrl: url });
+    const vistos: unknown[] = [];
+    await crear("otra", vistos).describe({ userId, readId: copia.id, chatId });
+    expect((await rowOf(copia.id)).description).toBe("Ya descrita antes.");
+    expect(vistos).toHaveLength(0);
+    expect(await cobrosDe(copia.id)).toHaveLength(0);
+    expect(original.id).not.toBe(copia.id);
+  });
+
+  it("si guardar o cobrar falla, anota el intento: el siguiente turno no vuelve a pagar", async () => {
+    const row = await leida();
+    const servicio = crear("Una nota.", []);
+    const credits = (servicio as unknown as { credits: { charge: () => Promise<void> } }).credits;
+    const original = credits.charge.bind(credits);
+    credits.charge = () => Promise.reject(new Error("ledger caído"));
+    try {
+      await expect(servicio.describe({ userId, readId: row.id, chatId })).rejects.toThrow(
+        "ledger caído",
+      );
+    } finally {
+      credits.charge = original;
+    }
+    const despues = await rowOf(row.id);
+    expect(despues.description).toBeNull();
+    expect(despues.describedAt).not.toBeNull();
+  });
+
   it("una respuesta vacía anota el intento, no cobra y lanza para reintentar", async () => {
     const row = await leida();
     await expect(crear("   ", []).describe({ userId, readId: row.id, chatId })).rejects.toThrow();

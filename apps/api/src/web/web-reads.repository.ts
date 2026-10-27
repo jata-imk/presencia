@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { webReads } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
@@ -41,6 +41,28 @@ export class WebReadsRepository {
       .where(and(eq(webReads.id, id), isNull(webReads.description)))
       .returning({ id: webReads.id });
     return updated.length > 0;
+  }
+
+  /** La descripción de otra lectura del creator de la misma página (pedida o final), si la hay. */
+  async findDescribedTwin(
+    tx: Tx,
+    row: Pick<WebReadRow, "id" | "url" | "finalUrl">,
+  ): Promise<string | null> {
+    const urls = [row.url, row.finalUrl].filter((u): u is string => Boolean(u));
+    const [twin] = await tx
+      .select({ description: webReads.description })
+      .from(webReads)
+      .where(
+        and(
+          ne(webReads.id, row.id),
+          eq(webReads.status, "ok"),
+          isNotNull(webReads.description),
+          or(inArray(webReads.url, urls), inArray(webReads.finalUrl, urls)),
+        ),
+      )
+      .orderBy(desc(webReads.createdAt))
+      .limit(1);
+    return twin?.description ?? null;
   }
 
   /** Varias por id, en la transacción del llamador (RLS: las ajenas no vienen). */

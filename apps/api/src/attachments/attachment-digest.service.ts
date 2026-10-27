@@ -109,20 +109,28 @@ export class AttachmentDigestService {
         await this.markAttempt(userId, attachmentId);
         throw new Error(`El modelo no describió el adjunto ${attachmentId}`);
       }
-      await this.dbService.runWithTenant(userId, async (tx) => {
-        const saved = await this.repo.setDescription(tx, attachmentId, description);
-        if (!saved) return;
-        // En la MISMA transacción que la descripción que cobra; el dedup del
-        // ledger (referencia: el adjunto) impide cobrarla dos veces.
-        await this.credits.charge(tx, {
-          userId,
-          usage: chargeUsageOf(respuesta.usage),
-          taskKind: TASK_KIND,
-          reason: "content_digest",
-          referenceType: "message_attachment",
-          referenceId: attachmentId,
+      try {
+        await this.dbService.runWithTenant(userId, async (tx) => {
+          const saved = await this.repo.setDescription(tx, attachmentId, description);
+          if (!saved) return;
+          // En la MISMA transacción que la descripción que cobra; el dedup del
+          // ledger (referencia: el adjunto) impide cobrarla dos veces.
+          await this.credits.charge(tx, {
+            userId,
+            usage: chargeUsageOf(respuesta.usage),
+            taskKind: TASK_KIND,
+            reason: "content_digest",
+            referenceType: "message_attachment",
+            referenceId: attachmentId,
+          });
         });
-      });
+      } catch (error) {
+        // F10.10 (review): la transacción se deshizo y la descripción no
+        // quedó; sin anotar el intento, cada turno volvería a pagar la
+        // llamada al modelo.
+        await this.markAttempt(userId, attachmentId);
+        throw error;
+      }
     } finally {
       // Siempre que hubo llamada: los tokens se pagaron aunque no quedara
       // descripción (ai_usage_events es gasto, no cobro). Nunca lanza.
