@@ -1,11 +1,13 @@
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import { READ_LINK_TOOL_NAME } from "@presencia/shared";
+import { transcriptForSummary } from "./history-compaction.js";
 import { estimateTokens } from "./history-window.js";
 import {
   dietWebReads,
   RECENT_WEB_READ_TOKENS,
   webReadIdsIn,
+  webReadLines,
   WEB_READ_MODEL_CHARS,
   type ReadLinkModelOutput,
   type WebReadForContext,
@@ -135,5 +137,23 @@ describe("dietWebReads", () => {
     const messages = [user("u1"), fallida, user("u2")];
     expect(dietWebReads(messages, new Map())).toEqual(messages);
     expect(webReadIdsIn(messages)).toEqual([]);
+  });
+});
+
+describe("webReadLines", () => {
+  it("nombra las páginas leídas, sin su texto, para el resumen y la memoria", () => {
+    const fallida = { ...readPart("r2", "requiere_sesion") };
+    const message = {
+      id: "a1",
+      role: "assistant",
+      parts: [readPart("r1"), fallida, { type: "text", text: "listo" }],
+    } as UIMessage;
+    expect(webReadLines(message)).toEqual(['[Presencia leyó la página "Nota r1" (x.mx)]']);
+  });
+
+  it("la transcripción de la compactación las incluye", () => {
+    expect(transcriptForSummary([user("u1", "léeme esto"), assistant("a1", "r1")])).toContain(
+      'Presencia leyó la página "Nota r1"',
+    );
   });
 });

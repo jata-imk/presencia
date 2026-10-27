@@ -50,6 +50,7 @@ import { lastTurnOf, storableMessageId } from "./last-user-message.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { TurnCards } from "./turn-cards.js";
 import { buildReadLinkTool } from "../web/read-link.tool.js";
+import { WebReadDigestService } from "../web/web-read-digest.service.js";
 import { WebReadsService } from "../web/web-reads.service.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
@@ -83,6 +84,7 @@ export class ChatService {
     @Inject(AttachmentsService) private readonly attachments: AttachmentsService,
     @Inject(AttachmentDigestService) private readonly attachmentDigests: AttachmentDigestService,
     @Inject(WebReadsService) private readonly webReads: WebReadsService,
+    @Inject(WebReadDigestService) private readonly webReadDigests: WebReadDigestService,
   ) {}
 
   /**
@@ -597,6 +599,17 @@ export class ChatService {
       userId,
       chatId,
       undescribed.map((row) => row.id),
+      trace.runId,
+    );
+    // F10.10: igual con las páginas leídas en turnos anteriores, para cuando
+    // salgan de la ventana (web-read-context.ts). Una leída en el último
+    // mensaje de un chat no se describe nunca: nadie la verá salir.
+    void this.webReadDigests.enqueue(
+      userId,
+      chatId,
+      [...(webReadRows?.values() ?? [])]
+        .filter((row) => row.status === "ok" && digestDue(row))
+        .map((row) => row.id),
       trace.runId,
     );
     const modelHistory = context.messages;

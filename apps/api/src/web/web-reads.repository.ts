@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { webReads } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
@@ -23,6 +23,24 @@ export class WebReadsRepository {
   async findById(tx: Tx, id: string): Promise<WebReadRow | undefined> {
     const [row] = await tx.select().from(webReads).where(eq(webReads.id, id));
     return row;
+  }
+
+  /** Anota un intento de describir que no salió (el chat no lo vuelve a pedir en un día). */
+  async markDescribeAttempt(tx: Tx, id: string): Promise<void> {
+    await tx
+      .update(webReads)
+      .set({ describedAt: new Date() })
+      .where(and(eq(webReads.id, id), isNull(webReads.description)));
+  }
+
+  /** Guarda la descripción si todavía no la tiene. Devuelve si la guardó (para cobrar una vez). */
+  async setDescription(tx: Tx, id: string, description: string): Promise<boolean> {
+    const updated = await tx
+      .update(webReads)
+      .set({ description, describedAt: new Date() })
+      .where(and(eq(webReads.id, id), isNull(webReads.description)))
+      .returning({ id: webReads.id });
+    return updated.length > 0;
   }
 
   /** Varias por id, en la transacción del llamador (RLS: las ajenas no vienen). */

@@ -1,7 +1,7 @@
 import type { UIMessage } from "ai";
 import { READ_LINK_TOOL_NAME, type ReadLinkOutput } from "@presencia/shared";
 import type { WebReadRow } from "../web/web-reads.repository.js";
-import { KEEP_ATTACHMENT_USER_TURNS, recentTurnsStart } from "./attachment-context.js";
+import { KEEP_ATTACHMENT_USER_TURNS, recentTurnsStart, safeName } from "./attachment-context.js";
 
 // F10.10 (ADR-028): cómo viajan al modelo las páginas leídas en turnos
 // anteriores. Funciones puras, como attachment-context.ts.
@@ -155,4 +155,18 @@ function fullReadIds(
     }
   }
   return full;
+}
+
+/**
+ * Las páginas que se leyeron en un mensaje, como líneas de transcript (resumen
+ * de la compactación y memoria entre chats). Solo título y dominio: el texto
+ * de un tercero no entra a la memoria (ADR-028), y estas funciones son puras.
+ */
+export function webReadLines(message: UIMessage): string[] {
+  return message.parts.flatMap((part) => {
+    if (!isGoodRead(part)) return [];
+    const { titulo, dominio, url } = part.output;
+    const where = dominio ?? url;
+    return [`[Presencia leyó la página ${titulo ? `"${safeName(titulo)}" (${where})` : where}]`];
+  });
 }

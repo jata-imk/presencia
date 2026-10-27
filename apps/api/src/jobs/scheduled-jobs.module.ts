@@ -15,6 +15,8 @@ import { MetricsJobs } from "../metrics/metrics.jobs.js";
 import { MetricsModule } from "../metrics/metrics.module.js";
 import { TrendsJobs } from "../trends/trends.jobs.js";
 import { TrendsModule } from "../trends/trends.module.js";
+import { WebJobs } from "../web/web.jobs.js";
+import { WebModule } from "../web/web.module.js";
 import { JobsModule } from "./jobs.module.js";
 
 // Todo lo que se agenda, en un solo lugar. Lo importan los DOS entrypoints:
@@ -32,6 +34,7 @@ import { JobsModule } from "./jobs.module.js";
     ImagesModule,
     ChatModule,
     AttachmentsModule,
+    WebModule,
   ],
   providers: [
     CardsJobs,
@@ -42,6 +45,7 @@ import { JobsModule } from "./jobs.module.js";
     ImagesJobs,
     ChatJobs,
     AttachmentsJobs,
+    WebJobs,
   ],
 })
 export class ScheduledJobsModule {}
