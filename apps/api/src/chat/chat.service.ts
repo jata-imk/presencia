@@ -37,7 +37,12 @@ import { blocksOf, contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
 import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
-import { assembleContext, attachmentIdsForContext, cardIdsForContext } from "./context-builder.js";
+import {
+  assembleContext,
+  attachmentIdsForContext,
+  cardIdsForContext,
+  webReadIdsForContext,
+} from "./context-builder.js";
 import { ChatRepository, type ChatSummaryRow, type MessageRow } from "./chat.repository.js";
 import { cardIdsIn, type CompressedCardOutput, type LiveCard } from "./context-diet.js";
 import { sanitizeInterruptedParts } from "./interrupted-turn.js";
@@ -565,10 +570,12 @@ export class ChatService {
     // del resumen y las de la ventana se leen de una sola vez. `history` no
     // se toca: la UI y lo que se persiste siguen siendo la conversación
     // completa.
-    const [liveCards, attachmentRows] = await Promise.all([
+    const [liveCards, attachmentRows, webReadRows] = await Promise.all([
       this.loadLiveCardsByIds(userId, cardIdsForContext(history, summary)),
       // F10.9: las filas de los adjuntos de la ventana (sin bytes todavía).
       this.attachments.forContext(userId, attachmentIdsForContext(history, summary)),
+      // F10.10: las de las páginas leídas, de una sola vez.
+      this.webReads.forContext(userId, webReadIdsForContext(history, summary)),
     ]);
     const context = assembleContext(
       history,
@@ -576,6 +583,7 @@ export class ChatService {
       liveCards,
       env.CHAT_HISTORY_CAP_TOKENS,
       attachmentRows,
+      webReadRows,
     );
     // F10.9: la descripción de los adjuntos de la ventana que no la tienen, en
     // segundo plano (el mensaje ya está guardado). Para cuando un adjunto deje
@@ -629,8 +637,8 @@ export class ChatService {
     const voice = await voicePromise;
     // F10.9: los bytes de los adjuntos que sobrevivieron al techo, al final.
     // F10.10: con las tools, para que las páginas leídas en turnos anteriores
-    // pasen por el `toModelOutput` de leer_enlace (su parte guarda solo la
-    // referencia; el texto sale de `web_reads`).
+    // pasen por el `toModelOutput` de leer_enlace, que les da forma a lo que la
+    // dieta (web-read-context.ts) ya les pegó: el texto o una línea.
     const modelMessages = await convertToModelMessages(
       await this.attachments.materialize(modelHistory, attachmentRows),
       { tools },

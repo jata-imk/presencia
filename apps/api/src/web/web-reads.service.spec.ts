@@ -127,6 +127,23 @@ describe("WebReadsService", { timeout: 30_000 }, () => {
     expect(other.output.readId).not.toBe(first.output.readId);
     expect(other.row?.chatId).toBe(chatA2);
     expect(other.row?.extractedText).toBe(NOTA);
+    // Con la fecha de la descarga: si no, una copia de una copia renovaría
+    // las 24 h sin volver a pedir la página nunca.
+    expect(other.row?.createdAt.getTime()).toBe(first.row?.createdAt.getTime());
+  });
+
+  it("si el turno se cortó mientras leía, no guarda nada y lanza", async () => {
+    const url = `https://www.yucatan.com.mx/cortada-${randomUUID()}`;
+    const controller = new AbortController();
+    readPage.mockImplementation((u) => {
+      controller.abort();
+      return Promise.resolve(ok(u));
+    });
+    await expect(service.read(userA, chatA, url, controller.signal)).rejects.toThrow();
+    readPage.mockImplementation((u) => Promise.resolve(ok(u)));
+    const again = await service.read(userA, chatA, url);
+    expect(readPage).toHaveBeenCalledTimes(2);
+    expect(again.output.estado).toBe("ok");
   });
 
   it("el caché de un creator no le sirve a otro", async () => {

@@ -6,21 +6,23 @@ import {
   type ReadLinkOutput,
   type WebReadStatus,
 } from "@presencia/shared";
-import { safeName } from "../chat/attachment-context.js";
+import { insideTag, safeName } from "../chat/attachment-context.js";
+import { fullView, type PageView, type ReadLinkModelOutput } from "../chat/web-read-context.js";
+import { normalizeReadUrl } from "./read-url.js";
 import type { WebReadRow } from "./web-reads.repository.js";
+import { failedOutput } from "./read-output.js";
 import type { WebReadsService } from "./web-reads.service.js";
 
 // F10.10 (ADR-028): la tool `leer_enlace`. Una por turno (el tope se cuenta
 // aquí). Lo que devuelve `execute` es la referencia que se guarda en la parte
 // del mensaje y ve la UI; lo que lee el modelo lo arma `toModelOutput`: el
-// texto de la página delimitado, o el motivo por el que no se pudo leer.
+// texto de la página delimitado, una línea, o el motivo por el que no se pudo
+// leer.
 //
 // `toModelOutput` corre en este turno (después de execute) y en los
-// siguientes (convertToModelMessages con estas tools): en este, la fila sale
-// del mapa del turno; en los siguientes, de la base.
-
-/** Lo que ve el modelo de una página, como máximo (~6k tokens). Se guarda más. */
-export const WEB_READ_MODEL_CHARS = 24_000;
+// siguientes (convertToModelMessages con estas tools). En este, la fila sale
+// del mapa del turno; en los siguientes, la dieta de contexto
+// (chat/web-read-context.ts) ya dejó en la parte lo que el modelo debe ver.
 
 const REASONS: Record<Exclude<WebReadStatus, "ok">, string> = {
   requiere_sesion: "esa red o página pide iniciar sesión (o pagar) para ver su contenido",
@@ -35,12 +37,12 @@ const REASONS: Record<Exclude<WebReadStatus, "ok">, string> = {
   no_disponible: "el sitio falló o no está disponible en este momento",
 };
 
-/** El texto de una página no puede cerrar su propia etiqueta. */
-function insidePageTag(text: string): string {
-  return text.replace(/<\/?pagina/gi, (m) => m.replace("<", "‹"));
+/** Una URL dentro de un atributo: se escapa, no se reescribe (el modelo la puede citar). */
+function attrUrl(url: string): string {
+  return url.replace(/"/g, "%22").replace(/</g, "%3C").replace(/>/g, "%3E").slice(0, 2048);
 }
 
-export function pageForModel(output: ReadLinkOutput, row: WebReadRow | null): string {
+export function pageForModel(output: ReadLinkOutput, view: PageView | null): string {
   if (output.estado === "limite") {
     return (
       `No se leyó ${output.url}: ya leíste ${String(WEB_READS_PER_TURN)} páginas en este mensaje, ` +
@@ -54,31 +56,36 @@ export function pageForModel(output: ReadLinkOutput, row: WebReadRow | null): st
       "y pídele que pegue aquí el texto o te cuente qué dice. No inventes ni adivines su contenido."
     );
   }
-  if (!row?.extractedText) {
+  const where = `${output.dominio ?? output.urlFinal ?? output.url}${output.titulo ? ` ("${safeName(output.titulo)}")` : ""}`;
+  if (!view || view.vista === "no_disponible") {
     return (
-      `La lectura de ${output.url} ya no está disponible. Si el creator necesita algo de esa ` +
-      "página, vuelve a leerla con leer_enlace."
+      `La lectura de ${where} ya no está disponible. Si el creator necesita algo de esa página, ` +
+      "vuelve a leerla con leer_enlace."
     );
   }
-  const text =
-    row.extractedText.length > WEB_READ_MODEL_CHARS
-      ? `${row.extractedText.slice(0, WEB_READ_MODEL_CHARS)}…`
-      : row.extractedText;
-  const cut = row.truncated || row.extractedText.length > WEB_READ_MODEL_CHARS;
+  if (view.vista === "linea") {
+    return (
+      `[Página que leíste antes: ${where}${view.descripcion ? `. ${safeName(view.descripcion, 1000)}` : ""}. ` +
+      "Ya no ves su texto: si necesitas el detalle, vuelve a leerla con leer_enlace (sale de lo " +
+      "guardado, sin costo). No inventes lo que no ves.]"
+    );
+  }
   const attrs = [
-    `url="${safeName(row.finalUrl ?? row.url, 2048)}"`,
-    row.title ? `titulo="${safeName(row.title)}"` : null,
-    row.siteName ? `sitio="${safeName(row.siteName)}"` : null,
+    `url="${attrUrl(view.urlFinal)}"`,
+    view.titulo ? `titulo="${safeName(view.titulo)}"` : null,
+    view.sitio ? `sitio="${safeName(view.sitio)}"` : null,
   ]
     .filter(Boolean)
     .join(" ");
   const notes = [
-    cut ? "[Solo leíste el inicio de la página: no inventes lo que diga después.]" : null,
-    row.onlyDescription
+    view.recortada
+      ? "[Solo leíste el inicio de la página: no inventes lo que diga después.]"
+      : null,
+    view.soloDescripcion
       ? "[La página no mostró su contenido: esto es solo su descripción. Dilo si el creator esperaba más.]"
       : null,
   ].filter(Boolean);
-  return [`<pagina ${attrs}>`, insidePageTag(text), "</pagina>", ...notes].join("\n");
+  return [`<pagina ${attrs}>`, insideTag(view.texto, "pagina"), "</pagina>", ...notes].join("\n");
 }
 
 export function buildReadLinkTool(deps: {
@@ -89,6 +96,9 @@ export function buildReadLinkTool(deps: {
   let reads = 0;
   // Las filas leídas en este turno, para no ir a la base en toModelOutput.
   const rows = new Map<string, WebReadRow>();
+  // Dos llamadas a la misma página en un mismo paso (en paralelo, antes de
+  // que la primera la guarde) comparten la lectura y gastan una sola del tope.
+  const inFlight = new Map<string, Promise<ReadLinkOutput>>();
 
   return {
     [READ_LINK_TOOL_NAME]: tool({
@@ -99,32 +109,31 @@ export function buildReadLinkTool(deps: {
         "de la publicación (su tienda, su promo, su link de reservas). Devuelve el texto de la " +
         "página o el motivo por el que no se pudo leer.",
       inputSchema: readLinkInputSchema,
-      execute: async ({ url }, { abortSignal }): Promise<ReadLinkOutput> => {
+      execute: ({ url }, { abortSignal }): Promise<ReadLinkOutput> => {
         abortSignal?.throwIfAborted();
-        if (reads >= WEB_READS_PER_TURN) {
-          return {
-            readId: null,
-            url,
-            urlFinal: null,
-            titulo: null,
-            dominio: null,
-            estado: "limite",
-            truncado: false,
-            soloDescripcion: false,
-          };
-        }
+        const key = normalizeReadUrl(url) ?? url;
+        const pending = inFlight.get(key);
+        if (pending) return pending;
+        if (reads >= WEB_READS_PER_TURN) return Promise.resolve(failedOutput(url, "limite"));
         reads += 1;
-        const { output, row } = await deps.service.read(deps.userId, deps.chatId, url, abortSignal);
-        if (row) rows.set(row.id, row);
-        return output;
+        const read = deps.service
+          .read(deps.userId, deps.chatId, url, abortSignal)
+          .then(({ output, row }) => {
+            if (row) rows.set(row.id, row);
+            return output;
+          });
+        inFlight.set(key, read);
+        return read;
       },
       toModelOutput: async ({ output }) => {
-        const out = output;
-        const row =
-          out.readId === null || out.estado !== "ok"
-            ? null
-            : (rows.get(out.readId) ?? (await deps.service.findById(deps.userId, out.readId)));
-        return { type: "text", value: pageForModel(out, row) };
+        const out = output as ReadLinkModelOutput;
+        let view: PageView | null = out.contexto ?? null;
+        if (!view && out.estado === "ok" && out.readId) {
+          const row =
+            rows.get(out.readId) ?? (await deps.service.findById(deps.userId, out.readId));
+          view = row ? fullView(row) : null;
+        }
+        return { type: "text", value: pageForModel(out, view) };
       },
     }),
   };

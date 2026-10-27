@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, desc, eq, gt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { webReads } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
@@ -23,6 +23,12 @@ export class WebReadsRepository {
   async findById(tx: Tx, id: string): Promise<WebReadRow | undefined> {
     const [row] = await tx.select().from(webReads).where(eq(webReads.id, id));
     return row;
+  }
+
+  /** Varias por id, en la transacción del llamador (RLS: las ajenas no vienen). */
+  findByIds(tx: Tx, ids: readonly string[]): Promise<WebReadRow[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return tx.select().from(webReads).where(inArray(webReads.id, ids));
   }
 
   /**

@@ -19,6 +19,7 @@ import {
   dietAttachments,
   type AttachmentForContext,
 } from "./attachment-context.js";
+import { dietWebReads, webReadIdsIn, type WebReadForContext } from "./web-read-context.js";
 
 // Lo que el modelo ve en cada turno (F10.8.1, ADR-026: "guardar ≠ recordar ≠
 // mandar al modelo"). Puro: recibe el historial completo, el resumen y las
@@ -29,8 +30,9 @@ import {
 //    se quedaron sin respuesta completa van marcados (unanswered-turns.ts).
 // 2. Las cards se describen como son HOY, no como quedaron en messages.parts.
 // 3. Dieta: los adjuntos viejos viajan como su descripción (F10.9,
-//    attachment-context.ts), y las cards viejas y los recuerdos de turnos
-//    pasados, cortos (context-diet.ts).
+//    attachment-context.ts), las páginas leídas fuera de la ventana como una
+//    línea (F10.10, web-read-context.ts), y las cards viejas y los recuerdos
+//    de turnos pasados, cortos (context-diet.ts).
 // 4. El techo mecánico, medido sobre lo que de verdad viaja. Los bytes de los
 //    adjuntos que sobreviven se cargan después (AttachmentsService.materialize).
 
@@ -66,6 +68,14 @@ export function attachmentIdsForContext(
   return attachmentIdsIn(pendingAfterSummary(history, summary));
 }
 
+/** F10.10: las páginas leídas cuyas filas hacen falta, igual que los adjuntos. */
+export function webReadIdsForContext(
+  history: UIMessage[],
+  summary: HistorySummary | null,
+): string[] {
+  return webReadIdsIn(pendingAfterSummary(history, summary));
+}
+
 /**
  * `live` es `null` si la lectura de las cards falló: la lista del resumen se
  * queda con su foto y las de la ventana con lo que guardó el mensaje. Peor
@@ -78,6 +88,8 @@ export function assembleContext(
   capTokens: number,
   /** F10.9: las filas de los adjuntos citados; `null` si la lectura falló. */
   attachments: ReadonlyMap<string, AttachmentForContext> | null = new Map(),
+  /** F10.10: las filas de las páginas leídas; `null` si la lectura falló. */
+  webReads: ReadonlyMap<string, WebReadForContext> | null = new Map(),
 ): ModelContext {
   // Después del resumen: un turno sin respuesta que ya quedó resumido no se
   // marca, y la marca no puede quedar pegada al acuse sintético del resumen.
@@ -85,7 +97,10 @@ export function assembleContext(
   const messages = capHistory(
     trimMemoryOutputsForModel(
       compressToolOutputsForModel(
-        dietAttachments(withLiveCards(windowed, live ?? new Map()), attachments),
+        dietWebReads(
+          dietAttachments(withLiveCards(windowed, live ?? new Map()), attachments),
+          webReads,
+        ),
       ),
     ),
     capTokens,

@@ -232,12 +232,13 @@ export function safeName(name: string, max = 300): string {
 }
 
 /**
- * El contenido dentro de <adjunto>: un archivo de terceros que trae
- * "</adjunto>" no puede cerrar la etiqueta y seguir como si lo dijera el
- * creator (el prompt de sistema trata lo de adentro como datos).
+ * El contenido dentro de <adjunto> (o de <pagina>, F10.10): un archivo o una
+ * página de terceros que trae "</adjunto>" no puede cerrar la etiqueta y
+ * seguir como si lo dijera el creator (el prompt de sistema trata lo de
+ * adentro como datos).
  */
-export function insideTag(text: string): string {
-  return text.replace(/<(\/?)adjunto/gi, "‹$1adjunto");
+export function insideTag(text: string, tag: "adjunto" | "pagina" = "adjunto"): string {
+  return text.replace(new RegExp(`<(\\/?)${tag}`, "gi"), `‹$1${tag}`);
 }
 
 /**

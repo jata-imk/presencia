@@ -223,3 +223,12 @@ Fuentes: [Claude: vision](https://platform.claude.com/docs/en/build-with-claude/
 - **Un CSV de ventas del año que se recorta en agosto** (`adjunto-csv-recortado`). Ninguno inventó diciembre, pero Luna y Gemini pidieron "el archivo completo", que se volvería a cortar en el mismo lugar. La nota de recorte de `<adjunto>` ahora lo dice ("mandarlo completo otra vez se corta en el mismo lugar: pide solo la parte que falta, o el dato"), y en la segunda corrida los tres piden solo diciembre o el total (`2026-10-20-reporte-parcial-2.md`).
 
 DoD con el respaldo forzado (`AI_FALLBACK_SIMULATE=openai`): una imagen enviada desde un chat nuevo la describió Gemini, y el turno, la descripción del adjunto (`content_digest`) y el título quedaron con `fallback_from = openai:gpt-6-luna`. Las imágenes viajan como `data:`, así que el respaldo no depende de que el proveedor pueda bajar una URL.
+
+## Addendum (F10.10 PR3, 2026-10-26) — las páginas leídas en el contexto
+
+La tool `leer_enlace` (ADR-028) guarda en la parte del mensaje solo una referencia (`readId`); el texto vive en `web_reads`. En la cadena de `assembleContext` entra un paso nuevo, `dietWebReads` (`chat/web-read-context.ts`), después de `dietAttachments` y **antes del techo**:
+
+- las filas de las lecturas de la ventana se cargan de una vez (`WebReadsService.forContext`), en paralelo con las cards y los adjuntos;
+- dentro de los últimos 3 turnos del creator, las páginas que caben en 12k tokens viajan completas (hasta ~6k cada una); las demás, como una línea con su título, dominio y descripción;
+- la dieta escribe lo que debe ver el modelo en la propia parte (`output.contexto`), así `capHistory` mide su tamaño real. Sin esto, cada página leída en el chat viajaba completa en cada turno y el techo solo veía una referencia de 200 caracteres (lo encontró el `/code-review` del PR3);
+- `convertToModelMessages` recibe las tools, y el `toModelOutput` de `leer_enlace` le da forma de `<pagina>` o de línea. En el turno en que se lee, la fila sale del mapa del turno.

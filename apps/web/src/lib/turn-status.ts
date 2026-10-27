@@ -1,9 +1,4 @@
-import {
-  isCardToolPart,
-  isMemoryToolPart,
-  isWebToolPart,
-  type ChatUIMessage,
-} from "./chat-types.js";
+import { isCardToolPart, isMemoryToolPart, type ChatUIMessage } from "./chat-types.js";
 
 /**
  * Cómo se quedó un turno sin respuesta completa (F10.8.2). `stopped`: se cortó
@@ -80,11 +75,10 @@ export function replyContent(message: ChatUIMessage): ReplyContent {
   if (message.parts.some((part) => part.type === "text" && part.text.trim().length > 0)) {
     return "text";
   }
-  if (
-    message.parts.some(
-      (part) => isCardToolPart(part) || isMemoryToolPart(part) || isWebToolPart(part),
-    )
-  ) {
+  // F10.10: una lectura de enlace todavía no se pinta (llega en el PR6, con
+  // su línea de estado); contarla aquí dejaría un hueco vacío y un aviso que
+  // dice que algo se ve. Entra a esta lista cuando AssistantMessage la pinte.
+  if (message.parts.some((part) => isCardToolPart(part) || isMemoryToolPart(part))) {
     return "tools";
   }
   return "none";
