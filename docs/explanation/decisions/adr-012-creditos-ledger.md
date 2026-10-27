@@ -126,3 +126,8 @@ Medido en dev: ~750 tokens de entrada y ~310 de salida, 4 unidades. Se paga sola
 ## Addendum (2026-10-18, F10.9 PR4) — `content_digest`: describir un adjunto se cobra
 
 Igual que el título y la compactación: **se cobra** con la tarifa utility (`perThousandTokens.content_digest = UTILITY_RATE`), una vez por adjunto (`reference_type = 'message_attachment'`, `reference_id` = el adjunto; el dedup del ledger impide el segundo cobro). En la misma transacción que guarda la descripción: si no se guardó (otro job se adelantó), no se cobra. Una imagen cuesta ~3 unidades; un archivo de texto, según lo que se lea de él (máximo 20k caracteres). La razón es genérica a propósito: F10.10 cobra igual la descripción de una página leída.
+
+## Addendum (2026-10-26, F10.10 PR4) — la descripción de una página leída y leer en sí
+
+- **Describir una página leída se cobra igual que un adjunto:** `content_digest` con la tarifa utility, una vez por lectura (`reference_type = 'web_read'`, `reference_id` = la fila de `web_reads`), en la misma transacción que guarda la descripción. Se pide solo para las lecturas `ok` que con un turno más dejarían de viajar completas: una página que sigue completa hasta que el chat termina o se resume no se describe ni se cobra nunca. Una copia de caché a otro chat hereda la descripción; si la original todavía no la tenía, el job la toma de la primera lectura de esa página que se describa, sin volver a cobrar.
+- **Leer no tiene cobro propio** (ADR-028): el fetch es nuestro y el texto ya se cobra como tokens de entrada del turno (`chat_message`). La búsqueda web sí llevará tarifa fija por búsqueda (F10.10 PR5).

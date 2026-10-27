@@ -37,6 +37,7 @@ import { blocksOf, contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
 import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
+import { webReadIdsToDescribe } from "./web-read-context.js";
 import {
   assembleContext,
   attachmentIdsForContext,
@@ -50,6 +51,7 @@ import { lastTurnOf, storableMessageId } from "./last-user-message.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { TurnCards } from "./turn-cards.js";
 import { buildReadLinkTool } from "../web/read-link.tool.js";
+import { WebReadDigestService } from "../web/web-read-digest.service.js";
 import { WebReadsService } from "../web/web-reads.service.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
@@ -83,6 +85,7 @@ export class ChatService {
     @Inject(AttachmentsService) private readonly attachments: AttachmentsService,
     @Inject(AttachmentDigestService) private readonly attachmentDigests: AttachmentDigestService,
     @Inject(WebReadsService) private readonly webReads: WebReadsService,
+    @Inject(WebReadDigestService) private readonly webReadDigests: WebReadDigestService,
   ) {}
 
   /**
@@ -597,6 +600,21 @@ export class ChatService {
       userId,
       chatId,
       undescribed.map((row) => row.id),
+      trace.runId,
+    );
+    // F10.10: igual con las páginas leídas, pero solo las que con un turno
+    // más dejarían de viajar completas (web-read-context.ts): una que sigue
+    // completa hasta que el chat termina o se resume no se describe ni se
+    // cobra nunca. Las que no tienen texto no tienen nada que describir.
+    const toDescribe = new Set(
+      webReadIdsToDescribe(pendingAfterSummary(history, summary), webReadRows),
+    );
+    void this.webReadDigests.enqueue(
+      userId,
+      chatId,
+      [...(webReadRows?.values() ?? [])]
+        .filter((row) => toDescribe.has(row.id) && row.extractedText && digestDue(row))
+        .map((row) => row.id),
       trace.runId,
     );
     const modelHistory = context.messages;

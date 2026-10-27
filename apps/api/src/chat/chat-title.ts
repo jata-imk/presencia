@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { attachmentLines } from "./attachment-context.js";
 import { textOf } from "./history-compaction.js";
+import { webReadLines } from "./web-read-context.js";
 
 // Lo puro del título automático (F10.8): qué lee el modelo y cómo se limpia lo
 // que responde. Aparte del servicio para probarlo sin levantar env ni base.
@@ -55,7 +56,8 @@ export function transcriptForTitle(conversation: UIMessage[]): string {
     .flatMap((message) => {
       const text = textOf(message).slice(0, MAX_CHARS_PER_MESSAGE);
       // F10.9: un mensaje que es solo un adjunto también cuenta qué se mandó.
-      const lines = attachmentLines(message);
+      // F10.10: y las páginas leídas, igual que el resumen y la memoria.
+      const lines = [...attachmentLines(message), ...webReadLines(message)];
       if (text) lines.unshift(`${message.role === "user" ? "Creator" : "Presencia"}: ${text}`);
       return lines;
     })

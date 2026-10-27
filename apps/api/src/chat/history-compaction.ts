@@ -1,5 +1,6 @@
 import type { UIMessage } from "ai";
 import { attachmentLines } from "./attachment-context.js";
+import { webReadLines } from "./web-read-context.js";
 import { z } from "zod";
 import { cardSummariesIn, type CompressedCardOutput } from "./context-diet.js";
 import { estimateTextTokens } from "./text-tokens.js";
@@ -97,9 +98,10 @@ export function textOf(message: UIMessage): string {
 }
 
 /**
- * El tramo a resumir como texto: quién dijo qué, y las publicaciones como una
- * línea (no el JSON de la tool). Sin razonamiento: es del modelo, no de la
- * conversación.
+ * El tramo a resumir como texto: quién dijo qué, y las publicaciones, los
+ * adjuntos y las páginas leídas (F10.10) como una línea cada uno (no el JSON
+ * de la tool ni el texto de la página). Sin razonamiento: es del modelo, no de
+ * la conversación. La memoria entre chats indexa lo mismo (memory.ts).
  */
 export function transcriptForSummary(messages: UIMessage[]): string {
   return messages
@@ -108,6 +110,7 @@ export function transcriptForSummary(messages: UIMessage[]): string {
       const text = textOf(message).slice(0, MAX_CHARS_PER_MESSAGE);
       if (text) lines.push(`${message.role === "user" ? "Creator" : "Presencia"}: ${text}`);
       lines.push(...attachmentLines(message));
+      lines.push(...webReadLines(message));
       for (const card of cardSummariesIn([message])) {
         lines.push(
           `[Presencia creó o actualizó una publicación de ${card.network}: ${card.resumen}]`,
