@@ -17,7 +17,12 @@ import {
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { MESSAGE_STATUSES, MODOS_ESTRATEGIA, ATTACHMENT_KINDS } from "@presencia/shared";
+import {
+  MESSAGE_STATUSES,
+  MODOS_ESTRATEGIA,
+  ATTACHMENT_KINDS,
+  WEB_READ_STATUSES,
+} from "@presencia/shared";
 import { AI_TASK_KINDS, EMBEDDING_DIMENSIONS } from "../ai/provider-registry.js";
 
 // Implementa docs/reference/modelo-de-datos.md (aprobado 2026-07-18).
@@ -73,6 +78,9 @@ export const assetSource = pgEnum("asset_source", ["generated", "uploaded"]);
 
 // F10.9: lo que el creator adjunta a un mensaje del chat.
 export const attachmentKind = pgEnum("attachment_kind", ATTACHMENT_KINDS);
+
+// F10.10: en qué terminó la lectura de una página (ADR-028).
+export const webReadStatus = pgEnum("web_read_status", WEB_READ_STATUSES);
 
 // F10: una imagen pedida a un generador (ADR-025).
 export const imageGenerationKind = pgEnum("image_generation_kind", ["generate", "edit"]);
@@ -672,6 +680,54 @@ export const messageAttachments = pgTable(
     index("attachments_unsent")
       .on(t.createdAt)
       .where(sql`${t.messageId} is null`),
+  ],
+);
+
+// F10.10 (ADR-028): las páginas que leyó el chat con `leer_enlace`. Como los
+// adjuntos, en su propia tabla y no en `messages.parts`: la parte de la tool
+// guarda solo la referencia (`readId`), así el texto (hasta 60k caracteres)
+// no viaja al navegador en el stream ni en cada carga del chat, y la
+// descripción tiene una fila donde escribirse.
+//
+// Sin `message_id`: la referencia vive en la parte del mensaje, y una lectura
+// de un turno cortado que nadie vio solo ocupa su fila hasta que se borra el
+// chat (cascade). También es el caché: la misma URL en el mismo chat se lee de
+// aquí siempre, y desde otro chat si tiene menos de 24 h (se copia al chat
+// nuevo, para que muera con él).
+//
+// Las fallidas también se guardan (sin texto): la UI y el modelo necesitan
+// el motivo, y la traza de qué no se pudo leer es la que dice si hace falta un
+// lector con JavaScript.
+export const webReads = pgTable(
+  "web_reads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    chatId: uuid("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    // La que pidió el modelo, y a la que llevaron los redirects.
+    url: text("url").notNull(),
+    finalUrl: text("final_url"),
+    status: webReadStatus("status").notNull(),
+    title: text("title"),
+    siteName: text("site_name"),
+    extractedText: text("extracted_text"),
+    truncated: boolean("truncated").notNull().default(false),
+    // Solo había la descripción og: de la página, no su cuerpo.
+    onlyDescription: boolean("only_description").notNull().default(false),
+    tokenEstimate: integer("token_estimate").notNull().default(0),
+    // Lo que viaja en vez del texto cuando la lectura ya quedó atrás (PR4).
+    description: text("description"),
+    describedAt: timestamp("described_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("web_reads_by_chat").on(t.chatId),
+    index("web_reads_by_url").on(t.userId, t.url),
+    index("web_reads_by_final_url").on(t.userId, t.finalUrl),
   ],
 );
 

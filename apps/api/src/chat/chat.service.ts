@@ -37,13 +37,20 @@ import { blocksOf, contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
 import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
-import { assembleContext, attachmentIdsForContext, cardIdsForContext } from "./context-builder.js";
+import {
+  assembleContext,
+  attachmentIdsForContext,
+  cardIdsForContext,
+  webReadIdsForContext,
+} from "./context-builder.js";
 import { ChatRepository, type ChatSummaryRow, type MessageRow } from "./chat.repository.js";
 import { cardIdsIn, type CompressedCardOutput, type LiveCard } from "./context-diet.js";
 import { sanitizeInterruptedParts } from "./interrupted-turn.js";
 import { lastTurnOf, storableMessageId } from "./last-user-message.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { TurnCards } from "./turn-cards.js";
+import { buildReadLinkTool } from "../web/read-link.tool.js";
+import { WebReadsService } from "../web/web-reads.service.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
 // Si el modelo agota este presupuesto a mitad de una tool call, onEnd lo
@@ -75,6 +82,7 @@ export class ChatService {
     @Inject(MemoryService) private readonly memory: MemoryService,
     @Inject(AttachmentsService) private readonly attachments: AttachmentsService,
     @Inject(AttachmentDigestService) private readonly attachmentDigests: AttachmentDigestService,
+    @Inject(WebReadsService) private readonly webReads: WebReadsService,
   ) {}
 
   /**
@@ -562,10 +570,12 @@ export class ChatService {
     // del resumen y las de la ventana se leen de una sola vez. `history` no
     // se toca: la UI y lo que se persiste siguen siendo la conversación
     // completa.
-    const [liveCards, attachmentRows] = await Promise.all([
+    const [liveCards, attachmentRows, webReadRows] = await Promise.all([
       this.loadLiveCardsByIds(userId, cardIdsForContext(history, summary)),
       // F10.9: las filas de los adjuntos de la ventana (sin bytes todavía).
       this.attachments.forContext(userId, attachmentIdsForContext(history, summary)),
+      // F10.10: las de las páginas leídas, de una sola vez.
+      this.webReads.forContext(userId, webReadIdsForContext(history, summary)),
     ]);
     const context = assembleContext(
       history,
@@ -573,6 +583,7 @@ export class ChatService {
       liveCards,
       env.CHAT_HISTORY_CAP_TOKENS,
       attachmentRows,
+      webReadRows,
     );
     // F10.9: la descripción de los adjuntos de la ventana que no la tienen, en
     // segundo plano (el mensaje ya está guardado). Para cuando un adjunto deje
@@ -614,6 +625,9 @@ export class ChatService {
         execute: ({ consulta }) =>
           this.memory.search(userId, chatId, consulta, trace.runId, context.oldestVisibleMessageId),
       }),
+      // F10.10 (ADR-028): leer un enlace. Nunca lanza por la página: lo que
+      // salga mal es un `estado` que el modelo le dice al creator.
+      ...buildReadLinkTool({ userId, chatId, service: this.webReads }),
     };
 
     // Voz de marca del usuario (F4): null durante el onboarding, para
@@ -622,8 +636,12 @@ export class ChatService {
     // el chat nunca se bloquea por esto.
     const voice = await voicePromise;
     // F10.9: los bytes de los adjuntos que sobrevivieron al techo, al final.
+    // F10.10: con las tools, para que las páginas leídas en turnos anteriores
+    // pasen por el `toModelOutput` de leer_enlace, que les da forma a lo que la
+    // dieta (web-read-context.ts) ya les pegó: el texto o una línea.
     const modelMessages = await convertToModelMessages(
       await this.attachments.materialize(modelHistory, attachmentRows),
+      { tools },
     );
 
     // Cortado mientras se armaba el turno (F10.8.2): no hay a quién responder.

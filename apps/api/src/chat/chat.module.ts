@@ -6,6 +6,7 @@ import { CardsModule } from "../cards/cards.module.js";
 import { CreditsModule } from "../credits/credits.module.js";
 import { FoldersModule } from "../folders/folders.module.js";
 import { JobsModule } from "../jobs/jobs.module.js";
+import { WebModule } from "../web/web.module.js";
 import { CardRewriteController } from "./card-rewrite.controller.js";
 import { CardRewriteService } from "./card-rewrite.service.js";
 import { ChatController } from "./chat.controller.js";
@@ -24,6 +25,7 @@ import { MemoryService } from "./memory.service.js";
     CreditsModule,
     FoldersModule,
     JobsModule,
+    WebModule,
   ],
   controllers: [ChatController, CardRewriteController],
   providers: [

@@ -37,11 +37,14 @@ describe("buildSystemPrompt — sin voz", () => {
     expect(buildSystemPrompt(null)).not.toContain("<voz_de_marca>");
   });
 
-  // F10.8.4: sin esta frase el modelo decía haber leído enlaces que nunca
-  // abrió. La suite cultural mide el comportamiento (limite-enlace y
-  // tool-post-con-enlace); esto solo evita que una reescritura la tire.
-  it("dice que no puede abrir enlaces", () => {
-    expect(BASE_SYSTEM_PROMPT).toContain("No puedes abrir enlaces");
+  // F10.8.4: sin la regla de honestidad el modelo decía haber leído enlaces
+  // que nunca abrió. F10.10: ya los lee, pero la regla sigue para los que no
+  // puede abrir, y la página llega como datos. La suite cultural mide el
+  // comportamiento; esto solo evita que una reescritura tire las frases.
+  it("lee enlaces con la tool, sin fingir los que no pudo abrir", () => {
+    expect(BASE_SYSTEM_PROMPT).toContain("leer_enlace");
+    expect(BASE_SYSTEM_PROMPT).toContain("nunca digas ni insinúes que la leíste");
+    expect(BASE_SYSTEM_PROMPT).toContain("<pagina>");
   });
 });
 
