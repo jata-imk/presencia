@@ -21,7 +21,7 @@ import { stepCountIs, streamText, tool, type ModelMessage, type ToolSet } from "
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CARD_ARCHETYPE_TOOLS } from "@presencia/shared";
+import { CARD_ARCHETYPE_TOOLS, READ_LINK_TOOL_NAME } from "@presencia/shared";
 import { costOf } from "../../src/ai/model-prices.js";
 import {
   createModelResolver,
@@ -32,6 +32,7 @@ import { buildSystemPrompt } from "../../src/chat/system-prompt.js";
 import { messagesWithAttachments } from "./attachments.js";
 import { culturalPrompts, type CulturalPrompt } from "./prompts.js";
 import { CULTURAL_SUITE_VOICES, type VoiceFixture } from "./voices.js";
+import { suiteReadLinkTools } from "./web-pages.js";
 import { registrarGasto, splitModelId } from "../gasto-local.js";
 
 // Los candidatos de F10.7 (ADR-004): Terra como referencia de lo que corre
@@ -102,7 +103,8 @@ async function runPrompt(
       model: resolveModel(modelEntry),
       system,
       ...input,
-      tools: culturalSuiteTools,
+      // F10.10: la de leer enlaces, nueva en cada corrida (lleva su tope).
+      tools: { ...culturalSuiteTools, ...suiteReadLinkTools() },
       stopWhen: stepCountIs(3),
     });
     let firstVisibleMs: number | null = null;
@@ -179,11 +181,25 @@ async function runPrompt(
 // Bloque de resultado reusado por el modo normal (### modelo) y el modo
 // voces (#### voz dentro de ### modelo) — mismo contenido, distinto nivel
 // de encabezado ya empujado por el caller.
-function appendResultLines(lines: string[], result: RunResult, expectsTool: boolean): void {
+function appendResultLines(
+  lines: string[],
+  result: RunResult,
+  expectsTool: boolean,
+  expectsReadLink?: boolean,
+): void {
   if (result.error) {
     lines.push(`**Error:** \`${result.error}\``, "");
   } else {
     lines.push(result.text.trim() || `*(sin texto — finishReason: ${result.finishReason})*`, "");
+  }
+  // F10.10: leer o no el enlace es parte de lo que se mide.
+  if (expectsReadLink !== undefined) {
+    const reads = result.toolAttempts.filter((a) => a.toolName === READ_LINK_TOOL_NAME).length;
+    const ok = reads > 0 === expectsReadLink;
+    lines.push(
+      `- ¿Leyó el enlace?: ${reads > 0 ? `sí (${reads})` : "no"} — ${expectsReadLink ? "debía leerlo" : "no debía"} ${ok ? "✅" : "❌"}`,
+      "",
+    );
   }
   const toolCalls = result.toolAttempts.length;
   if (expectsTool || toolCalls > 0) {
@@ -199,7 +215,7 @@ function appendResultLines(lines: string[], result: RunResult, expectsTool: bool
   // así se ve qué mandó el modelo, no solo si pasó Zod).
   for (const attempt of result.toolAttempts) {
     lines.push(
-      `<details><summary>Card generada — <code>${attempt.toolName}</code>${attempt.valid ? "" : " ⚠️ input inválido"}</summary>`,
+      `<details><summary>${attempt.toolName === READ_LINK_TOOL_NAME ? "Lectura" : "Card generada"} — <code>${attempt.toolName}</code>${attempt.valid ? "" : " ⚠️ input inválido"}</summary>`,
       "",
       "```json",
       JSON.stringify(attempt.input, null, 2),
@@ -358,7 +374,10 @@ async function main(): Promise<void> {
 
   for (const prompt of prompts) {
     console.log(`\n▶ ${prompt.id}`);
-    lines.push(`## ${prompt.id}${prompt.expectsTool ? " (espera tool call)" : ""}`, "");
+    lines.push(
+      `## ${prompt.id}${prompt.expectsTool ? " (espera tool call)" : ""}${prompt.expectsReadLink ? " (espera leer el enlace)" : ""}`,
+      "",
+    );
     lines.push(`> ${prompt.text}`, "");
     if (prompt.attachments) {
       lines.push(`Adjuntos: ${prompt.attachments.map((a) => `\`${a.filename}\``).join(", ")}.`, "");
@@ -407,7 +426,7 @@ async function main(): Promise<void> {
         }
 
         if (voiceFixture) lines.push(`#### Voz: ${voiceFixture.label}`, "");
-        appendResultLines(lines, result, prompt.expectsTool);
+        appendResultLines(lines, result, prompt.expectsTool, prompt.expectsReadLink);
       }
     }
   }
