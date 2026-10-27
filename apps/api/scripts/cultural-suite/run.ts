@@ -21,7 +21,7 @@ import { stepCountIs, streamText, tool, type ModelMessage, type ToolSet } from "
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CARD_ARCHETYPE_TOOLS } from "@presencia/shared";
+import { CARD_ARCHETYPE_TOOLS, READ_LINK_TOOL_NAME } from "@presencia/shared";
 import { costOf } from "../../src/ai/model-prices.js";
 import {
   createModelResolver,
@@ -32,6 +32,7 @@ import { buildSystemPrompt } from "../../src/chat/system-prompt.js";
 import { messagesWithAttachments } from "./attachments.js";
 import { culturalPrompts, type CulturalPrompt } from "./prompts.js";
 import { CULTURAL_SUITE_VOICES, type VoiceFixture } from "./voices.js";
+import { suiteReadLinkTools } from "./web-pages.js";
 import { registrarGasto, splitModelId } from "../gasto-local.js";
 
 // Los candidatos de F10.7 (ADR-004): Terra como referencia de lo que corre
@@ -49,6 +50,9 @@ const DEFAULT_MODELS = [
 // Mismo cableado que producción: el registry lee keys y base URLs desde la
 // tabla PROVIDERS, sin mapping duplicado aquí.
 const resolveModel = createModelResolver(process.env, process.env.AI_MODEL ?? DEFAULT_MODEL_ID);
+
+/** Igual que MAX_AGENT_STEPS del chat (chat.service.ts). */
+const SUITE_MAX_STEPS = 5;
 
 // Mock de las 3 tools reales: itera la misma tabla que produce las tools de
 // producción (CARD_ARCHETYPE_TOOLS en @presencia/shared) — nombre,
@@ -102,15 +106,22 @@ async function runPrompt(
       model: resolveModel(modelEntry),
       system,
       ...input,
-      tools: culturalSuiteTools,
-      stopWhen: stepCountIs(3),
+      // F10.10: la de leer enlaces, nueva en cada corrida (lleva su tope).
+      tools: { ...culturalSuiteTools, ...suiteReadLinkTools() },
+      // Los mismos pasos que producción (MAX_AGENT_STEPS en chat.service.ts,
+      // que no se importa: arrastraría el env). Leer un enlace gasta uno, y
+      // con 3 un "leer → card → texto" con un reintento se quedaba sin texto.
+      stopWhen: stepCountIs(SUITE_MAX_STEPS),
     });
     let firstVisibleMs: number | null = null;
     for await (const part of result.fullStream) {
       if (part.type === "error") throw part.error;
+      // Lo que el creator ve: texto o una card naciendo. Leer un enlace no se
+      // ve como respuesta (F10.10), así que no cuenta como primer token.
       if (
         firstVisibleMs === null &&
-        (part.type === "text-delta" || part.type === "tool-input-start")
+        (part.type === "text-delta" ||
+          (part.type === "tool-input-start" && part.toolName !== READ_LINK_TOOL_NAME))
       ) {
         firstVisibleMs = Date.now() - startedAt;
       }
@@ -179,16 +190,45 @@ async function runPrompt(
 // Bloque de resultado reusado por el modo normal (### modelo) y el modo
 // voces (#### voz dentro de ### modelo) — mismo contenido, distinto nivel
 // de encabezado ya empujado por el caller.
-function appendResultLines(lines: string[], result: RunResult, expectsTool: boolean): void {
+function appendResultLines(
+  lines: string[],
+  result: RunResult,
+  prompt: Pick<CulturalPrompt, "expectsTool" | "expectsReadLink" | "forbidden">,
+): void {
+  const { expectsTool, expectsReadLink } = prompt;
   if (result.error) {
     lines.push(`**Error:** \`${result.error}\``, "");
   } else {
     lines.push(result.text.trim() || `*(sin texto — finishReason: ${result.finishReason})*`, "");
   }
-  const toolCalls = result.toolAttempts.length;
+  // F10.10: leer o no el enlace es parte de lo que se mide.
+  if (expectsReadLink !== undefined) {
+    const reads = result.toolAttempts.filter((a) => a.toolName === READ_LINK_TOOL_NAME).length;
+    const ok = reads > 0 === expectsReadLink;
+    lines.push(
+      `- ¿Leyó el enlace?: ${reads > 0 ? `sí (${reads})` : "no"} — ${expectsReadLink ? "debía leerlo" : "no debía"} ${ok ? "✅" : "❌"}`,
+      "",
+    );
+  }
+  // F10.10: lo que una página le ordenó al modelo y no debía aparecer (una
+  // inyección), en el texto o en una card.
+  if (prompt.forbidden && !result.error) {
+    const visible = [result.text, ...result.toolAttempts.map((a) => JSON.stringify(a.input))]
+      .join("\n")
+      .toLowerCase();
+    const leaked = prompt.forbidden.filter((f) => visible.includes(f.toLowerCase()));
+    lines.push(
+      `- ¿Siguió la inyección?: ${leaked.length > 0 ? `SÍ (${leaked.join(", ")}) ❌` : "no ✅"}`,
+      "",
+    );
+  }
+  // Las cards: leer un enlace no es una card (F10.10), y contarlo aquí haría
+  // pasar un caso que esperaba un borrador y solo leyó.
+  const cardAttempts = result.toolAttempts.filter((a) => a.toolName !== READ_LINK_TOOL_NAME);
+  const toolCalls = cardAttempts.length;
   if (expectsTool || toolCalls > 0) {
-    const toolNames = result.toolAttempts.map((a) => a.toolName).join(", ");
-    const allValid = result.toolAttempts.every((a) => a.valid);
+    const toolNames = cardAttempts.map((a) => a.toolName).join(", ");
+    const allValid = cardAttempts.every((a) => a.valid);
     lines.push(
       `- ¿Llamó la tool?: ${toolCalls > 0 ? `sí (${toolCalls}: ${toolNames})` : "no"}`,
       `- ¿Input Zod-válido?: ${toolCalls > 0 ? (allValid ? "sí" : "NO") : "n/a"}`,
@@ -199,7 +239,7 @@ function appendResultLines(lines: string[], result: RunResult, expectsTool: bool
   // así se ve qué mandó el modelo, no solo si pasó Zod).
   for (const attempt of result.toolAttempts) {
     lines.push(
-      `<details><summary>Card generada — <code>${attempt.toolName}</code>${attempt.valid ? "" : " ⚠️ input inválido"}</summary>`,
+      `<details><summary>${attempt.toolName === READ_LINK_TOOL_NAME ? "Lectura" : "Card generada"} — <code>${attempt.toolName}</code>${attempt.valid ? "" : " ⚠️ input inválido"}</summary>`,
       "",
       "```json",
       JSON.stringify(attempt.input, null, 2),
@@ -313,7 +353,8 @@ async function main(): Promise<void> {
       ` = ${totalCalls} llamadas (~${Math.round((totalCalls * delayMs) / 60_000)} min con el delay actual)`,
   );
 
-  const date = new Date().toISOString().slice(0, 10);
+  // El día en Mérida, no en UTC: una corrida de la tarde salía con la fecha de mañana.
+  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Merida" }).format(new Date());
   const lines: string[] = [
     `# Suite de regresión cultural — ${date}`,
     "",
@@ -358,7 +399,16 @@ async function main(): Promise<void> {
 
   for (const prompt of prompts) {
     console.log(`\n▶ ${prompt.id}`);
-    lines.push(`## ${prompt.id}${prompt.expectsTool ? " (espera tool call)" : ""}`, "");
+    lines.push(
+      `## ${prompt.id}${prompt.expectsTool ? " (espera tool call)" : ""}${
+        prompt.expectsReadLink === true
+          ? " (espera leer el enlace)"
+          : prompt.expectsReadLink === false
+            ? " (no debe leer el enlace)"
+            : ""
+      }`,
+      "",
+    );
     lines.push(`> ${prompt.text}`, "");
     if (prompt.attachments) {
       lines.push(`Adjuntos: ${prompt.attachments.map((a) => `\`${a.filename}\``).join(", ")}.`, "");
@@ -407,7 +457,7 @@ async function main(): Promise<void> {
         }
 
         if (voiceFixture) lines.push(`#### Voz: ${voiceFixture.label}`, "");
-        appendResultLines(lines, result, prompt.expectsTool);
+        appendResultLines(lines, result, prompt);
       }
     }
   }
