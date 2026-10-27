@@ -91,7 +91,8 @@ export function pageForModel(output: ReadLinkOutput, view: PageView | null): str
 export function buildReadLinkTool(deps: {
   userId: string;
   chatId: string;
-  service: WebReadsService;
+  // Solo lo que la tool usa: la suite cultural le pasa uno de mentira tipado contra esto.
+  service: Pick<WebReadsService, "read" | "findById">;
 }): ToolSet {
   let reads = 0;
   // Las filas leídas en este turno, para no ir a la base en toModelOutput.

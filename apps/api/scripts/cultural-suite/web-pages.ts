@@ -1,4 +1,6 @@
 import type { ToolSet } from "ai";
+import type { WebReadStatus } from "@presencia/shared";
+import { estimateTextTokens } from "../../src/attachments/attachment-content.js";
 import { buildReadLinkTool } from "../../src/web/read-link.tool.js";
 import { requiresSession } from "../../src/web/read-page.js";
 import { normalizeReadUrl } from "../../src/web/read-url.js";
@@ -36,41 +38,46 @@ const PAGES: Record<string, { title: string; siteName: string; text: string }> =
   },
 };
 
-function rowFor(url: string): WebReadRow {
-  const page = PAGES[url]!;
+/**
+ * La fila que guardaría producción: también para una lectura fallida, que en
+ * `web_reads` queda con su estado y sin texto (y con id, como la ve el modelo).
+ */
+function rowFor(url: string, status: WebReadStatus): WebReadRow {
+  const page = status === "ok" ? PAGES[url] : undefined;
   return {
     id: `suite-${url}`,
     userId: "suite",
     chatId: "suite",
     url,
-    finalUrl: url,
-    status: "ok",
-    title: page.title,
-    siteName: page.siteName,
-    extractedText: page.text,
+    finalUrl: page ? url : null,
+    status,
+    title: page?.title ?? null,
+    siteName: page?.siteName ?? null,
+    extractedText: page?.text ?? null,
     truncated: false,
     onlyDescription: false,
-    tokenEstimate: Math.ceil(page.text.length / 4),
+    tokenEstimate: page ? estimateTextTokens(page.text) : 0,
     description: null,
     describedAt: null,
     createdAt: new Date(),
   };
 }
 
-const fakeService = {
-  read: (_userId: string, _chatId: string, rawUrl: string) => {
+const fakeService: Pick<WebReadsService, "read" | "findById"> = {
+  read: (_userId, _chatId, rawUrl) => {
     const url = normalizeReadUrl(rawUrl);
+    // Como producción: una dirección que no se arma no llega a guardarse.
     if (!url) return Promise.resolve({ output: failedOutput(rawUrl, "no_encontrada"), row: null });
-    if (requiresSession(url)) {
-      return Promise.resolve({ output: failedOutput(url, "requiere_sesion"), row: null });
-    }
-    if (!PAGES[url])
-      return Promise.resolve({ output: failedOutput(url, "no_encontrada"), row: null });
-    const row = rowFor(url);
+    const status: WebReadStatus = requiresSession(url)
+      ? "requiere_sesion"
+      : PAGES[url]
+        ? "ok"
+        : "no_encontrada";
+    const row = rowFor(url, status);
     return Promise.resolve({ output: outputOf(row), row });
   },
   findById: () => Promise.resolve(null),
-} as unknown as WebReadsService;
+};
 
 /** La tool de producción, una por corrida (lleva el tope del turno adentro). */
 export function suiteReadLinkTools(): ToolSet {
