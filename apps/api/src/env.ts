@@ -120,6 +120,12 @@ const envSchema = z
     // El /api final es parte de la base, no del path: todas las rutas del
     // openapi.json cuelgan de https://api.upload-post.com/api.
     UPLOAD_POST_BASE_URL: z.url().default("https://api.upload-post.com/api"),
+    // Búsqueda web del chat (F10.10, ADR-028). "brave" es el elegido en el
+    // bake-off (docs/reference/bakeoff-busqueda/); "fake" contesta resultados
+    // fijos sin red y es el default, como la publicación: levantar el repo
+    // sin ninguna key no truena el boot.
+    WEB_SEARCH_PROVIDER: z.enum(["fake", "brave"]).default("fake"),
+    BRAVE_SEARCH_API_KEY: z.string().min(1).optional(),
     // --- Backup diario (F8.5, ADR-011) ---
     // Opcionales como grupo: sin configurar, el job no se registra y la API
     // arranca igual (en dev nadie tiene bucket). Pero configurado a medias es
@@ -311,6 +317,13 @@ const envSchema = z
         code: "custom",
         path: ["POSTFAST_API_KEY"],
         message: 'PUBLISHING_PROVIDER="postfast" requiere POSTFAST_API_KEY en el entorno',
+      });
+    }
+    if (value.WEB_SEARCH_PROVIDER === "brave" && !value.BRAVE_SEARCH_API_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["BRAVE_SEARCH_API_KEY"],
+        message: 'WEB_SEARCH_PROVIDER="brave" requiere BRAVE_SEARCH_API_KEY en el entorno',
       });
     }
     if (value.PUBLISHING_PROVIDER === "upload_post" && !value.UPLOAD_POST_API_KEY) {

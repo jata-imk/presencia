@@ -8,6 +8,7 @@ import {
 import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage } from "ai";
 import {
   MEMORY_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
   memorySearchInputSchema,
   type BrandVoiceForPrompt,
   type CardContent,
@@ -53,6 +54,8 @@ import { TurnCards } from "./turn-cards.js";
 import { buildReadLinkTool } from "../web/read-link.tool.js";
 import { WebReadDigestService } from "../web/web-read-digest.service.js";
 import { WebReadsService } from "../web/web-reads.service.js";
+import { buildWebSearchTool } from "../web/web-search.tool.js";
+import { WebSearchService } from "../web/web-search.service.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
 // Si el modelo agota este presupuesto a mitad de una tool call, onEnd lo
@@ -86,6 +89,7 @@ export class ChatService {
     @Inject(AttachmentDigestService) private readonly attachmentDigests: AttachmentDigestService,
     @Inject(WebReadsService) private readonly webReads: WebReadsService,
     @Inject(WebReadDigestService) private readonly webReadDigests: WebReadDigestService,
+    @Inject(WebSearchService) private readonly webSearch: WebSearchService,
   ) {}
 
   /**
@@ -289,6 +293,8 @@ export class ChatService {
     chatId: string,
     userMessage: UIMessage,
     res: ServerResponse,
+    /** F10.10: lo que trae el body además del mensaje. */
+    options: { webSearch?: boolean } = {},
   ): Promise<void> {
     // Bloqueo suave (F5, ADR-012): se rechaza antes de tocar la DB o quemar
     // tokens del proveedor — nunca deja un mensaje user huérfano sin respuesta.
@@ -377,6 +383,7 @@ export class ChatService {
         voicePromise,
         turn,
         retitle,
+        options.webSearch === true,
       );
     } catch (error) {
       turn.release();
@@ -536,6 +543,8 @@ export class ChatService {
     turn: TurnInFlight,
     /** F10.9: se rehízo el primer turno; el título automático se rehace. */
     retitle = false,
+    /** F10.10: "Buscar en la web" del menú ＋: el primer paso busca sí o sí. */
+    forceWebSearch = false,
   ): Promise<void> {
     const { abortController, release } = turn;
 
@@ -646,6 +655,8 @@ export class ChatService {
       // F10.10 (ADR-028): leer un enlace. Nunca lanza por la página: lo que
       // salga mal es un `estado` que el modelo le dice al creator.
       ...buildReadLinkTool({ userId, chatId, service: this.webReads }),
+      // F10.10: buscar en la web. Se cobra por búsqueda (flat.web_search).
+      ...buildWebSearchTool({ userId, chatId, runId: trace.runId, service: this.webSearch }),
     };
 
     // Voz de marca del usuario (F4): null durante el onboarding, para
@@ -719,6 +730,14 @@ export class ChatService {
       messages: modelMessages,
       tools,
       stopWhen: stepCountIs(MAX_AGENT_STEPS),
+      // F10.10: "Buscar en la web" del menú ＋ obliga a buscar en el primer
+      // paso; después el modelo sigue libre (leer, crear la card, contestar).
+      prepareStep: forceWebSearch
+        ? ({ stepNumber }) =>
+            stepNumber === 0
+              ? { toolChoice: { type: "tool", toolName: WEB_SEARCH_TOOL_NAME } }
+              : undefined
+        : undefined,
       abortSignal: abortController.signal,
       onStepStart: (event) => trace.stepStarted(event),
       onStepFinish: (step) => trace.stepFinished(step),

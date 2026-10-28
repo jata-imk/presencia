@@ -7,6 +7,8 @@ import {
   dietWebReads,
   RECENT_WEB_READ_TOKENS,
   webReadIdsIn,
+  SEARCH_SNIPPET_CHARS_AFTER_TURN,
+  trimWebSearchOutputsForModel,
   webReadIdsToDescribe,
   webReadLines,
   WEB_READ_MODEL_CHARS,
@@ -186,5 +188,42 @@ describe("webReadIdsToDescribe", () => {
 
   it("sin filas no hay nada que describir", () => {
     expect(webReadIdsToDescribe([user("u1"), assistant("a1", "r1"), user("u2")], null)).toEqual([]);
+  });
+});
+
+describe("búsquedas en el contexto", () => {
+  const searchPart = (fragmento: string) => ({
+    type: "tool-buscar_en_web",
+    toolCallId: "s1",
+    state: "output-available",
+    input: { consulta: "precio del café" },
+    output: {
+      searchId: "s1",
+      consulta: "precio del café",
+      estado: "ok",
+      resultados: [
+        { titulo: "Café", url: "https://x.mx/cafe", dominio: "x.mx", fragmento, fecha: null },
+      ],
+    },
+  });
+
+  it("las de turnos anteriores viajan con el fragmento corto", () => {
+    const largo = "a".repeat(SEARCH_SNIPPET_CHARS_AFTER_TURN + 100);
+    const messages = [
+      user("u1"),
+      { id: "a1", role: "assistant", parts: [searchPart(largo)] } as UIMessage,
+      user("u2"),
+    ];
+    const out = trimWebSearchOutputsForModel(messages);
+    const part = out[1]!.parts[0] as { output: { resultados: { fragmento: string }[] } };
+    expect(part.output.resultados[0]!.fragmento).toHaveLength(SEARCH_SNIPPET_CHARS_AFTER_TURN + 1);
+    // El original no se toca: es lo que se guarda y ve la UI.
+    const original = messages[1]!.parts[0] as { output: { resultados: { fragmento: string }[] } };
+    expect(original.output.resultados[0]!.fragmento).toBe(largo);
+  });
+
+  it("el resumen y la memoria dicen qué se buscó", () => {
+    const message = { id: "a1", role: "assistant", parts: [searchPart("x")] } as UIMessage;
+    expect(webReadLines(message)).toEqual(['[Presencia buscó en la web: "precio del café"]']);
   });
 });

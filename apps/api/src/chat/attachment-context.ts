@@ -237,7 +237,10 @@ export function safeName(name: string, max = 300): string {
  * seguir como si lo dijera el creator (el prompt de sistema trata lo de
  * adentro como datos).
  */
-export function insideTag(text: string, tag: "adjunto" | "pagina" = "adjunto"): string {
+export function insideTag(
+  text: string,
+  tag: "adjunto" | "pagina" | "resultados" = "adjunto",
+): string {
   return text.replace(new RegExp(`<(\\/?)${tag}`, "gi"), `‹$1${tag}`);
 }
 

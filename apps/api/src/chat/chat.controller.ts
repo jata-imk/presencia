@@ -134,7 +134,9 @@ export class ChatController {
       return;
     }
 
-    await this.chatService.streamChat(user.id, chatId, userMessage, res);
+    await this.chatService.streamChat(user.id, chatId, userMessage, res, {
+      webSearch: trigger.data.webSearch,
+    });
   }
 
   private parseChatId(id: string): string {

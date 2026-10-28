@@ -46,6 +46,14 @@ describe("buildSystemPrompt — sin voz", () => {
     expect(BASE_SYSTEM_PROMPT).toContain("nunca digas ni insinúes que la leíste");
     expect(BASE_SYSTEM_PROMPT).toContain("<pagina>");
   });
+
+  // F10.10: buscar sin inventar y citando, y no buscar de más.
+  it("busca con la tool, cita la fuente y no inventa datos que cambian", () => {
+    expect(BASE_SYSTEM_PROMPT).toContain("buscar_en_web");
+    expect(BASE_SYSTEM_PROMPT).toContain("enlace markdown");
+    expect(BASE_SYSTEM_PROMPT).toContain("nunca inventes un precio");
+    expect(BASE_SYSTEM_PROMPT).toContain("no la uses para escribir un post de su propio negocio");
+  });
 });
 
 describe("buildSystemPrompt — con voz completa", () => {

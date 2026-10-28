@@ -10,6 +10,9 @@ import {
   READ_LINK_TOOL_NAME,
   type ReadLinkInput,
   type ReadLinkOutput,
+  WEB_SEARCH_TOOL_NAME,
+  type WebSearchInput,
+  type WebSearchOutput,
 } from "@presencia/shared";
 
 // Tipado explícito en vez de InferUITools: las tools del backend no
@@ -25,9 +28,13 @@ export type MemoryUITools = {
   [MEMORY_TOOL_NAME]: { input: MemorySearchInput; output: MemorySearchOutput };
 };
 
-/** F10.10: leer un enlace. Su output es una referencia: el texto no llega aquí. */
+/**
+ * F10.10: leer un enlace (su output es una referencia: el texto no llega
+ * aquí) y buscar en la web (sus resultados sí vienen completos).
+ */
 export type WebUITools = {
   [READ_LINK_TOOL_NAME]: { input: ReadLinkInput; output: ReadLinkOutput };
+  [WEB_SEARCH_TOOL_NAME]: { input: WebSearchInput; output: WebSearchOutput };
 };
 
 // F10.8.2: `metadata.status` marca una respuesta que se cortó o falló.
@@ -76,7 +83,9 @@ export function isMemoryToolPart(part: ChatPart): part is MemoryToolPart {
   return part.type === `tool-${MEMORY_TOOL_NAME}`;
 }
 
-/** F10.10: una lectura de enlace (la búsqueda web se suma aquí en el PR5). */
+/** F10.10: una lectura de enlace o una búsqueda web. */
 export function isWebToolPart(part: ChatPart): part is WebToolPart {
-  return part.type === `tool-${READ_LINK_TOOL_NAME}`;
+  return (
+    part.type === `tool-${READ_LINK_TOOL_NAME}` || part.type === `tool-${WEB_SEARCH_TOOL_NAME}`
+  );
 }

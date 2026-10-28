@@ -38,9 +38,10 @@ const CACHE_DIR = path.join(OUT_ROOT, "cache-respuestas");
 // Sube si cambia cómo se arma la pregunta o la regla de citar: la huella no los ve.
 const PROMPT_VERSION = 1;
 
-// La regla de búsqueda todavía no está en el prompt de producción (llega con
-// la tool, F10.10 PR5). Esta es la que se va a proponer: si en la galería no
-// convence, se ajusta aquí y allá.
+// La regla con la que se corrió la galería del 2026-10-27. Desde el PR5 de
+// F10.10 la de producción vive en system-prompt.ts (más completa: cuándo
+// buscar, abrir con leer_enlace, citar en el chat y no en el post); esta se
+// queda igual para que la galería se pueda volver a correr como se calificó.
 const SEARCH_RULE =
   "Usaste la herramienta buscar_en_web. Contesta con lo que dicen los resultados, en español " +
   "mexicano y tuteando. Cita la fuente de cada dato que cambia (precios, horarios, fechas, " +
