@@ -1,12 +1,13 @@
 // Las consultas del bake-off de búsqueda (F10.10). Escritas como las haría
 // el chat por un creator del sureste: lo que el modelo no sabe de memoria
 // (precios y horarios de hoy, noticias de esta semana, negocios locales) y lo
-// que un creator de marketing pregunta en México. Cuatro grupos de cuatro.
+// que un creator de marketing pregunta en México. Cuatro grupos de cuatro,
+// más un post de nicho (el blog de Jose) para ver si llega a los sitios chicos.
 //
 // `mirar` es lo que distingue un buen resultado al calificar: no es la
 // respuesta correcta (cambia), es de dónde debería salir.
 
-export type Grupo = "precios" | "lugares" | "noticias" | "marketing";
+export type Grupo = "precios" | "lugares" | "noticias" | "marketing" | "nicho";
 
 export interface Consulta {
   id: string;
@@ -112,5 +113,14 @@ export const CONSULTAS: Consulta[] = [
     grupo: "marketing",
     consulta: "cuántos usuarios tiene LinkedIn en México 2026",
     mirar: "Una cifra con fuente y fecha (DataReportal, IAB México, LinkedIn).",
+  },
+  {
+    // Pedido de Jose (2026-10-27): un post de nicho, en español y reciente, de
+    // un blog chico. Mide si el buscador llega más allá de los sitios grandes.
+    id: "blog-openclaw-video",
+    grupo: "nicho",
+    consulta: "generar video con IA desde OpenClaw",
+    mirar:
+      "El post de josetejero.com (/blog/generar-video-con-ia-desde-openclaw) arriba; si no, la documentación de OpenClaw sobre video.",
   },
 ];
