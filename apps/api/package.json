@@ -14,6 +14,7 @@
     "suite:voz-prohibida": "tsx --env-file=../../.env scripts/cultural-suite/prohibited-word.ts",
     "bakeoff:imagenes": "tsx --env-file=../../.env scripts/image-bakeoff/run.ts",
     "bakeoff:busqueda": "tsx --env-file=../../.env scripts/search-bakeoff/run.ts",
+    "bakeoff:busqueda:respuestas": "tsx --env-file=../../.env scripts/search-bakeoff/respuestas.ts",
     "estilos:imagenes": "tsx --env-file=../../.env scripts/image-bakeoff/estilos.ts",
     "gasto": "tsx --env-file=../../.env scripts/gasto.ts",
     "traza": "tsx --env-file=../../.env scripts/traza.ts",
