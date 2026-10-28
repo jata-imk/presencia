@@ -7,6 +7,7 @@ import {
 } from "@presencia/shared";
 import type { WebReadRow } from "../web/web-reads.repository.js";
 import { KEEP_ATTACHMENT_USER_TURNS, recentTurnsStart, safeName } from "./attachment-context.js";
+import { trimResultFragments } from "./context-diet.js";
 
 // F10.10 (ADR-028): cómo viajan al modelo las páginas leídas en turnos
 // anteriores. Funciones puras, como attachment-context.ts.
@@ -203,26 +204,7 @@ function isDoneSearch(
  * y si hace falta el detalle, abre la página con leer_enlace o vuelve a buscar.
  */
 export function trimWebSearchOutputsForModel(messages: UIMessage[]): UIMessage[] {
-  return messages.map((message) => {
-    if (!message.parts.some(isDoneSearch)) return message;
-    return {
-      ...message,
-      parts: message.parts.map((part) => {
-        if (!isDoneSearch(part)) return part;
-        const output: WebSearchOutput = {
-          ...part.output,
-          resultados: part.output.resultados.map((r) => ({
-            ...r,
-            fragmento:
-              r.fragmento.length > SEARCH_SNIPPET_CHARS_AFTER_TURN
-                ? `${r.fragmento.slice(0, SEARCH_SNIPPET_CHARS_AFTER_TURN)}…`
-                : r.fragmento,
-          })),
-        };
-        return { ...part, output };
-      }),
-    };
-  });
+  return trimResultFragments(messages, SEARCH_PART_TYPE, SEARCH_SNIPPET_CHARS_AFTER_TURN);
 }
 
 /**
