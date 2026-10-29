@@ -31,7 +31,7 @@ Un harness es todo lo que rodea al modelo para que haga trabajo real. En nuestro
 
 - **Mastra.** Es el más compatible (está construido sobre el AI SDK) y trae memoria por capas: mensajes recientes, búsqueda semántica con pgvector, _working memory_ y _observational memory_. Pero guarda sus hilos y mensajes en tablas propias (`mastra_threads`, `mastra_messages`) que aíslan por un filtro `resourceId`, no por RLS de Postgres (choca con ADR-003). Su compactación no sabe qué es una card ni cuánto cobrar por resumir. Adoptarlo sería reescribir el chat, el SSE y el store de la web para obtener piezas que ya existen.
 - **OpenAI Agents SDK.** Centrado en OpenAI: su compactación (`responses.compact`) solo funciona con modelos de OpenAI, y nuestra cadena cae a Gemini y a Claude. Los otros proveedores entran por un adapter de extensión.
-- **LangGraph.** Ejecución durable por grafos, con checkpoints y aprobación humana. Resuelve flujos de días con pausas; nuestros turnos son de 5 pasos como máximo.
+- **LangGraph.** Ejecución durable por grafos, con checkpoints y aprobación humana. Resuelve flujos de días con pausas; nuestros turnos son de 7 pasos como máximo (5 hasta F10.10).
 
 **Qué se toma de ellos como referencia** (cada pieza nueva de harness empieza por ver cómo la resolvieron):
 

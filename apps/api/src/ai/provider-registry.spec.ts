@@ -187,6 +187,8 @@ describe("MODEL_BY_TASK", () => {
     "image_edit",
     "memory_index",
     "memory_search",
+    // F10.10: una búsqueda web no es un modelo; la contesta el buscador.
+    "web_search",
   ];
 
   it("cubre toda tarea de AI_TASK_KINDS menos las que piden una capacidad", () => {

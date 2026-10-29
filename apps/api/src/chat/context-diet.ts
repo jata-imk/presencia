@@ -4,7 +4,6 @@ import {
   MEMORY_TOOL_NAME,
   summarizeCardContent,
   type CardToolOutput,
-  type MemorySearchOutput,
 } from "@presencia/shared";
 
 // Discriminante explícito: solo las 3 tools de card (ADR-005), nunca "toda
@@ -171,22 +170,34 @@ const MEMORY_TOOL_TYPE = `tool-${MEMORY_TOOL_NAME}`;
  * Misma forma del output, con cada fragmento acortado. Puro, como el resto.
  */
 export function trimMemoryOutputsForModel(history: UIMessage[]): UIMessage[] {
+  return trimResultFragments(history, MEMORY_TOOL_TYPE, MEMORY_FRAGMENT_CHARS_AFTER_TURN);
+}
+
+/**
+ * Corta a `chars` el `fragmento` de cada resultado de una tool que devuelve
+ * `{ resultados: [{ fragmento }] }` (la memoria, F10.8; la búsqueda web,
+ * F10.10). Misma forma del output; lo demás de cada resultado queda igual.
+ */
+export function trimResultFragments(
+  history: UIMessage[],
+  partType: string,
+  chars: number,
+): UIMessage[] {
   return history.map((message) => {
     let changed = false;
     const parts = message.parts.map((part) => {
       const candidate = part as { type?: unknown; state?: unknown; output?: unknown };
-      if (candidate.type !== MEMORY_TOOL_TYPE || candidate.state !== "output-available") {
+      if (candidate.type !== partType || candidate.state !== "output-available") {
         return part;
       }
-      const output = candidate.output as Partial<MemorySearchOutput> | undefined;
+      const output = candidate.output as
+        { resultados?: { fragmento: string }[]; [key: string]: unknown } | undefined;
       if (!Array.isArray(output?.resultados)) return part;
       changed = true;
       const resultados = output.resultados.map((hit) => ({
         ...hit,
         fragmento:
-          hit.fragmento.length > MEMORY_FRAGMENT_CHARS_AFTER_TURN
-            ? `${hit.fragmento.slice(0, MEMORY_FRAGMENT_CHARS_AFTER_TURN)}…`
-            : hit.fragmento,
+          hit.fragmento.length > chars ? `${hit.fragmento.slice(0, chars)}…` : hit.fragmento,
       }));
       return { ...part, output: { ...output, resultados } } as typeof part;
     });

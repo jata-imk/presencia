@@ -25,7 +25,7 @@ export type CreditReason = (typeof creditReason.enumValues)[number];
  */
 export type TokenBilledTaskKind = Exclude<
   AiTaskKind,
-  "trends_search" | "trends_structure" | ImageTaskKind | MemoryTaskKind
+  "trends_search" | "trends_structure" | "web_search" | ImageTaskKind | MemoryTaskKind
 >;
 
 export interface TokenRate {
@@ -102,6 +102,14 @@ const V1: RateCard = {
     // El refresco PERIÓDICO no pasa por acá: lo absorbe el negocio
     // (ADR-024). Esto solo cobra adelantarlo.
     trend_refresh: 800,
+    // F10.10: una búsqueda de `buscar_en_web` (ADR-028). Brave cobra $0.005
+    // por consulta; con la misma relación unidades/dólar que una imagen y el
+    // refresco de tendencias (~14-16k unidades por dólar de costo), 75. Una
+    // cuota creator alcanza para ~400 búsquedas al mes si no hiciera nada más.
+    // Los resultados que el modelo lee ya se cobran como tokens del turno.
+    // Entró a la tabla v1 (y v2, que la extiende) sin subir versión: es una
+    // razón nueva, ningún asiento viejo la usa.
+    web_search: 75,
     // `ritmo_narration` NO está acá, y no es un olvido: se cobra por tokens
     // (perThousandTokens.analytics_narration), no con tarifa fija, porque su
     // costo depende del texto que produce.

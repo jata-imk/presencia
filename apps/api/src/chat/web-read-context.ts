@@ -1,7 +1,13 @@
 import type { UIMessage } from "ai";
-import { READ_LINK_TOOL_NAME, type ReadLinkOutput } from "@presencia/shared";
+import {
+  READ_LINK_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
+  type ReadLinkOutput,
+  type WebSearchOutput,
+} from "@presencia/shared";
 import type { WebReadRow } from "../web/web-reads.repository.js";
 import { KEEP_ATTACHMENT_USER_TURNS, recentTurnsStart, safeName } from "./attachment-context.js";
+import { trimResultFragments } from "./context-diet.js";
 
 // F10.10 (ADR-028): cómo viajan al modelo las páginas leídas en turnos
 // anteriores. Funciones puras, como attachment-context.ts.
@@ -166,10 +172,39 @@ function fullReadIds(
  */
 export function webReadLines(message: UIMessage): string[] {
   return message.parts.flatMap((part) => {
-    if (!isGoodRead(part)) return [];
-    const { dominio, url } = part.output;
-    return [`[Presencia leyó una página de ${dominio ?? safeName(url, 200)}]`];
+    if (isGoodRead(part)) {
+      const { dominio, url } = part.output;
+      return [`[Presencia leyó una página de ${dominio ?? safeName(url, 200)}]`];
+    }
+    // La consulta la escribió el modelo, no un tercero: sí entra.
+    if (isDoneSearch(part)) {
+      return [`[Presencia buscó en la web: "${safeName(part.output.consulta, 200)}"]`];
+    }
+    return [];
   });
+}
+
+const SEARCH_PART_TYPE = `tool-${WEB_SEARCH_TOOL_NAME}`;
+
+/** Lo que queda de cada fragmento de una búsqueda de un turno anterior. */
+export const SEARCH_SNIPPET_CHARS_AFTER_TURN = 200;
+
+function isDoneSearch(
+  part: UIMessage["parts"][number],
+): part is UIMessage["parts"][number] & { state: "output-available"; output: WebSearchOutput } {
+  if (part.type !== SEARCH_PART_TYPE) return false;
+  const p = part as { state?: string; output?: WebSearchOutput };
+  return p.state === "output-available" && p.output?.estado === "ok";
+}
+
+/**
+ * Las búsquedas de turnos anteriores viajan cortas, como los recuerdos
+ * (trimMemoryOutputsForModel): título, URL y el inicio de cada fragmento.
+ * Lo que importaba ya está en la respuesta que el modelo escribió con ellas,
+ * y si hace falta el detalle, abre la página con leer_enlace o vuelve a buscar.
+ */
+export function trimWebSearchOutputsForModel(messages: UIMessage[]): UIMessage[] {
+  return trimResultFragments(messages, SEARCH_PART_TYPE, SEARCH_SNIPPET_CHARS_AFTER_TURN);
 }
 
 /**

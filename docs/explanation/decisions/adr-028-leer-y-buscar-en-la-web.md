@@ -3,7 +3,7 @@
 **Decisión:** el Chat lee enlaces y busca en la web con **dos tools propias** sobre el AI SDK, `leer_enlace` y `buscar_en_web`, que funcionan igual con cualquier modelo de la cadena. No usa las tools nativas de los proveedores (`url_context` y `google_search` de Gemini, `web_fetch` y `web_search` de Anthropic, `web_search` de OpenAI).
 
 - **Leer** es nuestro: el servidor descarga la página detrás de una guardia SSRF, extrae el texto legible y lo guarda.
-- **Buscar** va detrás de una interfaz `SearchProvider`, como la publicación (ADR-009): un adapter con el servicio que gane el bake-off (`docs/reference/bakeoff-busqueda/`), sin respaldo.
+- **Buscar** va detrás de una interfaz `SearchProvider`, como la publicación (ADR-009): un adapter con el servicio que ganó el bake-off, **Brave** (addendum de abajo), sin respaldo.
 
 Se construye en F10.10 en siete PRs. Este ADR fija las decisiones; los detalles que cambien al implementarlas van como addenda aquí y en ADR-006 (contexto), ADR-011 (tabla) y ADR-012 (cobro).
 
@@ -81,7 +81,7 @@ Instagram, TikTok, Facebook, Threads y X no muestran contenido sin sesión: devu
 
 - leer no tiene fee propio, porque el texto ya se cobra como tokens de entrada del turno;
 - la descripción se cobra como `content_digest`;
-- cada búsqueda lleva una tarifa fija, calibrada contra el precio del servicio elegido.
+- cada búsqueda lleva una tarifa fija, calibrada contra el precio del servicio elegido (75 unidades con Brave; addendum de abajo).
 
 ## Consecuencias
 
@@ -93,3 +93,25 @@ Instagram, TikTok, Facebook, Threads y X no muestran contenido sin sesión: devu
   - una nativa baje de precio y gane la combinación con function tools en los tres proveedores;
   - la suite muestre muchas páginas vacías (agregar un reader);
   - o cambie el precio del servicio de búsqueda elegido (volver a correr `pnpm --filter @presencia/api bakeoff:busqueda`).
+
+## Addendum (F10.10 PR5, 2026-10-27) — el buscador es Brave
+
+**Cómo se eligió.** Dos galerías a ciegas, calificadas por Jose (`docs/reference/bakeoff-busqueda/2026-10-27-015404-*`), con 17 consultas: precios, horarios y noticias de Mérida, marketing en México y un post de nicho.
+
+- **Resultados crudos** (lo que recibe el modelo): Brave y Exa empatan arriba de las APIs (4.35); en precios gana Brave (4.25). Serper (4.06) y Tavily (3.94) traen resultados viejos o de Facebook justo en precios, y Tavily no trajo nada en 2 consultas.
+- **Respuesta final** (Luna escribiendo con los resultados de cada uno, lo que vería el creator): Brave 4.47, Exa y Serper 4.29, Tavily 4.00. En precios, Brave 4.75.
+- **Las nativas**, como referencia: la de OpenAI sacó 4.81 porque abre las páginas por su cuenta y trae el precio del día. En Presencia lo mismo lo hace la cadena buscar → `leer_enlace`; en vivo, "¿cuánto cuesta hoy el Tren Maya?" buscó, abrió el portal oficial y la nota de tarifas de octubre de 2026 y contestó con las vigentes, citadas.
+
+Brave además es el más rápido (0.7 s de mediana) y cuesta $5 por mil búsquedas. Exa queda como segunda opción: cambiar es escribir su adapter y una variable.
+
+**Contrato.**
+
+- `WEB_SEARCH_PROVIDER` = `brave` (exige `BRAVE_SEARCH_API_KEY`) o `fake` (default, un resultado de mentira que dice serlo, para dev y tests), como `PUBLISHING_PROVIDER`.
+- Brave con `country=MX`, `search_lang=es` y los fragmentos extra: 5 resultados con título, URL, dominio, fragmento de hasta 600 caracteres y fecha si la trae. Sin etiquetas ni entidades.
+- La tool `buscar_en_web` (`web/web-search.tool.ts`) guarda los resultados completos en la parte del mensaje: son chicos, y son las fuentes que pinta la UI. El modelo los recibe dentro de `<resultados>`, escapados. Tope de 2 búsquedas por turno; la misma consulta dos veces en un paso se busca una vez.
+- **Cobro:** `flat.web_search` = 75 unidades por búsqueda (con la relación unidades/dólar de una imagen y del refresco de tendencias). Se cobra al recibir la respuesta del buscador, aunque traiga cero resultados o el turno se corte después: ya se pagó. Un buscador caído no cobra; la tool contesta `no_disponible` y el modelo lo dice. Cada búsqueda deja su fila en `ai_usage_events` (`task_kind = web_search`, `brave:web-search`, `search_queries = 1`), y `pnpm gasto` la valúa con `model-prices.ts`.
+- **Contexto:** las búsquedas de turnos anteriores viajan con cada fragmento cortado a 200 caracteres (`trimWebSearchOutputsForModel`), como los recuerdos de la memoria. El resumen y la memoria entre chats las nombran con su consulta, que escribió el modelo y no un tercero.
+- **"Buscar en la web" del menú ＋** manda `webSearch: true` en el body del stream (también al reintentar); `prepareStep` fuerza `toolChoice` a `buscar_en_web` solo en el paso 0. Lo demás del turno queda libre. Si la cadena del chat tiene un Anthropic con razonamiento (`@esfuerzo`), no se fuerza: Anthropic rechaza un tool_choice forzado con thinking y ese 400 tumbaría el turno, así que el paso 0 lleva una instrucción en el prompt de sistema (`web/force-search.ts`).
+- **Pasos por turno:** `MAX_AGENT_STEPS` pasó de 5 a 7, el peor caso que permiten los topes (2 búsquedas + 3 lecturas + la card + el texto de cierre). Lo que acota el costo son los topes de cada tool, no ese número.
+- **En producción no se acepta el buscador `fake`:** cobraría como reales unos resultados de mentira. `env.ts` lo rechaza al arrancar.
+- **Prompt:** buscar cuando la respuesta depende de algo que cambia o es reciente, o cuando lo pide el usuario; no para un post de su propio negocio ni para ideas generales. Si el fragmento no trae el dato, abrir la página con `leer_enlace`. Citar cada dato que cambia con un enlace markdown (en el chat, no dentro de la publicación) y nunca inventar un precio, un horario o una fecha.

@@ -60,3 +60,39 @@ export interface ReadLinkOutput {
   /** No había cuerpo: solo la descripción de la página. */
   soloDescripcion: boolean;
 }
+
+// La tool con la que el chat busca en la web (ADR-028). Igual que la de leer:
+// la API la declara y la web reconoce su parte.
+export const WEB_SEARCH_TOOL_NAME = "buscar_en_web";
+
+/** Búsquedas por turno (ADR-028): la tercera contesta `estado: "limite"`. */
+export const WEB_SEARCHES_PER_TURN = 2;
+
+/** Resultados que se le dan al modelo por búsqueda. */
+export const WEB_SEARCH_RESULTS = 5;
+
+export const webSearchInputSchema = z.object({
+  /** Lo que se busca, como se escribiría en un buscador: "precio del café en Mérida". */
+  consulta: z.string().trim().min(3).max(200),
+});
+export type WebSearchInput = z.infer<typeof webSearchInputSchema>;
+
+export interface WebSearchResult {
+  titulo: string;
+  url: string;
+  /** Host sin `www.`. */
+  dominio: string;
+  /** El texto del buscador alrededor de lo que se buscó. */
+  fragmento: string;
+  /** La fecha que dice el buscador, tal cual ("hace 2 días", "2026-10-20"); no siempre viene. */
+  fecha: string | null;
+}
+
+/** Lo que guarda la parte del mensaje: los resultados son chicos y van completos. */
+export interface WebSearchOutput {
+  /** La búsqueda cobrada (referencia del asiento); null si no se hizo. */
+  searchId: string | null;
+  consulta: string;
+  estado: "ok" | "sin_resultados" | "no_disponible" | "limite";
+  resultados: WebSearchResult[];
+}

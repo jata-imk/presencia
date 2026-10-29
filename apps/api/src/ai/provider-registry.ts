@@ -117,6 +117,10 @@ export const AI_TASK_KINDS = [
   // una página) para que viaje como descripción cuando ya quedó atrás.
   // Genérica a propósito: el contenido cambia, la tarea es la misma.
   "content_digest",
+  // F10.10: una búsqueda de `buscar_en_web` (ADR-028). No es un modelo: es un
+  // servicio de búsqueda (Brave) que cobra por consulta. Tiene fila para que
+  // `pnpm gasto` la vea (`search_queries` = 1, precio en model-prices.ts).
+  "web_search",
 ] as const;
 export type AiTaskKind = (typeof AI_TASK_KINDS)[number];
 
@@ -138,7 +142,10 @@ export type MemoryTaskKind = "memory_index" | "memory_search";
  * abierta una llamada a `resolveForTask("trends_search")` que devuelve un
  * modelo sin búsqueda; excluida del tipo, esa llamada no compila.
  */
-export type RoutedTaskKind = Exclude<AiTaskKind, "trends_search" | ImageTaskKind | MemoryTaskKind>;
+export type RoutedTaskKind = Exclude<
+  AiTaskKind,
+  "trends_search" | "web_search" | ImageTaskKind | MemoryTaskKind
+>;
 
 // Tiers de modelo (F4.5, addendum ADR-004): AI_MODEL_CHAT es el moat
 // cultural, no se abarata. AI_MODEL_UTILITY es modelo chico (titulares,

@@ -19,7 +19,7 @@ Imprime cada paso del modelo (cuánto esperó, tokens y **qué porcentaje salió
 
 ## De dónde salen los números
 
-- **La app:** `ai_usage_events` de la base del `.env`. En tu máquina es la de dev; corrido en el VPS, la de prod. Cubre el chat, adaptar, las tendencias (con sus búsquedas de grounding) y las imágenes.
+- **La app:** `ai_usage_events` de la base del `.env`. En tu máquina es la de dev; corrido en el VPS, la de prod. Cubre el chat, adaptar, las tendencias (con sus búsquedas de grounding), las imágenes y, desde F10.10, cada búsqueda web del chat (`web_search`, como `brave:web-search` con su precio por búsqueda).
 - **Los scripts de esta máquina:** `apps/api/scripts/.gasto-local.jsonl` (fuera de git). Ahí escriben el bake-off de imágenes, los ejemplos de Estilo visual y la suite cultural, que no pasan por la app. Antes eran gasto invisible.
 - **Los precios:** `apps/api/src/ai/model-prices.ts`, la fuente única. Cada fila dice de dónde salió y cuándo se revisó.
 

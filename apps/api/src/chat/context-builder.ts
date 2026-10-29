@@ -19,7 +19,12 @@ import {
   dietAttachments,
   type AttachmentForContext,
 } from "./attachment-context.js";
-import { dietWebReads, webReadIdsIn, type WebReadForContext } from "./web-read-context.js";
+import {
+  dietWebReads,
+  trimWebSearchOutputsForModel,
+  webReadIdsIn,
+  type WebReadForContext,
+} from "./web-read-context.js";
 
 // Lo que el modelo ve en cada turno (F10.8.1, ADR-026: "guardar ≠ recordar ≠
 // mandar al modelo"). Puro: recibe el historial completo, el resumen y las
@@ -95,11 +100,13 @@ export function assembleContext(
   // marca, y la marca no puede quedar pegada al acuse sintético del resumen.
   const windowed = markUnansweredTurns(applySummary(history, summary, live));
   const messages = capHistory(
-    trimMemoryOutputsForModel(
-      compressToolOutputsForModel(
-        dietWebReads(
-          dietAttachments(withLiveCards(windowed, live ?? new Map()), attachments),
-          webReads,
+    trimWebSearchOutputsForModel(
+      trimMemoryOutputsForModel(
+        compressToolOutputsForModel(
+          dietWebReads(
+            dietAttachments(withLiveCards(windowed, live ?? new Map()), attachments),
+            webReads,
+          ),
         ),
       ),
     ),

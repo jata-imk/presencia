@@ -140,6 +140,10 @@ export const creditReason = pgEnum("credit_reason", [
   // F10.9: describir un adjunto del chat (en F10.10, una página leída). Por
   // tokens, con la tarifa utility; un asiento por adjunto.
   "content_digest",
+  // F10.10: una búsqueda web del chat. Tarifa fija (`flat.web_search`), como
+  // el refresco de tendencias: el costo es el fee del buscador por consulta;
+  // los resultados ya se cobran como tokens del turno.
+  "web_search",
   "refund",
   "adjustment",
 ]);

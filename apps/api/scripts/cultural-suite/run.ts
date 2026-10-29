@@ -52,7 +52,7 @@ const DEFAULT_MODELS = [
 const resolveModel = createModelResolver(process.env, process.env.AI_MODEL ?? DEFAULT_MODEL_ID);
 
 /** Igual que MAX_AGENT_STEPS del chat (chat.service.ts). */
-const SUITE_MAX_STEPS = 5;
+const SUITE_MAX_STEPS = 7;
 
 // Mock de las 3 tools reales: itera la misma tabla que produce las tools de
 // producción (CARD_ARCHETYPE_TOOLS en @presencia/shared) — nombre,

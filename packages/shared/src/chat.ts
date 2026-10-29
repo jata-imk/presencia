@@ -45,6 +45,11 @@ export type ChatStreamTrigger = z.infer<typeof chatStreamTriggerSchema>;
 
 export const chatStreamBodySchema = z.object({
   trigger: chatStreamTriggerSchema.optional(),
+  /**
+   * F10.10: "Buscar en la web" del menú ＋. El mensaje obliga a buscar en el
+   * primer paso; sin él, el modelo decide si busca.
+   */
+  webSearch: z.boolean().optional(),
 });
 export type ChatStreamBody = z.infer<typeof chatStreamBodySchema>;
 
