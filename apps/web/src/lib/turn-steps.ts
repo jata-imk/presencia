@@ -6,7 +6,7 @@ import {
   type WebSearchOutput,
 } from "@presencia/shared";
 import { networkOfCardPart } from "./card-attempts.js";
-import type { CardToolPart, WebToolPart } from "./chat-types.js";
+import { isCardToolPart, type CardToolPart, type WebToolPart } from "./chat-types.js";
 import { NETWORK_LABELS } from "./network-labels.js";
 
 // F10.10 (Chat Web.html): los pasos de una respuesta, en el orden en que
@@ -145,9 +145,16 @@ function searchStep(part: StepPart, streaming: boolean): TurnStep {
       };
 }
 
+interface ReadFail {
+  text: string;
+  reason: StepReason;
+}
+
+const genericFail = (d: string): ReadFail => ({ text: `No pude leer ${d}`, reason: "sitio" });
+
 const READ_FAILS: Record<
   Exclude<ReadLinkOutput["estado"], "ok" | "limite">,
-  (d: string) => { text: string; reason: StepReason }
+  (d: string) => ReadFail
 > = {
   requiere_sesion: (d) => ({
     text: `No pude leer ${d}: ${isSocial(d) ? "pide iniciar sesión" : "pide cuenta o pago"}`,
@@ -200,12 +207,13 @@ function readStep(part: StepPart, streaming: boolean): TurnStep {
         text: `No abrí ${d}: llegué al tope de ${String(WEB_READS_PER_TURN)} páginas`,
       };
     }
-    return { kind: "read", state: "fail", ...READ_FAILS[out.estado](d) };
+    // Un estado que esta versión no conoce (una API más nueva con la pestaña
+    // vieja abierta) no tumba el mensaje: cae al genérico.
+    const fail = (READ_FAILS[out.estado] as ((d: string) => ReadFail) | undefined) ?? genericFail;
+    return { kind: "read", state: "fail", ...fail(d) };
   }
   const d = domainOfUrl(url);
-  if (part.state === "output-error") {
-    return { kind: "read", state: "fail", text: `No pude leer ${d}`, reason: "sitio" };
-  }
+  if (part.state === "output-error") return { kind: "read", state: "fail", ...genericFail(d) };
   return streaming
     ? { kind: "read", state: "live", text: `Leyendo ${d}…` }
     : { kind: "read", state: "stop", text: `Lectura detenida: ${d}`, target: d };
@@ -228,10 +236,10 @@ function cardStep(part: CardToolPart, streaming: boolean): TurnStep {
 /** Los pasos de una respuesta en su orden. Un tool sin output solo sigue en curso mientras el turno llega. */
 export function turnSteps(parts: readonly StepPart[], streaming: boolean): TurnStep[] {
   return parts.map((part) =>
-    part.type === `tool-${READ_LINK_TOOL_NAME}`
-      ? readStep(part, streaming)
-      : part.type.startsWith("tool-crear_borrador")
-        ? cardStep(part as CardToolPart, streaming)
+    isCardToolPart(part)
+      ? cardStep(part, streaming)
+      : part.type === `tool-${READ_LINK_TOOL_NAME}`
+        ? readStep(part, streaming)
         : searchStep(part, streaming),
   );
 }
@@ -276,14 +284,32 @@ export function stepsHeader(steps: readonly TurnStep[]): StepsHeader | null {
     };
   }
 
+  // Un solo paso de la web no tiene lista que abrir: el encabezado es el paso
+  // mismo, con su dominio o su consulta ("Busqué 'café' · 5 resultados").
+  if (!stepsExpandable(steps)) {
+    const only = steps[0]!;
+    return {
+      state:
+        only.state === "skip"
+          ? "limit"
+          : only.state === "ok" || only.state === "part"
+            ? "done"
+            : "fail",
+      label: only.meta ? `${only.text} · ${only.meta}` : only.text,
+    };
+  }
+
+  // El tope manda en el resumen solo si no salió un borrador: lo que el
+  // creator vino a buscar es el borrador, y el tope sigue en la lista.
   const skip = steps.find((s) => s.state === "skip");
-  if (skip) {
+  if (skip && !steps.some((s) => s.kind === "card" && s.state === "ok")) {
     return {
       state: "limit",
+      // El tope cuenta intentos, no lecturas buenas: "llegué al tope", no "ya leí 3".
       label:
         skip.kind === "read"
-          ? `Ya leí ${String(WEB_READS_PER_TURN)} páginas en este mensaje`
-          : `Ya busqué ${String(WEB_SEARCHES_PER_TURN)} veces en este mensaje`,
+          ? `Llegué al tope de ${String(WEB_READS_PER_TURN)} páginas en este mensaje`
+          : `Llegué al tope de ${String(WEB_SEARCHES_PER_TURN)} búsquedas en este mensaje`,
     };
   }
 

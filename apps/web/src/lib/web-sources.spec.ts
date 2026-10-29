@@ -66,6 +66,30 @@ describe("webSources", () => {
     });
   });
 
+  it("cuenta como cita un link con paréntesis en la URL y una URL suelta", () => {
+    const wiki = {
+      ...searchPart,
+      output: {
+        ...searchPart.output,
+        resultados: [
+          ...searchPart.output.resultados,
+          {
+            ...result(6),
+            url: "https://es.wikipedia.org/wiki/Mérida_(Yucatán)",
+            dominio: "es.wikipedia.org",
+          },
+        ],
+      },
+    };
+    const sources = webSources(
+      message(
+        "Ver [Wikipedia](https://es.wikipedia.org/wiki/Mérida_(Yucatán)) y https://medio2.mx/nota.",
+        [wiki, readPart("https://medio3.mx/nota")],
+      ),
+    );
+    expect(sources.map((s) => s.dominio)).toEqual(["medio3.mx", "medio2.mx", "es.wikipedia.org"]);
+  });
+
   it("si se buscó y no se leyó ni se citó nada, se listan los resultados", () => {
     expect(webSources(message("Encontré esto.", [searchPart]))).toHaveLength(5);
   });

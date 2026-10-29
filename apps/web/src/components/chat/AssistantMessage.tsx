@@ -1,5 +1,5 @@
 import { Copy, History, Layers, RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   isCardToolPart,
   isMemoryToolPart,
@@ -53,6 +53,9 @@ export function AssistantMessage({
   onRegenerate: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  // Solo cambia con el mensaje: en un chat largo, cada token del turno en
+  // curso repinta los mensajes viejos, y sus fuentes no se mueven.
+  const sources = useMemo(() => webSources(message), [message]);
 
   const blocks: Block[] = [];
   // F10.10: los pasos en una sola lista, en orden: buscar, leer y las cards.
@@ -140,7 +143,7 @@ export function AssistantMessage({
         ),
       )}
       {/* F10.10: al terminar, de dónde salió lo que la respuesta dice. */}
-      {!streaming && <WebSources sources={webSources(message)} />}
+      {!streaming && <WebSources sources={sources} />}
       {!streaming && (fullText || canRegenerate) && (
         // Siempre montado y con su alto reservado: aparecer en hover no
         // empuja lo de abajo. En pantallas táctiles (sin hover) se ve siempre.

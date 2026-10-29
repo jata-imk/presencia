@@ -60,9 +60,22 @@ export function displayDate(fecha: string | null): string | null {
   return Number.isNaN(date.getTime()) ? fecha : SHORT_DATE.format(date);
 }
 
+/**
+ * Las URLs que cita el texto: en un link markdown (con un nivel de paréntesis
+ * dentro, como `Mérida_(Yucatán)` de Wikipedia) o sueltas.
+ */
 function citedUrls(text: string): Set<string> {
   const keys = new Set<string>();
-  for (const match of text.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)) keys.add(urlKey(match[1]!));
+  for (const match of text.matchAll(/\]\((https?:\/\/(?:[^()\s]|\([^()\s]*\))+)\)/g)) {
+    keys.add(urlKey(match[1]!));
+  }
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"'\]]+/g)) {
+    // Suelta: sin el punto o la coma que la cierran en la frase, y sin el
+    // paréntesis de cierre si no abrió uno.
+    let url = match[0].replace(/[.,;:!?]+$/, "");
+    if (url.endsWith(")") && !url.includes("(")) url = url.slice(0, -1);
+    keys.add(urlKey(url));
+  }
   return keys;
 }
 

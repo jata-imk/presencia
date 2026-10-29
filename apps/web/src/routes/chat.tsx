@@ -535,10 +535,16 @@ function ChatView({
   // respuesta detenida marcada como tal (context-builder, F10.8.2) y retoma.
   function continueTurn() {
     if (busy) return;
-    send("Continúa");
+    // El chip es para lo que el creator escriba, no para el "Continúa"
+    // automático: se queda puesto para su siguiente mensaje.
+    send("Continúa", [], { keepWebSearch: true });
   }
 
-  function send(text: string, files: FileUIPart[] = []) {
+  function send(
+    text: string,
+    files: FileUIPart[] = [],
+    { keepWebSearch = false }: { keepWebSearch?: boolean } = {},
+  ) {
     // Un mensaje nuevo no es el regenerar o editar de antes: su rechazo no
     // repone nada.
     resyncOnReject.current = null;
@@ -549,10 +555,11 @@ function ChatView({
     // Lo que tú mandas siempre se ve, aunque estuvieras leyendo arriba.
     scrollToEnd(false);
     // F10.10: el chip vale para este mensaje y se va al enviar.
+    const forceSearch = webSearch && !keepWebSearch;
     enviar(
-      sendMessage(messageOf(text, files), webSearch ? { body: { webSearch: true } } : undefined),
+      sendMessage(messageOf(text, files), forceSearch ? { body: { webSearch: true } } : undefined),
     );
-    setWebSearch(false);
+    if (forceSearch) setWebSearch(false);
   }
 
   const lastMessage = messages.at(-1);

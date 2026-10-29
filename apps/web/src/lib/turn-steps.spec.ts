@@ -113,7 +113,7 @@ describe("turnSteps + stepsHeader", () => {
     });
     expect(stepsHeader(steps)).toEqual({
       state: "limit",
-      label: "Ya leí 3 páginas en este mensaje",
+      label: "Llegué al tope de 3 páginas en este mensaje",
     });
   });
 
@@ -155,5 +155,46 @@ describe("turnSteps + stepsHeader", () => {
     );
     expect(steps.map((s) => s.state)).toEqual(["fail", "fail"]);
     expect(stepsHeader(steps)?.label).toBe("Busqué 1 vez");
+  });
+
+  it("con un solo paso de la web, el encabezado es el paso mismo", () => {
+    const one = (part: Parameters<typeof turnSteps>[0][number]) =>
+      stepsHeader(turnSteps([part], false));
+    expect(one(search("café en Mérida"))).toEqual({
+      state: "done",
+      label: "Busqué 'café en Mérida' · 3 resultados",
+    });
+    expect(one(read("https://www.eluniversal.com.mx/x"))).toEqual({
+      state: "done",
+      label: "Leí eluniversal.com.mx",
+    });
+    expect(one(read("https://inegi.org.mx/x", { truncado: true }))).toEqual({
+      state: "done",
+      label: "Leí solo una parte de inegi.org.mx · es muy larga",
+    });
+    // Sin resultados no es una búsqueda que salió bien.
+    expect(one(search("x", { estado: "sin_resultados", resultados: [] }))).toEqual({
+      state: "fail",
+      label: "Busqué 'x': sin resultados",
+    });
+  });
+
+  it("el tope no tapa un borrador creado", () => {
+    const steps = turnSteps(
+      [
+        read("https://a.mx"),
+        read("https://b.mx"),
+        read("https://c.mx"),
+        read("https://d.mx", { estado: "limite" }),
+        card(),
+      ],
+      false,
+    );
+    expect(stepsHeader(steps)).toEqual({ state: "done", label: "Leí 3 páginas y creé 1 borrador" });
+  });
+
+  it("un estado de lectura que esta versión no conoce no tumba el mensaje", () => {
+    const [step] = turnSteps([read("https://a.mx/x", { estado: "nuevo_estado" as "ok" })], false);
+    expect(step).toMatchObject({ state: "fail", text: "No pude leer a.mx" });
   });
 });

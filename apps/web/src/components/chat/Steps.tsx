@@ -36,7 +36,8 @@ import {
 //
 // Abierta mientras corre si hay más de un paso, y plegada al terminar en un
 // resumen ("Busqué 1 vez y leí 2 páginas"); si el usuario la toca, manda lo
-// que eligió. Lo que no se pudo leer va sin rojo ni alarma: el modelo además
+// que eligió. Un solo paso de la web no se abre: el encabezado es el paso
+// ("Leí eluniversal.com.mx"). Lo que no se pudo leer va sin rojo ni alarma: el modelo además
 // lo explica en el texto. Rojo solo para un borrador que no se creó.
 
 const HEADER_ICON: Record<Exclude<StepsHeader["state"], "live">, LucideIcon> = {
