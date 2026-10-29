@@ -25,6 +25,8 @@ const TOUCHED = [
   "S3_ACCESS_KEY_ID",
   "S3_SECRET_ACCESS_KEY",
   "BACKUP_DATABASE_URL",
+  "WEB_SEARCH_PROVIDER",
+  "BRAVE_SEARCH_API_KEY",
 ];
 const ORIGINAL = Object.fromEntries(TOUCHED.map((key) => [key, process.env[key]]));
 
@@ -70,6 +72,9 @@ describe("env: storage de assets", () => {
       ASSETS_STORAGE: "r2",
       ASSETS_S3_BUCKET: "presencia-assets",
       ...R2,
+      // F10.10: producción no arranca con el buscador de mentira.
+      WEB_SEARCH_PROVIDER: "brave",
+      BRAVE_SEARCH_API_KEY: "llave",
     });
     expect(env.ASSETS_S3_BUCKET).toBe("presencia-assets");
   });
@@ -78,5 +83,22 @@ describe("env: storage de assets", () => {
     await expect(loadEnv({ ...R2, S3_BUCKET: "presencia-backups" })).rejects.toThrow(
       /BACKUP_DATABASE_URL/,
     );
+  });
+});
+
+describe("buscador web (F10.10)", () => {
+  it("en producción el buscador de mentira es un error de arranque", async () => {
+    await expect(
+      loadEnv({ NODE_ENV: "production", ASSETS_STORAGE: "r2", ASSETS_S3_BUCKET: "a", ...R2 }),
+    ).rejects.toThrow(/WEB_SEARCH_PROVIDER/);
+  });
+
+  it("brave sin su key es un error de arranque", async () => {
+    await expect(loadEnv({ WEB_SEARCH_PROVIDER: "brave" })).rejects.toThrow(/BRAVE_SEARCH_API_KEY/);
+  });
+
+  it("en dev el default es el de mentira", async () => {
+    const { env } = await loadEnv({ NODE_ENV: "development" });
+    expect(env.WEB_SEARCH_PROVIDER).toBe("fake");
   });
 });
