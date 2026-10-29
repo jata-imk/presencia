@@ -92,7 +92,7 @@ const conAdjuntos = (items: PendingAttachment[], value = "") => ({
  */
 export const MenuAgregar: Story = {
   name: "Menú ＋ abierto",
-  args: conAdjuntos([]),
+  args: { ...conAdjuntos([]), webSearch: { on: false, onChange: fn() } },
   render: (args) => (
     <div className="max-w-[752px] pt-48">
       <Composer {...args} />
@@ -103,6 +103,25 @@ export const MenuAgregar: Story = {
     const [trigger] = await within(canvasElement).findAllByLabelText("Agregar archivos y más");
     if (trigger) await userEvent.click(trigger);
   },
+};
+
+/**
+ * F10.10 (Chat Web.html → ComposerConChip): "Buscar en la web" activado. El
+ * chip obliga a buscar en este mensaje y se va al enviar.
+ */
+export const ComposerConChip: Story = {
+  name: "Buscar en la web (chip)",
+  args: {
+    ...conAdjuntos([]),
+    value: "¿Qué horario tiene hoy el Gran Museo del Mundo Maya?",
+    webSearch: { on: true, onChange: fn() },
+  },
+};
+
+/** El chip junto a adjuntos ya puestos, en la caja vacía. */
+export const ChipConAdjuntos: Story = {
+  name: "Buscar en la web con adjuntos",
+  args: { ...conAdjuntos([IMAGEN, KIT_PDF]), webSearch: { on: true, onChange: fn() } },
 };
 
 export const AdjuntosSubiendo: Story = {

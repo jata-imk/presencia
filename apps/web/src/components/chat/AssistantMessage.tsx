@@ -1,15 +1,18 @@
 import { Copy, History, Layers, RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   isCardToolPart,
   isMemoryToolPart,
+  isWebToolPart,
   type CardToolPart,
   type ChatUIMessage,
   type MemoryToolPart,
+  type WebToolPart,
 } from "../../lib/chat-types.js";
 import { withoutCorrectedAttempts } from "../../lib/card-attempts.js";
 import { NETWORK_LABELS } from "../../lib/network-labels.js";
 import { replyContent } from "../../lib/turn-status.js";
+import { webSources } from "../../lib/web-sources.js";
 import { useMediaQuery } from "../../lib/use-media-query.js";
 import { useCardSelectionStore, useSelectedIds } from "../../stores/card-selection-store.js";
 import { useCardsByIds } from "../../stores/cards-store.js";
@@ -18,6 +21,7 @@ import { CompactCard } from "../cards/CompactCard.js";
 import { GlowFrame } from "../cards/GlowFrame.js";
 import { MessageAI } from "./MessageAI.js";
 import { Steps } from "./Steps.js";
+import { WebSources } from "./WebSources.js";
 
 // Una respuesta completa de Presencia (F10.5, Chat Rediseño.html → AIMsg):
 // arriba la línea de pasos, luego el texto y las cards en el orden en que
@@ -49,9 +53,13 @@ export function AssistantMessage({
   onRegenerate: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  // Solo cambia con el mensaje: en un chat largo, cada token del turno en
+  // curso repinta los mensajes viejos, y sus fuentes no se mueven.
+  const sources = useMemo(() => webSources(message), [message]);
 
   const blocks: Block[] = [];
-  const toolParts: CardToolPart[] = [];
+  // F10.10: los pasos en una sola lista, en orden: buscar, leer y las cards.
+  const stepParts: (CardToolPart | WebToolPart)[] = [];
   const memoryParts: MemoryToolPart[] = [];
   const streaming = isLast && streamingNow;
   const visibleCardParts = new Set(
@@ -72,6 +80,10 @@ export function AssistantMessage({
       memoryParts.push(part);
       return;
     }
+    if (isWebToolPart(part)) {
+      stepParts.push(part);
+      return;
+    }
     if (isCardToolPart(part)) {
       // Un intento fallido que el modelo corrigió después en el turno no se
       // pinta: ni paso con error ni fila roja (lib/card-attempts.ts). Pero
@@ -79,7 +91,7 @@ export function AssistantMessage({
       // primera parte, y si cambiara al esconderlo, el bloque se volvería a
       // montar (el panel se abriría otra vez y el glow arrancaría de cero).
       const visible = visibleCardParts.has(part);
-      if (visible) toolParts.push(part);
+      if (visible) stepParts.push(part);
       const prev = blocks.at(-1);
       if (prev?.kind === "cards") {
         if (visible) prev.parts.push(part);
@@ -116,7 +128,7 @@ export function AssistantMessage({
   return (
     <div className="group/msg flex flex-col gap-3">
       <MemoryNote parts={memoryParts} streaming={streaming} />
-      <Steps parts={toolParts} streaming={streaming} />
+      <Steps parts={stepParts} streaming={streaming} />
       {blocks.map((block) =>
         block.kind === "text" ? (
           <MessageAI key={block.index} text={block.text} streaming={block.streaming} />
@@ -130,6 +142,8 @@ export function AssistantMessage({
           />
         ),
       )}
+      {/* F10.10: al terminar, de dónde salió lo que la respuesta dice. */}
+      {!streaming && <WebSources sources={sources} />}
       {!streaming && (fullText || canRegenerate) && (
         // Siempre montado y con su alto reservado: aparecer en hover no
         // empuja lo de abajo. En pantallas táctiles (sin hover) se ve siempre.

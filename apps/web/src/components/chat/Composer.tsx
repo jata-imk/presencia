@@ -1,4 +1,4 @@
-import { Mic, Paperclip, Palette, Plus, Send, Square } from "lucide-react";
+import { Check, Globe, Mic, Paperclip, Palette, Plus, Send, Square, X } from "lucide-react";
 import {
   useEffect,
   useImperativeHandle,
@@ -69,6 +69,7 @@ export function Composer({
   large = false,
   inputRef,
   attachments,
+  webSearch,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -88,6 +89,12 @@ export function Composer({
   inputRef?: Ref<HTMLTextAreaElement>;
   /** Sin esto, Adjuntar se queda deshabilitado (Storybook, pantallas sin chat). */
   attachments?: ComposerAttachments;
+  /**
+   * F10.10: "Buscar en la web" del menú ＋. Prendido, el próximo mensaje obliga
+   * a buscar (se ve como chip junto al ＋); quien lo usa lo apaga al enviar.
+   * Sin esto, el ítem no aparece.
+   */
+  webSearch?: { on: boolean; onChange: (on: boolean) => void };
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -218,7 +225,11 @@ export function Composer({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={
-              items.length > 0 && !hasText ? "Agrega un mensaje (opcional)…" : placeholder
+              webSearch?.on
+                ? "Escribe qué quieres que busque…"
+                : items.length > 0 && !hasText
+                  ? "Agrega un mensaje (opcional)…"
+                  : placeholder
             }
             rows={1}
             className={`w-full resize-none bg-transparent leading-[1.5] text-fg outline-none placeholder:text-fg-muted ${
@@ -263,6 +274,24 @@ export function Composer({
                     {UPLOAD_SHORTCUT}
                   </kbd>
                 </Menu.Item>
+                {webSearch && (
+                  // Cierra el menú al elegirlo: lo que queda a la vista es el chip.
+                  <Menu.Item
+                    className={`${MENU_ITEM_CLASS} items-start`}
+                    onClick={() => webSearch.onChange(!webSearch.on)}
+                  >
+                    <Globe size={14} className="mt-0.5" aria-hidden />
+                    <span className="flex flex-1 flex-col">
+                      Buscar en la web
+                      <span className="text-[11.5px] text-fg-muted">
+                        {webSearch.on
+                          ? "Activado para este mensaje: tócalo para quitarlo"
+                          : "Para algo reciente: precios, horarios, noticias"}
+                      </span>
+                    </span>
+                    {webSearch.on && <Check size={14} className="mt-0.5 text-accent" aria-hidden />}
+                  </Menu.Item>
+                )}
                 <div className="mx-1 my-1 border-t border-line-subtle" role="separator" />
                 <Menu.Item className={MENU_ITEM_CLASS} disabled>
                   <Palette size={14} aria-hidden />
@@ -273,6 +302,20 @@ export function Composer({
                 </Menu.Item>
               </Menu.Content>
             </Menu>
+            {webSearch?.on && (
+              <span className="ml-0.5 inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-ai-border bg-ai-bg pr-1 pl-2.5 font-display text-[12.5px] font-semibold whitespace-nowrap text-ai">
+                <Globe size={13} strokeWidth={2} aria-hidden />
+                Buscar en la web
+                <button
+                  type="button"
+                  aria-label="Quitar Buscar en la web"
+                  onClick={() => webSearch.onChange(false)}
+                  className="flex size-5 items-center justify-center rounded-full transition-colors hover:text-fg"
+                >
+                  <X size={12} strokeWidth={2} />
+                </button>
+              </span>
+            )}
             {/* Dictar se queda a la vista, junto al ＋ (como el micrófono de
                 Claude y ChatGPT): no es "algo que se agrega", es otra forma de
                 escribir (Jose, 2026-10-20). */}
