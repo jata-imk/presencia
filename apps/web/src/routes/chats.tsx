@@ -94,6 +94,8 @@ export function ChatsPage() {
   const { data: session } = authClient.useSession();
   const createChat = useChatsStore((s) => s.create);
   const [input, setInput] = useState("");
+  // F10.10: "Buscar en la web" del menú ＋; viaja al chat con el primer mensaje.
+  const [webSearch, setWebSearch] = useState(false);
   const [starting, setStarting] = useState(false);
   // Las tendencias del nicho, para las dos últimas tarjetas.
   const { tendencias, cargando: cargandoTendencias } = useTendencias();
@@ -165,7 +167,7 @@ export function ChatsPage() {
     try {
       const chat = await createChat();
       void navigate(`/chats/${chat.id}`, {
-        state: { initialPrompt: trimmed, initialFiles: pending.parts },
+        state: { initialPrompt: trimmed, initialFiles: pending.parts, initialWebSearch: webSearch },
       });
     } catch {
       setError("No se pudo crear el chat. Inténtalo de nuevo.");
@@ -210,6 +212,7 @@ export function ChatsPage() {
               onRemove: attachments.remove,
               onRetry: attachments.retry,
             }}
+            webSearch={{ on: webSearch, onChange: setWebSearch }}
           />
           {error && <p className="mt-2 text-center text-sm text-error">{error}</p>}
         </div>

@@ -115,3 +115,11 @@ Brave además es el más rápido (0.7 s de mediana) y cuesta $5 por mil búsqued
 - **Pasos por turno:** `MAX_AGENT_STEPS` pasó de 5 a 7, el peor caso que permiten los topes (2 búsquedas + 3 lecturas + la card + el texto de cierre). Lo que acota el costo son los topes de cada tool, no ese número.
 - **En producción no se acepta el buscador `fake`:** cobraría como reales unos resultados de mentira. `env.ts` lo rechaza al arrancar.
 - **Prompt:** buscar cuando la respuesta depende de algo que cambia o es reciente, o cuando lo pide el usuario; no para un post de su propio negocio ni para ideas generales. Si el fragmento no trae el dato, abrir la página con `leer_enlace`. Citar cada dato que cambia con un enlace markdown (en el chat, no dentro de la publicación) y nunca inventar un precio, un horario o una fecha.
+
+## Addendum (F10.10 PR6, 2026-10-28): lo que ve el creator
+
+Diseño en Claude Design ("Chat Web.html"). La UI sale solo de los outputs de las tools que ya guarda el mensaje; no hay partes `source-url` ni un endpoint nuevo.
+
+- **Una sola lista de pasos** (`lib/turn-steps.ts`, `Steps.tsx`): búsquedas, lecturas y borradores en el orden en que pasaron (decisión de Jose, 2026-10-28). Antes los borradores tenían su lista y la web iba aparte. El resumen al plegar cuenta cada tipo ("Busqué 1 vez, leí 2 páginas y creé 1 borrador"). El tope y el Detener tienen su propio encabezado. Lo que no se pudo leer lleva el motivo con un ícono neutro; el rojo queda para un borrador que falló.
+- **Fuentes** (`lib/web-sources.ts`, `WebSources.tsx`): las páginas leídas (con marca si fue a medias) y los resultados de búsqueda que el texto cita con su URL. Si no se leyó ni se citó nada, entran todos los resultados, porque algo salió de ahí. Lo que no se pudo leer no es fuente. La fecha ISO de Brave se pinta como día ("12 jun 2026"); el modelo la sigue recibiendo completa.
+- **El chip** (`Composer.tsx`): "Buscar en la web" del ＋ vive en el estado de la pantalla y viaja como `body.webSearch` solo con el siguiente envío, también desde la pantalla de nuevo chat (`initialWebSearch`). Regenerar desde la UI no lo reenvía: el flag no se guarda con el mensaje.

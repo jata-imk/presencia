@@ -76,6 +76,8 @@ function ChatView({
   initialMessages: ChatUIMessage[];
 }) {
   const [input, setInput] = useState("");
+  // F10.10: "Buscar en la web" del menú ＋, solo para el próximo mensaje.
+  const [webSearch, setWebSearch] = useState(false);
   // F10.8.2: los turnos que se quedaron sin respuesta completa. `localStatus`
   // es lo que pasó en esta sesión (la respuesta en pantalla de un turno en
   // vivo no trae metadata); al recargar manda lo que guardó el servidor.
@@ -188,7 +190,12 @@ function ChatView({
   // a mitad del stream.
   const location = useLocation();
   const navigate = useNavigate();
-  const initial = location.state as { initialPrompt?: string; initialFiles?: FileUIPart[] } | null;
+  const initial = location.state as {
+    initialPrompt?: string;
+    initialFiles?: FileUIPart[];
+    /** F10.10: el chip "Buscar en la web" de la pantalla de chat nuevo. */
+    initialWebSearch?: boolean;
+  } | null;
   const initialPrompt = initial?.initialPrompt ?? "";
   // F10.9: los adjuntos que se subieron en la pantalla de chat nuevo.
   const initialFiles = initial?.initialFiles ?? [];
@@ -197,7 +204,12 @@ function ChatView({
     if ((!initialPrompt && initialFiles.length === 0) || sentInitialPrompt.current) return;
     sentInitialPrompt.current = true;
     void navigate(location.pathname, { replace: true, state: null });
-    enviar(sendMessage(messageOf(initialPrompt, initialFiles)));
+    enviar(
+      sendMessage(
+        messageOf(initialPrompt, initialFiles),
+        initial?.initialWebSearch ? { body: { webSearch: true } } : undefined,
+      ),
+    );
   }, []);
 
   // F5: % de cuota + traducción a publicaciones, nunca un número crudo de
@@ -536,7 +548,11 @@ function ChatView({
     setEditingId(null);
     // Lo que tú mandas siempre se ve, aunque estuvieras leyendo arriba.
     scrollToEnd(false);
-    enviar(sendMessage(messageOf(text, files)));
+    // F10.10: el chip vale para este mensaje y se va al enviar.
+    enviar(
+      sendMessage(messageOf(text, files), webSearch ? { body: { webSearch: true } } : undefined),
+    );
+    setWebSearch(false);
   }
 
   const lastMessage = messages.at(-1);
@@ -668,6 +684,7 @@ function ChatView({
                 onRemove: attachments.remove,
                 onRetry: attachments.retry,
               }}
+              webSearch={{ on: webSearch, onChange: setWebSearch }}
             />
           </div>
         </div>

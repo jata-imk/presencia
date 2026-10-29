@@ -143,8 +143,9 @@ A medida que escribe, varias cosas pasan:
    - ＋ un menú con lo que se agrega al mensaje: subir fotos y
      archivos (también con Ctrl/⌘+U) y el estilo de respuesta
      (selector tipo Claude: Conciso, Explicativo, Creativo,
-     etc.). Es donde va a vivir lo que se sume después, como
-     buscar en la web (F10.10).
+     etc.). Desde F10.10 también "Buscar en la web", que pone
+     un chip quitable en la caja y obliga a buscar en ese
+     mensaje (ver "Leer enlaces y buscar en la web").
    - 🎤 Transcribir audio (si prefiere dictar en lugar de
      tipear), a la vista junto al ＋: no es algo que se agrega,
      es otra forma de escribir.
@@ -1090,6 +1091,14 @@ si expusiéramos cada tool como botón, el usuario tendría
 que decidir cuál usar. Mejor que la IA decida y le muestre
 qué hizo.
 
+> **F10.10 (implementado):** buscar, leer y crear borradores
+> van en **una sola lista**, en el orden en que pasaron. En
+> vivo se abre si hay más de un paso; al terminar se pliega en
+> un resumen ("Busqué 1 vez, leí 2 páginas y creé 1
+> borrador"). Lo que no se pudo leer lleva su motivo en una
+> línea neutra, sin rojo: el error de verdad (un borrador que
+> no se pudo crear) sigue en rojo.
+
 ### El streaming con typewriter effect
 
 **Qué es:** El efecto de la respuesta apareciendo letra por
@@ -1263,6 +1272,37 @@ recuerdos sueltos ni un interruptor para apagarla. Borrar un
 chat borra su memoria; archivarlo no. Si un creator lo pide,
 se agrega. No se cobra: buscar e indexar cuestan menos de
 una unidad.
+
+### Leer enlaces y buscar en la web (F10.10)
+
+**Qué pasa:** Si el creator pega un link ("hazme un post de
+esta nota"), Presencia lo abre y trabaja con lo que dice la
+página. Si pregunta algo que cambia (un precio, un horario,
+qué hay este fin de semana), busca en la web, puede abrir
+alguno de los resultados y cita en el texto de dónde salió
+cada dato. Arriba de la respuesta, la lista de pasos dice qué
+buscó y qué leyó; abajo, "Fuentes · N" lista las páginas
+leídas y los resultados citados, con título, dominio y fecha
+(el fragmento aparece al pasar el mouse). Con 4 o más, la
+lista se pliega en una fila con las iniciales de los dominios.
+No se piden favicons: ni a Google ni a los sitios.
+
+**Por qué:** Pegar una nota o la página de un negocio es un
+caso de todos los días, y un precio inventado en un post es
+peor que no tener post. Las fuentes existen para que el
+creator revise antes de publicar.
+
+**Cuándo busca:** por default decide el modelo. "Buscar en la
+web" en el ＋ obliga a buscar en el siguiente mensaje; el chip
+se va al enviar. Regenerar no la vuelve a forzar: el chip no
+se guarda con el mensaje, y el modelo decide de nuevo.
+
+**Límites:** hasta 3 páginas y 2 búsquedas por mensaje. Las
+redes que piden sesión (Instagram, TikTok, Facebook, Threads,
+X) no se abren: la lista lo dice y el modelo pide que le
+peguen el texto. El link que va dentro del post se usa tal
+cual, no se lee. Leer no tiene cobro propio; cada búsqueda sí
+(ADR-012). El detalle técnico vive en ADR-028.
 
 ### El indicador de canales en chats recientes
 
