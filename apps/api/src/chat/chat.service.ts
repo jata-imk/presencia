@@ -57,6 +57,8 @@ import { parseModelChain } from "../ai/provider-registry.js";
 import { forcedSearchStep } from "../web/force-search.js";
 import { buildWebSearchTool } from "../web/web-search.tool.js";
 import { WebSearchService } from "../web/web-search.service.js";
+import { ProfileRepository } from "../profile/profile.repository.js";
+import { DEFAULT_TIMEZONE, todayInstruction } from "./today.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
 // F10.10: buscar y leer también son pasos; el peor caso que los topes
@@ -95,6 +97,7 @@ export class ChatService {
     @Inject(WebReadsService) private readonly webReads: WebReadsService,
     @Inject(WebReadDigestService) private readonly webReadDigests: WebReadDigestService,
     @Inject(WebSearchService) private readonly webSearch: WebSearchService,
+    @Inject(ProfileRepository) private readonly profileRepo: ProfileRepository,
   ) {}
 
   /**
@@ -461,6 +464,19 @@ export class ChatService {
     });
   }
 
+  // F10.10: la zona del creator, para la fecha de hoy en el prompt. Igual
+  // que la voz: si falla, el turno sigue con el default (`users.timezone`
+  // tiene uno, así que una fila sin zona no existe).
+  private loadTimezone(userId: string): Promise<string> {
+    return this.profileRepo
+      .findById(userId)
+      .then((row) => row?.timezone ?? DEFAULT_TIMEZONE)
+      .catch((error: unknown) => {
+        console.error(`[chat] No se pudo cargar la zona horaria de ${userId}:`, error);
+        return DEFAULT_TIMEZONE;
+      });
+  }
+
   /**
    * Reintento ("Reintentar" en UI, ADR-006 addendum F3 PR3): borra el
    * mensaje assistant a regenerar y sus cards vinculadas (decisión de
@@ -556,6 +572,8 @@ export class ChatService {
     forceWebSearch = false,
   ): Promise<void> {
     const { abortController, release } = turn;
+    // En paralelo con lo que el turno carga de la base: no depende de nada.
+    const timezonePromise = this.loadTimezone(userId);
 
     // Las cards creadas durante este turno (closure compartido con la tool):
     // onEnd las vincula al mensaje assistant una vez que existe.
@@ -673,6 +691,9 @@ export class ChatService {
     // loadVoiceForPrompt. buildSystemPrompt cae al prompt base en ese caso,
     // el chat nunca se bloquea por esto.
     const voice = await voicePromise;
+    // F10.10: la fecha de hoy va al final (today.ts dice por qué).
+    const today = todayInstruction(new Date(), await timezonePromise);
+    const system = [buildSystemPrompt(voice), today].join("\n\n");
     // F10.9: los bytes de los adjuntos que sobrevivieron al techo, al final.
     // F10.10: con las tools, para que las páginas leídas en turnos anteriores
     // pasen por el `toModelOutput` de leer_enlace, que les da forma a lo que la
@@ -718,7 +739,7 @@ export class ChatService {
 
     const result = streamText({
       model: resolved.model,
-      system: buildSystemPrompt(voice),
+      system,
       // Dieta de contexto (F4.5): al modelo solo le llega íntegro el content
       // de las últimas cards (keepFull, default en context-diet.ts — no se
       // repite el número aquí para no tener que mantenerlo en dos lugares).
@@ -741,15 +762,13 @@ export class ChatService {
       stopWhen: stepCountIs(MAX_AGENT_STEPS),
       // F10.10: "Buscar en la web" del menú ＋ obliga a buscar en el primer
       // paso; después el modelo sigue libre (leer, crear la card, contestar).
-      // Con toolChoice si la cadena lo aguanta, si no con una instrucción
+      // Siempre con una instrucción en el prompt (Sonnet 5.5 rechaza una tool
+      // forzada) y, si la cadena lo aguanta, también con toolChoice
       // (web/force-search.ts).
       prepareStep: forceWebSearch
         ? ({ stepNumber }) =>
             stepNumber === 0
-              ? forcedSearchStep(
-                  parseModelChain(env.AI_MODEL_CHAT ?? env.AI_MODEL),
-                  buildSystemPrompt(voice),
-                )
+              ? forcedSearchStep(parseModelChain(env.AI_MODEL_CHAT ?? env.AI_MODEL), system)
               : undefined
         : undefined,
       abortSignal: abortController.signal,
