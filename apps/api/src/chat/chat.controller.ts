@@ -132,12 +132,14 @@ export class ChatController {
     if (trigger.data.trigger === "regenerate-message") {
       await this.chatService.regenerateChat(user.id, chatId, userMessage.id, res, {
         webSearch: trigger.data.webSearch,
+        timezone: user.timezone,
       });
       return;
     }
 
     await this.chatService.streamChat(user.id, chatId, userMessage, res, {
       webSearch: trigger.data.webSearch,
+      timezone: user.timezone,
     });
   }
 

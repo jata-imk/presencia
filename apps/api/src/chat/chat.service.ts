@@ -57,7 +57,6 @@ import { parseModelChain } from "../ai/provider-registry.js";
 import { forcedSearchStep } from "../web/force-search.js";
 import { buildWebSearchTool } from "../web/web-search.tool.js";
 import { WebSearchService } from "../web/web-search.service.js";
-import { ProfileRepository } from "../profile/profile.repository.js";
 import { DEFAULT_TIMEZONE, todayInstruction } from "./today.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
@@ -78,6 +77,14 @@ const ABORTED_TRACE_GRACE_MS = 3_000;
  */
 const TURN_WAIT_MS = 10_000;
 
+/** Lo que un turno trae además del mensaje (F10.10). */
+interface TurnOptions {
+  /** "Buscar en la web" del menú ＋. */
+  webSearch?: boolean;
+  /** `users.timezone`, que ya viene en la sesión: sin otra consulta por turno. */
+  timezone?: string | null;
+}
+
 @Injectable()
 export class ChatService {
   constructor(
@@ -97,7 +104,6 @@ export class ChatService {
     @Inject(WebReadsService) private readonly webReads: WebReadsService,
     @Inject(WebReadDigestService) private readonly webReadDigests: WebReadDigestService,
     @Inject(WebSearchService) private readonly webSearch: WebSearchService,
-    @Inject(ProfileRepository) private readonly profileRepo: ProfileRepository,
   ) {}
 
   /**
@@ -301,8 +307,8 @@ export class ChatService {
     chatId: string,
     userMessage: UIMessage,
     res: ServerResponse,
-    /** F10.10: lo que trae el body además del mensaje. */
-    options: { webSearch?: boolean } = {},
+    /** F10.10: lo que trae el body además del mensaje, y la zona del creator (de la sesión). */
+    options: TurnOptions = {},
   ): Promise<void> {
     // Bloqueo suave (F5, ADR-012): se rechaza antes de tocar la DB o quemar
     // tokens del proveedor — nunca deja un mensaje user huérfano sin respuesta.
@@ -392,6 +398,7 @@ export class ChatService {
         turn,
         retitle,
         options.webSearch === true,
+        options.timezone ?? DEFAULT_TIMEZONE,
       );
     } catch (error) {
       turn.release();
@@ -464,19 +471,6 @@ export class ChatService {
     });
   }
 
-  // F10.10: la zona del creator, para la fecha de hoy en el prompt. Igual
-  // que la voz: si falla, el turno sigue con el default (`users.timezone`
-  // tiene uno, así que una fila sin zona no existe).
-  private loadTimezone(userId: string): Promise<string> {
-    return this.profileRepo
-      .findById(userId)
-      .then((row) => row?.timezone ?? DEFAULT_TIMEZONE)
-      .catch((error: unknown) => {
-        console.error(`[chat] No se pudo cargar la zona horaria de ${userId}:`, error);
-        return DEFAULT_TIMEZONE;
-      });
-  }
-
   /**
    * Reintento ("Reintentar" en UI, ADR-006 addendum F3 PR3): borra el
    * mensaje assistant a regenerar y sus cards vinculadas (decisión de
@@ -503,7 +497,7 @@ export class ChatService {
     userMessageId: string,
     res: ServerResponse,
     /** F10.10: Reintentar un mensaje con "Buscar en la web" vuelve a buscar. */
-    options: { webSearch?: boolean } = {},
+    options: TurnOptions = {},
   ): Promise<void> {
     await this.assertQuotaForTurn(userId);
     const voicePromise = this.loadVoiceForPrompt(userId);
@@ -547,6 +541,7 @@ export class ChatService {
         turn,
         false,
         options.webSearch === true,
+        options.timezone ?? DEFAULT_TIMEZONE,
       );
     } catch (error) {
       turn.release();
@@ -570,10 +565,10 @@ export class ChatService {
     retitle = false,
     /** F10.10: "Buscar en la web" del menú ＋: el primer paso busca sí o sí. */
     forceWebSearch = false,
+    /** F10.10: la zona del creator (`users.timezone`), para la fecha de hoy en el prompt. */
+    timezone = DEFAULT_TIMEZONE,
   ): Promise<void> {
     const { abortController, release } = turn;
-    // En paralelo con lo que el turno carga de la base: no depende de nada.
-    const timezonePromise = this.loadTimezone(userId);
 
     // Las cards creadas durante este turno (closure compartido con la tool):
     // onEnd las vincula al mensaje assistant una vez que existe.
@@ -692,7 +687,7 @@ export class ChatService {
     // el chat nunca se bloquea por esto.
     const voice = await voicePromise;
     // F10.10: la fecha de hoy va al final (today.ts dice por qué).
-    const today = todayInstruction(new Date(), await timezonePromise);
+    const today = todayInstruction(new Date(), timezone);
     const system = [buildSystemPrompt(voice), today].join("\n\n");
     // F10.9: los bytes de los adjuntos que sobrevivieron al techo, al final.
     // F10.10: con las tools, para que las páginas leídas en turnos anteriores

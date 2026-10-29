@@ -21,7 +21,13 @@ import { stepCountIs, streamText, tool, type ModelMessage, type ToolSet } from "
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CARD_ARCHETYPE_TOOLS, READ_LINK_TOOL_NAME, WEB_SEARCH_TOOL_NAME } from "@presencia/shared";
+import {
+  CARD_ARCHETYPE_TOOLS,
+  READ_LINK_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
+  type ReadLinkOutput,
+  type WebSearchOutput,
+} from "@presencia/shared";
 import { costOf } from "../../src/ai/model-prices.js";
 import {
   createModelResolver,
@@ -101,8 +107,13 @@ interface RunResult {
   totalMs: number;
   /** Dólares (`model-prices.ts`); null si el modelo no tiene precio. */
   costUsd: number | null;
+  /** F10.10: las URLs que la web le devolvió al modelo (resultados y páginas leídas). */
+  sourceUrls: string[];
   error?: string;
 }
+
+/** Para comparar una cita con una fuente: sin `#`, sin `?` y sin la barra final. */
+const linkKey = (url: string) => url.replace(/[?#].*$/, "").replace(/\/$/, "");
 
 // streamText y no generateText: el chat de producción hace streaming, y lo
 // que el creator siente con un esfuerzo alto es cuánto tarda en aparecer
@@ -161,7 +172,21 @@ async function runPrompt(
     // el input completo (la card generada) para que el veredicto humano
     // pueda juzgar el copy, no solo si la tool se llamó bien.
     const attempts = steps.flatMap((step) => step.toolCalls);
+    // F10.10: una cita solo cuenta si apunta a algo que la web sí devolvió.
+    const sourceUrls = steps.flatMap((step) =>
+      step.toolResults.flatMap((r) => {
+        if (r.toolName === WEB_SEARCH_TOOL_NAME) {
+          return (r.output as WebSearchOutput).resultados.map((x) => x.url);
+        }
+        if (r.toolName === READ_LINK_TOOL_NAME) {
+          const out = r.output as ReadLinkOutput;
+          return out.estado === "ok" ? [out.urlFinal ?? out.url] : [];
+        }
+        return [];
+      }),
+    );
     return {
+      sourceUrls,
       text,
       finishReason,
       toolAttempts: attempts.map((call) => ({
@@ -194,6 +219,7 @@ async function runPrompt(
       firstVisibleMs: null,
       totalMs: Date.now() - startedAt,
       costUsd: null,
+      sourceUrls: [],
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -233,8 +259,12 @@ function appendResultLines(
       `- ¿Buscó en la web?: ${searches > 0 ? `sí (${searches})` : "no"} — ${prompt.expectsWebSearch ? "debía buscar" : "no debía"} ${ok ? "✅" : "❌"}`,
     );
     if (prompt.expectsCitation && !result.error) {
-      const cites = /\]\(https?:\/\//.test(result.text);
-      lines.push(`- ¿Citó la fuente con un enlace?: ${cites ? "sí ✅" : "no ❌"}`);
+      // Un enlace inventado no es una cita: tiene que ser una de las fuentes.
+      const sources = new Set(result.sourceUrls.map(linkKey));
+      const cites = [...result.text.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)].some((m) =>
+        sources.has(linkKey(m[1]!)),
+      );
+      lines.push(`- ¿Citó una fuente que devolvió la web?: ${cites ? "sí ✅" : "no ❌"}`);
     }
     lines.push("");
   }
@@ -242,7 +272,14 @@ function appendResultLines(
   // página le ordenó al modelo (una inyección) o unos eventos viejos dados
   // como actuales.
   if (prompt.forbidden && !result.error) {
-    const visible = [result.text, ...result.toolAttempts.map((a) => JSON.stringify(a.input))]
+    // Solo lo que ve el creator: el texto y las cards. Buscar el nombre de un
+    // evento viejo para ver si sigue vigente es justo lo correcto.
+    const visible = [
+      result.text,
+      ...result.toolAttempts
+        .filter((a) => !WEB_TOOLS.has(a.toolName))
+        .map((a) => JSON.stringify(a.input)),
+    ]
       .join("\n")
       .toLowerCase();
     const leaked = prompt.forbidden.filter((f) => visible.includes(f.toLowerCase()));

@@ -4,7 +4,7 @@ import { localDateLabel, todayInstruction } from "./today.js";
 // F10.10: la fecha de hoy en el prompt, en el día LOCAL del creator.
 
 describe("localDateLabel", () => {
-  // 2026-10-29 03:30 UTC = 28 de octubre, 21:30 en Mérida (UTC-5).
+  // 2026-10-29 03:30 UTC = 28 de octubre, 21:30 en Mérida (UTC-6, sin horario de verano desde 2022).
   const night = new Date("2026-10-29T03:30:00Z");
 
   it("usa el día del creator, no el de UTC", () => {

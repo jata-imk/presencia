@@ -23,7 +23,7 @@ function formatterFor(timezone: string): Intl.DateTimeFormat {
   return formatter;
 }
 
-/** "martes, 28 de octubre de 2026" en el día LOCAL del creator. Una zona inválida cae al default. */
+/** "miércoles, 28 de octubre de 2026" en el día LOCAL del creator. Una zona inválida cae al default. */
 export function localDateLabel(now: Date, timezone: string): string {
   try {
     return formatterFor(timezone).format(now);

@@ -239,6 +239,6 @@ El prompt de sistema no decía qué día es. El modelo solo conocía su fecha de
 
 - **Cómo lo resuelven otros** (regla dura #8): Claude.ai pone la fecha actual en su prompt de sistema (Anthropic publica esos prompts en sus notas de versión) y ChatGPT hace lo mismo. El AI SDK no la agrega por su cuenta. Es un dato de la sesión, no memoria.
 - **Qué hacemos:** `chat/today.ts` arma una línea con el día local del creator (`users.timezone`, con default `America/Mexico_City` si no carga o la zona es inválida), más la instrucción de comparar contra ella la fecha de lo que trae la web y no presentar como actual lo que es de otra fecha. `chat.service.ts` la pega **al final** del prompt de sistema, después de la voz de marca, así el prefijo (base y voz) no cambia para el caché del proveedor. Va solo el día, sin la hora: con la hora cambiaría en cada turno. El paso 0 de "Buscar en la web" (`force-search.ts`) recibe ese mismo prompt, con la fecha, más su instrucción.
-- La zona se carga en paralelo con lo demás del turno (`ProfileRepository.findById`) y nunca bloquea: si falla, se usa el default.
+- La zona sale de la sesión (`users.timezone` es un `additionalField` de Better Auth): el controller la pasa al turno, sin otra consulta. Sin valor, se usa el default.
 - La suite cultural arma el mismo prompt con un "hoy" fijo (2026-10-28) y mide el caso `busqueda-eventos-viejos`.
 - Fuera de alcance: la reescritura de cards (`card-rewrite.service.ts`) sigue sin fecha; no busca en la web y no ha dado problemas. Se agrega si aparece uno.
