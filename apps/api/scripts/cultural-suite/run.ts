@@ -21,7 +21,13 @@ import { stepCountIs, streamText, tool, type ModelMessage, type ToolSet } from "
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CARD_ARCHETYPE_TOOLS, READ_LINK_TOOL_NAME } from "@presencia/shared";
+import {
+  CARD_ARCHETYPE_TOOLS,
+  READ_LINK_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
+  type ReadLinkOutput,
+  type WebSearchOutput,
+} from "@presencia/shared";
 import { costOf } from "../../src/ai/model-prices.js";
 import {
   createModelResolver,
@@ -29,10 +35,12 @@ import {
   parseModelEntry,
 } from "../../src/ai/provider-registry.js";
 import { buildSystemPrompt } from "../../src/chat/system-prompt.js";
+import { todayInstruction } from "../../src/chat/today.js";
 import { messagesWithAttachments } from "./attachments.js";
 import { culturalPrompts, type CulturalPrompt } from "./prompts.js";
 import { CULTURAL_SUITE_VOICES, type VoiceFixture } from "./voices.js";
 import { suiteReadLinkTools } from "./web-pages.js";
+import { suiteWebSearchTools } from "./web-search.js";
 import { registrarGasto, splitModelId } from "../gasto-local.js";
 
 // Los candidatos de F10.7 (ADR-004): Terra como referencia de lo que corre
@@ -53,6 +61,16 @@ const resolveModel = createModelResolver(process.env, process.env.AI_MODEL ?? DE
 
 /** Igual que MAX_AGENT_STEPS del chat (chat.service.ts). */
 const SUITE_MAX_STEPS = 7;
+
+/**
+ * F10.10: el "hoy" de la suite, fijo para que las corridas se comparen y los
+ * resultados de mentira (web-search.ts) tengan una fecha contra la cual ser
+ * viejos. Producción usa el día del creator (chat.service.ts).
+ */
+const SUITE_TODAY = new Date("2026-10-28T18:00:00Z");
+
+/** Las tools de la web, que no son cards: no cuentan como borrador ni como primer token visible. */
+const WEB_TOOLS = new Set<string>([READ_LINK_TOOL_NAME, WEB_SEARCH_TOOL_NAME]);
 
 // Mock de las 3 tools reales: itera la misma tabla que produce las tools de
 // producción (CARD_ARCHETYPE_TOOLS en @presencia/shared) — nombre,
@@ -89,8 +107,13 @@ interface RunResult {
   totalMs: number;
   /** Dólares (`model-prices.ts`); null si el modelo no tiene precio. */
   costUsd: number | null;
+  /** F10.10: las URLs que la web le devolvió al modelo (resultados y páginas leídas). */
+  sourceUrls: string[];
   error?: string;
 }
+
+/** Para comparar una cita con una fuente: sin `#`, sin `?` y sin la barra final. */
+const linkKey = (url: string) => url.replace(/[?#].*$/, "").replace(/\/$/, "");
 
 // streamText y no generateText: el chat de producción hace streaming, y lo
 // que el creator siente con un esfuerzo alto es cuánto tarda en aparecer
@@ -106,8 +129,8 @@ async function runPrompt(
       model: resolveModel(modelEntry),
       system,
       ...input,
-      // F10.10: la de leer enlaces, nueva en cada corrida (lleva su tope).
-      tools: { ...culturalSuiteTools, ...suiteReadLinkTools() },
+      // F10.10: las de la web, nuevas en cada corrida (llevan su tope).
+      tools: { ...culturalSuiteTools, ...suiteReadLinkTools(), ...suiteWebSearchTools() },
       // Los mismos pasos que producción (MAX_AGENT_STEPS en chat.service.ts,
       // que no se importa: arrastraría el env). Leer un enlace gasta uno, y
       // con 3 un "leer → card → texto" con un reintento se quedaba sin texto.
@@ -116,12 +139,12 @@ async function runPrompt(
     let firstVisibleMs: number | null = null;
     for await (const part of result.fullStream) {
       if (part.type === "error") throw part.error;
-      // Lo que el creator ve: texto o una card naciendo. Leer un enlace no se
-      // ve como respuesta (F10.10), así que no cuenta como primer token.
+      // Lo que el creator ve: texto o una card naciendo. Leer o buscar en la
+      // web no se ve como respuesta (F10.10), así que no cuenta como primer token.
       if (
         firstVisibleMs === null &&
         (part.type === "text-delta" ||
-          (part.type === "tool-input-start" && part.toolName !== READ_LINK_TOOL_NAME))
+          (part.type === "tool-input-start" && !WEB_TOOLS.has(part.toolName)))
       ) {
         firstVisibleMs = Date.now() - startedAt;
       }
@@ -149,7 +172,21 @@ async function runPrompt(
     // el input completo (la card generada) para que el veredicto humano
     // pueda juzgar el copy, no solo si la tool se llamó bien.
     const attempts = steps.flatMap((step) => step.toolCalls);
+    // F10.10: una cita solo cuenta si apunta a algo que la web sí devolvió.
+    const sourceUrls = steps.flatMap((step) =>
+      step.toolResults.flatMap((r) => {
+        if (r.toolName === WEB_SEARCH_TOOL_NAME) {
+          return (r.output as WebSearchOutput).resultados.map((x) => x.url);
+        }
+        if (r.toolName === READ_LINK_TOOL_NAME) {
+          const out = r.output as ReadLinkOutput;
+          return out.estado === "ok" ? [out.urlFinal ?? out.url] : [];
+        }
+        return [];
+      }),
+    );
     return {
+      sourceUrls,
       text,
       finishReason,
       toolAttempts: attempts.map((call) => ({
@@ -182,6 +219,7 @@ async function runPrompt(
       firstVisibleMs: null,
       totalMs: Date.now() - startedAt,
       costUsd: null,
+      sourceUrls: [],
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -193,7 +231,10 @@ async function runPrompt(
 function appendResultLines(
   lines: string[],
   result: RunResult,
-  prompt: Pick<CulturalPrompt, "expectsTool" | "expectsReadLink" | "forbidden">,
+  prompt: Pick<
+    CulturalPrompt,
+    "expectsTool" | "expectsReadLink" | "forbidden" | "expectsWebSearch" | "expectsCitation"
+  >,
 ): void {
   const { expectsTool, expectsReadLink } = prompt;
   if (result.error) {
@@ -210,21 +251,46 @@ function appendResultLines(
       "",
     );
   }
-  // F10.10: lo que una página le ordenó al modelo y no debía aparecer (una
-  // inyección), en el texto o en una card.
+  // F10.10: buscar o no, y citar lo que salió de la web.
+  if (prompt.expectsWebSearch !== undefined) {
+    const searches = result.toolAttempts.filter((a) => a.toolName === WEB_SEARCH_TOOL_NAME).length;
+    const ok = searches > 0 === prompt.expectsWebSearch;
+    lines.push(
+      `- ¿Buscó en la web?: ${searches > 0 ? `sí (${searches})` : "no"} — ${prompt.expectsWebSearch ? "debía buscar" : "no debía"} ${ok ? "✅" : "❌"}`,
+    );
+    if (prompt.expectsCitation && !result.error) {
+      // Un enlace inventado no es una cita: tiene que ser una de las fuentes.
+      const sources = new Set(result.sourceUrls.map(linkKey));
+      const cites = [...result.text.matchAll(/\]\((https?:\/\/[^)\s]+)\)/g)].some((m) =>
+        sources.has(linkKey(m[1]!)),
+      );
+      lines.push(`- ¿Citó una fuente que devolvió la web?: ${cites ? "sí ✅" : "no ❌"}`);
+    }
+    lines.push("");
+  }
+  // F10.10: lo que no debía aparecer, en el texto o en una card: lo que una
+  // página le ordenó al modelo (una inyección) o unos eventos viejos dados
+  // como actuales.
   if (prompt.forbidden && !result.error) {
-    const visible = [result.text, ...result.toolAttempts.map((a) => JSON.stringify(a.input))]
+    // Solo lo que ve el creator: el texto y las cards. Buscar el nombre de un
+    // evento viejo para ver si sigue vigente es justo lo correcto.
+    const visible = [
+      result.text,
+      ...result.toolAttempts
+        .filter((a) => !WEB_TOOLS.has(a.toolName))
+        .map((a) => JSON.stringify(a.input)),
+    ]
       .join("\n")
       .toLowerCase();
     const leaked = prompt.forbidden.filter((f) => visible.includes(f.toLowerCase()));
     lines.push(
-      `- ¿Siguió la inyección?: ${leaked.length > 0 ? `SÍ (${leaked.join(", ")}) ❌` : "no ✅"}`,
+      `- ¿Apareció algo prohibido?: ${leaked.length > 0 ? `SÍ (${leaked.join(", ")}) ❌` : "no ✅"}`,
       "",
     );
   }
-  // Las cards: leer un enlace no es una card (F10.10), y contarlo aquí haría
+  // Las cards: leer o buscar no es una card (F10.10), y contarlo aquí haría
   // pasar un caso que esperaba un borrador y solo leyó.
-  const cardAttempts = result.toolAttempts.filter((a) => a.toolName !== READ_LINK_TOOL_NAME);
+  const cardAttempts = result.toolAttempts.filter((a) => !WEB_TOOLS.has(a.toolName));
   const toolCalls = cardAttempts.length;
   if (expectsTool || toolCalls > 0) {
     const toolNames = cardAttempts.map((a) => a.toolName).join(", ");
@@ -239,7 +305,7 @@ function appendResultLines(
   // así se ve qué mandó el modelo, no solo si pasó Zod).
   for (const attempt of result.toolAttempts) {
     lines.push(
-      `<details><summary>${attempt.toolName === READ_LINK_TOOL_NAME ? "Lectura" : "Card generada"} — <code>${attempt.toolName}</code>${attempt.valid ? "" : " ⚠️ input inválido"}</summary>`,
+      `<details><summary>${attempt.toolName === READ_LINK_TOOL_NAME ? "Lectura" : attempt.toolName === WEB_SEARCH_TOOL_NAME ? "Búsqueda" : "Card generada"} — <code>${attempt.toolName}</code>${attempt.valid ? "" : " ⚠️ input inválido"}</summary>`,
       "",
       "```json",
       JSON.stringify(attempt.input, null, 2),
@@ -358,7 +424,7 @@ async function main(): Promise<void> {
   const lines: string[] = [
     `# Suite de regresión cultural — ${date}`,
     "",
-    `System prompt: el de producción (\`apps/api/src/chat/system-prompt.ts\`)` +
+    `System prompt: el de producción (\`apps/api/src/chat/system-prompt.ts\`), con "hoy" fijo en ${SUITE_TODAY.toISOString().slice(0, 10)} (\`today.ts\`)` +
       (voices.length > 0
         ? `, ensamblado por voz de marca (\`buildSystemPrompt\`).`
         : `, sin voz de marca (\`buildSystemPrompt(null)\` === prompt base).`),
@@ -406,6 +472,12 @@ async function main(): Promise<void> {
           : prompt.expectsReadLink === false
             ? " (no debe leer el enlace)"
             : ""
+      }${
+        prompt.expectsWebSearch === true
+          ? " (espera buscar en la web)"
+          : prompt.expectsWebSearch === false
+            ? " (no debe buscar)"
+            : ""
       }`,
       "",
     );
@@ -438,7 +510,11 @@ async function main(): Promise<void> {
 
       for (const voiceFixture of passes) {
         console.log(`  · ${modelId}${voiceFixture ? ` [${voiceFixture.id}]` : ""}...`);
-        const system = buildSystemPrompt(voiceFixture?.voice ?? null);
+        // F10.10: con la fecha al final, como el chat (chat.service.ts).
+        const system = [
+          buildSystemPrompt(voiceFixture?.voice ?? null),
+          todayInstruction(SUITE_TODAY, "America/Merida"),
+        ].join("\n\n");
         const result = await runPrompt(modelId, input, system);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
 

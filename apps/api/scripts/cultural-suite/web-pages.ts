@@ -36,6 +36,26 @@ const PAGES: Record<string, { title: string; siteName: string; text: string }> =
       "Horario: lunes a sábado de 8 de la mañana a 9 de la noche.",
     ].join("\n\n"),
   },
+  // Las que un resultado de búsqueda puede abrir (web-search.ts).
+  "https://www.granmuseodelmundomaya.com.mx/visita": {
+    title: "Planea tu visita — Gran Museo del Mundo Maya",
+    siteName: "Gran Museo del Mundo Maya",
+    text: [
+      "Horario: miércoles a lunes de 8:00 a 17:00 horas. Los martes el museo permanece cerrado.",
+      "Costos 2026: entrada general 250 pesos. Residentes de Yucatán con INE vigente, 100 pesos. Niños menores de 13 años, adultos mayores con INAPAM y personas con discapacidad, entrada libre.",
+      "El espectáculo de luz y sonido en la fachada es gratuito, de jueves a domingo a las 20:30 horas.",
+    ].join("\n\n"),
+  },
+  "https://yucatan.heraldodemexico.com.mx/2026/06/12/planes-fin-de-semana": {
+    title: "¿Qué hacer el fin de semana en Yucatán? Planes del 12 al 14 de junio en Mérida",
+    siteName: "Heraldo de México Yucatán",
+    text: [
+      "Mérida, Yucatán, 12 de junio de 2026. Este fin de semana del 12 al 14 de junio hay planes para todos.",
+      "Viernes 12: Pok ta pok en la Plaza Grande a las 20:00 horas, gratis.",
+      "Sábado 13: cine bajo las estrellas en el parque de Santa Lucía, 19:30 horas.",
+      "Domingo 14: feria del libro infantil en el Centro Cultural Olimpo, de 10 a 18 horas.",
+    ].join("\n\n"),
+  },
 };
 
 /**
