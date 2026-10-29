@@ -78,3 +78,35 @@ describe("plainSnippet", () => {
     expect(plainSnippet("<b>Hola</b>&nbsp;&quot;Mérida&quot;", 8)).toBe('Hola "Mé…');
   });
 });
+
+describe("BraveSearchProvider — resultados raros", () => {
+  const conResultados = (results: unknown[]) =>
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(new Response(JSON.stringify({ web: { results } }), { status: 200 })),
+    );
+
+  it("tira los que no son http(s): un link javascript: no llega al modelo ni a la UI", async () => {
+    conResultados([
+      { title: "Trampa", url: "javascript:alert(1)", description: "x" },
+      { title: "Bien", url: "https://www.yucatan.com.mx/nota", description: "y" },
+    ]);
+    const results = await new BraveSearchProvider("llave").search("x");
+    expect(results.map((r) => r.titulo)).toEqual(["Bien"]);
+  });
+
+  it("el dominio es el host aunque no sea uno común, nunca la URL entera", async () => {
+    conResultados([{ title: "Ruso", url: "https://www.пример.рф/ruta?q=1", description: "x" }]);
+    const [r] = await new BraveSearchProvider("llave").search("x");
+    expect(r?.dominio).toBe("xn--e1afmkfd.xn--p1ai");
+  });
+});
+
+describe("plainSnippet — entidades numéricas", () => {
+  it("decodifica &#233;, &#x27;, &apos; y &hellip;", () => {
+    expect(plainSnippet("caf&#233; de &#x27;Mérida&apos;&hellip;")).toBe("café de 'Mérida'…");
+  });
+
+  it("una entidad que no conoce se queda tal cual", () => {
+    expect(plainSnippet("a &foo; b")).toBe("a &foo; b");
+  });
+});

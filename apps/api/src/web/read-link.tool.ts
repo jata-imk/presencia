@@ -122,7 +122,9 @@ export function buildReadLinkTool(deps: {
           .then(({ output, row }) => {
             if (row) rows.set(row.id, row);
             return output;
-          });
+          })
+          // Solo mientras corre (lo leído ya queda en web_reads, que es el caché).
+          .finally(() => inFlight.delete(key));
         inFlight.set(key, read);
         return read;
       },

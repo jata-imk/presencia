@@ -319,6 +319,16 @@ const envSchema = z
         message: 'PUBLISHING_PROVIDER="postfast" requiere POSTFAST_API_KEY en el entorno',
       });
     }
+    // En producción el buscador de mentira contestaría resultados falsos y los
+    // cobraría como búsquedas reales: es un boot roto, no un default cómodo.
+    if (value.WEB_SEARCH_PROVIDER === "fake" && value.NODE_ENV === "production") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["WEB_SEARCH_PROVIDER"],
+        message:
+          'WEB_SEARCH_PROVIDER="fake" no se permite en producción: usa "brave" con BRAVE_SEARCH_API_KEY',
+      });
+    }
     if (value.WEB_SEARCH_PROVIDER === "brave" && !value.BRAVE_SEARCH_API_KEY) {
       ctx.addIssue({
         code: "custom",

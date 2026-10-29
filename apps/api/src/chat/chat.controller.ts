@@ -130,7 +130,9 @@ export class ChatController {
     const userMessage = await parseLastUserMessage(body);
 
     if (trigger.data.trigger === "regenerate-message") {
-      await this.chatService.regenerateChat(user.id, chatId, userMessage.id, res);
+      await this.chatService.regenerateChat(user.id, chatId, userMessage.id, res, {
+        webSearch: trigger.data.webSearch,
+      });
       return;
     }
 

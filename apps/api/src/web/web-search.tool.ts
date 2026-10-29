@@ -79,13 +79,11 @@ export function buildWebSearchTool(deps: {
           return Promise.resolve({ searchId: null, consulta, estado: "limite", resultados: [] });
         }
         searches += 1;
-        const search = deps.service.search(
-          deps.userId,
-          deps.chatId,
-          consulta,
-          deps.runId,
-          abortSignal,
-        );
+        // Solo mientras corre: una búsqueda que falló (no_disponible) se puede
+        // reintentar en otro paso, y entonces sí cuenta para el tope.
+        const search = deps.service
+          .search(deps.userId, deps.chatId, consulta, deps.runId, abortSignal)
+          .finally(() => inFlight.delete(key));
         inFlight.set(key, search);
         return search;
       },

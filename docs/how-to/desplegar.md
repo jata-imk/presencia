@@ -137,7 +137,8 @@ generador" (Generador 2, 3…): no hay forma de tener un respaldo que el creator
 Tres cosas que se olvidan y muerden:
 
 - **`WEB_SEARCH_PROVIDER` tampoco (F10.10).** Con `fake`, "busca en la web" contesta un resultado de
-  mentira: el modelo lo dice, pero el creator no recibe nada real. Sin la variable, el default es `fake`.
+  mentira: el modelo lo dice, pero el creator no recibe nada real. Sin la variable, el default es `fake`,
+  y `env.ts` no deja arrancar la API en producción con él.
 - **`PUBLISHING_PROVIDER` no puede ser `fake` en prod.** El provider falso guarda los posts programados
   en memoria del proceso, y el `worker` corre en OTRO proceso: su mapa estaría vacío y la reconciliación
   marcaría **fallida toda card programada** (ADR-008).

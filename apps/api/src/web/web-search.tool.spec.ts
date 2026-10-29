@@ -94,3 +94,26 @@ describe("buildWebSearchTool", () => {
     expect(search).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("buildWebSearchTool — reintento", () => {
+  it("una búsqueda que falló se puede reintentar en otro paso (no queda en caché)", async () => {
+    const search = vi
+      .fn()
+      .mockResolvedValueOnce(output({ estado: "no_disponible", searchId: null, resultados: [] }))
+      .mockResolvedValueOnce(output());
+    const buscar = buildWebSearchTool({
+      userId: "u",
+      chatId: "c",
+      runId: null,
+      service: { search },
+    })[WEB_SEARCH_TOOL_NAME];
+    const options = { toolCallId: "t", messages: [], abortSignal: undefined, context: {} };
+    await buscar.execute!({ consulta: "precio del café" }, options);
+    const segunda = (await buscar.execute!(
+      { consulta: "precio del café" },
+      options,
+    )) as WebSearchOutput;
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(segunda.estado).toBe("ok");
+  });
+});

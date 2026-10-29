@@ -147,6 +147,13 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
     source: "paquete de $50 (50k consultas), fuentes secundarias 2026-10-25",
   },
   "fake:solid-png": { inputPerM: 0, outputPerM: 0, source: "generador de mentira de dev" },
+  // F10.10: el buscador de mentira de dev (WEB_SEARCH_PROVIDER=fake).
+  "fake:web-search": {
+    inputPerM: 0,
+    outputPerM: 0,
+    perSearch: 0,
+    source: "buscador de mentira de dev",
+  },
 };
 
 export interface UsageForCost {

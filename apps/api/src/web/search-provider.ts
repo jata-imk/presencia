@@ -26,18 +26,47 @@ const ENTIDADES: Record<string, string> = {
   lt: "<",
   gt: ">",
   quot: '"',
-  "#39": "'",
+  apos: "'",
   nbsp: " ",
+  hellip: "…",
+  ndash: "–",
+  mdash: "—",
+  laquo: "«",
+  raquo: "»",
 };
+
+/** Una entidad numérica (`&#233;`, `&#x27;`) como su carácter; basura queda tal cual. */
+function numericEntity(match: string, hex: string | undefined, dec: string | undefined): string {
+  const code = hex ? parseInt(hex, 16) : Number(dec);
+  return Number.isInteger(code) && code > 0 && code <= 0x10ffff
+    ? String.fromCodePoint(code)
+    : match;
+}
 
 /** Texto plano: Brave marca la coincidencia con `<strong>` y trae entidades. */
 export function plainSnippet(text: string | null | undefined, max = SNIPPET_CHARS): string {
   const clean = (text ?? "")
     .replace(/<[^>]+>/g, "")
-    .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_, e: string) => ENTIDADES[e] ?? " ")
+    .replace(/&#(?:x([0-9a-f]+)|(\d+));/gi, numericEntity)
+    .replace(/&([a-z]+);/gi, (match, e: string) => ENTIDADES[e.toLowerCase()] ?? match)
     .replace(/\s+/g, " ")
     .trim();
   return clean.length > max ? `${clean.slice(0, max)}…` : clean;
+}
+
+/** El host de un resultado, sin `www.`: nunca la URL entera, aunque sea un host raro. */
+function domainOf(url: string): string {
+  return normalizeTrendSource(url) ?? new URL(url).hostname.replace(/^www\./, "");
+}
+
+/** Solo http(s): una URL `javascript:` de un índice envenenado terminaría citada como link. */
+function isWebUrl(url: string): boolean {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 interface BraveResponse {
@@ -84,13 +113,16 @@ export class BraveSearchProvider implements SearchProvider {
       throw new Error(`Brave contestó ${String(res.status)}: ${(await res.text()).slice(0, 200)}`);
     }
     const data = (await res.json()) as BraveResponse;
-    return (data.web?.results ?? []).slice(0, WEB_SEARCH_RESULTS).map((r) => ({
-      titulo: plainSnippet(r.title, 300),
-      url: r.url,
-      dominio: normalizeTrendSource(r.url) ?? r.url,
-      fragmento: plainSnippet([r.description, ...(r.extra_snippets ?? [])].join(" ")),
-      fecha: r.page_age ?? r.age ?? null,
-    }));
+    return (data.web?.results ?? [])
+      .filter((r) => isWebUrl(r.url))
+      .slice(0, WEB_SEARCH_RESULTS)
+      .map((r) => ({
+        titulo: plainSnippet(r.title, 300),
+        url: r.url,
+        dominio: domainOf(r.url),
+        fragmento: plainSnippet([r.description, ...(r.extra_snippets ?? [])].join(" ")),
+        fecha: r.page_age ?? r.age ?? null,
+      }));
   }
 }
 

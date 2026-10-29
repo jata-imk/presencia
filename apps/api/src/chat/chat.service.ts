@@ -8,7 +8,6 @@ import {
 import { convertToModelMessages, stepCountIs, streamText, tool, type UIMessage } from "ai";
 import {
   MEMORY_TOOL_NAME,
-  WEB_SEARCH_TOOL_NAME,
   memorySearchInputSchema,
   type BrandVoiceForPrompt,
   type CardContent,
@@ -54,14 +53,20 @@ import { TurnCards } from "./turn-cards.js";
 import { buildReadLinkTool } from "../web/read-link.tool.js";
 import { WebReadDigestService } from "../web/web-read-digest.service.js";
 import { WebReadsService } from "../web/web-reads.service.js";
+import { parseModelChain } from "../ai/provider-registry.js";
+import { forcedSearchStep } from "../web/force-search.js";
 import { buildWebSearchTool } from "../web/web-search.tool.js";
 import { WebSearchService } from "../web/web-search.service.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
+// F10.10: buscar y leer también son pasos; el peor caso que los topes
+// permiten es 2 búsquedas + 3 lecturas + la card + el texto de cierre = 7.
+// Los topes por turno de cada tool (no este número) acotan el costo: un paso
+// que no se usa no cuesta.
 // Si el modelo agota este presupuesto a mitad de una tool call, onEnd lo
 // detecta (steps.length === MAX_AGENT_STEPS + finishReason "tool-calls") y
 // lo loguea — el turno se persiste igual, truncado, sin bloquear al usuario.
-const MAX_AGENT_STEPS = 5;
+const MAX_AGENT_STEPS = 7;
 /** Cuánto espera la traza de un turno cortado a que termine la tool en curso. */
 const ABORTED_TRACE_GRACE_MS = 3_000;
 /**
@@ -481,6 +486,8 @@ export class ChatService {
     chatId: string,
     userMessageId: string,
     res: ServerResponse,
+    /** F10.10: Reintentar un mensaje con "Buscar en la web" vuelve a buscar. */
+    options: { webSearch?: boolean } = {},
   ): Promise<void> {
     await this.assertQuotaForTurn(userId);
     const voicePromise = this.loadVoiceForPrompt(userId);
@@ -522,6 +529,8 @@ export class ChatService {
         res,
         voicePromise,
         turn,
+        false,
+        options.webSearch === true,
       );
     } catch (error) {
       turn.release();
@@ -732,10 +741,15 @@ export class ChatService {
       stopWhen: stepCountIs(MAX_AGENT_STEPS),
       // F10.10: "Buscar en la web" del menú ＋ obliga a buscar en el primer
       // paso; después el modelo sigue libre (leer, crear la card, contestar).
+      // Con toolChoice si la cadena lo aguanta, si no con una instrucción
+      // (web/force-search.ts).
       prepareStep: forceWebSearch
         ? ({ stepNumber }) =>
             stepNumber === 0
-              ? { toolChoice: { type: "tool", toolName: WEB_SEARCH_TOOL_NAME } }
+              ? forcedSearchStep(
+                  parseModelChain(env.AI_MODEL_CHAT ?? env.AI_MODEL),
+                  buildSystemPrompt(voice),
+                )
               : undefined
         : undefined,
       abortSignal: abortController.signal,
