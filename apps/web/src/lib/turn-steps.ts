@@ -1,4 +1,6 @@
 import {
+  isSessionHost,
+  normalizeTrendSource,
   READ_LINK_TOOL_NAME,
   WEB_READS_PER_TURN,
   WEB_SEARCHES_PER_TURN,
@@ -57,36 +59,27 @@ export interface StepsHeader {
 
 type StepPart = CardToolPart | WebToolPart;
 
-// Redes que piden sesión: se dice así ("pide iniciar sesión"); en cualquier
-// otro sitio la misma respuesta del servidor es una cuenta o un muro de pago.
-const SESSION_DOMAINS = [
-  "instagram.com",
-  "tiktok.com",
-  "facebook.com",
-  "fb.com",
-  "fb.watch",
-  "threads.net",
-  "threads.com",
-  "x.com",
-  "twitter.com",
-];
-
-/** Host sin `www.` de una URL, o lo que se pueda. */
+/**
+ * Host sin `www.` de una URL, con el mismo helper con que la API llena
+ * `dominio` (read-output.ts): una lectura en curso o fallida y su fuente ya
+ * leída nombran igual al sitio. Para lo que ese helper no acepta (una IP,
+ * localhost, otro protocolo), el host a secas: nunca la URL completa, que
+ * puede traer una ruta o un token.
+ */
 export function domainOfUrl(url: string | undefined): string {
   if (!url) return "la página";
+  const domain = normalizeTrendSource(url);
+  if (domain) return domain;
   try {
-    return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(
-      /^www\./,
-      "",
-    );
+    return new URL(url).hostname.replace(/^www\./, "") || "la página";
   } catch {
-    return url;
+    return "la página";
   }
 }
 
-function isSocial(domain: string): boolean {
-  return SESSION_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`));
-}
+// Redes que piden sesión: se dice así ("pide iniciar sesión"); en cualquier
+// otro sitio la misma respuesta del servidor es una cuenta o un muro de pago.
+const isSocial = isSessionHost;
 
 function inputOf<T>(part: StepPart): Partial<T> {
   return part.input ?? {};
@@ -166,7 +159,9 @@ const READ_FAILS: Record<
   }),
   no_legible: (d) => ({ text: `No pude leer ${d}: no tiene texto legible`, reason: "ilegible" }),
   bloqueada: (d) => ({
-    text: `No abrí ${d}: es una dirección interna y la bloqueo por seguridad`,
+    // Cubre más que las direcciones internas: un puerto raro, otro protocolo
+    // o un usuario y contraseña en el enlace (safe-fetch.ts).
+    text: `No abrí ${d}: por seguridad no abro ese tipo de dirección`,
     reason: "bloqueada",
   }),
   tiempo: (d) => ({ text: `${d} no contestó a tiempo`, reason: "tiempo" }),

@@ -459,6 +459,8 @@ function ChatView({
       // F10.9: editar cambia el texto, no los adjuntos: viajan los mismos.
       const original = messages.find((m) => m.id === userId);
       const files = original ? messageFiles(original) : [];
+      // F10.10: el chip de "Buscar en la web" es del borrador del composer,
+      // no de una edición: editar no lo usa ni lo apaga.
       enviar(sendMessage({ ...messageOf(text, files), messageId: userId }));
     }).finally(() => {
       replacing.current = false;

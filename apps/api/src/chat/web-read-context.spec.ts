@@ -82,6 +82,22 @@ describe("dietWebReads", () => {
     expect(after - before).toBeGreaterThan(1_900);
   });
 
+  it("una página releída (el mismo id) viaja completa una sola vez: en su lectura más nueva", () => {
+    const messages = [
+      user("u1"),
+      assistant("a1", "nota"),
+      user("u2"),
+      assistant("a2", "nota"),
+      user("u3"),
+    ];
+    const out = dietWebReads(messages, new Map([["nota", row("nota", 100, "De qué trata.")]]));
+    const views = out
+      .flatMap((m) => m.parts)
+      .map((p) => (p as { output?: ReadLinkModelOutput }).output?.contexto?.vista)
+      .filter(Boolean);
+    expect(views).toEqual(["linea", "completa"]);
+  });
+
   it("fuera de la ventana de 3 turnos, una línea con la descripción", () => {
     const messages = [
       user("u1"),

@@ -159,7 +159,9 @@ export async function safeFetch(
       res.destroy();
     }
   }
-  return fail("bloqueada", `más de ${String(WEB_FETCH_MAX_REDIRECTS)} redirects`);
+  // Un ciclo o una cadena larga de redirects es un sitio que falla, no un
+  // bloqueo de seguridad: decirle "bloqueada" al creator lo confundía.
+  return fail("no_disponible", `más de ${String(WEB_FETCH_MAX_REDIRECTS)} redirects`);
 }
 
 type Address = { address: string; family: number };

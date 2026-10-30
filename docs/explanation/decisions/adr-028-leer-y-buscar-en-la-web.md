@@ -129,3 +129,24 @@ Diseño en Claude Design ("Chat Web.html"). La UI sale solo de los outputs de la
 - **Buscar sin saber qué día es no sirve.** El prompt no traía la fecha, y unas notas de junio salieron como los planes de "este fin de semana" (en vivo, 2026-10-28). Ahora el prompt cierra con el día local del creator y la regla de no presentar como actual lo que es de otra fecha (ADR-006, addendum F10.10 PR7).
 - **Suite cultural:** `buscar_en_web` de producción con un buscador de mentira (`scripts/cultural-suite/web-search.ts`), resultados fijos por consulta y un "hoy" fijo. Hay tres casos: un precio de hoy (debe buscar y citar), un post de su propio negocio (no debe buscar) y eventos con solo resultados de junio (no debe presentarlos como de este fin de semana). Las marcas nuevas del reporte son `expectsWebSearch` y `expectsCitation`; esta última solo cuenta donde el dato bueno sí está en los resultados, porque con eventos viejos no citarlos es lo correcto. Con la cadena (Luna, Gemini 3.8 y Sonnet 5.5), los 7 casos web pasan (`docs/reference/suite-cultural/2026-10-28-reporte-busqueda.md`). La lista `forbidden` tiene que ser el contenido exacto de la trampa: una palabra suelta ("casino") marcó como fallo a Sonnet, que reportó la inyección en vez de seguirla.
 - **Corrige el addendum del PR5: Sonnet 5.5 nunca acepta una tool forzada.** Con el respaldo forzado en vivo (`AI_FALLBACK_SIMULATE=openai,google`), el AI SDK avisó que `claude-sonnet-5-5` "rejects forced tool use": manda solo `buscar_en_web`, con `auto`, y pide que se instruya en el prompt. Sonnet 5.5 además razona siempre (no se le puede apagar el thinking), aunque en la cadena no lleve `@esfuerzo`. Antes la instrucción solo iba con un Anthropic con esfuerzo, así que con Sonnet sin esfuerzo nada lo obligaba a buscar; esa vez buscó por su cuenta. Ahora `forcedSearchStep` **siempre** agrega la instrucción al prompt del paso 0, y además `toolChoice` salvo con un Anthropic con `@esfuerzo` explícito.
+
+## Addendum (cierre de F10.10, 2026-10-29): la revisión del rango completo
+
+`/code-review medium` sobre todo el rango de la fase (`6a349cd..a3f6984`). Lo que cambió:
+
+- **La extracción del HTML corre en un worker** (`web/extract-html-thread.ts` y `extract-html.worker.ts`; la lógica pura vive en `extract-html.ts`, y lo que no necesita el parser en `extract-text.ts`, así el hilo principal no carga linkedom).
+  - **El problema:** linkedom y Readability son síncronos. Medido: páginas reales de 100 a 350 ms (El Universal, 2 MB: 180 ms; Wikipedia, 800 KB: 330 ms). Un HTML con mucho markup anidado tardó **16 s**, con los streams de todos los chats congelados mientras.
+  - **Un worker por lectura, como mucho 2 a la vez** en el proceso; las demás esperan turno. Cada uno tiene 256 MB de memoria.
+  - **El tope de 8 s cuenta desde que el worker avisa que está listo**, no desde que arranca: con la CPU ocupada, arrancar ya tarda.
+  - **Detener mata el worker** en ese momento.
+  - Si no termina a tiempo, la página queda `no_legible` ("demasiado pesada"). Si el parser o el worker fallan, también es `no_legible` con un motivo genérico, y el error real va al log.
+  - **En dev**, el worker carga `tsx/cjs` a mano porque no hereda el cargador de TypeScript.
+- **Dieta por parte, no por página.** Releer una página (un acierto del caché, el mismo `readId`) la citaba dos veces, y las dos viajaban completas con el presupuesto contándola una sola vez. Ahora solo la lectura más nueva lleva el texto (`fullReadParts` en `chat/web-read-context.ts`).
+- **Demasiados redirects es `no_disponible`, no `bloqueada`.** Es un sitio que falla, no un bloqueo de seguridad. En la UI, `bloqueada` ya no dice "dirección interna": también cubre un puerto raro, otro protocolo o credenciales en el enlace.
+- **Una sola lista de redes con sesión:** `SESSION_DOMAINS` e `isSessionHost` en `@presencia/shared`, para la API y la UI. El dominio de un paso en la UI sale de `normalizeTrendSource`, el mismo helper con el que la API llena `dominio`.
+- **`prepareStep` usa la cadena que se resolvió** (`ResolvedModel.chain`), no la vuelve a leer del env.
+
+No se cambiaron:
+
+- **Reintentar y un envío rechazado no reenvían el chip.** Es la decisión del addendum PR6. Se corrigió el comentario del servidor, que decía lo contrario.
+- **Editar un mensaje no usa ni apaga el chip.** El chip es del borrador del composer, no de una edición. La primera revisión pedía lo contrario; la del PR de cierre lo revirtió, porque el creator lo prende para lo que está escribiendo abajo.
