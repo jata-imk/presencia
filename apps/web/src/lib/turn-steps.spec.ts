@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ReadLinkOutput, WebSearchOutput } from "@presencia/shared";
 import type { CardToolPart, WebToolPart } from "./chat-types.js";
-import { stepsExpandable, stepsHeader, turnSteps } from "./turn-steps.js";
+import { domainOfUrl, stepsExpandable, stepsHeader, turnSteps } from "./turn-steps.js";
 
 // F10.10: los pasos de una respuesta (buscar, leer, crear borradores) en una
 // sola lista, y el encabezado que la resume.
@@ -196,5 +196,17 @@ describe("turnSteps + stepsHeader", () => {
   it("un estado de lectura que esta versión no conoce no tumba el mensaje", () => {
     const [step] = turnSteps([read("https://a.mx/x", { estado: "nuevo_estado" as "ok" })], false);
     expect(step).toMatchObject({ state: "fail", text: "No pude leer a.mx" });
+  });
+});
+
+describe("domainOfUrl", () => {
+  it("el dominio sin www, como lo guarda la API", () => {
+    expect(domainOfUrl("https://www.eluniversal.com.mx/nota?x=1")).toBe("eluniversal.com.mx");
+  });
+
+  it("una IP o localhost da el host, nunca la URL con su ruta o su token", () => {
+    expect(domainOfUrl("http://127.0.0.1:8080/admin?token=abc")).toBe("127.0.0.1");
+    expect(domainOfUrl("http://localhost:3000/x")).toBe("localhost");
+    expect(domainOfUrl("no es una url")).toBe("la página");
   });
 });

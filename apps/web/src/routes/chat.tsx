@@ -459,16 +459,9 @@ function ChatView({
       // F10.9: editar cambia el texto, no los adjuntos: viajan los mismos.
       const original = messages.find((m) => m.id === userId);
       const files = original ? messageFiles(original) : [];
-      // F10.10: editar es mandar un mensaje: el chip vale para él y se va,
-      // en vez de quedarse prendido para el siguiente que no lo pidió.
-      const forceSearch = latest.webSearch;
-      enviar(
-        sendMessage(
-          { ...messageOf(text, files), messageId: userId },
-          forceSearch ? { body: { webSearch: true } } : undefined,
-        ),
-      );
-      if (forceSearch) setWebSearch(false);
+      // F10.10: el chip de "Buscar en la web" es del borrador del composer,
+      // no de una edición: editar no lo usa ni lo apaga.
+      enviar(sendMessage({ ...messageOf(text, files), messageId: userId }));
     }).finally(() => {
       replacing.current = false;
     });
@@ -476,8 +469,8 @@ function ChatView({
 
   const lastUserId = [...messages].reverse().find((m) => m.role === "user")?.id;
   // Lo de este render, para lo que corre después de un await.
-  const latestRef = useRef({ busy, lastUserId, webSearch });
-  latestRef.current = { busy, lastUserId, webSearch };
+  const latestRef = useRef({ busy, lastUserId });
+  latestRef.current = { busy, lastUserId };
   const notices = turnNotices(messages, { busy, local: localStatus });
   // Un rechazo de la API no guardó nada: reintentarlo tal cual daría lo mismo.
   const turnApiError = quotaExhaustedError ? "Usaste toda tu cuota de este mes." : apiErrorMessage;

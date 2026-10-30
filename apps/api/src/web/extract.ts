@@ -1,9 +1,9 @@
 import { processAttachment, RejectedAttachmentError } from "../attachments/attachment-content.js";
-import { capped, normalize, type ExtractedPage } from "./extract-html.js";
+import { capped, normalize, type ExtractedPage } from "./extract-text.js";
 import { extractHtmlOffThread } from "./extract-html-thread.js";
 import type { FetchedKind } from "./safe-fetch.js";
 
-export { WEB_READ_MAX_CHARS, type ExtractedPage } from "./extract-html.js";
+export { WEB_READ_MAX_CHARS, type ExtractedPage } from "./extract-text.js";
 
 // F10.10 (ADR-028): de los bytes de una página al texto que lee el modelo.
 //
@@ -20,20 +20,23 @@ export { WEB_READ_MAX_CHARS, type ExtractedPage } from "./extract-html.js";
 /** Un <meta refresh> con más espera que esto no es un redirect: es una recarga. */
 const MAX_REFRESH_DELAY_S = 1;
 
-export async function extractPage(input: {
-  kind: FetchedKind;
-  body: Uint8Array;
-  charset: string | null;
-  url: string;
-  truncated: boolean;
-}): Promise<ExtractedPage> {
+export async function extractPage(
+  input: {
+    kind: FetchedKind;
+    body: Uint8Array;
+    charset: string | null;
+    url: string;
+    truncated: boolean;
+  },
+  signal?: AbortSignal,
+): Promise<ExtractedPage> {
   if (input.kind === "pdf") return extractPdf(input.body);
   const raw = decode(
     input.body,
     input.charset ?? (input.kind === "html" ? sniffCharset(input.body) : null),
   );
   if (input.kind === "text") return capped(null, null, normalize(raw), input.truncated, false);
-  return extractHtmlOffThread(raw, input.url, input.truncated);
+  return extractHtmlOffThread(raw, input.url, input.truncated, { signal });
 }
 
 async function extractPdf(body: Uint8Array): Promise<ExtractedPage> {

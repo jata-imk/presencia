@@ -81,12 +81,18 @@ export async function readPage(url: string, options: SafeFetchOptions = {}): Pro
   if (!fetched.ok) return { status: fetched.status, url, finalUrl: null, detail: fetched.detail };
   // Un HTML que rompe al parser (o a Readability) es una página ilegible, no
   // un error del turno: así queda su fila y el modelo recibe el motivo.
-  const page = await extractPage({ ...fetched, url: fetched.finalUrl }).catch(
-    (error: unknown) =>
-      ({
-        ok: false,
-        detail: `no se pudo extraer el texto (${error instanceof Error ? error.message : String(error)})`,
-      }) as const,
+  // Con la señal del turno y no la del reloj de la descarga: la extracción
+  // tiene su propio tope (extract-html-thread.ts), y Detener la corta.
+  const page = await extractPage({ ...fetched, url: fetched.finalUrl }, options.signal).catch(
+    (error: unknown) => {
+      // Detener no es una página ilegible: sale como el corte que es.
+      if (options.signal?.aborted) throw error;
+      // Un HTML que rompe al parser, o el worker que se cae, es una página que
+      // no se pudo leer y no un error del turno: así queda su fila y el
+      // modelo recibe el motivo. El error real va al log, no al creator.
+      console.error(`[web] No se pudo extraer el texto de ${fetched.finalUrl}:`, error);
+      return { ok: false, detail: "no se pudo extraer el texto" } as const;
+    },
   );
   if (!page.ok)
     return { status: "no_legible", url, finalUrl: fetched.finalUrl, detail: page.detail };

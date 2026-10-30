@@ -62,11 +62,19 @@ type StepPart = CardToolPart | WebToolPart;
 /**
  * Host sin `www.` de una URL, con el mismo helper con que la API llena
  * `dominio` (read-output.ts): una lectura en curso o fallida y su fuente ya
- * leída nombran igual al sitio. Si no es un host, lo que se pueda.
+ * leída nombran igual al sitio. Para lo que ese helper no acepta (una IP,
+ * localhost, otro protocolo), el host a secas: nunca la URL completa, que
+ * puede traer una ruta o un token.
  */
 export function domainOfUrl(url: string | undefined): string {
   if (!url) return "la página";
-  return normalizeTrendSource(url) ?? url;
+  const domain = normalizeTrendSource(url);
+  if (domain) return domain;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "") || "la página";
+  } catch {
+    return "la página";
+  }
 }
 
 // Redes que piden sesión: se dice así ("pide iniciar sesión"); en cualquier

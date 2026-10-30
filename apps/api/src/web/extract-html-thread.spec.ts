@@ -14,7 +14,19 @@ describe("extractHtmlOffThread", () => {
   it("una página que no termina a tiempo se corta, sin colgar el turno", async () => {
     // Mucho markup anidado: segundos en el parser (revisión de cierre de F10.10).
     const heavy = `<html><body>${"<div><span>x</span><a href='/a'>l</a><div><img src='a.png'></div></div>".repeat(20_000)}</body></html>`;
-    const page = await extractHtmlOffThread(heavy, "https://x.mx/", false, 200);
+    const page = await extractHtmlOffThread(heavy, "https://x.mx/", false, { timeoutMs: 200 });
     expect(page).toEqual({ ok: false, detail: "la página es demasiado pesada para leerla" });
+  });
+
+  it("Detener mata el worker en ese momento, sin esperar el tope", async () => {
+    const heavy = `<html><body>${"<div><span>x</span><a href='/a'>l</a><div><img src='a.png'></div></div>".repeat(20_000)}</body></html>`;
+    const controller = new AbortController();
+    const started = Date.now();
+    const reading = extractHtmlOffThread(heavy, "https://x.mx/", false, {
+      signal: controller.signal,
+    });
+    setTimeout(() => controller.abort(new Error("detenido")), 300);
+    await expect(reading).rejects.toThrow("detenido");
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 });

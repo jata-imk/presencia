@@ -1,5 +1,6 @@
 import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
+import { capped, normalize, type ExtractedPage } from "./extract-text.js";
 
 // F10.10 (ADR-028): el HTML de una página al texto que lee el modelo. Aparte
 // de extract.ts porque corre en un worker (extract-html-thread.ts): con mucho
@@ -7,26 +8,10 @@ import { parseHTML } from "linkedom";
 // congelaba los streams de todos los chats. Solo lo que el worker necesita,
 // sin el lector de PDF ni sharp.
 
-/** Lo que se guarda de una página. Lo que ve el modelo es menos (el tope de contexto). */
-export const WEB_READ_MAX_CHARS = 60_000;
-
 /** Menos texto que esto en el cuerpo y no es un artículo: se prueba la descripción. */
 const MIN_ARTICLE_CHARS = 200;
 /** Ni la descripción llega a esto: no hay nada que leer. */
 const MIN_READABLE_CHARS = 80;
-export type ExtractedPage =
-  | {
-      ok: true;
-      title: string | null;
-      siteName: string | null;
-      text: string;
-      /** Se guardó solo el inicio (WEB_READ_MAX_CHARS), o la descarga ya venía cortada. */
-      truncated: boolean;
-      /** Solo había la descripción de la página, no su cuerpo. */
-      onlyDescription: boolean;
-    }
-  | { ok: false; detail: string };
-
 export function extractHtml(html: string, url: string, downloadTruncated: boolean): ExtractedPage {
   const { document } = parseHTML(html);
   const doc = document;
@@ -54,26 +39,6 @@ export function extractHtml(html: string, url: string, downloadTruncated: boolea
     return { ok: false, detail: "la página no tiene texto legible sin JavaScript" };
   }
   return capped(title, siteName, best, downloadTruncated, best === description);
-}
-
-export function capped(
-  title: string | null,
-  siteName: string | null,
-  text: string,
-  truncated: boolean,
-  onlyDescription: boolean,
-): ExtractedPage {
-  if (text.length <= WEB_READ_MAX_CHARS) {
-    return { ok: true, title, siteName, text, truncated, onlyDescription };
-  }
-  return {
-    ok: true,
-    title,
-    siteName,
-    text: `${text.slice(0, WEB_READ_MAX_CHARS)}…`,
-    truncated: true,
-    onlyDescription,
-  };
 }
 
 const BLOCK_TAGS = new Set([
@@ -133,20 +98,6 @@ function textWithBreaks(node: Node): string {
   };
   walk(node);
   return parts.join("");
-}
-
-/** Espacios colapsados por línea, sin más de una línea en blanco seguida. */
-export function normalize(text: string): string {
-  return (
-    text
-      .replace(/\r\n?/g, "\n")
-      .split("\n")
-      // `\s` incluye el espacio duro (&nbsp;); dentro de una línea ya no hay saltos.
-      .map((line) => line.replace(/\s+/g, " ").trim())
-      .join("\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim()
-  );
 }
 
 function clean(value: string | null | undefined): string | null {

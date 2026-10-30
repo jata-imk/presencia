@@ -141,7 +141,7 @@ const partKey = (messageIndex: number, partIndex: number) =>
   `${String(messageIndex)}:${String(partIndex)}`;
 
 /**
- * Las partes que van completas: en la ventana y dentro del presupuesto, de la
+ * Las partes que van completas (su clave, con el id de su página): en la ventana y dentro del presupuesto, de la
  * más nueva hacia atrás. Por parte y no por página: releer una página (un
  * acierto del caché, el mismo id) la cita dos veces, y solo la lectura más
  * nueva lleva el texto; las demás van como línea. Por id, la página viajaba
@@ -152,8 +152,8 @@ function fullReadParts(
   rows: ReadonlyMap<string, WebReadForContext> | null,
   keep: number,
   budget: number,
-): Set<string> {
-  const full = new Set<string>();
+): Map<string, string> {
+  const full = new Map<string, string>();
   if (!rows) return full;
   const start = recentTurnsStart(messages, keep);
   const seen = new Set<string>();
@@ -170,7 +170,7 @@ function fullReadParts(
       const cost = costOf(row);
       // Una que no cabe no detiene la cuenta: una más vieja y más chica sí puede.
       if (used + cost <= budget) {
-        full.add(partKey(index, partIndex));
+        full.set(partKey(index, partIndex), id);
         used += cost;
       }
     }
@@ -236,11 +236,6 @@ export function webReadIdsToDescribe(
 ): string[] {
   if (!rows) return [];
   // Una página releída sigue completa si su lectura más nueva lo está.
-  const stillFull = new Set(
-    [...fullReadParts(messages, rows, keep - 1, budget)].map((key) => {
-      const [messageIndex, partIndex] = key.split(":").map(Number);
-      return (messages[messageIndex!]!.parts[partIndex!] as ReadPart).output.readId!;
-    }),
-  );
+  const stillFull = new Set(fullReadParts(messages, rows, keep - 1, budget).values());
   return webReadIdsIn(messages).filter((id) => rows.has(id) && !stillFull.has(id));
 }
