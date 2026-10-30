@@ -36,6 +36,8 @@ export interface ResolvedModel {
   readonly fallbackFrom: string | null;
   /** Los intentos que fallaron antes del que respondió. */
   readonly attempts: readonly FallbackAttempt[];
+  /** La cadena completa que se resolvió, en orden (F10.10: decide cómo forzar una tool). */
+  readonly chain: readonly ModelEntry[];
 }
 
 // Fachada inyectable sobre el registry (ADR-004): el resto de la app pide
@@ -61,6 +63,7 @@ export class AiService {
     const ran = (): ModelEntry => chain.ran;
     return {
       model: chain.model,
+      chain: entries,
       get id() {
         return ran().id;
       },

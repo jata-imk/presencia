@@ -170,7 +170,7 @@ describe("safeFetch — redirects", () => {
     routes.set("/ciclo", (_req, res) => res.writeHead(302, { Location: "/ciclo" }).end());
     expect(await safeFetch(`${base}/ciclo`, { policy: local() })).toMatchObject({
       ok: false,
-      status: "bloqueada",
+      status: "no_disponible",
       detail: "más de 5 redirects",
     });
   });

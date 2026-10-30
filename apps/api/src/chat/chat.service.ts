@@ -53,7 +53,6 @@ import { TurnCards } from "./turn-cards.js";
 import { buildReadLinkTool } from "../web/read-link.tool.js";
 import { WebReadDigestService } from "../web/web-read-digest.service.js";
 import { WebReadsService } from "../web/web-reads.service.js";
-import { parseModelChain } from "../ai/provider-registry.js";
 import { forcedSearchStep } from "../web/force-search.js";
 import { buildWebSearchTool } from "../web/web-search.tool.js";
 import { WebSearchService } from "../web/web-search.service.js";
@@ -496,7 +495,11 @@ export class ChatService {
     chatId: string,
     userMessageId: string,
     res: ServerResponse,
-    /** F10.10: Reintentar un mensaje con "Buscar en la web" vuelve a buscar. */
+    /**
+     * F10.10: si el body trae `webSearch`, se respeta. La UI no lo manda al
+     * reintentar: el chip no se guarda con el mensaje, y el modelo decide de
+     * nuevo (presencia-chat.md, ADR-028 addendum PR6).
+     */
     options: TurnOptions = {},
   ): Promise<void> {
     await this.assertQuotaForTurn(userId);
@@ -762,9 +765,7 @@ export class ChatService {
       // (web/force-search.ts).
       prepareStep: forceWebSearch
         ? ({ stepNumber }) =>
-            stepNumber === 0
-              ? forcedSearchStep(parseModelChain(env.AI_MODEL_CHAT ?? env.AI_MODEL), system)
-              : undefined
+            stepNumber === 0 ? forcedSearchStep(resolved.chain, system) : undefined
         : undefined,
       abortSignal: abortController.signal,
       onStepStart: (event) => trace.stepStarted(event),

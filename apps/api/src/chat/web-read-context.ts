@@ -118,17 +118,17 @@ export function dietWebReads(
   keep = KEEP_ATTACHMENT_USER_TURNS,
   budget = RECENT_WEB_READ_TOKENS,
 ): UIMessage[] {
-  const full = fullReadIds(messages, rows, keep, budget);
-  return messages.map((message) => {
+  const full = fullReadParts(messages, rows, keep, budget);
+  return messages.map((message, messageIndex) => {
     if (!message.parts.some(isGoodRead)) return message;
     return {
       ...message,
-      parts: message.parts.map((part) => {
+      parts: message.parts.map((part, partIndex) => {
         if (!isGoodRead(part)) return part;
         const row = rows?.get(part.output.readId!);
         const contexto: PageView = !row
           ? { vista: "no_disponible" }
-          : full.has(row.id)
+          : full.has(partKey(messageIndex, partIndex))
             ? fullView(row)
             : { vista: "linea", descripcion: row.description };
         return { ...part, output: { ...part.output, contexto } };
@@ -137,8 +137,17 @@ export function dietWebReads(
   });
 }
 
-/** Las que van completas: en la ventana y dentro del presupuesto, de la más nueva hacia atrás. */
-function fullReadIds(
+const partKey = (messageIndex: number, partIndex: number) =>
+  `${String(messageIndex)}:${String(partIndex)}`;
+
+/**
+ * Las partes que van completas: en la ventana y dentro del presupuesto, de la
+ * más nueva hacia atrás. Por parte y no por página: releer una página (un
+ * acierto del caché, el mismo id) la cita dos veces, y solo la lectura más
+ * nueva lleva el texto; las demás van como línea. Por id, la página viajaba
+ * completa una vez por cada lectura y el presupuesto la contaba una sola.
+ */
+function fullReadParts(
   messages: UIMessage[],
   rows: ReadonlyMap<string, WebReadForContext> | null,
   keep: number,
@@ -147,15 +156,21 @@ function fullReadIds(
   const full = new Set<string>();
   if (!rows) return full;
   const start = recentTurnsStart(messages, keep);
+  const seen = new Set<string>();
   let used = 0;
   for (let index = messages.length - 1; index >= start; index--) {
-    for (const id of webReadIdsIn([messages[index]!])) {
+    const parts = messages[index]!.parts;
+    for (let partIndex = parts.length - 1; partIndex >= 0; partIndex--) {
+      const part = parts[partIndex]!;
+      if (!isGoodRead(part)) continue;
+      const id = part.output.readId!;
       const row = rows.get(id);
-      if (!row || full.has(id)) continue;
+      if (!row || seen.has(id)) continue;
+      seen.add(id);
       const cost = costOf(row);
       // Una que no cabe no detiene la cuenta: una más vieja y más chica sí puede.
       if (used + cost <= budget) {
-        full.add(id);
+        full.add(partKey(index, partIndex));
         used += cost;
       }
     }
@@ -220,6 +235,12 @@ export function webReadIdsToDescribe(
   budget = RECENT_WEB_READ_TOKENS,
 ): string[] {
   if (!rows) return [];
-  const stillFull = fullReadIds(messages, rows, keep - 1, budget);
+  // Una página releída sigue completa si su lectura más nueva lo está.
+  const stillFull = new Set(
+    [...fullReadParts(messages, rows, keep - 1, budget)].map((key) => {
+      const [messageIndex, partIndex] = key.split(":").map(Number);
+      return (messages[messageIndex!]!.parts[partIndex!] as ReadPart).output.readId!;
+    }),
+  );
   return webReadIdsIn(messages).filter((id) => rows.has(id) && !stillFull.has(id));
 }

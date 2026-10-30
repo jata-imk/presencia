@@ -1,4 +1,4 @@
-import type { WebReadStatus } from "@presencia/shared";
+import { isSessionHost, type WebReadStatus } from "@presencia/shared";
 import { extractPage, metaRefreshTarget } from "./extract.js";
 import {
   safeFetch,
@@ -11,34 +11,14 @@ import {
 // su texto. Una función pura de red: no guarda nada ni sabe de chats; el caché
 // y la tabla `web_reads` son del PR que la conecta a la tool.
 
-/**
- * Redes que no muestran contenido sin sesión. Pedirlas devuelve la página de
- * login (o un muro), y su texto haría creer al modelo que leyó algo: se
- * contestan sin hacer la petición. Es una lista corta a propósito: un sitio
- * con login a medias (LinkedIn, Medium) sí se intenta, y si no hay texto sale
- * `no_legible`.
- */
-const SESSION_DOMAINS = [
-  "instagram.com",
-  "tiktok.com",
-  "facebook.com",
-  "fb.com",
-  "fb.watch",
-  "threads.net",
-  "threads.com",
-  "x.com",
-  "twitter.com",
-];
-
+// Las redes que piden sesión (SESSION_DOMAINS) viven en @presencia/shared:
+// la UI usa la misma lista para decir por qué no se leyó.
 export function requiresSession(url: string): boolean {
-  let host: string;
   try {
-    // Sin el punto final: `www.instagram.com.` es el mismo host.
-    host = new URL(url).hostname.toLowerCase().replace(/\.$/, "");
+    return isSessionHost(new URL(url).hostname);
   } catch {
     return false;
   }
-  return SESSION_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
 }
 
 export type PageRead =
@@ -94,12 +74,20 @@ export async function readPage(url: string, options: SafeFetchOptions = {}): Pro
     if (!next || next === fetched.finalUrl) break;
     redirectsLeft -= fetched.redirects + 1;
     if (redirectsLeft < 0) {
-      return { status: "bloqueada", url, finalUrl: null, detail: "demasiados redirects" };
+      return { status: "no_disponible", url, finalUrl: null, detail: "demasiados redirects" };
     }
     fetched = await fetchOnce(next);
   }
   if (!fetched.ok) return { status: fetched.status, url, finalUrl: null, detail: fetched.detail };
-  const page = await extractPage({ ...fetched, url: fetched.finalUrl });
+  // Un HTML que rompe al parser (o a Readability) es una página ilegible, no
+  // un error del turno: así queda su fila y el modelo recibe el motivo.
+  const page = await extractPage({ ...fetched, url: fetched.finalUrl }).catch(
+    (error: unknown) =>
+      ({
+        ok: false,
+        detail: `no se pudo extraer el texto (${error instanceof Error ? error.message : String(error)})`,
+      }) as const,
+  );
   if (!page.ok)
     return { status: "no_legible", url, finalUrl: fetched.finalUrl, detail: page.detail };
   return {

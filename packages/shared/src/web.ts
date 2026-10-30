@@ -35,6 +35,30 @@ export const READ_LINK_TOOL_NAME = "leer_enlace";
 /** Lecturas por turno (ADR-028): la cuarta contesta `estado: "limite"`. */
 export const WEB_READS_PER_TURN = 3;
 
+/**
+ * Redes que no muestran contenido sin sesión. La API no las pide (devuelve
+ * `requiere_sesion` sin hacer la petición) y la UI dice "pide iniciar sesión"
+ * en vez de "pide cuenta o pago". Una sola lista para los dos lados. Corta a
+ * propósito: un sitio con login a medias (LinkedIn, Medium) sí se intenta.
+ */
+export const SESSION_DOMAINS = [
+  "instagram.com",
+  "tiktok.com",
+  "facebook.com",
+  "fb.com",
+  "fb.watch",
+  "threads.net",
+  "threads.com",
+  "x.com",
+  "twitter.com",
+] as const;
+
+/** Si un host (sin `www.` o con él, sin punto final) es de una red que pide sesión. */
+export function isSessionHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  return SESSION_DOMAINS.some((d) => h === d || h.endsWith(`.${d}`));
+}
+
 export const readLinkInputSchema = z.object({
   /** La dirección tal cual la pegó el creator o la trajo una búsqueda. */
   url: z.string().trim().min(4).max(2048),
