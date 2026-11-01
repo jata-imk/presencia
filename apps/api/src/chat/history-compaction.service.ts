@@ -53,6 +53,14 @@ export const COMPACTION_QUEUE = "chat.compact";
 export const COMPACTION_EXPIRE_SECONDS = 5 * 60;
 
 /**
+ * F10.11: cuánto espera la compactación a que salgan las descripciones de los
+ * adjuntos de su tramo (una foto tarda unos segundos; corren en paralelo).
+ * Muy por debajo del vencimiento del job.
+ */
+const DESCRIBE_WAIT_MS = 60_000;
+const DESCRIBE_POLL_MS = 2_000;
+
+/**
  * Lo que viaja en el job. Declarado como tipo y usado al encolar, no armado
  * como literal: `enqueue<T>` infiere T del literal (la cicatriz de F9.6).
  */
@@ -141,6 +149,8 @@ export class HistoryCompactionService {
     const last = tramo[tramo.length - 1]!;
     const lastRow = rows.find((row) => row.id === last.id)!;
 
+    // F10.11: antes de medir la latencia del resumen, que no la cargue.
+    const descriptions = await this.describeTramo(userId, chatId, tramo, runId);
     const modelo = this.ai.resolveForTask(TASK_KIND);
     const anteriores = base ? blocksOf(base) : [];
     const arranque = Date.now();
@@ -155,10 +165,7 @@ export class HistoryCompactionService {
       // sus datos (un menú, una tabla): el adjunto ya no se va a ver completo.
       prompt: summaryPrompt(
         anteriores,
-        transcriptForSummary(
-          markUnansweredTurns(tramo),
-          await this.describeTramo(userId, chatId, tramo, runId),
-        ),
+        transcriptForSummary(markUnansweredTurns(tramo), descriptions),
       ),
     });
     await this.registrar(userId, chatId, modelo, respuesta, arranque, runId, false);
@@ -243,9 +250,10 @@ export class HistoryCompactionService {
    * un adjunto se describe cuando está por salir de la ventana (chat.service),
    * y la compactación conserva solo ~12k tokens recientes: uno puede quedar
    * resumido sin haber salido nunca, y llegaría al resumen solo con su
-   * nombre. Se describe aquí, antes de resumir, por el mismo job (cobrado
-   * como `content_digest`, una vez por adjunto). Si falla, el resumen sale
-   * igual con el nombre: nunca tumba la compactación.
+   * nombre. Se encolan por la misma cola que usa el turno (`singletonKey` por
+   * adjunto: si el turno ya pidió uno, no se pide otro ni se paga dos veces),
+   * corren en paralelo en el worker, y aquí se espera un rato a que salgan.
+   * Lo que no salga a tiempo va con su nombre: nunca tumba la compactación.
    */
   private async describeTramo(
     userId: string,
@@ -255,21 +263,26 @@ export class HistoryCompactionService {
   ): Promise<Map<string, string>> {
     const ids = attachmentIdsIn(tramo);
     if (ids.length === 0) return new Map();
-    const before = await this.attachments.forContext(userId, ids);
-    for (const row of before?.values() ?? []) {
-      if (!digestDue(row)) continue;
-      try {
-        await this.digests.describe({ userId, attachmentId: row.id, chatId, runId });
-      } catch (error) {
-        console.error(
-          `[chat] No se describió ${row.id} antes de resumir el chat ${chatId}:`,
-          error,
-        );
+    const startedAt = Date.now();
+    let rows = await this.attachments.forContext(userId, ids);
+    const pending = [...(rows?.values() ?? [])]
+      .filter((row) => digestDue(row))
+      .map((row) => row.id);
+    if (pending.length > 0) {
+      await this.digests.enqueue(userId, chatId, pending, runId);
+      // Listo cuando cada uno tiene descripción o ya tuvo su intento (falló).
+      const settled = () =>
+        pending.every((id) => {
+          const row = rows?.get(id);
+          return !row || row.description || (row.describedAt?.getTime() ?? 0) >= startedAt;
+        });
+      while (!settled() && Date.now() - startedAt < DESCRIBE_WAIT_MS) {
+        await new Promise((resolve) => setTimeout(resolve, DESCRIBE_POLL_MS));
+        rows = await this.attachments.forContext(userId, ids);
       }
     }
-    const after = await this.attachments.forContext(userId, ids);
     return new Map(
-      [...(after?.values() ?? [])].flatMap((row) =>
+      [...(rows?.values() ?? [])].flatMap((row) =>
         row.description ? [[row.id, row.description] as const] : [],
       ),
     );

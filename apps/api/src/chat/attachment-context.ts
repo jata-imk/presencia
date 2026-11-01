@@ -301,8 +301,9 @@ export function attachmentLine(
   part: UIMessage["parts"][number],
   descriptions?: ReadonlyMap<string, string>,
 ): string | null {
-  const id = part.type === "file" ? attachmentIdFromUrl(part.url) : null;
-  if (!id || part.type !== "file") return null;
+  if (part.type !== "file") return null;
+  const id = attachmentIdFromUrl(part.url);
+  if (!id) return null;
   const name = safeName(part.filename ?? "un archivo");
   const description = descriptions?.get(id);
   return description

@@ -1,5 +1,6 @@
 import type { UIMessage } from "ai";
-import { attachmentLines } from "./attachment-context.js";
+import { ATTACHMENT_DESCRIPTION_CHARS } from "../attachments/attachment-digest.js";
+import { attachmentIdsIn, attachmentLines } from "./attachment-context.js";
 import { webReadLines } from "./web-read-context.js";
 import { z } from "zod";
 import { cardSummariesIn, type CompressedCardOutput } from "./context-diet.js";
@@ -189,7 +190,12 @@ export function boundedTramo(tramo: UIMessage[], maxChars = MAX_TRAMO_CHARS): UI
   let total = 0;
   let end = 0;
   while (end < tramo.length) {
-    const size = transcriptForSummary([tramo[end]!]).length + 2;
+    // F10.11: cada adjunto puede llevar su descripción en el resumen; se
+    // cuenta su tope, que todavía no se sabe cuánto mide.
+    const size =
+      transcriptForSummary([tramo[end]!]).length +
+      attachmentIdsIn([tramo[end]!]).length * ATTACHMENT_DESCRIPTION_CHARS +
+      2;
     if (end > 0 && total + size > maxChars) break;
     total += size;
     end++;

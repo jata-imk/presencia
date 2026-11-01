@@ -36,7 +36,8 @@ import { toChatSummary, toUIMessage } from "./chat-summary.js";
 import { blocksOf, contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
-import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
+import { applySummary, pendingAfterSummary, type HistorySummary } from "./history-window.js";
+import { markUnansweredTurns } from "./unanswered-turns.js";
 import { webReadIdsToDescribe } from "./web-read-context.js";
 import { attachmentIdsToDescribe } from "./attachment-context.js";
 import {
@@ -638,7 +639,7 @@ export class ChatService {
     // describe ni se cobra nunca. Lo que se resuma antes de salir de la
     // ventana lo describe la compactación.
     const attachmentsToDescribe = new Set(
-      attachmentIdsToDescribe(pendingAfterSummary(history, summary), attachmentRows),
+      attachmentIdsToDescribe(markUnansweredTurns(applySummary(history, summary)), attachmentRows),
     );
     const undescribed = [...(attachmentRows?.values() ?? [])].filter(
       (row) => attachmentsToDescribe.has(row.id) && digestDue(row),

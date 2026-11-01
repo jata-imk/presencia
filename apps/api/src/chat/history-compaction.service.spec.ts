@@ -305,8 +305,9 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
         })
         .where(eq(messages.id, ids[0]!)),
     );
+    // El job de la cola lo describe; aquí, al encolar (el worker no corre en el test).
     let described = false;
-    const describe = vi.fn(() => {
+    const enqueue = vi.fn(() => {
       described = true;
       return Promise.resolve();
     });
@@ -348,13 +349,12 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
             ]),
           ),
       } as never,
-      { describe } as never,
+      { enqueue } as never,
     );
     await service.compact({ userId, chatId });
 
-    expect(describe).toHaveBeenCalledWith(
-      expect.objectContaining({ attachmentId: adjunto, chatId }),
-    );
+    // Por la cola del turno (singletonKey por adjunto), no una llamada aparte.
+    expect(enqueue).toHaveBeenCalledWith(userId, chatId, [adjunto], undefined);
     expect(prompts[0]).toContain(
       '[El creator adjuntó \\"menu.pdf\\": Menú en PDF: panuchos de cochinita $95',
     );
