@@ -22,7 +22,9 @@
 // Uso: pnpm --filter @presencia/api sonda:releer
 // La cadena sale de AI_MODEL_CHAT y la utility de AI_MODEL_UTILITY (los mismos
 // del .env). AI_PROBE_VARIANTS="ninguno;openai;openai,google" elige qué caídas
-// se fingen (default: las tres), y AI_PROBE_RUNS cuántas veces corre cada caso.
+// se fingen (default: las tres; la utility cae igual que en producción, porque son
+// los mismos proveedores), AI_PROBE_RUNS cuántas veces corre cada caso (default 1)
+// y AI_PROBE_MODES="usuario,tool,inyectar,subllamada" qué caminos (default: todos).
 // Reporte en docs/reference/releer-adjuntos/.
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -51,6 +53,7 @@ import {
 } from "../src/ai/provider-registry.js";
 import { chargeUsageOf, quoteChatTurn } from "../src/credits/rate-card.js";
 import { registrarGasto, splitModelId } from "./gasto-local.js";
+import { findRepoRoot } from "./repo-root.js";
 
 const TOOL_NAME = "ver_adjunto";
 
@@ -207,6 +210,7 @@ interface RunResult {
   subInputTokens: number;
   subUnits: number;
   subUsd: number | null;
+  subError: string | null;
   ms: number;
   warnings: string[];
   answer: string;
@@ -252,7 +256,7 @@ async function runOnce(
     })),
     { simulateDown },
   );
-  const sub = { inputTokens: 0, units: 0, usd: 0 as number | null };
+  const sub = { inputTokens: 0, units: 0, usd: 0 as number | null, error: null as string | null };
   let injected = false;
 
   const verAdjunto = tool({
@@ -277,6 +281,9 @@ async function runOnce(
         })),
         { simulateDown },
       );
+      // Si la subllamada truena, el SDK se lo devuelve al modelo como un error
+      // de la tool y el turno sigue: se guarda aquí para que el reporte no lo
+      // confunda con un modelo que contestó mal.
       const answer = await generateText({
         model: utility.model,
         system:
@@ -284,12 +291,17 @@ async function runOnce(
           "o dos frases. Copia los datos tal cual. Si no se alcanza a leer, dilo; no inventes.",
         messages: [userWithFile(pregunta ?? "Describe con detalle qué dice el archivo.", fixture)],
         maxOutputTokens: 300,
+      }).catch((error: unknown) => {
+        sub.error = (error instanceof Error ? error.message : String(error))
+          .replace(/\s+/g, " ")
+          .slice(0, 300);
+        throw error;
       });
       sub.inputTokens += answer.usage.inputTokens ?? 0;
       sub.units += quoteChatTurn(chargeUsageOf(answer.usage), "content_digest");
       const cost = usageCost(utility.ran, answer.usage);
       sub.usd = sub.usd === null || cost === null ? null : sub.usd + cost;
-      void registrarGasto({
+      await registrarGasto({
         script: "sonda-releer",
         ...splitModelId(utility.ran.id),
         task: "chat",
@@ -365,7 +377,7 @@ async function runOnce(
       for (const warning of step.warnings ?? []) warnings.push(JSON.stringify(warning));
     }
     const usage = result.totalUsage;
-    void registrarGasto({
+    await registrarGasto({
       script: "sonda-releer",
       ...splitModelId(chain.ran.id),
       task: "chat",
@@ -391,6 +403,7 @@ async function runOnce(
       subInputTokens: sub.inputTokens,
       subUnits: sub.units,
       subUsd: sub.usd,
+      subError: sub.error,
       ms: Date.now() - started,
       warnings,
       answer: result.text.replace(/\s+/g, " ").trim().slice(0, 240),
@@ -416,6 +429,7 @@ async function runOnce(
       subInputTokens: sub.inputTokens,
       subUnits: sub.units,
       subUsd: sub.usd,
+      subError: sub.error,
       ms: Date.now() - started,
       warnings,
       answer: "",
@@ -468,13 +482,18 @@ function report(
     const n = group.length;
     const count = (pick: (r: RunResult) => boolean) =>
       `${String(group.filter(pick).length)}/${String(n)}`;
+    // Los promedios, solo de las corridas que respondieron: una que truena no
+    // gastó tokens del turno, y contarla como 0 bajaría el costo del camino.
+    const ok = group.filter((r) => r.ok);
     const avg = (pick: (r: RunResult) => number) =>
-      Math.round(group.reduce((total, r) => total + pick(r), 0) / n);
-    const usd = group.every((r) => r.usd !== null && r.subUsd !== null)
-      ? group.reduce((total, r) => total + (r.usd ?? 0) + (r.subUsd ?? 0), 0) / n
-      : null;
+      ok.length === 0 ? "—" : String(Math.round(ok.reduce((t, r) => t + pick(r), 0) / ok.length));
+    const priced = ok.filter((r) => r.usd !== null && r.subUsd !== null);
+    const usd =
+      priced.length === 0
+        ? null
+        : priced.reduce((t, r) => t + (r.usd ?? 0) + (r.subUsd ?? 0), 0) / priced.length;
     lines.push(
-      `| ${first.mode} | ${first.fixture} | ${first.variant} | ${[...new Set(group.map((r) => r.ran))].join(", ")} | ${count((r) => r.ok)} | ${first.mode === "usuario" ? "—" : count((r) => r.called)} | ${count((r) => r.correct)} | ${String(avg((r) => r.inputTokens))} | ${String(avg((r) => r.units))} | ${String(avg((r) => r.subUnits))} | ${money(usd)} | ${String(avg((r) => r.ms))} |`,
+      `| ${first.mode} | ${first.fixture} | ${first.variant} | ${[...new Set(group.map((r) => r.ran))].join(", ")} | ${count((r) => r.ok)} | ${first.mode === "usuario" ? "—" : count((r) => r.called)} | ${count((r) => r.correct)} | ${avg((r) => r.inputTokens)} | ${avg((r) => r.units)} | ${avg((r) => r.subUnits)} | ${money(usd)} | ${avg((r) => r.ms)} |`,
     );
   }
   lines.push("", "## Cada corrida", "");
@@ -483,6 +502,7 @@ function report(
       `- **${r.mode} · ${r.fixture} · ${r.variant} → ${r.ran}**: ${r.ok ? `${r.correct ? "✅" : "❌"} ${String(r.steps)} pasos, ${String(r.inputTokens)} de entrada (${String(r.cachedInputTokens)} de caché), ${String(r.outputTokens)} de salida` : `💥 ${r.error ?? ""}`}`,
     );
     if (r.answer) lines.push(`  - Respuesta: "${r.answer}"`);
+    if (r.subError) lines.push(`  - La subllamada falló: \`${r.subError}\``);
     for (const warning of r.warnings) lines.push(`  - Aviso del SDK: \`${warning.slice(0, 300)}\``);
   }
   lines.push(
@@ -495,16 +515,6 @@ function report(
   return lines.join("\n");
 }
 
-function findRepoRoot(start: string): string {
-  let dir = start;
-  while (!existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
-    const parent = path.dirname(dir);
-    if (parent === dir) throw new Error("No encontré la raíz del repo (pnpm-workspace.yaml)");
-    dir = parent;
-  }
-  return dir;
-}
-
 async function main(): Promise<void> {
   const chat = process.env.AI_MODEL_CHAT ?? process.env.AI_MODEL ?? DEFAULT_MODEL_ID;
   const utility = process.env.AI_MODEL_UTILITY ?? process.env.AI_MODEL ?? DEFAULT_MODEL_ID;
@@ -515,8 +525,19 @@ async function main(): Promise<void> {
     .map((v) => v.trim())
     .filter(Boolean);
   const runs = Number(process.env.AI_PROBE_RUNS ?? "1");
-  const modeFilter = process.env.AI_PROBE_MODES?.split(",").map((m) => m.trim());
-  const modes = modeFilter ? MODES.filter((m) => modeFilter.includes(m)) : MODES;
+  if (!Number.isInteger(runs) || runs < 1) {
+    throw new Error(
+      `AI_PROBE_RUNS tiene que ser un entero ≥ 1, no "${process.env.AI_PROBE_RUNS ?? ""}"`,
+    );
+  }
+  const modeFilter = process.env.AI_PROBE_MODES?.split(",")
+    .map((m) => m.trim())
+    .filter(Boolean);
+  const unknown = modeFilter?.filter((m) => !(MODES as string[]).includes(m)) ?? [];
+  if (unknown.length > 0) {
+    throw new Error(`AI_PROBE_MODES no conoce ${unknown.join(", ")}; usa ${MODES.join(", ")}`);
+  }
+  const modes = modeFilter?.length ? MODES.filter((m) => modeFilter.includes(m)) : MODES;
   const fixtures = [await fachada(), await avisoEscaneado()];
 
   const results: RunResult[] = [];
