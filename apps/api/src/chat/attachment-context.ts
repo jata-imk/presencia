@@ -117,7 +117,22 @@ export function dietAttachments(
   keep = KEEP_ATTACHMENT_USER_TURNS,
   budget = RECENT_ATTACHMENT_TOKENS,
   /** F10.11: los que viajan completos, si quien llama ya los calculó (context-builder.ts). */
-  full = fullAttachmentIds(messages, attachments, keep, budget),
+): UIMessage[] {
+  return dietAttachmentsWith(
+    messages,
+    attachments,
+    fullAttachmentIds(messages, attachments, keep, budget),
+  );
+}
+
+/**
+ * La dieta con los que viajan completos ya calculados (F10.11: el
+ * ContextBuilder los usa también para saber si ofrecer ver_adjunto).
+ */
+export function dietAttachmentsWith(
+  messages: UIMessage[],
+  attachments: ReadonlyMap<string, AttachmentForContext> | null,
+  full: ReadonlySet<string>,
 ): UIMessage[] {
   return messages.map((message) => {
     if (!message.parts.some((part) => part.type === "file")) return message;
@@ -241,12 +256,16 @@ const VIEW_PART_TYPE = `tool-${VIEW_ATTACHMENT_TOOL_NAME}`;
 export function dietViewedAttachments(messages: UIMessage[]): UIMessage[] {
   return messages.map((message) => {
     if (!message.parts.some((part) => part.type === VIEW_PART_TYPE)) return message;
+    // Un turno que se cortó o falló después de volver a ver no tiene una
+    // respuesta que haya salido de verlo: su línea no puede decir que sí.
+    const status = (message.metadata as { status?: unknown } | undefined)?.status;
+    const contexto = status === "stopped" || status === "failed" ? "cortada" : "linea";
     return {
       ...message,
       parts: message.parts.map((part) => {
         const p = part as { type: string; state?: string; output?: object };
         if (p.type !== VIEW_PART_TYPE || p.state !== "output-available" || !p.output) return part;
-        return { ...part, output: { ...p.output, contexto: "linea" } } as typeof part;
+        return { ...part, output: { ...p.output, contexto } } as typeof part;
       }),
     };
   });

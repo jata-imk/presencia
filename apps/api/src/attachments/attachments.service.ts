@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { normalizeAttachmentRef } from "./attachment-view.js";
+import { normalizeAttachmentRef } from "@presencia/shared";
+import { sameAttachmentName } from "./attachment-view.js";
 import {
   BadRequestException,
   Inject,
@@ -320,7 +321,8 @@ export class AttachmentsService {
         const row = await this.repo.findById(tx, wanted.toLowerCase());
         return row && row.chatId === chatId && row.messageId !== null ? row : null;
       }
-      return (await this.repo.findSentInChatByName(tx, chatId, wanted)) ?? null;
+      const sent = await this.repo.sentInChat(tx, chatId);
+      return sent.find((row) => sameAttachmentName(wanted, row.filename)) ?? null;
     });
   }
 

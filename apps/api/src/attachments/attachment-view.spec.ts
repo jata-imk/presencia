@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parsePageRange,
+  sameAttachmentName,
   pdfPages,
   textView,
   viewCost,
@@ -147,5 +148,26 @@ describe("viewCost", () => {
         null,
       ),
     ).toBe(36_000);
+  });
+});
+
+describe("F10.11 cierre", () => {
+  it("el nombre se compara como lo vio el modelo: espacios raros, corchetes y comillas", () => {
+    // Una captura de macOS trae un espacio angosto antes de "a.m."
+    expect(
+      sameAttachmentName(
+        "Captura de pantalla 2026-10-30 a las 10.15.32 a.m..png",
+        "Captura de pantalla 2026-10-30 a las 10.15.32 a.m..png",
+      ),
+    ).toBe(true);
+    expect(sameAttachmentName('"menu (final).pdf"', "menu [final].pdf")).toBe(true);
+    expect(sameAttachmentName("MENU.PDF", "menu.pdf")).toBe(true);
+    expect(sameAttachmentName("otro.pdf", "menu.pdf")).toBe(false);
+  });
+
+  it("la última página guardada de un PDF recortado va marcada como a medias", () => {
+    const view = textView(pdf(["Uno", "Dos"], { pages: 12, truncated: true }), "2");
+    expect(view.seen).toBe("2");
+    expect(view.cut).toBe(true);
   });
 });

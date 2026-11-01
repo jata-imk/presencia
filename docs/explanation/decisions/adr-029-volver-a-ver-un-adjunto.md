@@ -113,3 +113,21 @@ En la app, con `seed:dev`, contra la base de dev: una foto de fachada y un menú
 - **Medido con el mismo historial que armó la dieta de producción** (3 corridas por modelo):
   - Luna y Gemini dicen que lo sacaron de la foto;
   - Sonnet vuelve a abrir la imagen para confirmar en vez de desmentirse.
+
+## Addendum (cierre de F10.11, 2026-11-01): la revisión del rango completo
+
+`/code-review medium` sobre todo el rango de la fase (`ff81e4c..2ffd579`). Lo que cambió:
+
+- **Por nombre, como lo vio el modelo.** El modelo nunca ve el nombre crudo, sino el que pasó por `safeName`: sin comillas, `[]` como `()`, y cualquier espacio raro como uno normal (una captura de macOS trae un espacio angosto antes de "a.m."). `findForView` buscaba el nombre crudo y no lo encontraba. Ahora compara los dos así (`sameAttachmentName`), contra los adjuntos enviados en el chat.
+- **La última página guardada de un PDF recortado va marcada como a medias:** la subida la corta en el tope de 100k caracteres.
+- **En los turnos siguientes, el tope y el "no encontrado" van en pasado:** "pídelo en otro mensaje", leído en el mensaje siguiente, decía que el tope seguía. Y lo que se volvió a ver en un turno **cortado o fallido** tiene su propia línea (`contexto: "cortada"`): no hubo una respuesta que saliera de verlo.
+- **Robustez:**
+  - una página no disponible ya no vuelve a ir a la base en `toModelOutput`;
+  - si la base falla ahí, el modelo lo dice en vez de tumbar el turno;
+  - la compactación ya no compara el reloj de la API con el de Postgres para saber si una descripción terminó.
+- **Una sola copia:**
+  - `normalizeAttachmentRef` vive en `@presencia/shared` (API y web);
+  - `rangeLabel` es uno solo;
+  - lo que se vio de un texto se calcula una vez por llamada;
+  - el ContextBuilder usa `dietAttachmentsWith` en vez de pasar `undefined, undefined` por posición.
+- **Web:** una lista de páginas ("1,3") ya no se pinta como rango.
