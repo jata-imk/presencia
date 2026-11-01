@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import type { UIMessage } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { CardContent } from "@presencia/shared";
+import { attachmentContentUrl, type CardContent } from "@presencia/shared";
 import {
   aiUsageEvents,
   chatSummaries,
@@ -156,6 +156,9 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
         aiUsage,
         credits,
         { enqueue: () => Promise.resolve(true) } as never,
+        // F10.11: sin adjuntos en estos chats, nunca se llaman.
+        { forContext: () => Promise.resolve(new Map()) } as never,
+        {} as never,
       );
     };
     const [a, b] = await dbService.db
@@ -282,6 +285,81 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
     expect(ajeno).toEqual([]);
   });
 
+  it("F10.11: describe antes de resumir el adjunto que nunca salió de la ventana, y el resumen lo lee", async () => {
+    const { chatId, ids } = await chatLargo(12);
+    const adjunto = "22222222-2222-4222-8222-222222222222";
+    // El primer mensaje lleva un menú que nunca se describió.
+    await dbService.runWithTenant(userId, (tx) =>
+      tx
+        .update(messages)
+        .set({
+          parts: [
+            {
+              type: "file",
+              mediaType: "application/pdf",
+              filename: "menu.pdf",
+              url: attachmentContentUrl(adjunto),
+            },
+            { type: "text", text: `Pregunta 0 sobre mis marquesitas${RELLENO}` },
+          ],
+        })
+        .where(eq(messages.id, ids[0]!)),
+    );
+    let described = false;
+    const describe = vi.fn(() => {
+      described = true;
+      return Promise.resolve();
+    });
+    const prompts: string[] = [];
+    const { ChatRepository } = await import("./chat.repository.js");
+    const { HistoryCompactionService } = await import("./history-compaction.service.js");
+    const { AiUsageRepository } = await import("../ai/ai-usage.repository.js");
+    const { AiUsageService } = await import("../ai/ai-usage.service.js");
+    const { CreditsRepository } = await import("../credits/credits.repository.js");
+    const { CreditsService } = await import("../credits/credits.service.js");
+    const service = new HistoryCompactionService(
+      dbService,
+      new ChatRepository(),
+      {
+        resolveForTask: () => ({
+          model: modelo("- Tiene un menú con panuchos.", prompts),
+          id: "openai:mock-utility",
+          provider: "openai",
+          modelName: "mock-utility",
+        }),
+      } as never,
+      new AiUsageService(dbService, new AiUsageRepository()),
+      new CreditsService(dbService, new CreditsRepository()),
+      { enqueue: () => Promise.resolve(true) } as never,
+      {
+        forContext: () =>
+          Promise.resolve(
+            new Map([
+              [
+                adjunto,
+                {
+                  id: adjunto,
+                  description: described
+                    ? "Menú en PDF: panuchos de cochinita $95, salbutes $95."
+                    : null,
+                  describedAt: null,
+                },
+              ],
+            ]),
+          ),
+      } as never,
+      { describe } as never,
+    );
+    await service.compact({ userId, chatId });
+
+    expect(describe).toHaveBeenCalledWith(
+      expect.objectContaining({ attachmentId: adjunto, chatId }),
+    );
+    expect(prompts[0]).toContain(
+      '[El creator adjuntó \\"menu.pdf\\": Menú en PDF: panuchos de cochinita $95',
+    );
+  });
+
   it("solo encola si el contexto pasa del umbral y hay tramo suficiente", async () => {
     const encolados: unknown[] = [];
     const { HistoryCompactionService } = await import("./history-compaction.service.js");
@@ -294,6 +372,8 @@ describe("HistoryCompactionService", { timeout: 60_000 }, () => {
       {
         enqueue: (_q: string, data: unknown) => (encolados.push(data), Promise.resolve(true)),
       } as never,
+      {} as never,
+      {} as never,
     );
     // Mensajes de ~1.1k tokens, como los de chatLargo.
     const pendientes = (n: number): UIMessage[] =>

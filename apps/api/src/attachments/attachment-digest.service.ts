@@ -9,7 +9,12 @@ import { BossService } from "../jobs/boss.service.js";
 import { AttachmentsRepository, type AttachmentRow } from "./attachments.repository.js";
 import { AttachmentsService } from "./attachments.service.js";
 import { insideTag, safeName } from "../chat/attachment-context.js";
-import { DIGEST_SYSTEM, cleanDescription, sliceText } from "./attachment-digest.js";
+import {
+  ATTACHMENT_DESCRIPTION_CHARS,
+  DIGEST_SYSTEM,
+  cleanDescription,
+  sliceText,
+} from "./attachment-digest.js";
 
 // La descripción de cada adjunto (F10.9, ADR-006 addendum). Cuando un adjunto
 // ya quedó atrás (fuera de los últimos turnos, attachment-context.ts) viaja
@@ -18,8 +23,10 @@ import { DIGEST_SYSTEM, cleanDescription, sliceText } from "./attachment-digest.
 // foto sin volver a verla.
 //
 // Corre en segundo plano, después de que el mensaje se guardó: el turno no lo
-// espera. La tarea es genérica (`content_digest`): F10.10 describe igual las
-// páginas que el chat lee.
+// espera. Desde F10.11 se pide solo cuando el adjunto está por salir de la
+// ventana (chat.service, `attachmentIdsToDescribe`), o desde la compactación
+// antes de resumirlo; ya no al enviarse. La tarea es genérica
+// (`content_digest`): F10.10 describe igual las páginas que el chat lee.
 
 export const ATTACHMENT_DIGEST_QUEUE = "attachment.describe";
 export const ATTACHMENT_DIGEST_EXPIRE_SECONDS = 2 * 60;
@@ -48,7 +55,7 @@ export class AttachmentDigestService {
     @Inject(BossService) private readonly boss: BossService,
   ) {}
 
-  /** Encola la descripción de los adjuntos de un mensaje recién guardado. Nunca lanza. */
+  /** Encola la descripción de unos adjuntos (los que están por salir de la ventana). Nunca lanza. */
   async enqueue(
     userId: string,
     chatId: string,
@@ -96,13 +103,15 @@ export class AttachmentDigestService {
         model: modelo.model,
         system: DIGEST_SYSTEM,
         messages: await this.digestInput(row),
-        maxOutputTokens: 400,
+        // ~1,500 caracteres son ~430 tokens; con margen, para que un cierre por
+        // tokens no la corte a media frase (F10.11).
+        maxOutputTokens: 700,
       });
     } catch (error) {
       await this.markAttempt(userId, attachmentId);
       throw error;
     }
-    const description = cleanDescription(respuesta.text);
+    const description = cleanDescription(respuesta.text, ATTACHMENT_DESCRIPTION_CHARS);
 
     try {
       if (!description) {

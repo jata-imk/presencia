@@ -249,3 +249,16 @@ El prompt de sistema no decía qué día es. El modelo solo conocía su fecha de
 - **Un paso más en la cadena de `assembleContext`:** después de `dietWebReads` entra `dietViewedAttachments`. Lo que se volvió a ver en turnos anteriores viaja como una línea (`contexto: "linea"`), y solo en su turno va completo (ADR-029).
 - **`ModelContext.hiddenAttachments`:** sale verdadero si algún adjunto del historial no viaja completo (salió de la ventana o quedó resumido). `chat.service.ts` solo registra `ver_adjunto` en ese caso.
 - La suite cultural arma las conversaciones de varios turnos por este mismo camino (`scripts/cultural-suite/history.ts`, PR2 de F10.11) y le da al modelo la tool de producción con un servicio de mentira (`view-attachment.ts`).
+
+## Addendum (F10.11 PR4, 2026-11-01): describir un adjunto al salir de la ventana
+
+Desde F10.9 cada adjunto se describía al enviarse (decisión de esa fase, a revisar cuando existiera una herramienta para volver a verlo). Con `ver_adjunto` (ADR-029) eso cambia:
+
+- **Se describe cuando está por dejar de viajar completo**, como las páginas leídas. `attachmentIdsToDescribe` (`chat/attachment-context.ts`) simula el turno siguiente (el de ahora con su respuesta, y otro mensaje del creator) con la misma regla de la dieta, y encola solo los que en ese turno ya no viajarían completos.
+  - Una foto se describe en el tercer turno del creator.
+  - Un documento grande que no cabe en el presupuesto de los turnos anteriores se describe en su mismo turno.
+  - **Un chat que termina antes no paga ninguna descripción.**
+- **La compactación describe primero.** Conserva solo ~12k tokens recientes, así que un adjunto puede quedar resumido sin haber salido nunca de la ventana. Antes de resumir, el job describe los del tramo que no tienen descripción (`describeTramo`, en `history-compaction.service.ts`; mismo cobro `content_digest`). Si falla, el resumen sale igual, con el nombre.
+- **El resumen lee la descripción:** `[El creator adjuntó "menu.pdf": Menú en PDF: panuchos $95…]` (`transcriptForSummary(messages, descriptions)`). Así conserva los datos de un adjunto que ya no se va a ver completo, y `ver_adjunto` lo alcanza por su nombre.
+- **La memoria entre chats sigue con el nombre.** Se indexa al terminar cada turno, antes de que exista la descripción, y volver a indexar para agregarla queda fuera de esta fase.
+- **La descripción, más larga y con tope fijo:** hasta 1,500 caracteres para todo (antes 1,000; decisión de Jose, 2026-10-31). El prompt (`DIGEST_SYSTEM`) dejó de decir "una a tres frases": pide las frases que hagan falta para conservar los datos, que copie las filas de una tabla, un menú o una lista de precios, y que una foto sin datos se quede en una o dos frases. `maxOutputTokens` sube de 400 a 700 para no cortarla a media frase. Las páginas leídas siguen en 1,000.

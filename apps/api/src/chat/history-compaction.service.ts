@@ -2,6 +2,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import { generateText, type UIMessage } from "ai";
 import { AiService } from "../ai/ai.service.js";
 import { AiUsageService } from "../ai/ai-usage.service.js";
+import { digestDue } from "../attachments/attachment-digest.js";
+import { AttachmentDigestService } from "../attachments/attachment-digest.service.js";
+import { AttachmentsService } from "../attachments/attachments.service.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { chargeUsageOf, type ChatTurnUsage } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
@@ -9,6 +12,7 @@ import { env } from "../env.js";
 import { BossService } from "../jobs/boss.service.js";
 import { ChatRepository } from "./chat.repository.js";
 import { toUIMessage } from "./chat-summary.js";
+import { attachmentIdsIn } from "./attachment-context.js";
 import { cardSummariesIn, type CompressedCardOutput } from "./context-diet.js";
 import {
   CONSOLIDATE_AT_TOKENS,
@@ -73,6 +77,8 @@ export class HistoryCompactionService {
     @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
     @Inject(CreditsService) private readonly credits: CreditsService,
     @Inject(BossService) private readonly boss: BossService,
+    @Inject(AttachmentsService) private readonly attachments: AttachmentsService,
+    @Inject(AttachmentDigestService) private readonly digests: AttachmentDigestService,
   ) {}
 
   /**
@@ -145,7 +151,15 @@ export class HistoryCompactionService {
       system: SUMMARY_SYSTEM,
       // Con los turnos sin respuesta marcados (F10.8.2), como los ve el modelo:
       // sin la marca, el resumen daría por contestado un pedido que se cortó.
-      prompt: summaryPrompt(anteriores, transcriptForSummary(markUnansweredTurns(tramo))),
+      // F10.11: con la descripción de cada adjunto, así el resumen conserva
+      // sus datos (un menú, una tabla): el adjunto ya no se va a ver completo.
+      prompt: summaryPrompt(
+        anteriores,
+        transcriptForSummary(
+          markUnansweredTurns(tramo),
+          await this.describeTramo(userId, chatId, tramo, runId),
+        ),
+      ),
     });
     await this.registrar(userId, chatId, modelo, respuesta, arranque, runId, false);
     const summary = respuesta.text.trim();
@@ -222,6 +236,43 @@ export class HistoryCompactionService {
         referenceId: last.id,
       });
     });
+  }
+
+  /**
+   * F10.11: las descripciones de los adjuntos del tramo, por id. Desde F10.11
+   * un adjunto se describe cuando está por salir de la ventana (chat.service),
+   * y la compactación conserva solo ~12k tokens recientes: uno puede quedar
+   * resumido sin haber salido nunca, y llegaría al resumen solo con su
+   * nombre. Se describe aquí, antes de resumir, por el mismo job (cobrado
+   * como `content_digest`, una vez por adjunto). Si falla, el resumen sale
+   * igual con el nombre: nunca tumba la compactación.
+   */
+  private async describeTramo(
+    userId: string,
+    chatId: string,
+    tramo: UIMessage[],
+    runId: string | undefined,
+  ): Promise<Map<string, string>> {
+    const ids = attachmentIdsIn(tramo);
+    if (ids.length === 0) return new Map();
+    const before = await this.attachments.forContext(userId, ids);
+    for (const row of before?.values() ?? []) {
+      if (!digestDue(row)) continue;
+      try {
+        await this.digests.describe({ userId, attachmentId: row.id, chatId, runId });
+      } catch (error) {
+        console.error(
+          `[chat] No se describió ${row.id} antes de resumir el chat ${chatId}:`,
+          error,
+        );
+      }
+    }
+    const after = await this.attachments.forContext(userId, ids);
+    return new Map(
+      [...(after?.values() ?? [])].flatMap((row) =>
+        row.description ? [[row.id, row.description] as const] : [],
+      ),
+    );
   }
 
   /** Cada llamada deja su fila de uso, aunque el resumen no se guarde: los tokens se pagaron. */
