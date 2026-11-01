@@ -1,6 +1,7 @@
 import {
   isCardToolPart,
   isMemoryToolPart,
+  isViewToolPart,
   isWebToolPart,
   type ChatUIMessage,
 } from "./chat-types.js";
@@ -81,9 +82,14 @@ export function replyContent(message: ChatUIMessage): ReplyContent {
     return "text";
   }
   // F10.10: leer y buscar también se ven (la línea de pasos de Steps.tsx).
+  // F10.11: volver a ver un adjunto, igual.
   if (
     message.parts.some(
-      (part) => isCardToolPart(part) || isMemoryToolPart(part) || isWebToolPart(part),
+      (part) =>
+        isCardToolPart(part) ||
+        isMemoryToolPart(part) ||
+        isWebToolPart(part) ||
+        isViewToolPart(part),
     )
   ) {
     return "tools";

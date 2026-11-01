@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ReadLinkOutput, WebSearchOutput } from "@presencia/shared";
-import type { CardToolPart, WebToolPart } from "./chat-types.js";
+import type { ReadLinkOutput, ViewAttachmentOutput, WebSearchOutput } from "@presencia/shared";
+import type { CardToolPart, ViewToolPart, WebToolPart } from "./chat-types.js";
 import { domainOfUrl, stepsExpandable, stepsHeader, turnSteps } from "./turn-steps.js";
 
 // F10.10: los pasos de una respuesta (buscar, leer, crear borradores) en una
@@ -196,6 +196,89 @@ describe("turnSteps + stepsHeader", () => {
   it("un estado de lectura que esta versión no conoce no tumba el mensaje", () => {
     const [step] = turnSteps([read("https://a.mx/x", { estado: "nuevo_estado" as "ok" })], false);
     expect(step).toMatchObject({ state: "fail", text: "No pude leer a.mx" });
+  });
+});
+
+const view = (
+  adjunto: string,
+  output?: Partial<ViewAttachmentOutput>,
+  state: ViewToolPart["state"] = "output-available",
+) =>
+  ({
+    type: "tool-ver_adjunto",
+    toolCallId: `v-${adjunto}`,
+    state,
+    input: { adjunto },
+    output: {
+      attachmentId: "a1",
+      nombre: "fachada.png",
+      tipo: "image",
+      paginas: null,
+      totalPaginas: null,
+      estado: "ok",
+      recortado: false,
+      ...output,
+    },
+  }) as unknown as ViewToolPart;
+
+const ID = "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed";
+
+describe("F10.11: volver a ver un adjunto", () => {
+  it("un solo paso: el encabezado es el paso, con su nombre", () => {
+    const steps = turnSteps([view(ID)], false);
+    expect(stepsHeader(steps)).toEqual({ state: "done", label: "Volví a ver fachada.png" });
+    expect(stepsExpandable(steps)).toBe(false);
+  });
+
+  it("en vivo, nunca enseña el id que pidió el modelo", () => {
+    expect(turnSteps([view(ID, {}, "input-available")], true)[0]!.text).toBe(
+      "Volviendo a ver un adjunto…",
+    );
+    expect(turnSteps([view("menu.pdf", {}, "input-available")], true)[0]!.text).toBe(
+      "Volviendo a ver menu.pdf…",
+    );
+  });
+
+  it("las páginas de un PDF van al lado; a medias se marca", () => {
+    const [pagina] = turnSteps([view(ID, { nombre: "menu.pdf", paginas: "3-5" })], false);
+    expect(pagina).toMatchObject({ state: "ok", text: "Volví a ver menu.pdf", meta: "págs. 3–5" });
+    const [corto] = turnSteps(
+      [view(ID, { nombre: "menu.pdf", paginas: "1-8", recortado: true })],
+      false,
+    );
+    expect(corto).toMatchObject({ state: "part", meta: "págs. 1–8, solo una parte" });
+  });
+
+  it("lo que no se pudo ver dice por qué, sin rojo", () => {
+    const steps = turnSteps(
+      [
+        view("otro.png", { estado: "no_encontrado", attachmentId: null, nombre: "otro.png" }),
+        view(ID, { estado: "pagina_no_disponible", nombre: "menu.pdf", paginas: "9" }),
+      ],
+      false,
+    );
+    expect(steps.map((s) => [s.state, s.text, s.reason])).toEqual([
+      ["fail", "No encontré otro.png en este chat", "sin_adjunto"],
+      ["fail", "No pude ver pág. 9 de menu.pdf", "sin_pagina"],
+    ]);
+  });
+
+  it("el resumen lo cuenta junto con lo demás", () => {
+    const steps = turnSteps([view(ID), read("https://a.mx/1"), card()], false);
+    expect(stepsHeader(steps)?.label).toBe("Leí 1 página, volví a ver 1 adjunto y creé 1 borrador");
+  });
+
+  it("el tope y el detenido tienen su propio encabezado", () => {
+    const tope = turnSteps([view(ID), view("b.png", { estado: "limite", nombre: "b.png" })], false);
+    expect(stepsHeader(tope)).toEqual({
+      state: "limit",
+      label: "Llegué al tope de 3 adjuntos en este mensaje",
+    });
+    const detenido = turnSteps([view("menu.pdf", {}, "input-available")], false);
+    expect(stepsHeader(detenido)).toEqual({
+      state: "stop",
+      label: "Detuviste cuando volvía a ver menu.pdf",
+    });
   });
 });
 

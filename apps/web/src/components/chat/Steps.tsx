@@ -7,6 +7,7 @@ import {
   FileExclamationPoint,
   FilePlay,
   FileQuestionMark,
+  FileX,
   Info,
   Link2Off,
   Lock,
@@ -18,7 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
-import type { CardToolPart, WebToolPart } from "../../lib/chat-types.js";
+import type { CardToolPart, ViewToolPart, WebToolPart } from "../../lib/chat-types.js";
 import {
   stepsExpandable,
   stepsHeader,
@@ -30,7 +31,8 @@ import {
 
 // La línea de pasos de una respuesta (F10.5, Chat Rediseño.html → Steps;
 // F10.10, Chat Web.html → WLine). Una sola lista con todo lo que la IA hizo en
-// el turno, en orden: buscar, leer y crear borradores (Jose, 2026-10-28). Se
+// el turno, en orden: buscar, leer, volver a ver un adjunto (F10.11) y crear
+// borradores (Jose, 2026-10-28). Se
 // deriva solo de los tool parts reales del mensaje (lib/turn-steps.ts): no se
 // inventan pasos que el backend no reporta.
 //
@@ -59,13 +61,15 @@ const REASON_ICON: Record<StepReason, LucideIcon> = {
   sitio: ServerCrash,
   buscador: ServerCrash,
   sin_resultados: SearchX,
+  sin_adjunto: FileX,
+  sin_pagina: FileQuestionMark,
 };
 
 export function Steps({
   parts,
   streaming,
 }: {
-  parts: (CardToolPart | WebToolPart)[];
+  parts: (CardToolPart | WebToolPart | ViewToolPart)[];
   streaming: boolean;
 }) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null);

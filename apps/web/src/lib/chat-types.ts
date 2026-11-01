@@ -10,6 +10,9 @@ import {
   READ_LINK_TOOL_NAME,
   type ReadLinkInput,
   type ReadLinkOutput,
+  VIEW_ATTACHMENT_TOOL_NAME,
+  type ViewAttachmentInput,
+  type ViewAttachmentOutput,
   WEB_SEARCH_TOOL_NAME,
   type WebSearchInput,
   type WebSearchOutput,
@@ -37,15 +40,24 @@ export type WebUITools = {
   [WEB_SEARCH_TOOL_NAME]: { input: WebSearchInput; output: WebSearchOutput };
 };
 
+/**
+ * F10.11: volver a ver un adjunto (ADR-029). Su output es una referencia:
+ * ni los bytes ni el texto llegan aquí.
+ */
+export type AttachmentUITools = {
+  [VIEW_ATTACHMENT_TOOL_NAME]: { input: ViewAttachmentInput; output: ViewAttachmentOutput };
+};
+
 // F10.8.2: `metadata.status` marca una respuesta que se cortó o falló.
 export type ChatUIMessage = UIMessage<
   ChatMessageMetadata,
   never,
-  CardArchetypeUITools & MemoryUITools & WebUITools
+  CardArchetypeUITools & MemoryUITools & WebUITools & AttachmentUITools
 >;
 export type CardToolPart = ToolUIPart<CardArchetypeUITools>;
 export type MemoryToolPart = ToolUIPart<MemoryUITools>;
 export type WebToolPart = ToolUIPart<WebUITools>;
+export type ViewToolPart = ToolUIPart<AttachmentUITools>;
 
 type ChatPart = ChatUIMessage["parts"][number];
 
@@ -81,6 +93,11 @@ export function isCardToolPart(part: ChatPart): part is CardToolPart {
 
 export function isMemoryToolPart(part: ChatPart): part is MemoryToolPart {
   return part.type === `tool-${MEMORY_TOOL_NAME}`;
+}
+
+/** F10.11: volver a ver un adjunto. Es un paso más de la lista, como leer. */
+export function isViewToolPart(part: ChatPart): part is ViewToolPart {
+  return part.type === `tool-${VIEW_ATTACHMENT_TOOL_NAME}`;
 }
 
 /** F10.10: una lectura de enlace o una búsqueda web. */
