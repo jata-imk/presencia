@@ -261,6 +261,9 @@ describe("ver_adjunto", () => {
     })) as { type: string; value: string };
     expect(model.type).toBe("text");
     expect(model.value).toContain("vuelve a verlo con ver_adjunto");
+    // Que SÍ lo vio: si no, otro modelo que lee el historial cree que la
+    // respuesta de ese turno se inventó (lo hizo Sonnet en vivo, 2026-11-01).
+    expect(model.value).toContain("sí te llegó completo");
     expect(service.modelData).not.toHaveBeenCalled();
   });
 

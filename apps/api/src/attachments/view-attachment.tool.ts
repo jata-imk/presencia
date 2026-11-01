@@ -81,9 +81,16 @@ export function viewLineForModel(output: ViewAttachmentModelOutput): string {
       "pero no se podía leer. No inventes lo que decía.]"
     );
   }
+  // Tiene que decir que SÍ lo vio: en vivo (2026-11-01), con solo "ya no lo
+  // ves", Sonnet leyó un resultado de tool sin imagen seguido de una respuesta
+  // segura, concluyó que esa respuesta (de Luna, que sí la vio) se la había
+  // inventado, y se "corrigió" ante el creator.
   return (
-    `[En un turno anterior volviste a ver ${what} "${name}"${pagesLabel(output)}. Ya no lo ves: ` +
-    `si necesitas el detalle otra vez, vuelve a verlo con ${VIEW_ATTACHMENT_TOOL_NAME}.]`
+    `[Nota de Presencia sobre este resultado: aquí ${what} "${name}"${pagesLabel(output)} sí ` +
+    "te llegó completo, y la respuesta que diste después se basó en verlo. Presencia quitó el " +
+    "archivo de este resultado al pasar el turno, para no reenviarlo en cada mensaje: que ya no " +
+    "esté aquí no es un error ni quiere decir que no lo hayas visto. Si necesitas otro detalle, " +
+    `vuelve a verlo con ${VIEW_ATTACHMENT_TOOL_NAME}.]`
   );
 }
 
