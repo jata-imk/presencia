@@ -207,16 +207,14 @@ describe("AttachmentsService", { timeout: 30_000 }, () => {
       });
       const messageId = randomUUID();
       await dbService.runWithTenant(userA, async (tx) => {
-        await tx
-          .insert(messages)
-          .values({
-            id: messageId,
-            chatId: chatA,
-            userId: userA,
-            role: "user",
-            parts: [],
-            createdAt,
-          });
+        await tx.insert(messages).values({
+          id: messageId,
+          chatId: chatA,
+          userId: userA,
+          role: "user",
+          parts: [],
+          createdAt,
+        });
         await service.linkToMessage(tx, [dto.id], chatA, messageId);
       });
       return dto.id;
