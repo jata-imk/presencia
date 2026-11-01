@@ -72,8 +72,16 @@ export interface TextView {
   seen: string | null;
   /** Hay más que no se ve: pasó del tope, o el archivo se guardó recortado. */
   cut: boolean;
-  /** El rango pedido no existe en el documento. */
-  badRange: boolean;
+  /** La última página que se ve va cortada: ella sola pasa del tope. */
+  sliced: boolean;
+  /**
+   * Por qué no hay nada que mostrar: la página no existe en el documento, no
+   * tiene texto (es una imagen dentro de un PDF con texto) o no se guardó (el
+   * texto se recortó en la subida antes de llegar a ella). null si hay algo.
+   */
+  missing: "no_existe" | "sin_texto" | "no_guardada" | null;
+  /** Hasta qué página se guardó el texto de un PDF; null si no es un PDF. */
+  lastStored: number | null;
 }
 
 const rangeLabel = (from: number, to: number) =>
@@ -84,9 +92,15 @@ export function textView(row: ViewableAttachment, pages?: string): TextView {
   const text = row.extractedText ?? "";
   if (row.kind === "pdf" && row.pages) {
     const all = pdfPages(text);
+    const lastStored = all.at(-1)?.page ?? 0;
     const range = pages ? parsePageRange(pages, row.pages) : null;
-    if (pages && !range) return { text: "", seen: null, cut: false, badRange: true };
+    const empty = { text: "", seen: null, cut: false, sliced: false, lastStored };
+    if (pages && !range) return { ...empty, missing: "no_existe" };
     const wanted = range ? all.filter((p) => p.page >= range.from && p.page <= range.to) : all;
+    if (wanted.length === 0) {
+      const notStored = row.truncated && (range?.from ?? 1) > lastStored;
+      return { ...empty, missing: notStored ? "no_guardada" : "sin_texto" };
+    }
     // Páginas enteras hasta el tope; si la primera sola ya pasa, va cortada.
     const kept: typeof wanted = [];
     let used = 0;
@@ -98,27 +112,37 @@ export function textView(row: ViewableAttachment, pages?: string): TextView {
       kept.push({ page: page.page, text: block.slice(0, VIEW_TEXT_CHARS) });
       used += block.length + 2;
     }
-    const first = kept[0]?.page;
-    const last = kept.at(-1)?.page;
-    // El texto se guardó hasta aquí: lo que se pida después no existe.
-    const lastStored = all.at(-1)?.page ?? 0;
+    const first = kept[0]!.page;
+    const last = kept.at(-1)!.page;
     return {
       text: kept.map((p) => p.text).join("\n\n"),
-      seen: first !== undefined && last !== undefined ? rangeLabel(first, last) : null,
+      seen: rangeLabel(first, last),
       // Quedaron páginas fuera por el tope, o se pidió más allá de lo guardado.
       cut:
         sliced ||
         kept.length < wanted.length ||
         (row.truncated && (range ? range.to : row.pages) > lastStored),
-      badRange: false,
+      sliced,
+      missing: null,
+      lastStored,
     };
   }
   return {
     text: text.slice(0, VIEW_TEXT_CHARS),
     seen: null,
     cut: row.truncated || text.length > VIEW_TEXT_CHARS,
-    badRange: false,
+    sliced: false,
+    missing: null,
+    lastStored: null,
   };
+}
+
+/**
+ * Lo que el modelo escribe para nombrar un adjunto, como lo busca la base: sin
+ * comillas alrededor ni espacios de más. Lo usan `findForView` y la suite.
+ */
+export function normalizeAttachmentRef(ref: string): string {
+  return ref.trim().replace(/^["'“”«]+|["'“”»]+$/g, "");
 }
 
 /** Lo que le cuesta al turno volver a ver un adjunto, en tokens estimados. */

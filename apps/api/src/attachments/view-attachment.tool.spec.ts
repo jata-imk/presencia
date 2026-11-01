@@ -132,11 +132,18 @@ describe("ver_adjunto", () => {
   });
 
   it(`tope de ${String(ATTACHMENT_VIEWS_PER_TURN)} por mensaje; el siguiente es "limite", no un error`, async () => {
-    const { view } = setup([row()]);
-    for (let i = 0; i < ATTACHMENT_VIEWS_PER_TURN; i++) {
-      await view.execute!({ adjunto: row().id, paginas: String(i) }, options);
+    const photos = [0, 1, 2, 3].map((n) =>
+      row({
+        id: `6666666${String(n)}-6666-4666-8666-666666666666`,
+        filename: `foto-${String(n)}.png`,
+      }),
+    );
+    const { view } = setup(photos);
+    for (const photo of photos.slice(0, ATTACHMENT_VIEWS_PER_TURN)) {
+      const out = (await view.execute!({ adjunto: photo.id }, options)) as ViewAttachmentOutput;
+      expect(out.estado).toBe("ok");
     }
-    const out = (await view.execute!({ adjunto: row().id }, options)) as ViewAttachmentOutput;
+    const out = (await view.execute!({ adjunto: photos[3]!.id }, options)) as ViewAttachmentOutput;
     expect(out.estado).toBe("limite");
   });
 
@@ -154,13 +161,71 @@ describe("ver_adjunto", () => {
     );
   });
 
-  it("la misma llamada dos veces en un paso cuenta una sola vez", async () => {
+  it("lo mismo dos veces (en paralelo u otro paso) no vuelve a mandar el archivo ni gasta cupo", async () => {
     const { view, service } = setup([row()]);
-    await Promise.all([
-      view.execute!({ adjunto: row().id }, options),
-      view.execute!({ adjunto: row().id }, options),
-    ]);
-    expect(service.findForView).toHaveBeenCalledTimes(1);
+    const [first, second] = (await Promise.all([
+      view.execute!({ adjunto: row().id }, { ...options, toolCallId: "a" }),
+      view.execute!({ adjunto: "fachada.png" }, { ...options, toolCallId: "b" }),
+    ])) as ViewAttachmentOutput[];
+    expect(first!.estado).toBe("ok");
+    const again = (await view.toModelOutput!({
+      toolCallId: "b",
+      input: { adjunto: "fachada.png" },
+      output: second!,
+    })) as { type: string; value: string };
+    expect(again).toMatchObject({ type: "text" });
+    expect(again.value).toContain("lo tienes arriba");
+    expect(service.modelData).not.toHaveBeenCalled();
+    // Los dos cupos que quedan siguen libres.
+    for (const id of ["c", "d"]) {
+      const out = (await view.execute!(
+        { adjunto: MENU.id, paginas: id === "c" ? "1" : "2" },
+        { ...options, toolCallId: id },
+      )) as ViewAttachmentOutput;
+      expect(out.estado).toBe("no_encontrado");
+    }
+  });
+
+  it("una página que no se puede ver no gasta un cupo de vista, y dice por qué", async () => {
+    const recortado = row({
+      ...MENU,
+      id: "55555555-5555-4555-8555-555555555555",
+      pages: 12,
+      truncated: true,
+      extractedText: "[Página 1]\nUno\n\n[Página 2]\nDos",
+    });
+    const { view } = setup([recortado, row()]);
+    const input = { adjunto: recortado.id, paginas: "9" };
+    const out = (await view.execute!(input, options)) as ViewAttachmentOutput;
+    expect(out).toMatchObject({ estado: "pagina_no_disponible", paginas: "9" });
+    const model = (await view.toModelOutput!({ toolCallId: "t", input, output: out })) as {
+      value: string;
+    };
+    expect(model.value).toContain("solo se guardó el texto hasta la página 2 de 12");
+    // Ver el PDF desde el inicio: la nota no lo manda a una página que no se guardó.
+    const start = (await view.execute!(
+      { adjunto: recortado.id },
+      { ...options, toolCallId: "s" },
+    )) as ViewAttachmentOutput;
+    const startModel = (await view.toModelOutput!({
+      toolCallId: "s",
+      input: { adjunto: recortado.id },
+      output: start,
+    })) as { value: string };
+    expect(startModel.value).toContain("lo de después no se puede ver");
+    expect(startModel.value).not.toContain('por ejemplo "3"');
+    // Y en el siguiente turno queda como intento, no como algo que vio.
+    expect(viewLineForModel({ ...out, contexto: "linea" })).toContain("no se podía leer");
+  });
+
+  it("los intentos fallidos también tienen tope: un modelo que reintenta en círculo", async () => {
+    const { view, service } = setup([]);
+    for (let i = 0; i < ATTACHMENT_VIEWS_PER_TURN; i++) {
+      await view.execute!({ adjunto: `x${String(i)}.png` }, { ...options, toolCallId: String(i) });
+    }
+    const out = (await view.execute!({ adjunto: "y.png" }, options)) as ViewAttachmentOutput;
+    expect(out.estado).toBe("limite");
+    expect(service.findForView).toHaveBeenCalledTimes(ATTACHMENT_VIEWS_PER_TURN);
   });
 
   it("en un turno siguiente, lo que dejó la dieta: una línea, sin volver a cargar los bytes", async () => {

@@ -117,7 +117,13 @@ export function assembleContext(
         compressToolOutputsForModel(
           dietViewedAttachments(
             dietWebReads(
-              dietAttachments(withLiveCards(windowed, live ?? new Map()), attachments),
+              dietAttachments(
+                withLiveCards(windowed, live ?? new Map()),
+                attachments,
+                undefined,
+                undefined,
+                full,
+              ),
               webReads,
             ),
           ),

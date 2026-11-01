@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { normalizeAttachmentRef } from "./attachment-view.js";
 import {
   BadRequestException,
   Inject,
@@ -313,7 +314,7 @@ export class AttachmentsService {
    * aunque sea del mismo creator. `null` si no hay ninguno.
    */
   async findForView(userId: string, chatId: string, ref: string): Promise<AttachmentRow | null> {
-    const wanted = ref.trim().replace(/^["'“”«]+|["'“”»]+$/g, "");
+    const wanted = normalizeAttachmentRef(ref);
     return this.dbService.runWithTenant(userId, async (tx) => {
       if (z.uuid().safeParse(wanted).success) {
         const row = await this.repo.findById(tx, wanted.toLowerCase());

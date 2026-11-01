@@ -8,6 +8,7 @@ import type { ToolSet } from "ai";
 import type { AttachmentForContext } from "../../src/chat/attachment-context.js";
 import type { AttachmentRow } from "../../src/attachments/attachments.repository.js";
 import type { AttachmentsService } from "../../src/attachments/attachments.service.js";
+import { normalizeAttachmentRef } from "../../src/attachments/attachment-view.js";
 import { buildViewAttachmentTool } from "../../src/attachments/view-attachment.tool.js";
 
 /** Un adjunto de la conversación, con lo que la tool necesita para volver a verlo. */
@@ -39,10 +40,7 @@ function rowOf(file: ViewableFile): AttachmentRow {
 export function suiteViewAttachmentTools(files: readonly ViewableFile[]): ToolSet {
   const service: Pick<AttachmentsService, "findForView" | "modelData"> = {
     findForView: (_userId, _chatId, ref) => {
-      const wanted = ref
-        .trim()
-        .replace(/^["'“”«]+|["'“”»]+$/g, "")
-        .toLowerCase();
+      const wanted = normalizeAttachmentRef(ref).toLowerCase();
       // Por id, o el más nuevo con ese nombre (los últimos van al final).
       const found =
         files.find((f) => f.row.id === wanted) ??

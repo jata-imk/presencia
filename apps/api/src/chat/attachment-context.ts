@@ -116,8 +116,9 @@ export function dietAttachments(
   attachments: ReadonlyMap<string, AttachmentForContext> | null,
   keep = KEEP_ATTACHMENT_USER_TURNS,
   budget = RECENT_ATTACHMENT_TOKENS,
+  /** F10.11: los que viajan completos, si quien llama ya los calculó (context-builder.ts). */
+  full = fullAttachmentIds(messages, attachments, keep, budget),
 ): UIMessage[] {
-  const full = fullAttachmentIds(messages, attachments, keep, budget);
   return messages.map((message) => {
     if (!message.parts.some((part) => part.type === "file")) return message;
     return {

@@ -81,15 +81,25 @@ describe("textView", () => {
     expect(view.cut).toBe(true);
   });
 
-  it("pedir una página después de donde se guardó el texto es un recorte, no un invento", () => {
+  it("un PDF guardado recortado sabe hasta dónde llegó", () => {
     // Se guardaron 2 de 10 páginas (el tope de 100k caracteres de la subida).
-    const view = textView(pdf(["Uno", "Dos"], { pages: 10, truncated: true }), "8");
-    expect(view.text).toBe("");
+    const view = textView(pdf(["Uno", "Dos"], { pages: 10, truncated: true }));
+    expect(view.seen).toBe("1-2");
+    expect(view.lastStored).toBe(2);
     expect(view.cut).toBe(true);
   });
 
-  it("una página que no existe es badRange, no el documento entero", () => {
-    expect(textView(MENU, "12").badRange).toBe(true);
+  it("una página que no existe, que no tiene texto o que no se guardó: missing, con su motivo", () => {
+    expect(textView(MENU, "12").missing).toBe("no_existe");
+    // La página 2 es una foto: el texto del PDF no la trae.
+    const conFoto = pdf(["Uno", "Tres"]);
+    conFoto.extractedText = "[Página 1]\nUno\n\n[Página 3]\nTres";
+    conFoto.pages = 3;
+    expect(textView(conFoto, "2").missing).toBe("sin_texto");
+    expect(textView(pdf(["Uno", "Dos"], { pages: 10, truncated: true }), "8").missing).toBe(
+      "no_guardada",
+    );
+    expect(textView(MENU, "4").missing).toBeNull();
   });
 
   it("un texto sin páginas: el inicio, hasta el tope", () => {
