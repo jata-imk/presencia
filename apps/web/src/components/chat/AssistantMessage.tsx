@@ -3,10 +3,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   isCardToolPart,
   isMemoryToolPart,
+  isViewToolPart,
   isWebToolPart,
   type CardToolPart,
   type ChatUIMessage,
   type MemoryToolPart,
+  type ViewToolPart,
   type WebToolPart,
 } from "../../lib/chat-types.js";
 import { withoutCorrectedAttempts } from "../../lib/card-attempts.js";
@@ -58,8 +60,9 @@ export function AssistantMessage({
   const sources = useMemo(() => webSources(message), [message]);
 
   const blocks: Block[] = [];
-  // F10.10: los pasos en una sola lista, en orden: buscar, leer y las cards.
-  const stepParts: (CardToolPart | WebToolPart)[] = [];
+  // F10.10: los pasos en una sola lista, en orden: buscar, leer, volver a ver
+  // un adjunto (F10.11) y las cards.
+  const stepParts: (CardToolPart | WebToolPart | ViewToolPart)[] = [];
   const memoryParts: MemoryToolPart[] = [];
   const streaming = isLast && streamingNow;
   const visibleCardParts = new Set(
@@ -80,7 +83,7 @@ export function AssistantMessage({
       memoryParts.push(part);
       return;
     }
-    if (isWebToolPart(part)) {
+    if (isWebToolPart(part) || isViewToolPart(part)) {
       stepParts.push(part);
       return;
     }

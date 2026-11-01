@@ -142,3 +142,45 @@ export const DIEZ: PendingAttachment[] = [
   listo("slide-02-el-problema.png", 812_000),
   listo("slide-03-agents-md.png", 790_000),
 ];
+
+/**
+ * F10.11: la parte de `ver_adjunto` como la guarda la API (una referencia, sin
+ * bytes ni texto), para las historias de la línea de pasos.
+ */
+export function vista(
+  nombre: string,
+  over: {
+    estado?: "ok" | "no_encontrado" | "pagina_no_disponible" | "limite";
+    tipo?: "image" | "pdf" | "text";
+    paginas?: string;
+    totalPaginas?: number;
+    recortado?: boolean;
+  } = {},
+) {
+  const estado = over.estado ?? "ok";
+  return {
+    type: "tool-ver_adjunto",
+    toolCallId: `ver-${nombre}-${over.paginas ?? ""}`,
+    state: "output-available",
+    input: { adjunto: nombre, ...(over.paginas ? { paginas: over.paginas } : {}) },
+    output: {
+      attachmentId: estado === "no_encontrado" ? null : `adj-${nombre}`,
+      nombre,
+      tipo: over.tipo ?? (nombre.endsWith(".pdf") ? "pdf" : "image"),
+      paginas: over.paginas ?? null,
+      totalPaginas: over.totalPaginas ?? null,
+      estado,
+      recortado: over.recortado ?? false,
+    },
+  };
+}
+
+/** Lo mismo, mientras corre: todavía sin output. */
+export function viendo(nombre: string) {
+  return {
+    type: "tool-ver_adjunto",
+    toolCallId: `ver-${nombre}`,
+    state: "input-available",
+    input: { adjunto: nombre },
+  };
+}

@@ -124,6 +124,20 @@ describe("ver_adjunto", () => {
     expect(model.value.match(/<\/adjunto>/g)).toHaveLength(1);
   });
 
+  it("lo que guarda la parte lo ve el creator: sin comillas, y las páginas canónicas", async () => {
+    const { view } = setup([MENU]);
+    const missing = (await view.execute!(
+      { adjunto: '"otro.png"' },
+      options,
+    )) as ViewAttachmentOutput;
+    expect(missing).toMatchObject({ estado: "no_encontrado", nombre: "otro.png" });
+    const page = (await view.execute!(
+      { adjunto: MENU.id, paginas: "8 a 9" },
+      { ...options, toolCallId: "p" },
+    )) as ViewAttachmentOutput;
+    expect(page).toMatchObject({ estado: "pagina_no_disponible", paginas: "8-9" });
+  });
+
   it("uno que no está en el chat se dice, sin inventar", async () => {
     const { view } = setup([]);
     const out = (await view.execute!({ adjunto: "otro.png" }, options)) as ViewAttachmentOutput;
@@ -247,6 +261,9 @@ describe("ver_adjunto", () => {
     })) as { type: string; value: string };
     expect(model.type).toBe("text");
     expect(model.value).toContain("vuelve a verlo con ver_adjunto");
+    // Que SÍ lo vio: si no, otro modelo que lee el historial cree que la
+    // respuesta de ese turno se inventó (lo hizo Sonnet en vivo, 2026-11-01).
+    expect(model.value).toContain("sí te llegó completo");
     expect(service.modelData).not.toHaveBeenCalled();
   });
 

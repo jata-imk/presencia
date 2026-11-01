@@ -90,3 +90,26 @@ Los 11 casos de releer (`scripts/cultural-suite/reread-prompts.ts`), 3 corridas 
 - Las dos corridas con el respaldo forzado son de antes de los arreglos del `/code-review` de este PR: un estado `pagina_no_disponible`, el tope de intentos, lo repetido no recargado y el prompt condicionado a que la línea ofrezca la tool. La corrida por modelo es la del código final.
 
 Reportes: `docs/reference/suite-cultural/2026-10-31-reporte-releer.md`, `-releer-respaldo-gemini.md`, `-releer-respaldo-sonnet.md` y la línea base `-releer-base.md`.
+
+## Prueba en vivo (F10.11 PR5, 2026-11-01)
+
+En la app, con `seed:dev`, contra la base de dev: una foto de fachada y un menú en PDF, dos turnos de relleno, y preguntas que solo se contestan mirando el archivo. Primero con la cadena normal (Luna), y después con `AI_FALLBACK_SIMULATE=openai` (Gemini) y `openai,google` (Sonnet).
+
+- **Describir al salir (PR4):** ninguna descripción en los turnos 1 y 2; las dos salieron en el turno 3 (fachada 339 caracteres, 6 unidades; menú 705, 3 unidades).
+- **Volver a ver:**
+  - Luna contestó si el nombre del café lleva serifa;
+  - Gemini, el color del borde del cartel chico;
+  - Sonnet, la página 4 del menú, con `paginas: "4"`.
+
+  En los tres, el paso "Volví a ver …" en la lista, y se conserva al recargar.
+
+- **Cobro:** el turno que volvió a ver la foto usó 11,413 tokens de entrada (la imagen en un segundo paso) y cobró **un solo asiento `chat_message`** de 67 unidades, sin fee aparte. El turno siguiente bajó a 4,941 tokens: la imagen ya no volvió a viajar. Ese turno contestó un precio desde la descripción, sin volver a ver nada.
+- **Respaldo:** los turnos de Gemini y Sonnet quedaron con `fallback_from = openai:gpt-6-luna`, sobre un historial que armó Luna.
+- **UI:** a 390 px el paso cabe sin desbordar, en los dos temas. Los estados de no disponible y tope se revisaron en Storybook con "Lado a lado".
+
+**Lo que encontró y la suite no podía ver: un modelo que se desmiente.** En los turnos siguientes, la dieta cambia la imagen vuelta a ver por una línea. Con "volviste a ver… ya no lo ves", Sonnet leyó un resultado de tool sin imagen seguido de una respuesta segura (de Luna, que sí la vio), concluyó que esa respuesta se había inventado y se "corrigió" ante el creator: "la herramienta no me mostró la imagen y te respondí como si la hubiera visto". La suite no lo podía ver porque sus historiales no traen relecturas anteriores.
+
+- **El arreglo:** la línea ahora dice que el archivo sí llegó completo en ese turno, que la respuesta se basó en verlo y que Presencia lo quitó del historial para no reenviarlo (`viewLineForModel`).
+- **Medido con el mismo historial que armó la dieta de producción** (3 corridas por modelo):
+  - Luna y Gemini dicen que lo sacaron de la foto;
+  - Sonnet vuelve a abrir la imagen para confirmar en vez de desmentirse.

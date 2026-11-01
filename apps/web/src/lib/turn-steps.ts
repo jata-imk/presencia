@@ -5,19 +5,27 @@ import {
   WEB_READS_PER_TURN,
   WEB_SEARCHES_PER_TURN,
   type ReadLinkOutput,
+  type ViewAttachmentOutput,
   type WebSearchOutput,
 } from "@presencia/shared";
 import { networkOfCardPart } from "./card-attempts.js";
-import { isCardToolPart, type CardToolPart, type WebToolPart } from "./chat-types.js";
+import {
+  isCardToolPart,
+  isViewToolPart,
+  type CardToolPart,
+  type ViewToolPart,
+  type WebToolPart,
+} from "./chat-types.js";
 import { NETWORK_LABELS } from "./network-labels.js";
 
 // F10.10 (Chat Web.html): los pasos de una respuesta, en el orden en que
 // pasaron: buscar, leer y crear borradores en UNA sola lista (decisión de
 // Jose, 2026-10-28). Se derivan solo de los tool parts reales del mensaje:
 // no se inventan pasos que el backend no reporta. Puro, para probarlo sin
-// pintar nada; Steps.tsx los dibuja.
+// pintar nada; Steps.tsx los dibuja. F10.11: volver a ver un adjunto es un
+// paso más, con la misma anatomía que leer una página (sin pase de diseño).
 
-export type StepKind = "search" | "read" | "card";
+export type StepKind = "search" | "read" | "view" | "card";
 
 /**
  * - live: corriendo; ok: terminó bien; part: terminó a medias (página larga o
@@ -38,7 +46,10 @@ export type StepReason =
   | "tipo"
   | "sitio"
   | "buscador"
-  | "sin_resultados";
+  | "sin_resultados"
+  // F10.11: el adjunto ya no está en el chat; la página no se pudo ver.
+  | "sin_adjunto"
+  | "sin_pagina";
 
 export interface TurnStep {
   kind: StepKind;
@@ -57,7 +68,7 @@ export interface StepsHeader {
   label: string;
 }
 
-type StepPart = CardToolPart | WebToolPart;
+type StepPart = CardToolPart | WebToolPart | ViewToolPart;
 
 /**
  * Host sin `www.` de una URL, con el mismo helper con que la API llena
@@ -214,6 +225,82 @@ function readStep(part: StepPart, streaming: boolean): TurnStep {
     : { kind: "read", state: "stop", text: `Lectura detenida: ${d}`, target: d };
 }
 
+// El modelo pide el adjunto por su id (el que trae su línea): eso no se le
+// enseña al creator. Mientras no hay output, si lo que pidió es un id, "un adjunto".
+const LOOKS_LIKE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
+
+/** Sin comillas alrededor, como lo busca la API (normalizeAttachmentRef). */
+const unquoted = (ref: string) => ref.trim().replace(/^["'“”«]+|["'“”»]+$/g, "");
+
+function viewName(part: StepPart): string {
+  const out = part.state === "output-available" ? (part.output as ViewAttachmentOutput) : null;
+  const named = out?.nombre ? unquoted(out.nombre) : "";
+  if (named && !LOOKS_LIKE_ID.test(named)) return named;
+  const asked = unquoted(inputOf<{ adjunto: string }>(part).adjunto ?? "");
+  return asked && !LOOKS_LIKE_ID.test(asked) ? asked : "un adjunto";
+}
+
+/** "pág. 4", "págs. 3–5"; con el total si se sabe ("pág. 9 de 6"). */
+function pagesMeta(pages: string | null | undefined, total?: number | null): string | undefined {
+  if (!pages) return undefined;
+  const range = /^\s*(\d+)\s*(?:-|–|—|a|al|,)\s*(\d+)\s*$/i.exec(pages);
+  const label = range ? `págs. ${range[1]!}–${range[2]!}` : `pág. ${pages.trim()}`;
+  return total ? `${label} de ${String(total)}` : label;
+}
+
+function viewStep(part: StepPart, streaming: boolean): TurnStep {
+  const name = viewName(part);
+  if (part.state === "output-available") {
+    const out = part.output as ViewAttachmentOutput;
+    if (out.estado === "ok") {
+      const pages = pagesMeta(out.paginas, out.totalPaginas);
+      return out.recortado
+        ? {
+            kind: "view",
+            state: "part",
+            text: `Volví a ver ${name}`,
+            meta: pages ? `${pages}, solo una parte` : "solo una parte",
+          }
+        : { kind: "view", state: "ok", text: `Volví a ver ${name}`, meta: pages };
+    }
+    if (out.estado === "pagina_no_disponible") {
+      return {
+        kind: "view",
+        state: "fail",
+        text: `No pude ver ${pagesMeta(out.paginas) ?? "esa página"} de ${name}${out.totalPaginas ? ` (tiene ${String(out.totalPaginas)})` : ""}`,
+        reason: "sin_pagina",
+      };
+    }
+    if (out.estado === "limite") {
+      return {
+        kind: "view",
+        state: "skip",
+        // El tope es de 3 adjuntos, de lo que suman o de intentos (ADR-029):
+        // la línea no adivina cuál fue.
+        text: `No volví a ver ${name}: llegué al tope de este mensaje`,
+      };
+    }
+    // `no_encontrado`, o un estado que esta versión no conoce: el genérico.
+    return {
+      kind: "view",
+      state: "fail",
+      text:
+        out.estado === "no_encontrado"
+          ? `No encontré ${name} en este chat`
+          : `No pude volver a ver ${name}`,
+      reason: "sin_adjunto",
+    };
+  }
+  // Una falla nuestra (la tool o el storage), no un adjunto que no está: sin
+  // motivo, con el ícono genérico.
+  if (part.state === "output-error") {
+    return { kind: "view", state: "fail", text: `No pude volver a ver ${name}` };
+  }
+  return streaming
+    ? { kind: "view", state: "live", text: `Volviendo a ver ${name}…` }
+    : { kind: "view", state: "stop", text: `Detuviste cuando volvía a ver ${name}`, target: name };
+}
+
 function cardStep(part: CardToolPart, streaming: boolean): TurnStep {
   const network = networkOfCardPart(part);
   const red = network ? ` para ${NETWORK_LABELS[network]}` : "";
@@ -228,20 +315,40 @@ function cardStep(part: CardToolPart, streaming: boolean): TurnStep {
     : { kind: "card", state: "stop", text: `Se detuvo el borrador${red}` };
 }
 
+/**
+ * Lo mismo que se volvió a ver dos veces en un mensaje (en paralelo o en otro
+ * paso) es una sola vista: la API no lo vuelve a cargar (ADR-029), y la lista
+ * tampoco lo cuenta dos veces.
+ */
+function withoutRepeatedViews(parts: readonly StepPart[]): StepPart[] {
+  const seen = new Set<string>();
+  return parts.filter((part) => {
+    if (!isViewToolPart(part) || part.state !== "output-available") return true;
+    const out = part.output;
+    if (out.estado !== "ok" || !out.attachmentId) return true;
+    const key = `${out.attachmentId}|${out.paginas ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Los pasos de una respuesta en su orden. Un tool sin output solo sigue en curso mientras el turno llega. */
 export function turnSteps(parts: readonly StepPart[], streaming: boolean): TurnStep[] {
-  return parts.map((part) =>
+  return withoutRepeatedViews(parts).map((part) =>
     isCardToolPart(part)
       ? cardStep(part, streaming)
-      : part.type === `tool-${READ_LINK_TOOL_NAME}`
-        ? readStep(part, streaming)
-        : searchStep(part, streaming),
+      : isViewToolPart(part)
+        ? viewStep(part, streaming)
+        : part.type === `tool-${READ_LINK_TOOL_NAME}`
+          ? readStep(part, streaming)
+          : searchStep(part, streaming),
   );
 }
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
-/** "Busqué 1 vez, leí 2 páginas y creé 1 borrador": solo lo que sí pasó. */
+/** "Busqué 1 vez, leí 2 páginas, volví a ver 1 adjunto y creé 1 borrador": solo lo que sí pasó. */
 function doneLabel(steps: readonly TurnStep[]): string | null {
   const searches = steps.filter(
     (s) => s.kind === "search" && (s.state === "ok" || s.reason === "sin_resultados"),
@@ -249,10 +356,14 @@ function doneLabel(steps: readonly TurnStep[]): string | null {
   const reads = steps.filter(
     (s) => s.kind === "read" && (s.state === "ok" || s.state === "part"),
   ).length;
+  const views = steps.filter(
+    (s) => s.kind === "view" && (s.state === "ok" || s.state === "part"),
+  ).length;
   const cards = steps.filter((s) => s.kind === "card" && s.state === "ok").length;
   const pieces = [
     searches > 0 ? `busqué ${String(searches)} ${plural(searches, "vez", "veces")}` : null,
     reads > 0 ? `leí ${String(reads)} ${plural(reads, "página", "páginas")}` : null,
+    views > 0 ? `volví a ver ${String(views)} ${plural(views, "adjunto", "adjuntos")}` : null,
     cards > 0 ? `creé ${String(cards)} ${plural(cards, "borrador", "borradores")}` : null,
   ].filter((p): p is string => p !== null);
   if (pieces.length === 0) return null;
@@ -272,6 +383,7 @@ export function stepsHeader(steps: readonly TurnStep[]): StepsHeader | null {
       return { state: "stop", label: `Detuviste la lectura de ${stopped.target ?? "la página"}` };
     }
     if (stopped.kind === "search") return { state: "stop", label: stopped.text };
+    if (stopped.kind === "view") return { state: "stop", label: stopped.text };
     const cards = steps.filter((s) => s.kind === "card").length;
     return {
       state: "stop",
@@ -296,15 +408,14 @@ export function stepsHeader(steps: readonly TurnStep[]): StepsHeader | null {
 
   // El tope manda en el resumen solo si no salió un borrador: lo que el
   // creator vino a buscar es el borrador, y el tope sigue en la lista.
-  const skip = steps.find((s) => s.state === "skip");
-  if (skip && !steps.some((s) => s.kind === "card" && s.state === "ok")) {
+  const skipped = [...new Set(steps.filter((s) => s.state === "skip").map((s) => s.kind))];
+  if (skipped.length > 0 && !steps.some((s) => s.kind === "card" && s.state === "ok")) {
+    // El tope cuenta intentos, no lecturas buenas: "llegué al tope", no "ya
+    // leí 3". Con topes de dos tipos, uno genérico: nombrar solo uno escondería el otro.
+    const only = skipped.length === 1 ? skipped[0] : undefined;
     return {
       state: "limit",
-      // El tope cuenta intentos, no lecturas buenas: "llegué al tope", no "ya leí 3".
-      label:
-        skip.kind === "read"
-          ? `Llegué al tope de ${String(WEB_READS_PER_TURN)} páginas en este mensaje`
-          : `Llegué al tope de ${String(WEB_SEARCHES_PER_TURN)} búsquedas en este mensaje`,
+      label: (only && LIMIT_LABELS[only]) ?? "Llegué a los topes de este mensaje",
     };
   }
 
@@ -313,6 +424,14 @@ export function stepsHeader(steps: readonly TurnStep[]): StepsHeader | null {
   // Nada salió: el primer motivo lo dice todo ("No pude leer instagram.com: pide iniciar sesión").
   return { state: "fail", label: steps[0]!.text };
 }
+
+/** El encabezado cuando un tipo de paso llegó a su tope. */
+const LIMIT_LABELS: Partial<Record<StepKind, string>> = {
+  read: `Llegué al tope de ${String(WEB_READS_PER_TURN)} páginas en este mensaje`,
+  search: `Llegué al tope de ${String(WEB_SEARCHES_PER_TURN)} búsquedas en este mensaje`,
+  // Son 3 adjuntos, o lo que suman, o los intentos: no se adivina cuál.
+  view: "Llegué al tope de adjuntos en este mensaje",
+};
 
 /** Con un solo paso, el encabezado ya lo dice todo: no hay lista que abrir. */
 export function stepsExpandable(steps: readonly TurnStep[]): boolean {

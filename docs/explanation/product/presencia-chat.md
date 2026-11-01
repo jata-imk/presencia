@@ -811,6 +811,24 @@ ChatGPT y Claude.ai mantienen input simple por algo.
 > Editar el mensaje cambia el texto, no los adjuntos: se
 > quedan igual, y la caja lo dice.
 >
+> **Volver a ver un adjunto (F10.11, ADR-029).** Un adjunto
+> viaja completo los últimos 3 turnos; después el modelo solo
+> ve su descripción, que guarda los datos que tiene a la
+> vista (hasta 1,500 caracteres: las filas de una tabla, los
+> platillos y precios de un menú). Se escribe cuando el
+> adjunto está por salir de la ventana, no al enviarlo: un
+> chat corto no la paga. Si el creator pregunta por algo que
+> la descripción no trae ("¿qué dice el cartel chiquito de la
+> foto de hace rato?", "¿cuánto cuesta lo de la página 4?"),
+> el modelo vuelve a ver el archivo y contesta de ahí: una
+> foto o un PDF escaneado completos, y un PDF con texto por
+> páginas. También alcanza a uno que solo quedó nombrado en el
+> resumen de un chat largo. Si el dato ya está en la
+> descripción, no lo vuelve a ver. Se nota en la lista de
+> pasos ("Volví a ver fachada.png · pág. 4"); hasta 3 por
+> mensaje, y no tiene cobro propio: lo que vuelve a leer se
+> cobra como el resto del mensaje.
+>
 > **Una imagen adjunta puede ser la de la publicación.** En
 > la imagen de la card, junto a "Subir la mía" (y en el ⋯
 > cuando ya tiene una), "Usar una que adjuntaste" abre las
@@ -1092,7 +1110,10 @@ que decidir cuál usar. Mejor que la IA decida y le muestre
 qué hizo.
 
 > **F10.10 (implementado):** buscar, leer y crear borradores
-> van en **una sola lista**, en el orden en que pasaron. En
+> van en **una sola lista**, en el orden en que pasaron.
+> F10.11 suma volver a ver un adjunto ("Volví a ver
+> fachada.png", "No encontré foto.png en este chat"), con la
+> misma forma que leer una página. En
 > vivo se abre si hay más de un paso; al terminar se pliega en
 > un resumen ("Busqué 1 vez, leí 2 páginas y creé 1
 > borrador"). Lo que no se pudo leer lleva su motivo en una
@@ -1611,6 +1632,12 @@ sigue accesible desde la vista "Archivados".
   qué olvidar) llega en V2.
 - **Modo voz interactivo (conversación bidireccional por
   audio).** En V1 solo transcripción de audio a texto.
+- **Buscar dentro de los adjuntos.** Volver a ver un adjunto
+  (F10.11) es pedirlo entero o por páginas, no una búsqueda
+  por significado dentro de él. Tampoco se parte un PDF
+  escaneado por páginas (se ve completo, hasta 20), ni un CSV
+  por filas (se ve el inicio). Se agrega si un creator lo
+  pide.
 - **Generación de video con IA.** Para TikTok/Reels/Shorts
   (arquetipo B), Presencia entrega guion, hook, caption y
   hashtags; el creator graba y sube el video. No generamos
