@@ -42,6 +42,7 @@ import { CULTURAL_SUITE_VOICES, type VoiceFixture } from "./voices.js";
 import { suiteReadLinkTools } from "./web-pages.js";
 import { suiteWebSearchTools } from "./web-search.js";
 import { registrarGasto, splitModelId } from "../gasto-local.js";
+import { findRepoRoot } from "../repo-root.js";
 
 // Los candidatos de F10.7 (ADR-004): Terra como referencia de lo que corre
 // hoy, Luna en los dos esfuerzos que se comparan, y los respaldos. Cada
@@ -351,16 +352,6 @@ function formatMs(ms: number | null): string {
 
 function formatUsd(usd: number | null): string {
   return usd === null ? "sin precio" : `$${usd.toFixed(4)}`;
-}
-
-function findRepoRoot(start: string): string {
-  let dir = start;
-  while (!existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
-    const parent = path.dirname(dir);
-    if (parent === dir) throw new Error("No encontré la raíz del repo (pnpm-workspace.yaml)");
-    dir = parent;
-  }
-  return dir;
 }
 
 async function main(): Promise<void> {

@@ -12,7 +12,6 @@
 // AI_SUITE_DELAY_MS — mismo nombre que suite:cultural (default 10000).
 
 import { generateText } from "ai";
-import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { normalizeExpression } from "@presencia/shared";
@@ -20,6 +19,7 @@ import { createModelResolver, DEFAULT_MODEL_ID } from "../../src/ai/provider-reg
 import { buildSystemPrompt } from "../../src/chat/system-prompt.js";
 import { PROHIBITED_WORD_VOICE } from "./voices.js";
 import { registrarGasto, splitModelId } from "../gasto-local.js";
+import { findRepoRoot } from "../repo-root.js";
 
 // Tema deliberadamente propenso al hype de marketing ("increíble", "único",
 // "revolucionario") que la voz de PROHIBITED_WORD_VOICE prohíbe.
@@ -29,16 +29,6 @@ const PROMPT =
   "cierre que invite a visitarnos.";
 
 const resolveModel = createModelResolver(process.env, process.env.AI_MODEL ?? DEFAULT_MODEL_ID);
-
-function findRepoRoot(start: string): string {
-  let dir = start;
-  while (!existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
-    const parent = path.dirname(dir);
-    if (parent === dir) throw new Error("No encontré la raíz del repo (pnpm-workspace.yaml)");
-    dir = parent;
-  }
-  return dir;
-}
 
 interface RunOutcome {
   index: number;
