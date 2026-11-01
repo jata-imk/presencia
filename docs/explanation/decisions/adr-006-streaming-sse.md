@@ -242,3 +242,10 @@ El prompt de sistema no decía qué día es. El modelo solo conocía su fecha de
 - La zona sale de la sesión (`users.timezone` es un `additionalField` de Better Auth): el controller la pasa al turno, sin otra consulta. Sin valor, se usa el default.
 - La suite cultural arma el mismo prompt con un "hoy" fijo (2026-10-28) y mide el caso `busqueda-eventos-viejos`.
 - Fuera de alcance: la reescritura de cards (`card-rewrite.service.ts`) sigue sin fecha; no busca en la web y no ha dado problemas. Se agrega si aparece uno.
+
+## Addendum (F10.11 PR3, 2026-11-01): volver a ver un adjunto
+
+- **La línea de un adjunto viejo lleva su id** y dice "si necesitas un detalle que esto no trae, vuelve a verlo con ver_adjunto". Antes le pedía al modelo que se lo pidiera al creator (`digestLine`, `chat/attachment-context.ts`). También perdió el punto doble que quedaba cuando la descripción ya traía el suyo.
+- **Un paso más en la cadena de `assembleContext`:** después de `dietWebReads` entra `dietViewedAttachments`. Lo que se volvió a ver en turnos anteriores viaja como una línea (`contexto: "linea"`), y solo en su turno va completo (ADR-029).
+- **`ModelContext.hiddenAttachments`:** sale verdadero si algún adjunto del historial no viaja completo (salió de la ventana o quedó resumido). `chat.service.ts` solo registra `ver_adjunto` en ese caso.
+- La suite cultural arma las conversaciones de varios turnos por este mismo camino (`scripts/cultural-suite/history.ts`, PR2 de F10.11) y le da al modelo la tool de producción con un servicio de mentira (`view-attachment.ts`).

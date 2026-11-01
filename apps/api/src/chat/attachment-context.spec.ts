@@ -6,6 +6,7 @@ import {
   attachmentIdsIn,
   attachmentLines,
   dietAttachments,
+  dietViewedAttachments,
   recentTurnsStart,
   type AttachmentForContext,
 } from "./attachment-context.js";
@@ -101,8 +102,9 @@ describe("dietAttachments", () => {
     ];
     const out = dietAttachments(chat, new Map([[vieja.id, vieja]]));
     expect(out[0]!.parts.some((p) => p.type === "file")).toBe(false);
+    // F10.11: con su id, sin punto doble, y diciendo cómo volver a verlo.
     expect(textOf(out[0]!)).toContain(
-      'Adjunto de antes (imagen "foto.jpg"): Una marquesita de queso en un plato azul.',
+      `Adjunto de antes (imagen "foto.jpg", id: ${vieja.id}): Una marquesita de queso en un plato azul. Si necesitas un detalle que esto no trae, vuelve a verlo con ver_adjunto.]`,
     );
   });
 
@@ -230,5 +232,62 @@ describe("transcripts", () => {
     expect(attachmentLines(message)).toEqual(['[El creator adjuntó "menu.md"]']);
     expect(transcriptForSummary([message])).toContain('[El creator adjuntó "menu.md"]');
     expect(attachmentIdsIn([message])).toEqual([menu.id]);
+  });
+});
+
+describe("F10.11: volver a ver un adjunto", () => {
+  const viewPart = {
+    type: "tool-ver_adjunto",
+    toolCallId: "v1",
+    state: "output-available",
+    input: { adjunto: "fachada.png" },
+    output: { attachmentId: "x", nombre: "fachada.png", tipo: "image", estado: "ok" },
+  };
+
+  it("lo que se volvió a ver en un turno anterior viaja como línea", () => {
+    const chat: UIMessage[] = [
+      user("¿qué dice el cartel?"),
+      { id: randomUUID(), role: "assistant", parts: [viewPart] } as unknown as UIMessage,
+      user("gracias"),
+    ];
+    const out = dietViewedAttachments(chat);
+    expect((out[1]!.parts[0] as unknown as { output: { contexto?: string } }).output.contexto).toBe(
+      "linea",
+    );
+    // El historial no se toca: la UI y lo que se guarda siguen completos.
+    expect(
+      (chat[1]!.parts[0] as unknown as { output: { contexto?: string } }).output.contexto,
+    ).toBe(undefined);
+  });
+
+  it("hiddenAttachments: no con la foto en la ventana; sí cuando salió o quedó resumida", () => {
+    const foto = attachment({ description: "La fachada." });
+    const rows = new Map([[foto.id, foto]]);
+    const enVentana = [user("mira", [foto]), reply("ok"), user("¿y?")];
+    expect(assembleContext(enVentana, null, null, 120_000, rows).hiddenAttachments).toBe(false);
+
+    const fuera = [
+      user("mira", [foto]),
+      reply("ok"),
+      user("2"),
+      reply("b"),
+      user("3"),
+      reply("c"),
+      user("4"),
+    ];
+    expect(assembleContext(fuera, null, null, 120_000, rows).hiddenAttachments).toBe(true);
+
+    const resumen = {
+      blocks: [{ summary: "Mandó la foto de su fachada (foto.jpg)." }],
+      throughMessageId: fuera[1]!.id,
+      cards: [],
+    };
+    expect(assembleContext(fuera.slice(0, 4), resumen, null, 120_000, rows).hiddenAttachments).toBe(
+      true,
+    );
+    // Sin adjuntos en el chat, la tool ni se ofrece.
+    expect(assembleContext([user("hola")], null, null, 120_000, rows).hiddenAttachments).toBe(
+      false,
+    );
   });
 });

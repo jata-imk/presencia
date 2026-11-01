@@ -1,5 +1,9 @@
 import type { UIMessage } from "ai";
-import { attachmentIdFromUrl, type AttachmentKind } from "@presencia/shared";
+import {
+  VIEW_ATTACHMENT_TOOL_NAME,
+  attachmentIdFromUrl,
+  type AttachmentKind,
+} from "@presencia/shared";
 // Solo funciones: el ciclo history-window → history-compaction → aquí no
 // toca nada al cargar el módulo.
 import { isSyntheticMessage } from "./history-window.js";
@@ -147,11 +151,11 @@ export function dietAttachments(
  * no detiene la cuenta: uno más viejo y más chico (una foto detrás de un
  * documento grande) todavía puede entrar.
  */
-function fullAttachmentIds(
+export function fullAttachmentIds(
   messages: UIMessage[],
   attachments: ReadonlyMap<string, AttachmentForContext> | null,
-  keep: number,
-  budget: number,
+  keep = KEEP_ATTACHMENT_USER_TURNS,
+  budget = RECENT_ATTACHMENT_TOKENS,
 ): Set<string> {
   const full = new Set<string>();
   if (!attachments) return full;
@@ -207,15 +211,44 @@ function fullAttachment(
   ];
 }
 
-/** La línea de un adjunto que ya quedó atrás. */
+/**
+ * La línea de un adjunto que ya quedó atrás. F10.11: con su id, para que el
+ * modelo lo vuelva a ver con ver_adjunto si la descripción no trae lo que le
+ * piden (antes decía que se lo pidiera al creator otra vez).
+ */
 export function digestLine(row: AttachmentForContext): string {
   const what = row.kind === "image" ? "imagen" : row.kind === "pdf" ? "PDF" : "archivo de texto";
   const about =
-    (row.description && safeName(row.description, 1_000)) ??
+    (row.description && safeName(row.description, 1_500)) ??
     (row.extractedText
       ? `empieza así: "${safeName(row.extractedText.slice(0, EXCERPT_CHARS)).trim()}…"`
       : "ya no lo ves");
-  return `[Adjunto de antes (${what} "${safeName(row.filename)}"): ${about}. Si necesitas el detalle, pídele al creator que lo vuelva a adjuntar.]`;
+  // Sin el punto final de la descripción: la línea pone el suyo.
+  return `[Adjunto de antes (${what} "${safeName(row.filename)}", id: ${row.id}): ${about.replace(/[.\s]+$/, "")}. Si necesitas un detalle que esto no trae, vuelve a verlo con ${VIEW_ATTACHMENT_TOOL_NAME}.]`;
+}
+
+const VIEW_PART_TYPE = `tool-${VIEW_ATTACHMENT_TOOL_NAME}`;
+
+/**
+ * F10.11: lo que se volvió a ver en turnos anteriores viaja como una línea
+ * (`contexto: "linea"`; la arma el `toModelOutput` de ver_adjunto). Ya
+ * cumplió: la respuesta que el modelo escribió con eso está en la
+ * conversación, y reenviar la imagen en cada turno es justo lo que la
+ * ventana evita. Todas las de `messages` son de turnos anteriores: las del
+ * turno en curso todavía no están en el historial.
+ */
+export function dietViewedAttachments(messages: UIMessage[]): UIMessage[] {
+  return messages.map((message) => {
+    if (!message.parts.some((part) => part.type === VIEW_PART_TYPE)) return message;
+    return {
+      ...message,
+      parts: message.parts.map((part) => {
+        const p = part as { type: string; state?: string; output?: object };
+        if (p.type !== VIEW_PART_TYPE || p.state !== "output-available" || !p.output) return part;
+        return { ...part, output: { ...p.output, contexto: "linea" } } as typeof part;
+      }),
+    };
+  });
 }
 
 /**
