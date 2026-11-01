@@ -25,6 +25,10 @@ export interface ModelPrice {
   perImage?: number;
   /** Dólares por búsqueda (grounding, web search). */
   perSearch?: number;
+  /** Dólares por minuto de audio, para los de transcripción (F11). */
+  perAudioMinute?: number;
+  /** Segundos mínimos que se cobran por llamada (Groq cobra 10 aunque el audio dure menos). */
+  minBilledAudioSeconds?: number;
   /** De dónde salió el precio y cuándo se revisó. */
   source: string;
 }
@@ -146,6 +150,21 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
     perSearch: 1 / 1000,
     source: "paquete de $50 (50k consultas), fuentes secundarias 2026-10-25",
   },
+  // F11: transcripción de notas de voz (ADR-030). No tienen tokens: cobran
+  // por minuto de audio.
+  "groq:whisper-large-v3-turbo": {
+    inputPerM: 0,
+    outputPerM: 0,
+    perAudioMinute: 0.04 / 60,
+    minBilledAudioSeconds: 10,
+    source: "groq.com/pricing ($0.04 por hora, mínimo 10 s por llamada), 2026-11-01",
+  },
+  "openai:gpt-4o-mini-transcribe": {
+    inputPerM: 0,
+    outputPerM: 0,
+    perAudioMinute: 0.003,
+    source: "developers.openai.com/api/docs/pricing (estimado por minuto), 2026-11-01",
+  },
   "fake:solid-png": { inputPerM: 0, outputPerM: 0, source: "generador de mentira de dev" },
   // F10.10: el buscador de mentira de dev (WEB_SEARCH_PROVIDER=fake).
   "fake:web-search": {
@@ -164,6 +183,8 @@ export interface UsageForCost {
   cachedInputTokens?: number | null;
   imagesCount?: number | null;
   searchQueries?: number | null;
+  /** Segundos de audio transcritos (F11). */
+  audioSeconds?: number | null;
 }
 
 /** Dólares de un uso, o null si el modelo no tiene precio en la tabla. */
@@ -177,6 +198,13 @@ export function costOf(usage: UsageForCost): number | null {
     (cached * (price.cachedInputPerM ?? price.inputPerM)) / 1e6 +
     (usage.outputTokens * price.outputPerM) / 1e6 +
     (usage.imagesCount ?? 0) * (price.perImage ?? 0) +
-    (usage.searchQueries ?? 0) * (price.perSearch ?? 0)
+    (usage.searchQueries ?? 0) * (price.perSearch ?? 0) +
+    audioCost(usage.audioSeconds, price)
   );
+}
+
+function audioCost(seconds: number | null | undefined, price: ModelPrice): number {
+  if (!seconds || !price.perAudioMinute) return 0;
+  const billed = Math.max(seconds, price.minBilledAudioSeconds ?? 0);
+  return (billed / 60) * price.perAudioMinute;
 }

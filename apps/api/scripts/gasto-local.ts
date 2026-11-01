@@ -17,12 +17,14 @@ export interface GastoLocal {
   script: string;
   provider: string;
   model: string;
-  task: "image_generate" | "image_edit" | "chat" | "web_search";
+  task: "image_generate" | "image_edit" | "chat" | "web_search" | "transcription";
   inputTokens: number;
   outputTokens: number;
   imagesCount?: number;
   /** Búsquedas web (F10.10): las nativas de un modelo o las de una API de búsqueda. */
   searchQueries?: number;
+  /** Segundos de audio transcritos (F11). */
+  audioSeconds?: number;
 }
 
 // Relativo al cwd: los scripts corren con `pnpm --filter @presencia/api`, que
