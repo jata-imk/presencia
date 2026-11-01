@@ -16,7 +16,7 @@ import {
 import { markUnansweredTurns } from "./unanswered-turns.js";
 import {
   attachmentIdsIn,
-  dietAttachments,
+  dietAttachmentsWith,
   dietViewedAttachments,
   fullAttachmentIds,
   type AttachmentForContext,
@@ -117,13 +117,7 @@ export function assembleContext(
         compressToolOutputsForModel(
           dietViewedAttachments(
             dietWebReads(
-              dietAttachments(
-                withLiveCards(windowed, live ?? new Map()),
-                attachments,
-                undefined,
-                undefined,
-                full,
-              ),
+              dietAttachmentsWith(withLiveCards(windowed, live ?? new Map()), attachments, full),
               webReads,
             ),
           ),

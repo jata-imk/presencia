@@ -265,16 +265,19 @@ export class HistoryCompactionService {
     if (ids.length === 0) return new Map();
     const startedAt = Date.now();
     let rows = await this.attachments.forContext(userId, ids);
-    const pending = [...(rows?.values() ?? [])]
-      .filter((row) => digestDue(row))
-      .map((row) => row.id);
+    const pendingRows = [...(rows?.values() ?? [])].filter((row) => digestDue(row));
+    const pending = pendingRows.map((row) => row.id);
+    // El intento que había antes (si hubo uno viejo): se compara contra él,
+    // no contra el reloj de la API, que puede ir adelante del de Postgres.
+    const before = new Map(pendingRows.map((row) => [row.id, row.describedAt?.getTime() ?? null]));
     if (pending.length > 0) {
       await this.digests.enqueue(userId, chatId, pending, runId);
       // Listo cuando cada uno tiene descripción o ya tuvo su intento (falló).
       const settled = () =>
         pending.every((id) => {
           const row = rows?.get(id);
-          return !row || row.description || (row.describedAt?.getTime() ?? 0) >= startedAt;
+          const attempt = row?.describedAt?.getTime() ?? null;
+          return !row || row.description || (attempt !== null && attempt !== before.get(id));
         });
       while (!settled() && Date.now() - startedAt < DESCRIBE_WAIT_MS) {
         await new Promise((resolve) => setTimeout(resolve, DESCRIBE_POLL_MS));

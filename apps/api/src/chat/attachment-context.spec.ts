@@ -327,3 +327,25 @@ describe("F10.11: describir al salir de la ventana", () => {
     expect(transcriptForSummary([message])).toContain('[El creator adjuntó "menu.jpg"]');
   });
 });
+
+describe("F10.11 cierre: lo que se volvió a ver en un turno cortado", () => {
+  it("queda como cortada, no como algo que sí se respondió", () => {
+    const part = {
+      type: "tool-ver_adjunto",
+      toolCallId: "v1",
+      state: "output-available",
+      input: { adjunto: "fachada.png" },
+      output: { attachmentId: "x", nombre: "fachada.png", tipo: "image", estado: "ok" },
+    };
+    const cortada = {
+      id: randomUUID(),
+      role: "assistant",
+      parts: [part],
+      metadata: { status: "stopped" },
+    } as unknown as UIMessage;
+    const [out] = dietViewedAttachments([cortada]);
+    expect((out!.parts[0] as unknown as { output: { contexto?: string } }).output.contexto).toBe(
+      "cortada",
+    );
+  });
+});

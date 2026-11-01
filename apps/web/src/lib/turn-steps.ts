@@ -1,5 +1,6 @@
 import {
   isSessionHost,
+  normalizeAttachmentRef,
   normalizeTrendSource,
   READ_LINK_TOOL_NAME,
   WEB_READS_PER_TURN,
@@ -229,21 +230,19 @@ function readStep(part: StepPart, streaming: boolean): TurnStep {
 // enseña al creator. Mientras no hay output, si lo que pidió es un id, "un adjunto".
 const LOOKS_LIKE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
 
-/** Sin comillas alrededor, como lo busca la API (normalizeAttachmentRef). */
-const unquoted = (ref: string) => ref.trim().replace(/^["'“”«]+|["'“”»]+$/g, "");
-
 function viewName(part: StepPart): string {
   const out = part.state === "output-available" ? (part.output as ViewAttachmentOutput) : null;
-  const named = out?.nombre ? unquoted(out.nombre) : "";
+  const named = out?.nombre ? normalizeAttachmentRef(out.nombre) : "";
   if (named && !LOOKS_LIKE_ID.test(named)) return named;
-  const asked = unquoted(inputOf<{ adjunto: string }>(part).adjunto ?? "");
+  const asked = normalizeAttachmentRef(inputOf<{ adjunto: string }>(part).adjunto ?? "");
   return asked && !LOOKS_LIKE_ID.test(asked) ? asked : "un adjunto";
 }
 
 /** "pág. 4", "págs. 3–5"; con el total si se sabe ("pág. 9 de 6"). */
 function pagesMeta(pages: string | null | undefined, total?: number | null): string | undefined {
   if (!pages) return undefined;
-  const range = /^\s*(\d+)\s*(?:-|–|—|a|al|,)\s*(\d+)\s*$/i.exec(pages);
+  // Una lista ("1,3") no es un rango: va tal cual.
+  const range = /^\s*(\d+)\s*(?:-|–|—|a|al)\s*(\d+)\s*$/i.exec(pages);
   const label = range ? `págs. ${range[1]!}–${range[2]!}` : `pág. ${pages.trim()}`;
   return total ? `${label} de ${String(total)}` : label;
 }

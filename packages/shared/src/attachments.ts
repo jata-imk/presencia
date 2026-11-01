@@ -163,3 +163,12 @@ export interface ViewAttachmentOutput {
   /** Se vio solo una parte: el texto pasa del tope o el archivo se guardó recortado. */
   recortado: boolean;
 }
+
+/**
+ * Lo que el modelo escribe para nombrar un adjunto, sin comillas alrededor ni
+ * espacios de más. Lo usan la API (para buscarlo) y la web (para no enseñar un
+ * id entre comillas): una sola copia.
+ */
+export function normalizeAttachmentRef(ref: string): string {
+  return ref.trim().replace(/^["'“”«]+|["'“”»]+$/g, "");
+}

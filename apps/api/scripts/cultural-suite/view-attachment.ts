@@ -8,7 +8,8 @@ import type { ToolSet } from "ai";
 import type { AttachmentForContext } from "../../src/chat/attachment-context.js";
 import type { AttachmentRow } from "../../src/attachments/attachments.repository.js";
 import type { AttachmentsService } from "../../src/attachments/attachments.service.js";
-import { normalizeAttachmentRef } from "../../src/attachments/attachment-view.js";
+import { normalizeAttachmentRef } from "@presencia/shared";
+import { sameAttachmentName } from "../../src/attachments/attachment-view.js";
 import { buildViewAttachmentTool } from "../../src/attachments/view-attachment.tool.js";
 
 /** Un adjunto de la conversación, con lo que la tool necesita para volver a verlo. */
@@ -44,7 +45,7 @@ export function suiteViewAttachmentTools(files: readonly ViewableFile[]): ToolSe
       // Por id, o el más nuevo con ese nombre (los últimos van al final).
       const found =
         files.find((f) => f.row.id === wanted) ??
-        [...files].reverse().find((f) => f.row.filename.toLowerCase() === wanted);
+        [...files].reverse().find((f) => sameAttachmentName(wanted, f.row.filename));
       return Promise.resolve(found ? rowOf(found) : null);
     },
     modelData: (row) => {

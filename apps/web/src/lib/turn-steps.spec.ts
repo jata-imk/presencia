@@ -323,6 +323,14 @@ describe("F10.11: volver a ver un adjunto", () => {
     expect(ok!.meta).toBe("pág. 4 de 6");
   });
 
+  it("una lista de páginas no se pinta como rango", () => {
+    const [step] = turnSteps(
+      [view(ID, { estado: "pagina_no_disponible", nombre: "menu.pdf", paginas: "1,3" })],
+      false,
+    );
+    expect(step!.text).toBe("No pude ver pág. 1,3 de menu.pdf");
+  });
+
   it("con topes de dos tipos, el encabezado no esconde ninguno", () => {
     const steps = turnSteps(
       [

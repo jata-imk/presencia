@@ -284,3 +284,65 @@ describe("ver_adjunto", () => {
     expect(model.value).toContain("No se pudo cargar");
   });
 });
+
+describe("ver_adjunto: cierre de F10.11", () => {
+  it("en un turno siguiente, el tope y el no encontrado van en pasado", () => {
+    const base = {
+      attachmentId: null,
+      nombre: "d.png",
+      tipo: null,
+      paginas: null,
+      totalPaginas: null,
+      recortado: false,
+    };
+    const tope = viewLineForModel({ ...base, estado: "limite", contexto: "linea" });
+    expect(tope).toContain("Ese tope ya no aplica");
+    expect(tope).not.toContain("en otro mensaje");
+    expect(viewLineForModel({ ...base, estado: "no_encontrado", contexto: "linea" })).toContain(
+      "En un turno anterior no se encontró",
+    );
+  });
+
+  it("de un turno cortado no dice que hubo respuesta", () => {
+    const line = viewLineForModel({
+      attachmentId: "a",
+      nombre: "fachada.png",
+      tipo: "image",
+      paginas: null,
+      totalPaginas: null,
+      estado: "ok",
+      recortado: false,
+      contexto: "cortada",
+    });
+    expect(line).toContain("se cortó antes de que respondieras");
+    expect(line).not.toContain("se basó en verlo");
+  });
+
+  it("una página no disponible no vuelve a ir a la base en toModelOutput", async () => {
+    const { view, service } = setup([MENU]);
+    const input = { adjunto: MENU.id, paginas: "12" };
+    const out = (await view.execute!(input, options)) as ViewAttachmentOutput;
+    await view.toModelOutput!({ toolCallId: "t", input, output: out });
+    expect(service.findForView).toHaveBeenCalledTimes(1);
+  });
+
+  it("si la base falla al armar el resultado, lo dice en vez de tumbar el turno", async () => {
+    const { view, service } = setup([]);
+    service.findForView.mockRejectedValueOnce(new Error("pool agotado"));
+    vi.spyOn(console, "error").mockImplementationOnce(() => undefined);
+    const model = (await view.toModelOutput!({
+      toolCallId: "t",
+      input: { adjunto: MENU.id },
+      output: {
+        attachmentId: MENU.id,
+        nombre: "menu.pdf",
+        tipo: "pdf",
+        paginas: null,
+        totalPaginas: 6,
+        estado: "ok",
+        recortado: false,
+      },
+    })) as { type: string; value: string };
+    expect(model.value).toContain("No se pudo cargar");
+  });
+});

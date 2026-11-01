@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import { chats, messageAttachments, messages } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
@@ -127,28 +127,18 @@ export class AttachmentsRepository {
   }
 
   /**
-   * F10.11: el adjunto enviado más nuevo de un chat con ese nombre de archivo
-   * (sin distinguir mayúsculas). Es como `ver_adjunto` alcanza uno que solo
-   * sobrevive nombrado en el resumen: el modelo ya no ve su id.
+   * F10.11: los adjuntos enviados en un chat, del más nuevo al más viejo. Es
+   * como `ver_adjunto` alcanza uno por su nombre (`findForView`): la
+   * comparación se hace en código, contra el nombre como lo vio el modelo.
    */
-  async findSentInChatByName(
-    tx: Tx,
-    chatId: string,
-    filename: string,
-  ): Promise<AttachmentRow | undefined> {
-    const [found] = await tx
+  sentInChat(tx: Tx, chatId: string): Promise<AttachmentRow[]> {
+    return tx
       .select({ row: messageAttachments })
       .from(messageAttachments)
       .innerJoin(messages, eq(messages.id, messageAttachments.messageId))
-      .where(
-        and(
-          eq(messageAttachments.chatId, chatId),
-          sql`lower(${messageAttachments.filename}) = lower(${filename})`,
-        ),
-      )
+      .where(eq(messageAttachments.chatId, chatId))
       .orderBy(desc(messages.createdAt), desc(messageAttachments.createdAt))
-      .limit(1);
-    return found?.row;
+      .then((rows) => rows.map((r) => r.row));
   }
 
   /** Las llaves de los adjuntos de un chat: para borrar sus bytes al borrar el chat. */

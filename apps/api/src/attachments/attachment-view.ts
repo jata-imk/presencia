@@ -9,6 +9,8 @@
 //   inicio hasta el tope, por páginas enteras.
 // - Un texto sin páginas (.csv, .txt, .md, .json): el inicio, hasta el tope.
 
+import { normalizeAttachmentRef } from "@presencia/shared";
+import { safeName } from "../chat/attachment-context.js";
 import { IMAGE_TOKEN_ESTIMATE, PDF_PAGE_TOKEN_ESTIMATE } from "./attachment-content.js";
 
 /** Lo más que se ve de un texto al volver a verlo: ~8k tokens a 3.5 caracteres por token. */
@@ -84,7 +86,8 @@ export interface TextView {
   lastStored: number | null;
 }
 
-const rangeLabel = (from: number, to: number) =>
+/** "4" o "3-5": la forma en que la parte guarda las páginas. */
+export const rangeLabel = (from: number, to: number) =>
   from === to ? String(from) : `${String(from)}-${String(to)}`;
 
 /** Lo que se ve del texto de un adjunto al volver a verlo. */
@@ -121,7 +124,9 @@ export function textView(row: ViewableAttachment, pages?: string): TextView {
       cut:
         sliced ||
         kept.length < wanted.length ||
-        (row.truncated && (range ? range.to : row.pages) > lastStored),
+        (row.truncated && (range ? range.to : row.pages) > lastStored) ||
+        // La última página guardada de un archivo recortado quedó a medias.
+        (row.truncated && last >= lastStored),
       sliced,
       missing: null,
       lastStored,
@@ -138,11 +143,14 @@ export function textView(row: ViewableAttachment, pages?: string): TextView {
 }
 
 /**
- * Lo que el modelo escribe para nombrar un adjunto, como lo busca la base: sin
- * comillas alrededor ni espacios de más. Lo usan `findForView` y la suite.
+ * Si lo que escribió el modelo nombra este archivo. El modelo nunca ve el
+ * nombre crudo: ve el que pasó por `safeName` (sin comillas ni `<>`, `[]`
+ * como `()`, cualquier espacio raro como uno normal: una captura de macOS
+ * trae un espacio angosto antes de "a.m."). Se comparan los dos así.
  */
-export function normalizeAttachmentRef(ref: string): string {
-  return ref.trim().replace(/^["'“”«]+|["'“”»]+$/g, "");
+export function sameAttachmentName(ref: string, filename: string): boolean {
+  const shown = (name: string) => safeName(name).toLowerCase();
+  return shown(normalizeAttachmentRef(ref)) === shown(filename);
 }
 
 /** Lo que le cuesta al turno volver a ver un adjunto, en tokens estimados. */
