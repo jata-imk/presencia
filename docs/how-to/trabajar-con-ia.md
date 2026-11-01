@@ -35,3 +35,14 @@ Los archivos son formato `.dc.html` (HTML entity-escaped, con lógica embebida e
 ## Suite de regresión cultural
 
 Prompts en registro mexicano "de barrio" versionados en `apps/api/scripts/cultural-suite/`, corridos contra cada modelo candidato (ADR-004): `pnpm --filter @presencia/api suite:cultural` (registro y calidad) y `suite:voz-prohibida` (palabras que la Voz de marca prohíbe). Los reportes viven en `docs/reference/suite-cultural/`. El moat cultural se valida por modelo, no se asume: un modelo entra a la cadena del chat solo si pasa la suite (así se eligió Luna en F10.7).
+
+**Volver a ver adjuntos (F10.11).** Los casos `releer-*`, `abstener-*` y `trampa-*` (`reread-prompts.ts`) arman una conversación de varios turnos (`history.ts`, por `assembleContext`), así que el adjunto ya salió de la ventana o quedó resumido. El reporte cierra con la tabla de la vara: relee donde debe, se abstiene donde no hace falta, inventos y órdenes de un archivo obedecidas.
+
+Variables de entorno:
+
+- `AI_SUITE_PROMPTS="releer-*,abstener-*,trampa-*"`: solo esos casos (un `*` final es un prefijo).
+- `AI_SUITE_RUNS=3`: cada caso corre tres veces.
+- `AI_SUITE_CHAIN=1`: la cadena del chat (`AI_MODEL_CHAT`) en lugar de cada modelo suelto; combinada con `AI_FALLBACK_SIMULATE=openai` o `openai,google`, mide el respaldo forzado.
+- `AI_SUITE_REPORT_SUFFIX=-releer`: el sufijo del nombre del reporte.
+
+La sonda de formato (`pnpm --filter @presencia/api sonda:releer`) comprueba que cada proveedor acepte una imagen o un PDF escaneado como resultado de una tool. Su reporte va a `docs/reference/releer-adjuntos/`.
