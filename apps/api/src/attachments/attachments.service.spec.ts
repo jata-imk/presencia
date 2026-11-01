@@ -196,6 +196,54 @@ describe("AttachmentsService", { timeout: 30_000 }, () => {
     ).rejects.toThrow(/ya no está disponible/);
   });
 
+  it("F10.11: ver_adjunto encuentra uno enviado en este chat, por id o por nombre (el más nuevo)", async () => {
+    const { messages } = await import("../db/schema.js");
+    const send = async (filename: string, text: string, createdAt: Date) => {
+      const dto = await service.upload({
+        userId: userA,
+        chatId: chatA,
+        data: new TextEncoder().encode(text),
+        filename,
+      });
+      const messageId = randomUUID();
+      await dbService.runWithTenant(userA, async (tx) => {
+        await tx
+          .insert(messages)
+          .values({
+            id: messageId,
+            chatId: chatA,
+            userId: userA,
+            role: "user",
+            parts: [],
+            createdAt,
+          });
+        await service.linkToMessage(tx, [dto.id], chatA, messageId);
+      });
+      return dto.id;
+    };
+    const viejo = await send("Menu.txt", "menú viejo", new Date("2026-10-01T12:00:00Z"));
+    const nuevo = await send("menu.txt", "menú nuevo", new Date("2026-10-02T12:00:00Z"));
+    // Uno en el composer, sin mensaje: todavía no es parte del chat.
+    const sinEnviar = await service.upload({
+      userId: userA,
+      chatId: chatA,
+      data: new TextEncoder().encode("borrador"),
+      filename: "borrador.txt",
+    });
+
+    expect((await service.findForView(userA, chatA, viejo))?.id).toBe(viejo);
+    expect((await service.findForView(userA, chatA, ` "MENU.TXT" `))?.id).toBe(nuevo);
+    expect(await service.findForView(userA, chatA, sinEnviar.id)).toBeNull();
+    expect(await service.findForView(userA, chatA, "borrador.txt")).toBeNull();
+    // De otro chat del mismo creator, o de otro creator (RLS), no.
+    const otroChat = await dbService.runWithTenant(userA, async (tx) => {
+      const [chat] = await tx.insert(chats).values({ userId: userA }).returning({ id: chats.id });
+      return chat!.id;
+    });
+    expect(await service.findForView(userA, otroChat, viejo)).toBeNull();
+    expect(await service.findForView(userB, chatA, viejo)).toBeNull();
+  });
+
   it("el barrido borra los que llevan más de un día sin enviarse, con sus bytes", async () => {
     const data = new TextEncoder().encode("viejo");
     const viejo = await service.upload({ userId: userA, chatId: chatA, data, filename: "v.txt" });

@@ -33,6 +33,7 @@ import path from "node:path";
 import {
   CARD_ARCHETYPE_TOOLS,
   READ_LINK_TOOL_NAME,
+  VIEW_ATTACHMENT_TOOL_NAME,
   WEB_SEARCH_TOOL_NAME,
   type ReadLinkOutput,
   type WebSearchOutput,
@@ -84,11 +85,8 @@ const SUITE_MAX_STEPS = 7;
  */
 const SUITE_TODAY = new Date("2026-10-28T18:00:00Z");
 
-/**
- * F10.11: la tool de volver a ver un adjunto. El nombre va aquí hasta que
- * exista en @presencia/shared (PR3); la línea base corre sin ella.
- */
-const REREAD_TOOL_NAME = "ver_adjunto";
+/** F10.11: la tool de volver a ver un adjunto (solo en los casos con conversación). */
+const REREAD_TOOL_NAME = VIEW_ATTACHMENT_TOOL_NAME;
 
 /** Las tools que no son cards (la web, releer): no cuentan como borrador ni como primer token visible. */
 const WEB_TOOLS = new Set<string>([READ_LINK_TOOL_NAME, WEB_SEARCH_TOOL_NAME, REREAD_TOOL_NAME]);
@@ -175,6 +173,8 @@ async function runPrompt(
   modelEntry: string,
   input: { prompt: string } | { messages: ModelMessage[] },
   system: string,
+  /** F10.11: las tools que dependen del caso (ver_adjunto), nuevas en cada corrida. */
+  caseTools: () => ToolSet = () => ({}),
 ): Promise<RunResult> {
   const startedAt = Date.now();
   const suite = suiteModel(modelEntry);
@@ -184,7 +184,12 @@ async function runPrompt(
       system,
       ...input,
       // F10.10: las de la web, nuevas en cada corrida (llevan su tope).
-      tools: { ...culturalSuiteTools, ...suiteReadLinkTools(), ...suiteWebSearchTools() },
+      tools: {
+        ...culturalSuiteTools,
+        ...suiteReadLinkTools(),
+        ...suiteWebSearchTools(),
+        ...caseTools(),
+      },
       // Los mismos pasos que producción (MAX_AGENT_STEPS en chat.service.ts,
       // que no se importa: arrastraría el env). Leer un enlace gasta uno, y
       // con 3 un "leer → card → texto" con un reintento se quedaba sin texto.
@@ -527,14 +532,15 @@ interface ModelTotals {
 async function promptInput(prompt: CulturalPrompt): Promise<{
   input: { prompt: string } | { messages: ModelMessage[] };
   notes: string[];
+  caseTools?: () => ToolSet;
 }> {
   if (prompt.conversation) {
-    const { messages, notes } = await messagesWithHistory(
+    const { messages, notes, tools } = await messagesWithHistory(
       prompt.conversation,
       prompt.text,
       prompt.currentFiles,
     );
-    return { input: { messages }, notes };
+    return { input: { messages }, notes, caseTools: tools };
   }
   if (!prompt.attachments) return { input: { prompt: prompt.text }, notes: [] };
   const { messages, notes } = await messagesWithAttachments(prompt.text, prompt.attachments);
@@ -725,9 +731,11 @@ async function main(): Promise<void> {
     // queda con el error en el reporte y la suite sigue: las corridas de
     // antes ya se pagaron.
     let input: { prompt: string } | { messages: ModelMessage[] };
+    let caseTools: (() => ToolSet) | undefined;
     try {
       const built = await promptInput(prompt);
       input = built.input;
+      caseTools = built.caseTools;
       for (const note of built.notes) lines.push(`- ${note}`, "");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -752,7 +760,7 @@ async function main(): Promise<void> {
         ].join("\n\n");
         if (voiceFixture) lines.push(`#### Voz: ${voiceFixture.label}`, "");
         for (let run = 1; run <= runs; run++) {
-          const result = await runPrompt(modelId, input, system);
+          const result = await runPrompt(modelId, input, system, caseTools);
           await new Promise((resolve) => setTimeout(resolve, delayMs));
 
           const totals = tokensByModel.get(modelId);

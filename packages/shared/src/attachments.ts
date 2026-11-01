@@ -116,3 +116,50 @@ export function attachmentKindFor(file: { name: string; type: string }): Attachm
   }
   return null;
 }
+
+// F10.11 (ADR-029): la tool con la que el chat vuelve a ver un adjunto que ya
+// no viaja completo (salió de la ventana o quedó en el resumen). La API la
+// declara; la web pinta su paso en la lista de pasos desde F10.11 PR5.
+export const VIEW_ATTACHMENT_TOOL_NAME = "ver_adjunto";
+
+/** Cuántos adjuntos se vuelven a ver por mensaje del creator. */
+export const ATTACHMENT_VIEWS_PER_TURN = 3;
+
+export const viewAttachmentInputSchema = z.object({
+  /** El id que trae la línea del adjunto, o su nombre de archivo. */
+  adjunto: z.string().trim().min(1).max(300),
+  /** Solo para un PDF con texto: una página ("4") o un rango ("3-5"). */
+  paginas: z.string().trim().max(20).optional(),
+});
+export type ViewAttachmentInput = z.infer<typeof viewAttachmentInputSchema>;
+
+/**
+ * `pagina_no_disponible`: el PDF existe, pero la página pedida no existe, no
+ * tiene texto o no se guardó (el texto se recortó en la subida).
+ */
+export const VIEW_ATTACHMENT_STATUSES = [
+  "ok",
+  "no_encontrado",
+  "pagina_no_disponible",
+  "limite",
+] as const;
+export type ViewAttachmentStatus = (typeof VIEW_ATTACHMENT_STATUSES)[number];
+
+/**
+ * Lo que guarda la parte del mensaje y ve la UI: una referencia, nunca los
+ * bytes ni el texto. Lo que lee el modelo lo arma `toModelOutput` en la API.
+ */
+export interface ViewAttachmentOutput {
+  /** null si no se encontró o si ni se intentó (el tope del turno). */
+  attachmentId: string | null;
+  /** El nombre del archivo; si no se encontró, lo que pidió el modelo. */
+  nombre: string;
+  tipo: AttachmentKind | null;
+  /** Las páginas que se vieron de un PDF con texto ("4", "1-5"), o las que se pidieron si no se pudo; null en lo demás. */
+  paginas: string | null;
+  /** Las páginas del PDF, para "págs. 3–5 de 12". */
+  totalPaginas: number | null;
+  estado: ViewAttachmentStatus;
+  /** Se vio solo una parte: el texto pasa del tope o el archivo se guardó recortado. */
+  recortado: boolean;
+}

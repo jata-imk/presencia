@@ -13,6 +13,7 @@ import {
   type AttachmentForContext,
 } from "../../src/chat/attachment-context.js";
 import { loadSuiteAttachment } from "./attachments.js";
+import { suiteViewAttachmentTools, type ViewableFile } from "./view-attachment.js";
 import { assembleContext } from "../../src/chat/context-builder.js";
 import type { HistorySummary } from "../../src/chat/history-window.js";
 
@@ -56,20 +57,30 @@ export async function messagesWithHistory(
   text: string,
   current: SuiteFile[] = [],
   tools?: ToolSet,
-): Promise<{ messages: ModelMessage[]; notes: string[] }> {
+): Promise<{
+  messages: ModelMessage[];
+  notes: string[];
+  /**
+   * F10.11: la tool ver_adjunto, si el chat de producción la daría (hay
+   * adjuntos fuera de la vista). Una fábrica: cada corrida lleva su tope.
+   */
+  tools: () => ToolSet;
+}> {
   const rows = new Map<string, AttachmentForContext>();
   const loaded = new Map<string, string | null>();
   const names = new Map<string, string>();
+  const viewable: ViewableFile[] = [];
 
   const partsOf = async (turn: SuiteTurn): Promise<UIMessage["parts"]> => {
     const parts: UIMessage["parts"] = [];
     for (const file of turn.attachments ?? []) {
-      const { row, dataUrl, part } = await loadSuiteAttachment(
+      const { processed, row, dataUrl, part } = await loadSuiteAttachment(
         await file.build(),
         file.filename,
         file.description ?? null,
       );
       names.set(row.id, file.filename);
+      viewable.push({ row, mimeType: processed.mimeType, dataUrl });
       rows.set(row.id, row);
       loaded.set(row.id, dataUrl);
       parts.push(part);
@@ -110,7 +121,7 @@ export async function messagesWithHistory(
   const notes = [...names].map(([id, filename]) =>
     summarized.has(id)
       ? `\`${filename}\`: quedó en el tramo resumido; el modelo solo ve el resumen.`
-      : travelled.includes(`[Adjunto de antes (`) && travelled.includes(`\\"${filename}\\"):`)
+      : travelled.includes(`[Adjunto de antes (`) && travelled.includes(`\\"${filename}\\", id:`)
         ? `\`${filename}\`: fuera de la ventana, viaja como su línea de descripción.`
         : `\`${filename}\`: viaja completo (en la ventana).`,
   );
@@ -120,5 +131,6 @@ export async function messagesWithHistory(
       tools,
     }),
     notes,
+    tools: () => (context.hiddenAttachments ? suiteViewAttachmentTools(viewable) : {}),
   };
 }

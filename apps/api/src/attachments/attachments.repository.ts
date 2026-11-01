@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { chats, messageAttachments, messages } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
@@ -124,6 +124,31 @@ export class AttachmentsRepository {
         ),
       )
       .orderBy(desc(messages.createdAt), desc(messageAttachments.createdAt));
+  }
+
+  /**
+   * F10.11: el adjunto enviado más nuevo de un chat con ese nombre de archivo
+   * (sin distinguir mayúsculas). Es como `ver_adjunto` alcanza uno que solo
+   * sobrevive nombrado en el resumen: el modelo ya no ve su id.
+   */
+  async findSentInChatByName(
+    tx: Tx,
+    chatId: string,
+    filename: string,
+  ): Promise<AttachmentRow | undefined> {
+    const [found] = await tx
+      .select({ row: messageAttachments })
+      .from(messageAttachments)
+      .innerJoin(messages, eq(messages.id, messageAttachments.messageId))
+      .where(
+        and(
+          eq(messageAttachments.chatId, chatId),
+          sql`lower(${messageAttachments.filename}) = lower(${filename})`,
+        ),
+      )
+      .orderBy(desc(messages.createdAt), desc(messageAttachments.createdAt))
+      .limit(1);
+    return found?.row;
   }
 
   /** Las llaves de los adjuntos de un chat: para borrar sus bytes al borrar el chat. */

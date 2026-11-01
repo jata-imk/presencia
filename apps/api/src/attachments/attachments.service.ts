@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { normalizeAttachmentRef } from "./attachment-view.js";
 import {
   BadRequestException,
   Inject,
@@ -303,6 +305,33 @@ export class AttachmentsService {
     );
 
     return withAttachmentBytes(messages, loaded);
+  }
+
+  /**
+   * F10.11: el adjunto que `ver_adjunto` quiere volver a ver, por su id (el
+   * que trae su línea) o por su nombre de archivo (el más nuevo con ese
+   * nombre). Solo uno enviado en este chat: un id de otro chat no se ve
+   * aunque sea del mismo creator. `null` si no hay ninguno.
+   */
+  async findForView(userId: string, chatId: string, ref: string): Promise<AttachmentRow | null> {
+    const wanted = normalizeAttachmentRef(ref);
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      if (z.uuid().safeParse(wanted).success) {
+        const row = await this.repo.findById(tx, wanted.toLowerCase());
+        return row && row.chatId === chatId && row.messageId !== null ? row : null;
+      }
+      return (await this.repo.findSentInChatByName(tx, chatId, wanted)) ?? null;
+    });
+  }
+
+  /**
+   * F10.11: los bytes que ve el modelo, en base64, con la misma caché que
+   * `materialize`: un adjunto que se vuelve a ver suele haber viajado hace
+   * unos turnos.
+   */
+  async modelData(row: AttachmentRow): Promise<string> {
+    const url = await this.modelDataUrl(row);
+    return url.slice(url.indexOf(",") + 1);
   }
 
   /** Los bytes que ve el modelo (la variante chica de una imagen), sin caché. */

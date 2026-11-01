@@ -51,6 +51,7 @@ import { lastTurnOf, storableMessageId } from "./last-user-message.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { TurnCards } from "./turn-cards.js";
 import { buildReadLinkTool } from "../web/read-link.tool.js";
+import { buildViewAttachmentTool } from "../attachments/view-attachment.tool.js";
 import { WebReadDigestService } from "../web/web-read-digest.service.js";
 import { WebReadsService } from "../web/web-reads.service.js";
 import { forcedSearchStep } from "../web/force-search.js";
@@ -62,7 +63,9 @@ import { DEFAULT_TIMEZONE, todayInstruction } from "./today.js";
 // F10.10: buscar y leer también son pasos; el peor caso que los topes
 // permiten es 2 búsquedas + 3 lecturas + la card + el texto de cierre = 7.
 // Los topes por turno de cada tool (no este número) acotan el costo: un paso
-// que no se usa no cuesta.
+// que no se usa no cuesta. F10.11: volver a ver adjuntos (hasta 3) no sube el
+// número: en la práctica comparte paso (varias en paralelo) o va solo, sin
+// búsquedas, y el tope de esa tool acota su costo igual que los otros.
 // Si el modelo agota este presupuesto a mitad de una tool call, onEnd lo
 // detecta (steps.length === MAX_AGENT_STEPS + finishReason "tool-calls") y
 // lo loguea — el turno se persiste igual, truncado, sin bloquear al usuario.
@@ -682,6 +685,13 @@ export class ChatService {
       ...buildReadLinkTool({ userId, chatId, service: this.webReads }),
       // F10.10: buscar en la web. Se cobra por búsqueda (flat.web_search).
       ...buildWebSearchTool({ userId, chatId, runId: trace.runId, service: this.webSearch }),
+      // F10.11 (ADR-029): volver a ver un adjunto que ya no viaja completo.
+      // Solo si hay alguno: un chat sin adjuntos viejos no paga su definición
+      // ni tienta al modelo. Sin fee propio: los bytes se cobran como tokens
+      // de entrada del turno.
+      ...(context.hiddenAttachments
+        ? buildViewAttachmentTool({ userId, chatId, service: this.attachments })
+        : {}),
     };
 
     // Voz de marca del usuario (F4): null durante el onboarding, para

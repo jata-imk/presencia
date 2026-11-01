@@ -17,6 +17,8 @@ import { markUnansweredTurns } from "./unanswered-turns.js";
 import {
   attachmentIdsIn,
   dietAttachments,
+  dietViewedAttachments,
+  fullAttachmentIds,
   type AttachmentForContext,
 } from "./attachment-context.js";
 import {
@@ -36,8 +38,9 @@ import {
 // 2. Las cards se describen como son HOY, no como quedaron en messages.parts.
 // 3. Dieta: los adjuntos viejos viajan como su descripción (F10.9,
 //    attachment-context.ts), las páginas leídas fuera de la ventana como una
-//    línea (F10.10, web-read-context.ts), y las cards viejas y los recuerdos
-//    de turnos pasados, cortos (context-diet.ts).
+//    línea (F10.10, web-read-context.ts), lo que se volvió a ver con
+//    ver_adjunto en turnos anteriores también (F10.11), y las cards viejas y
+//    los recuerdos de turnos pasados, cortos (context-diet.ts).
 // 4. El techo mecánico, medido sobre lo que de verdad viaja. Los bytes de los
 //    adjuntos que sobreviven se cargan después (AttachmentsService.materialize).
 
@@ -50,6 +53,14 @@ export interface ModelContext {
    * resumen ni techo): no hay nada escondido que buscar en este chat.
    */
   oldestVisibleMessageId: string | null;
+  /**
+   * F10.11: hay algún adjunto en el chat que el modelo ya no ve completo
+   * (salió de la ventana, o quedó en el tramo resumido). Solo entonces se le
+   * da ver_adjunto. Una vez que pasa no deja de pasar (la ventana solo avanza),
+   * así que la lista de tools no cambia de un turno a otro y su prefijo sigue
+   * en la caché del proveedor.
+   */
+  hiddenAttachments: boolean;
 }
 
 /**
@@ -99,13 +110,22 @@ export function assembleContext(
   // Después del resumen: un turno sin respuesta que ya quedó resumido no se
   // marca, y la marca no puede quedar pegada al acuse sintético del resumen.
   const windowed = markUnansweredTurns(applySummary(history, summary, live));
+  const full = fullAttachmentIds(windowed, attachments);
   const messages = capHistory(
     trimWebSearchOutputsForModel(
       trimMemoryOutputsForModel(
         compressToolOutputsForModel(
-          dietWebReads(
-            dietAttachments(withLiveCards(windowed, live ?? new Map()), attachments),
-            webReads,
+          dietViewedAttachments(
+            dietWebReads(
+              dietAttachments(
+                withLiveCards(windowed, live ?? new Map()),
+                attachments,
+                undefined,
+                undefined,
+                full,
+              ),
+              webReads,
+            ),
           ),
         ),
       ),
@@ -118,5 +138,6 @@ export function assembleContext(
       messages[0] && isSyntheticMessage(messages[0])
         ? (messages.find((m) => !isSyntheticMessage(m))?.id ?? null)
         : null,
+    hiddenAttachments: attachmentIdsIn(history).some((id) => !full.has(id)),
   };
 }
