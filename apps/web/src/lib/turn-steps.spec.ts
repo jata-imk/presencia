@@ -240,8 +240,15 @@ describe("F10.11: volver a ver un adjunto", () => {
   });
 
   it("las páginas de un PDF van al lado; a medias se marca", () => {
-    const [pagina] = turnSteps([view(ID, { nombre: "menu.pdf", paginas: "3-5" })], false);
-    expect(pagina).toMatchObject({ state: "ok", text: "Volví a ver menu.pdf", meta: "págs. 3–5" });
+    const [pagina] = turnSteps(
+      [view(ID, { nombre: "menu.pdf", paginas: "3-5", totalPaginas: 12 })],
+      false,
+    );
+    expect(pagina).toMatchObject({
+      state: "ok",
+      text: "Volví a ver menu.pdf",
+      meta: "págs. 3–5 de 12",
+    });
     const [corto] = turnSteps(
       [view(ID, { nombre: "menu.pdf", paginas: "1-8", recortado: true })],
       false,
@@ -272,12 +279,61 @@ describe("F10.11: volver a ver un adjunto", () => {
     const tope = turnSteps([view(ID), view("b.png", { estado: "limite", nombre: "b.png" })], false);
     expect(stepsHeader(tope)).toEqual({
       state: "limit",
-      label: "Llegué al tope de 3 adjuntos en este mensaje",
+      // El tope puede ser de 3 adjuntos, de lo que suman o de intentos: no se adivina.
+      label: "Llegué al tope de adjuntos en este mensaje",
     });
     const detenido = turnSteps([view("menu.pdf", {}, "input-available")], false);
     expect(stepsHeader(detenido)).toEqual({
       state: "stop",
       label: "Detuviste cuando volvía a ver menu.pdf",
+    });
+    // La línea y el encabezado dicen lo mismo.
+    expect(detenido[0]!.text).toBe("Detuviste cuando volvía a ver menu.pdf");
+  });
+
+  it("lo mismo dos veces es una sola vista, en la lista y en el resumen", () => {
+    const steps = turnSteps([view(ID), view("fachada.png"), card()], false);
+    expect(steps.filter((s) => s.kind === "view")).toHaveLength(1);
+    expect(stepsHeader(steps)?.label).toBe("Volví a ver 1 adjunto y creé 1 borrador");
+  });
+
+  it("un id entre comillas tampoco se enseña", () => {
+    expect(turnSteps([view(`"${ID}"`, {}, "input-available")], true)[0]!.text).toBe(
+      "Volviendo a ver un adjunto…",
+    );
+  });
+
+  it("las páginas se leen con raya o con 'a', y llevan el total si se sabe", () => {
+    const [step] = turnSteps(
+      [
+        view(ID, {
+          estado: "pagina_no_disponible",
+          nombre: "menu.pdf",
+          paginas: "8 a 9",
+          totalPaginas: 6,
+        }),
+      ],
+      false,
+    );
+    expect(step!.text).toBe("No pude ver págs. 8–9 de menu.pdf (tiene 6)");
+    const [ok] = turnSteps(
+      [view(ID, { nombre: "menu.pdf", paginas: "4", totalPaginas: 6 })],
+      false,
+    );
+    expect(ok!.meta).toBe("pág. 4 de 6");
+  });
+
+  it("con topes de dos tipos, el encabezado no esconde ninguno", () => {
+    const steps = turnSteps(
+      [
+        read("https://a.mx/1", { estado: "limite" }),
+        view("b.png", { estado: "limite", nombre: "b.png" }),
+      ],
+      false,
+    );
+    expect(stepsHeader(steps)).toEqual({
+      state: "limit",
+      label: "Llegué a los topes de este mensaje",
     });
   });
 });

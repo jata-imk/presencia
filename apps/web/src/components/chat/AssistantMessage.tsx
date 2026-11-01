@@ -60,7 +60,8 @@ export function AssistantMessage({
   const sources = useMemo(() => webSources(message), [message]);
 
   const blocks: Block[] = [];
-  // F10.10: los pasos en una sola lista, en orden: buscar, leer y las cards.
+  // F10.10: los pasos en una sola lista, en orden: buscar, leer, volver a ver
+  // un adjunto (F10.11) y las cards.
   const stepParts: (CardToolPart | WebToolPart | ViewToolPart)[] = [];
   const memoryParts: MemoryToolPart[] = [];
   const streaming = isLast && streamingNow;

@@ -7,7 +7,13 @@ import {
   type ViewAttachmentOutput,
 } from "@presencia/shared";
 import { insideTag, safeName } from "../chat/attachment-context.js";
-import { textView, viewCost, VIEW_TURN_TOKENS } from "./attachment-view.js";
+import {
+  normalizeAttachmentRef,
+  parsePageRange,
+  textView,
+  viewCost,
+  VIEW_TURN_TOKENS,
+} from "./attachment-view.js";
 import type { AttachmentRow } from "./attachments.repository.js";
 import type { AttachmentsService } from "./attachments.service.js";
 
@@ -177,12 +183,23 @@ export function buildViewAttachmentTool(deps: {
     input: ViewAttachmentInput,
     toolCallId: string,
   ): Promise<ViewAttachmentOutput> => {
-    if (misses >= ATTACHMENT_VIEWS_PER_TURN) return failed(input.adjunto, "limite");
+    // Lo que guarda la parte lo ve el creator: sin comillas alrededor (web, turn-steps.ts).
+    const asked = normalizeAttachmentRef(input.adjunto);
+    if (misses >= ATTACHMENT_VIEWS_PER_TURN) return failed(asked, "limite");
     const row = await deps.service.findForView(deps.userId, deps.chatId, input.adjunto);
     // De aquí al final no hay `await`: dos llamadas en paralelo no se cruzan.
-    if (!row) return failed(input.adjunto, "no_encontrado");
+    if (!row) return failed(asked, "no_encontrado");
     const text = row.extractedText !== null ? textView(row, input.paginas) : null;
-    if (text?.missing) return failed(row.filename, "pagina_no_disponible", row, input.paginas);
+    if (text?.missing) {
+      // Las páginas pedidas en su forma canónica ("3-5") si se entienden; si no, tal cual.
+      const range = input.paginas ? parsePageRange(input.paginas, Number.MAX_SAFE_INTEGER) : null;
+      const pages = range
+        ? range.from === range.to
+          ? String(range.from)
+          : `${String(range.from)}-${String(range.to)}`
+        : input.paginas;
+      return failed(row.filename, "pagina_no_disponible", row, pages);
+    }
     const key = `${row.id}|${text?.seen ?? ""}`;
     const already = viewed.get(key);
     if (already) {

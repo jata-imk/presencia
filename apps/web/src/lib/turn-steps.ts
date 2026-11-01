@@ -1,5 +1,4 @@
 import {
-  ATTACHMENT_VIEWS_PER_TURN,
   isSessionHost,
   normalizeTrendSource,
   READ_LINK_TOOL_NAME,
@@ -230,17 +229,23 @@ function readStep(part: StepPart, streaming: boolean): TurnStep {
 // enseña al creator. Mientras no hay output, si lo que pidió es un id, "un adjunto".
 const LOOKS_LIKE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
 
+/** Sin comillas alrededor, como lo busca la API (normalizeAttachmentRef). */
+const unquoted = (ref: string) => ref.trim().replace(/^["'“”«]+|["'“”»]+$/g, "");
+
 function viewName(part: StepPart): string {
   const out = part.state === "output-available" ? (part.output as ViewAttachmentOutput) : null;
-  const asked = inputOf<{ adjunto: string }>(part).adjunto?.trim();
-  if (out?.nombre && !LOOKS_LIKE_ID.test(out.nombre)) return out.nombre;
+  const named = out?.nombre ? unquoted(out.nombre) : "";
+  if (named && !LOOKS_LIKE_ID.test(named)) return named;
+  const asked = unquoted(inputOf<{ adjunto: string }>(part).adjunto ?? "");
   return asked && !LOOKS_LIKE_ID.test(asked) ? asked : "un adjunto";
 }
 
-/** "pág. 4" o "págs. 3–5". */
-function pagesMeta(pages: string | null | undefined): string | undefined {
+/** "pág. 4", "págs. 3–5"; con el total si se sabe ("pág. 9 de 6"). */
+function pagesMeta(pages: string | null | undefined, total?: number | null): string | undefined {
   if (!pages) return undefined;
-  return pages.includes("-") ? `págs. ${pages.replace("-", "–")}` : `pág. ${pages}`;
+  const range = /^\s*(\d+)\s*(?:-|–|—|a|al|,)\s*(\d+)\s*$/i.exec(pages);
+  const label = range ? `págs. ${range[1]!}–${range[2]!}` : `pág. ${pages.trim()}`;
+  return total ? `${label} de ${String(total)}` : label;
 }
 
 function viewStep(part: StepPart, streaming: boolean): TurnStep {
@@ -248,7 +253,7 @@ function viewStep(part: StepPart, streaming: boolean): TurnStep {
   if (part.state === "output-available") {
     const out = part.output as ViewAttachmentOutput;
     if (out.estado === "ok") {
-      const pages = pagesMeta(out.paginas);
+      const pages = pagesMeta(out.paginas, out.totalPaginas);
       return out.recortado
         ? {
             kind: "view",
@@ -262,7 +267,7 @@ function viewStep(part: StepPart, streaming: boolean): TurnStep {
       return {
         kind: "view",
         state: "fail",
-        text: `No pude ver ${pagesMeta(out.paginas) ?? "esa página"} de ${name}`,
+        text: `No pude ver ${pagesMeta(out.paginas) ?? "esa página"} de ${name}${out.totalPaginas ? ` (tiene ${String(out.totalPaginas)})` : ""}`,
         reason: "sin_pagina",
       };
     }
@@ -270,7 +275,9 @@ function viewStep(part: StepPart, streaming: boolean): TurnStep {
       return {
         kind: "view",
         state: "skip",
-        text: `No volví a ver ${name}: llegué al tope de ${String(ATTACHMENT_VIEWS_PER_TURN)} adjuntos`,
+        // El tope es de 3 adjuntos, de lo que suman o de intentos (ADR-029):
+        // la línea no adivina cuál fue.
+        text: `No volví a ver ${name}: llegué al tope de este mensaje`,
       };
     }
     // `no_encontrado`, o un estado que esta versión no conoce: el genérico.
@@ -284,17 +291,14 @@ function viewStep(part: StepPart, streaming: boolean): TurnStep {
       reason: "sin_adjunto",
     };
   }
+  // Una falla nuestra (la tool o el storage), no un adjunto que no está: sin
+  // motivo, con el ícono genérico.
   if (part.state === "output-error") {
-    return {
-      kind: "view",
-      state: "fail",
-      text: `No pude volver a ver ${name}`,
-      reason: "sin_adjunto",
-    };
+    return { kind: "view", state: "fail", text: `No pude volver a ver ${name}` };
   }
   return streaming
     ? { kind: "view", state: "live", text: `Volviendo a ver ${name}…` }
-    : { kind: "view", state: "stop", text: `Se detuvo al volver a ver ${name}`, target: name };
+    : { kind: "view", state: "stop", text: `Detuviste cuando volvía a ver ${name}`, target: name };
 }
 
 function cardStep(part: CardToolPart, streaming: boolean): TurnStep {
@@ -311,9 +315,27 @@ function cardStep(part: CardToolPart, streaming: boolean): TurnStep {
     : { kind: "card", state: "stop", text: `Se detuvo el borrador${red}` };
 }
 
+/**
+ * Lo mismo que se volvió a ver dos veces en un mensaje (en paralelo o en otro
+ * paso) es una sola vista: la API no lo vuelve a cargar (ADR-029), y la lista
+ * tampoco lo cuenta dos veces.
+ */
+function withoutRepeatedViews(parts: readonly StepPart[]): StepPart[] {
+  const seen = new Set<string>();
+  return parts.filter((part) => {
+    if (!isViewToolPart(part) || part.state !== "output-available") return true;
+    const out = part.output;
+    if (out.estado !== "ok" || !out.attachmentId) return true;
+    const key = `${out.attachmentId}|${out.paginas ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Los pasos de una respuesta en su orden. Un tool sin output solo sigue en curso mientras el turno llega. */
 export function turnSteps(parts: readonly StepPart[], streaming: boolean): TurnStep[] {
-  return parts.map((part) =>
+  return withoutRepeatedViews(parts).map((part) =>
     isCardToolPart(part)
       ? cardStep(part, streaming)
       : isViewToolPart(part)
@@ -361,12 +383,7 @@ export function stepsHeader(steps: readonly TurnStep[]): StepsHeader | null {
       return { state: "stop", label: `Detuviste la lectura de ${stopped.target ?? "la página"}` };
     }
     if (stopped.kind === "search") return { state: "stop", label: stopped.text };
-    if (stopped.kind === "view") {
-      return {
-        state: "stop",
-        label: `Detuviste cuando volvía a ver ${stopped.target ?? "un adjunto"}`,
-      };
-    }
+    if (stopped.kind === "view") return { state: "stop", label: stopped.text };
     const cards = steps.filter((s) => s.kind === "card").length;
     return {
       state: "stop",
@@ -391,17 +408,14 @@ export function stepsHeader(steps: readonly TurnStep[]): StepsHeader | null {
 
   // El tope manda en el resumen solo si no salió un borrador: lo que el
   // creator vino a buscar es el borrador, y el tope sigue en la lista.
-  const skip = steps.find((s) => s.state === "skip");
-  if (skip && !steps.some((s) => s.kind === "card" && s.state === "ok")) {
+  const skipped = [...new Set(steps.filter((s) => s.state === "skip").map((s) => s.kind))];
+  if (skipped.length > 0 && !steps.some((s) => s.kind === "card" && s.state === "ok")) {
+    // El tope cuenta intentos, no lecturas buenas: "llegué al tope", no "ya
+    // leí 3". Con topes de dos tipos, uno genérico: nombrar solo uno escondería el otro.
+    const only = skipped.length === 1 ? skipped[0] : undefined;
     return {
       state: "limit",
-      // El tope cuenta intentos, no lecturas buenas: "llegué al tope", no "ya leí 3".
-      label:
-        skip.kind === "read"
-          ? `Llegué al tope de ${String(WEB_READS_PER_TURN)} páginas en este mensaje`
-          : skip.kind === "view"
-            ? `Llegué al tope de ${String(ATTACHMENT_VIEWS_PER_TURN)} adjuntos en este mensaje`
-            : `Llegué al tope de ${String(WEB_SEARCHES_PER_TURN)} búsquedas en este mensaje`,
+      label: (only && LIMIT_LABELS[only]) ?? "Llegué a los topes de este mensaje",
     };
   }
 
@@ -410,6 +424,14 @@ export function stepsHeader(steps: readonly TurnStep[]): StepsHeader | null {
   // Nada salió: el primer motivo lo dice todo ("No pude leer instagram.com: pide iniciar sesión").
   return { state: "fail", label: steps[0]!.text };
 }
+
+/** El encabezado cuando un tipo de paso llegó a su tope. */
+const LIMIT_LABELS: Partial<Record<StepKind, string>> = {
+  read: `Llegué al tope de ${String(WEB_READS_PER_TURN)} páginas en este mensaje`,
+  search: `Llegué al tope de ${String(WEB_SEARCHES_PER_TURN)} búsquedas en este mensaje`,
+  // Son 3 adjuntos, o lo que suman, o los intentos: no se adivina cuál.
+  view: "Llegué al tope de adjuntos en este mensaje",
+};
 
 /** Con un solo paso, el encabezado ya lo dice todo: no hay lista que abrir. */
 export function stepsExpandable(steps: readonly TurnStep[]): boolean {
