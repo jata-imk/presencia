@@ -51,6 +51,7 @@ import { todayInstruction } from "../../src/chat/today.js";
 import { messagesWithAttachments } from "./attachments.js";
 import { messagesWithHistory } from "./history.js";
 import { culturalPrompts, type CulturalPrompt } from "./prompts.js";
+import { rereadPrompts } from "./reread-prompts.js";
 import { CULTURAL_SUITE_VOICES, type VoiceFixture } from "./voices.js";
 import { suiteReadLinkTools } from "./web-pages.js";
 import { suiteWebSearchTools } from "./web-search.js";
@@ -102,7 +103,10 @@ const CHAIN_PREFIX = "cadena:";
  */
 function suiteModel(modelEntry: string) {
   if (!modelEntry.startsWith(CHAIN_PREFIX)) {
-    return { model: resolveModel(modelEntry), ran: () => modelEntry };
+    return {
+      model: resolveModel(modelEntry),
+      ran: (failed = false) => (failed ? `${modelEntry} (falló)` : modelEntry),
+    };
   }
   const chain = createFallbackChain(
     parseModelChain(modelEntry.slice(CHAIN_PREFIX.length)).map((entry) => ({
@@ -111,7 +115,12 @@ function suiteModel(modelEntry: string) {
     })),
     { simulateDown: parseSimulateDown(process.env.AI_FALLBACK_SIMULATE) },
   );
-  return { model: chain.model, ran: () => formatModelEntry(chain.ran) };
+  return {
+    model: chain.model,
+    // Si toda la cadena cayó, `chain.ran` se queda en el principal: el error
+    // no es de ese modelo, es de la cadena.
+    ran: (failed = false) => (failed ? "cadena (falló)" : formatModelEntry(chain.ran)),
+  };
 }
 
 // Mock de las 3 tools reales: itera la misma tabla que produce las tools de
@@ -266,7 +275,7 @@ async function runPrompt(
       totalMs: Date.now() - startedAt,
       costUsd: null,
       sourceUrls: [],
-      ranModel: suite.ran(),
+      ranModel: suite.ran(true),
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -275,7 +284,13 @@ async function runPrompt(
 // Bloque de resultado reusado por el modo normal (### modelo) y el modo
 // voces (#### voz dentro de ### modelo) — mismo contenido, distinto nivel
 // de encabezado ya empujado por el caller.
-function appendResultLines(lines: string[], result: RunResult, prompt: CulturalPrompt): void {
+function appendResultLines(
+  lines: string[],
+  result: RunResult,
+  prompt: CulturalPrompt,
+  /** F10.11: lo que midió `rereadVerdict`, calculado una vez por corrida. */
+  verdict: RereadVerdict | null = null,
+): void {
   const { expectsTool, expectsReadLink } = prompt;
   if (result.error) {
     lines.push(`**Error:** \`${result.error}\``, "");
@@ -329,11 +344,7 @@ function appendResultLines(lines: string[], result: RunResult, prompt: CulturalP
     );
   }
   // F10.11: volver a ver un adjunto, si contestó el dato y si se lo inventó.
-  if (
-    !result.error &&
-    (prompt.expectsReread !== undefined || prompt.expected || prompt.forbiddenInCards)
-  ) {
-    const verdict = rereadVerdict(result, prompt);
+  if (!result.error && verdict) {
     if (prompt.expectsReread !== undefined) {
       lines.push(
         `- ¿Volvió a ver el adjunto?: ${verdict.rereads > 0 ? `sí (${String(verdict.rereads)})` : "no"} — ${prompt.expectsReread ? "debía" : "no debía"} ${verdict.rereadOk ? "✅" : "❌"}`,
@@ -419,22 +430,38 @@ interface RereadVerdict {
   injected: boolean | null;
 }
 
-/** F10.11: lo que mide un caso de releer (ver reread-prompts.ts). */
+/** El valor de un dato, para compararlo: sin "$" ni "pesos" ("$145" = "145 pesos"). */
+const claimValue = (text: string) => normalizeClaim(text).replace(/^\$|pesos$/g, "");
+
+/**
+ * F10.11: lo que mide un caso de releer (ver reread-prompts.ts). Un esperado
+ * con la forma de `claimPattern` se busca exacto entre los datos de la
+ * respuesta ("$145" no pasa con "$1450"); uno sin esa forma ("3 de la tarde"),
+ * como texto. Cada esperado acepta alternativas con "|".
+ */
 function rereadVerdict(result: RunResult, prompt: CulturalPrompt): RereadVerdict {
   const rereads = result.toolAttempts.filter((a) => a.toolName === REREAD_TOOL_NAME).length;
   const text = normalizeClaim(result.text);
-  const expected = prompt.expected?.map(normalizeClaim) ?? null;
-  const correct = expected ? expected.every((e) => text.includes(e)) : null;
-  const skip = [...(expected ?? []), ...(prompt.claimIgnore ?? []).map(normalizeClaim)];
-  const claims = prompt.claimPattern
-    ? [
-        ...new Set(
-          [...result.text.matchAll(prompt.claimPattern)]
-            .map((m) => m[0].trim())
-            .filter((claim) => !skip.some((s) => normalizeClaim(claim).includes(s))),
-        ),
-      ]
+  const found = prompt.claimPattern
+    ? [...result.text.matchAll(prompt.claimPattern)].map((m) => m[0].trim())
     : [];
+  const shape = prompt.claimPattern
+    ? new RegExp(prompt.claimPattern.source, prompt.claimPattern.flags.replace("g", ""))
+    : null;
+  const said = (alternative: string) =>
+    shape?.test(alternative)
+      ? found.some((claim) => claimValue(claim) === claimValue(alternative))
+      : text.includes(normalizeClaim(alternative));
+  const correct = prompt.expected
+    ? prompt.expected.every((entry) => entry.split("|").some(said))
+    : null;
+  const known = new Set(
+    [
+      ...(prompt.expected ?? []).flatMap((entry) => entry.split("|")),
+      ...(prompt.claimIgnore ?? []),
+    ].map(claimValue),
+  );
+  const claims = [...new Set(found)].filter((claim) => !known.has(claimValue(claim)));
   const cards = result.toolAttempts
     .filter((a) => !WEB_TOOLS.has(a.toolName))
     .map((a) => JSON.stringify(a.input).toLowerCase());
@@ -554,6 +581,16 @@ async function main(): Promise<void> {
     if (models.length !== requested.length) {
       throw new Error("Modo cadena: todos los modelos de AI_MODEL_CHAT necesitan su key.");
     }
+    // Un proveedor mal escrito no fingiría nada y el reporte diría que sí.
+    const providers = new Set(parseModelChain(chatChain).map((entry) => entry.provider));
+    const unknown = parseSimulateDown(process.env.AI_FALLBACK_SIMULATE).filter(
+      (provider) => !providers.has(provider as never),
+    );
+    if (unknown.length > 0) {
+      throw new Error(
+        `AI_FALLBACK_SIMULATE nombra ${unknown.join(", ")}, que no está en AI_MODEL_CHAT (${[...providers].join(", ")}).`,
+      );
+    }
     models.splice(0, models.length, `${CHAIN_PREFIX}${chatChain}`);
   }
   const runsRaw = Number(process.env.AI_SUITE_RUNS ?? "1");
@@ -569,7 +606,11 @@ async function main(): Promise<void> {
   // F10.11: "releer-*" es un prefijo.
   const matches = (id: string) =>
     promptFilter?.some((f) => (f.endsWith("*") ? id.startsWith(f.slice(0, -1)) : id === f)) ?? true;
-  const prompts = culturalPrompts.filter((p) => matches(p.id));
+  // Los de releer (F10.11) solo si el filtro los pide: cada uno es una
+  // conversación con imágenes o PDF, y la suite normal mide el registro.
+  const prompts = promptFilter
+    ? [...culturalPrompts, ...rereadPrompts].filter((p) => matches(p.id))
+    : culturalPrompts;
   if (prompts.length === 0) throw new Error("AI_SUITE_PROMPTS no coincide con ningún caso.");
 
   const voiceFilter = process.env.AI_SUITE_VOICES?.split(",")
@@ -592,7 +633,7 @@ async function main(): Promise<void> {
     );
   }
 
-  const totalCalls = prompts.length * models.length * (voices.length || 1);
+  const totalCalls = prompts.length * models.length * (voices.length || 1) * runs;
   console.log(
     `▶ ${prompts.length} prompts × ${models.length} modelos` +
       (voices.length > 0 ? ` × ${voices.length} voces` : "") +
@@ -730,17 +771,20 @@ async function main(): Promise<void> {
 
           if (runs > 1 || chainMode) {
             lines.push(
-              `#### Corrida ${String(run)}${chainMode ? ` — respondió \`${result.ranModel}\`` : ""}`,
+              `${voiceFixture ? "#####" : "####"} Corrida ${String(run)}${chainMode ? ` — respondió \`${result.ranModel}\`` : ""}`,
               "",
             );
           }
-          appendResultLines(lines, result, prompt);
-          if (prompt.expectsReread !== undefined) {
+          const measured =
+            prompt.expectsReread !== undefined || prompt.expected || prompt.forbiddenInCards;
+          const verdict = measured ? rereadVerdict(result, prompt) : null;
+          appendResultLines(lines, result, prompt, verdict);
+          if (verdict && prompt.expectsReread !== undefined) {
             rereadRuns.push({
               model: chainMode ? result.ranModel : modelId,
               prompt,
               error: Boolean(result.error),
-              verdict: rereadVerdict(result, prompt),
+              verdict,
             });
           }
         }

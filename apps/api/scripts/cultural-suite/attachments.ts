@@ -109,6 +109,43 @@ export function cortaAntesDeDiciembre(processed: ProcessedAttachment): string {
 }
 
 /**
+ * Un archivo de la suite como lo deja el chat de producción: procesado como
+ * en la subida, su fila para el contexto, su `data:` (lo que hace
+ * `modelDataUrl`: la variante del modelo si la hay, con el tipo de la fila) y
+ * la parte `file` que cita la URL de la API. Lo usan los casos de un turno y
+ * las conversaciones (history.ts), así los dos mandan lo mismo.
+ */
+export async function loadSuiteAttachment(
+  bytes: Uint8Array,
+  filename: string,
+  description: string | null,
+): Promise<{
+  processed: ProcessedAttachment;
+  row: AttachmentForContext;
+  dataUrl: string;
+  part: Extract<UIMessage["parts"][number], { type: "file" }>;
+}> {
+  const processed = await processAttachment(bytes, filename);
+  const id = randomUUID();
+  return {
+    processed,
+    row: {
+      id,
+      kind: processed.kind,
+      filename,
+      pages: processed.pages,
+      scanned: processed.scanned,
+      extractedText: processed.extractedText,
+      truncated: processed.truncated,
+      tokenEstimate: processed.tokenEstimate,
+      description,
+    },
+    dataUrl: `data:${processed.mimeType};base64,${Buffer.from(processed.modelData ?? processed.data).toString("base64")}`,
+    part: { type: "file", mediaType: processed.mimeType, filename, url: attachmentContentUrl(id) },
+  };
+}
+
+/**
  * El mensaje del creator con sus adjuntos, ya como lo recibe el modelo, y
  * las notas de las premisas para el reporte. Un solo turno: todos son del
  * turno abierto y viajan completos.
@@ -122,32 +159,15 @@ export async function messagesWithAttachments(
   const notes: string[] = [];
   const parts: UIMessage["parts"] = [];
   for (const attachment of attachments) {
-    const processed = await processAttachment(await attachment.build(), attachment.filename);
-    if (attachment.premise) notes.push(attachment.premise(processed));
-    const id = randomUUID();
-    rows.set(id, {
-      id,
-      kind: processed.kind,
-      filename: attachment.filename,
-      pages: processed.pages,
-      scanned: processed.scanned,
-      extractedText: processed.extractedText,
-      truncated: processed.truncated,
-      tokenEstimate: processed.tokenEstimate,
-      description: null,
-    });
-    // Lo que hace `modelDataUrl` en producción: la variante del modelo si
-    // la hay, con el tipo de la fila.
-    loaded.set(
-      id,
-      `data:${processed.mimeType};base64,${Buffer.from(processed.modelData ?? processed.data).toString("base64")}`,
+    const { processed, row, dataUrl, part } = await loadSuiteAttachment(
+      await attachment.build(),
+      attachment.filename,
+      null,
     );
-    parts.push({
-      type: "file",
-      mediaType: processed.mimeType,
-      filename: attachment.filename,
-      url: attachmentContentUrl(id),
-    });
+    if (attachment.premise) notes.push(attachment.premise(processed));
+    rows.set(row.id, row);
+    loaded.set(row.id, dataUrl);
+    parts.push(part);
   }
   parts.push({ type: "text", text });
 

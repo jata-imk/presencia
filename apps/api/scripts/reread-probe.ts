@@ -51,10 +51,7 @@ import {
   type ModelEntry,
 } from "../src/ai/provider-registry.js";
 import { chargeUsageOf, quoteChatTurn } from "../src/credits/rate-card.js";
-import {
-  avisoEscaneado as avisoPdf,
-  fachada as fachadaPng,
-} from "./cultural-suite/reread-fixtures.js";
+import { scannedNotice, storefront } from "./cultural-suite/reread-fixtures.js";
 import { registrarGasto, splitModelId } from "./gasto-local.js";
 import { findRepoRoot } from "./repo-root.js";
 
@@ -82,7 +79,7 @@ interface Fixture {
 
 /** La fachada de un café con un cartel chico: el código solo se lee de cerca. */
 async function fachada(): Promise<Fixture> {
-  const png = await fachadaPng();
+  const png = await storefront();
   const processed = await processAttachment(png, "fachada.png");
   if (processed.kind !== "image" || !processed.modelData) {
     throw new Error("La fachada tenía que salir como imagen con variante para el modelo");
@@ -103,7 +100,7 @@ async function fachada(): Promise<Fixture> {
 
 /** Un aviso escaneado: una página que es solo una imagen, con un folio en letra chica. */
 async function avisoEscaneado(): Promise<Fixture> {
-  const pdf = await avisoPdf();
+  const pdf = await scannedNotice();
   const processed = await processAttachment(pdf, "aviso.pdf");
   if (processed.kind !== "pdf" || !processed.scanned) {
     throw new Error("El aviso tenía que salir como PDF escaneado");

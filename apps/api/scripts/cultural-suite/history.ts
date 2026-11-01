@@ -7,17 +7,19 @@
 
 import { randomUUID } from "node:crypto";
 import { convertToModelMessages, type ModelMessage, type ToolSet, type UIMessage } from "ai";
-import { attachmentContentUrl } from "@presencia/shared";
-import { processAttachment } from "../../src/attachments/attachment-content.js";
 import {
   attachmentIdsIn,
   withAttachmentBytes,
   type AttachmentForContext,
 } from "../../src/chat/attachment-context.js";
+import { loadSuiteAttachment } from "./attachments.js";
 import { assembleContext } from "../../src/chat/context-builder.js";
 import type { HistorySummary } from "../../src/chat/history-window.js";
 
-/** Un archivo de un turno anterior, con la descripción que ya le habría puesto `content_digest`. */
+/**
+ * Un archivo de la conversación, con la descripción que ya le habría puesto
+ * `content_digest`. Se carga igual que un `SuiteAttachment` (attachments.ts).
+ */
 export interface SuiteFile {
   filename: string;
   build: () => Promise<Uint8Array>;
@@ -62,30 +64,15 @@ export async function messagesWithHistory(
   const partsOf = async (turn: SuiteTurn): Promise<UIMessage["parts"]> => {
     const parts: UIMessage["parts"] = [];
     for (const file of turn.attachments ?? []) {
-      const processed = await processAttachment(await file.build(), file.filename);
-      const id = randomUUID();
-      names.set(id, file.filename);
-      rows.set(id, {
-        id,
-        kind: processed.kind,
-        filename: file.filename,
-        pages: processed.pages,
-        scanned: processed.scanned,
-        extractedText: processed.extractedText,
-        truncated: processed.truncated,
-        tokenEstimate: processed.tokenEstimate,
-        description: file.description ?? null,
-      });
-      loaded.set(
-        id,
-        `data:${processed.mimeType};base64,${Buffer.from(processed.modelData ?? processed.data).toString("base64")}`,
+      const { row, dataUrl, part } = await loadSuiteAttachment(
+        await file.build(),
+        file.filename,
+        file.description ?? null,
       );
-      parts.push({
-        type: "file",
-        mediaType: processed.mimeType,
-        filename: file.filename,
-        url: attachmentContentUrl(id),
-      });
+      names.set(row.id, file.filename);
+      rows.set(row.id, row);
+      loaded.set(row.id, dataUrl);
+      parts.push(part);
     }
     if (turn.text) parts.push({ type: "text", text: turn.text });
     return parts;
@@ -114,16 +101,18 @@ export async function messagesWithHistory(
   // Lo del resumen ya no se carga en producción (attachmentIdsForContext): da
   // igual pasarle la fila, porque assembleContext quita esos mensajes.
   const context = assembleContext(history, summary, new Map(), SUITE_CAP_TOKENS, rows, new Map());
-  const full = new Set(attachmentIdsIn(context.messages));
+  // Cómo viajó cada uno: un texto completo ya no es una parte `file` (la
+  // dieta lo vuelve <adjunto>), así que lo que se busca es su línea.
   const summarized = new Set(
     summaryAt === undefined ? [] : attachmentIdsIn(history.slice(0, summaryAt + 1)),
   );
+  const travelled = JSON.stringify(context.messages);
   const notes = [...names].map(([id, filename]) =>
-    full.has(id)
-      ? `\`${filename}\`: viaja completo (en la ventana).`
-      : summarized.has(id)
-        ? `\`${filename}\`: quedó en el tramo resumido; el modelo solo ve el resumen.`
-        : `\`${filename}\`: fuera de la ventana, viaja como su línea de descripción.`,
+    summarized.has(id)
+      ? `\`${filename}\`: quedó en el tramo resumido; el modelo solo ve el resumen.`
+      : travelled.includes(`[Adjunto de antes (`) && travelled.includes(`\\"${filename}\\"):`)
+        ? `\`${filename}\`: fuera de la ventana, viaja como su línea de descripción.`
+        : `\`${filename}\`: viaja completo (en la ventana).`,
   );
 
   return {

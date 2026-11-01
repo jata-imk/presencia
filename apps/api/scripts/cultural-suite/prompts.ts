@@ -12,7 +12,6 @@ import {
   type SuiteAttachment,
 } from "./attachments.js";
 import type { SuiteConversation, SuiteFile } from "./history.js";
-import { rereadPrompts } from "./reread-prompts.js";
 
 export interface CulturalPrompt {
   id: string;
@@ -238,6 +237,4 @@ export const culturalPrompts: CulturalPrompt[] = [
     expectsWebSearch: true,
     forbidden: ["cine bajo las estrellas", "feria del libro infantil"],
   },
-  // F10.11: volver a ver un adjunto (reread-prompts.ts).
-  ...rereadPrompts,
 ];
