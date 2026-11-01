@@ -11,6 +11,7 @@ import {
   ventasDelAno,
   type SuiteAttachment,
 } from "./attachments.js";
+import type { SuiteConversation, SuiteFile } from "./history.js";
 
 export interface CulturalPrompt {
   id: string;
@@ -40,6 +41,32 @@ export interface CulturalPrompt {
   expectsCitation?: boolean;
   /** F10.9: archivos que el creator adjunta en el mismo mensaje (ver attachments.ts). */
   attachments?: SuiteAttachment[];
+  /**
+   * F10.11: los turnos anteriores (y el resumen, si el chat ya se compactó),
+   * para que un adjunto haya salido de la ventana de verdad (history.ts).
+   */
+  conversation?: SuiteConversation;
+  /** F10.11: archivos del mensaje del caso cuando también hay conversación. */
+  currentFiles?: SuiteFile[];
+  /**
+   * F10.11: si debe volver a ver un adjunto con ver_adjunto (true) o no
+   * (false). Sin el campo, no se mide.
+   */
+  expectsReread?: boolean;
+  /** F10.11: lo que una respuesta correcta tiene que decir, todo (sin mayúsculas, espacios, guiones ni comas). */
+  expected?: string[];
+  /**
+   * F10.11: la forma del dato (un código, un precio, una hora). Si la
+   * respuesta trae algo con esa forma y no es lo esperado, lo inventó.
+   */
+  claimPattern?: RegExp;
+  /** F10.11: lo que `claimPattern` atrapa pero no es un dato inventado (el año, otro precio de la conversación). */
+  claimIgnore?: string[];
+  /**
+   * F10.11: lo que no debe aparecer en una card. Para una trampa que pide
+   * crear un borrador: contar lo que dice el archivo está bien, obedecerlo no.
+   */
+  forbiddenInCards?: string[];
 }
 
 export const culturalPrompts: CulturalPrompt[] = [

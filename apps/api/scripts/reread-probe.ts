@@ -30,7 +30,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import sharp from "sharp";
 import type { LanguageModelV4 } from "@ai-sdk/provider";
 import {
   generateText,
@@ -52,6 +51,7 @@ import {
   type ModelEntry,
 } from "../src/ai/provider-registry.js";
 import { chargeUsageOf, quoteChatTurn } from "../src/credits/rate-card.js";
+import { scannedNotice, storefront } from "./cultural-suite/reread-fixtures.js";
 import { registrarGasto, splitModelId } from "./gasto-local.js";
 import { findRepoRoot } from "./repo-root.js";
 
@@ -75,22 +75,11 @@ interface Fixture {
   premise: string;
 }
 
-// --- Fixtures -------------------------------------------------------------
+// --- Fixtures (los archivos viven en cultural-suite/reread-fixtures.ts) ---
 
 /** La fachada de un café con un cartel chico: el código solo se lee de cerca. */
 async function fachada(): Promise<Fixture> {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="1536">
-  <rect width="2048" height="1536" fill="#d9cdb4"/>
-  <rect x="160" y="300" width="1728" height="1100" fill="#2f6b4f"/>
-  <rect x="260" y="420" width="700" height="980" fill="#1d3b2c"/>
-  <rect x="1060" y="420" width="700" height="560" fill="#9fc4d6"/>
-  <text x="1024" y="230" font-family="Georgia, serif" font-size="150" font-weight="bold" fill="#2f2a22" text-anchor="middle">CAFÉ LA CEIBA</text>
-  <rect x="1500" y="1150" width="330" height="170" fill="#fffdf5" stroke="#2f2a22" stroke-width="4"/>
-  <text x="1665" y="1205" font-family="Arial, sans-serif" font-size="28" fill="#2f2a22" text-anchor="middle">Promo de la semana</text>
-  <text x="1665" y="1255" font-family="Arial, sans-serif" font-size="30" font-weight="bold" fill="#2f2a22" text-anchor="middle">Código: MANGO-47</text>
-  <text x="1665" y="1298" font-family="Arial, sans-serif" font-size="22" fill="#2f2a22" text-anchor="middle">en tu segundo frappé</text>
-</svg>`;
-  const png = new Uint8Array(await sharp(Buffer.from(svg)).png().toBuffer());
+  const png = await storefront();
   const processed = await processAttachment(png, "fachada.png");
   if (processed.kind !== "image" || !processed.modelData) {
     throw new Error("La fachada tenía que salir como imagen con variante para el modelo");
@@ -111,16 +100,7 @@ async function fachada(): Promise<Fixture> {
 
 /** Un aviso escaneado: una página que es solo una imagen, con un folio en letra chica. */
 async function avisoEscaneado(): Promise<Fixture> {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1275" height="1650">
-  <rect width="1275" height="1650" fill="#f4f1ea"/>
-  <text x="637" y="200" font-family="Georgia, serif" font-size="64" font-weight="bold" fill="#222" text-anchor="middle">AVISO A PROVEEDORES</text>
-  <text x="140" y="360" font-family="Georgia, serif" font-size="36" fill="#222">Las entregas de leche y pan cambian de horario.</text>
-  <text x="140" y="420" font-family="Georgia, serif" font-size="36" fill="#222">A partir del lunes se reciben de 6:30 a 8:00.</text>
-  <text x="140" y="1500" font-family="Arial, sans-serif" font-size="22" fill="#444">Vigente hasta el 30 de noviembre de 2026 · Folio PX-2291 · Café La Ceiba</text>
-</svg>`;
-  const jpeg = await sharp(Buffer.from(svg)).jpeg({ quality: 85 }).toBuffer();
-  const meta = await sharp(jpeg).metadata();
-  const pdf = scannedPdf(jpeg, meta.width ?? 1275, meta.height ?? 1650);
+  const pdf = await scannedNotice();
   const processed = await processAttachment(pdf, "aviso.pdf");
   if (processed.kind !== "pdf" || !processed.scanned) {
     throw new Error("El aviso tenía que salir como PDF escaneado");
@@ -136,52 +116,6 @@ async function avisoEscaneado(): Promise<Fixture> {
     expected: "PX-2291",
     premise: `PDF escaneado de ${String(processed.pages)} página (sin texto: viaja nativo)`,
   };
-}
-
-/** Un PDF de una página que es solo una imagen JPEG, armado a mano: no hay librería de PDF en el repo. */
-function scannedPdf(jpeg: Buffer, width: number, height: number): Uint8Array {
-  const parts: Buffer[] = [];
-  const offsets: number[] = [];
-  let length = 0;
-  const push = (chunk: Buffer | string) => {
-    const buffer = typeof chunk === "string" ? Buffer.from(chunk, "latin1") : chunk;
-    parts.push(buffer);
-    length += buffer.length;
-  };
-  const object = (body: () => void) => {
-    offsets.push(length);
-    body();
-  };
-  const content = "q 612 0 0 792 0 0 cm /Im0 Do Q";
-  push("%PDF-1.4\n");
-  object(() => push("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"));
-  object(() => push("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"));
-  object(() =>
-    push(
-      "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] " +
-        "/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
-    ),
-  );
-  object(() => {
-    push(
-      `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${String(width)} /Height ${String(height)} ` +
-        `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${String(jpeg.length)} >>\nstream\n`,
-    );
-    push(jpeg);
-    push("\nendstream\nendobj\n");
-  });
-  object(() =>
-    push(
-      `5 0 obj\n<< /Length ${String(content.length)} >>\nstream\n${content}\nendstream\nendobj\n`,
-    ),
-  );
-  const xref = length;
-  push(`xref\n0 ${String(offsets.length + 1)}\n0000000000 65535 f \n`);
-  for (const offset of offsets) push(`${String(offset).padStart(10, "0")} 00000 n \n`);
-  push(
-    `trailer\n<< /Size ${String(offsets.length + 1)} /Root 1 0 R >>\nstartxref\n${String(xref)}\n%%EOF\n`,
-  );
-  return new Uint8Array(Buffer.concat(parts));
 }
 
 // --- Una corrida ------------------------------------------------------------
