@@ -36,8 +36,10 @@ import { toChatSummary, toUIMessage } from "./chat-summary.js";
 import { blocksOf, contextTokensOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
-import { pendingAfterSummary, type HistorySummary } from "./history-window.js";
+import { applySummary, pendingAfterSummary, type HistorySummary } from "./history-window.js";
+import { markUnansweredTurns } from "./unanswered-turns.js";
 import { webReadIdsToDescribe } from "./web-read-context.js";
+import { attachmentIdsToDescribe } from "./attachment-context.js";
 import {
   assembleContext,
   attachmentIdsForContext,
@@ -632,7 +634,16 @@ export class ChatService {
     // recupera solo), pero no si se intentó en el último día y no salió:
     // un adjunto que el proveedor rechaza siempre no se paga en cada turno
     // (digestDue). El job no hace nada con uno ya descrito.
-    const undescribed = [...(attachmentRows?.values() ?? [])].filter((row) => digestDue(row));
+    // F10.11: solo los que con un turno más dejarían de viajar completos,
+    // como las páginas: una foto de un chat que termina en su turno no se
+    // describe ni se cobra nunca. Lo que se resuma antes de salir de la
+    // ventana lo describe la compactación.
+    const attachmentsToDescribe = new Set(
+      attachmentIdsToDescribe(markUnansweredTurns(applySummary(history, summary)), attachmentRows),
+    );
+    const undescribed = [...(attachmentRows?.values() ?? [])].filter(
+      (row) => attachmentsToDescribe.has(row.id) && digestDue(row),
+    );
     void this.attachmentDigests.enqueue(
       userId,
       chatId,

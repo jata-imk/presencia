@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { attachmentContentUrl } from "@presencia/shared";
 import {
   attachmentIdsIn,
+  attachmentIdsToDescribe,
   attachmentLines,
   dietAttachments,
   dietViewedAttachments,
@@ -289,5 +290,40 @@ describe("F10.11: volver a ver un adjunto", () => {
     expect(assembleContext([user("hola")], null, null, 120_000, rows).hiddenAttachments).toBe(
       false,
     );
+  });
+});
+
+describe("F10.11: describir al salir de la ventana", () => {
+  it("una foto se describe en el tercer turno, no al enviarse", () => {
+    const foto = attachment();
+    const rows = new Map([[foto.id, foto]]);
+    const turno1 = [user("mira", [foto])];
+    expect(attachmentIdsToDescribe(turno1, rows)).toEqual([]);
+    const turno2 = [...turno1, reply("ok"), user("2")];
+    expect(attachmentIdsToDescribe(turno2, rows)).toEqual([]);
+    // Con un turno más (el cuarto) ya no viaja completa: es ahora.
+    const turno3 = [...turno2, reply("b"), user("3")];
+    expect(attachmentIdsToDescribe(turno3, rows)).toEqual([foto.id]);
+  });
+
+  it("un documento grande se describe en su mismo turno: el siguiente ya no lo trae completo", () => {
+    const documento = attachment({
+      kind: "text",
+      filename: "ventas.csv",
+      extractedText: "x",
+      tokenEstimate: 30_000,
+    });
+    expect(
+      attachmentIdsToDescribe([user("ventas", [documento])], new Map([[documento.id, documento]])),
+    ).toEqual([documento.id]);
+  });
+
+  it("el resumen lee la descripción del adjunto si la hay; si no, solo el nombre", () => {
+    const foto = attachment({ filename: "menu.jpg" });
+    const message = user("mi menú", [foto]);
+    expect(
+      transcriptForSummary([message], new Map([[foto.id, "Menú con panuchos a $95."]])),
+    ).toContain('[El creator adjuntó "menu.jpg": Menú con panuchos a $95.]');
+    expect(transcriptForSummary([message])).toContain('[El creator adjuntó "menu.jpg"]');
   });
 });

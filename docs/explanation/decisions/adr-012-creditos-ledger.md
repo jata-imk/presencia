@@ -135,3 +135,7 @@ Igual que el título y la compactación: **se cobra** con la tarifa utility (`pe
 ## Addendum (2026-11-01, F10.11 PR3) — volver a ver un adjunto no tiene cobro propio
 
 `ver_adjunto` (ADR-029) no lleva fee: los bytes o el texto que vuelven a entrar se cobran como tokens de entrada del turno (`chat_message`), igual que el texto de una página leída. No hay razón nueva en `credit_reason` ni `task_kind` nuevo, y la relectura queda en la traza del turno. Lo que acota el costo son sus topes: 3 por mensaje y ~40k tokens estimados entre todos. En la sonda (`docs/reference/releer-adjuntos/2026-11-01-sonda.md`), un turno que vuelve a ver una foto costó 24 unidades con Luna sin caché (9 con el prefijo en caché), 17 con Gemini y 38 con Sonnet.
+
+## Addendum (2026-11-01, F10.11 PR4) — se describe menos, y la descripción pesa un poco más
+
+`content_digest` sigue igual: tarifa utility, una vez por adjunto. Lo que cambia es cuándo se pide (ADR-006, addendum F10.11 PR4): solo cuando el adjunto está por salir de la ventana, o cuando la compactación lo va a resumir. Un chat que termina dentro de sus primeros turnos ya no paga las ~3 unidades por foto ni las ~12 por texto. A cambio, la descripción puede llegar a 1,500 caracteres (~430 tokens): unas 2.6 unidades de salida en el peor caso, y ~1 unidad más por turno mientras viaja como línea.

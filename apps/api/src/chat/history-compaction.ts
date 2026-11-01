@@ -1,5 +1,6 @@
 import type { UIMessage } from "ai";
-import { attachmentLines } from "./attachment-context.js";
+import { ATTACHMENT_DESCRIPTION_CHARS } from "../attachments/attachment-digest.js";
+import { attachmentIdsIn, attachmentLines } from "./attachment-context.js";
 import { webReadLines } from "./web-read-context.js";
 import { z } from "zod";
 import { cardSummariesIn, type CompressedCardOutput } from "./context-diet.js";
@@ -99,17 +100,22 @@ export function textOf(message: UIMessage): string {
 
 /**
  * El tramo a resumir como texto: quién dijo qué, y las publicaciones, los
- * adjuntos y las páginas leídas (F10.10) como una línea cada uno (no el JSON
- * de la tool ni el texto de la página). Sin razonamiento: es del modelo, no de
+ * adjuntos (con su descripción, si la hay: F10.11) y las páginas leídas
+ * (F10.10) como una línea cada uno (no el JSON de la tool ni el texto de la
+ * página). Sin razonamiento: es del modelo, no de
  * la conversación. La memoria entre chats indexa lo mismo (memory.ts).
  */
-export function transcriptForSummary(messages: UIMessage[]): string {
+export function transcriptForSummary(
+  messages: UIMessage[],
+  /** F10.11: la descripción de cada adjunto, por id, si ya la tiene. */
+  descriptions?: ReadonlyMap<string, string>,
+): string {
   return messages
     .flatMap((message) => {
       const lines: string[] = [];
       const text = textOf(message).slice(0, MAX_CHARS_PER_MESSAGE);
       if (text) lines.push(`${message.role === "user" ? "Creator" : "Presencia"}: ${text}`);
-      lines.push(...attachmentLines(message));
+      lines.push(...attachmentLines(message, descriptions));
       lines.push(...webReadLines(message));
       for (const card of cardSummariesIn([message])) {
         lines.push(
@@ -184,7 +190,12 @@ export function boundedTramo(tramo: UIMessage[], maxChars = MAX_TRAMO_CHARS): UI
   let total = 0;
   let end = 0;
   while (end < tramo.length) {
-    const size = transcriptForSummary([tramo[end]!]).length + 2;
+    // F10.11: cada adjunto puede llevar su descripción en el resumen; se
+    // cuenta su tope, que todavía no se sabe cuánto mide.
+    const size =
+      transcriptForSummary([tramo[end]!]).length +
+      attachmentIdsIn([tramo[end]!]).length * ATTACHMENT_DESCRIPTION_CHARS +
+      2;
     if (end > 0 && total + size > maxChars) break;
     total += size;
     end++;

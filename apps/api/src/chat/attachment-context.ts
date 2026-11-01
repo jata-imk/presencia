@@ -281,21 +281,60 @@ export function insideTag(
 /**
  * Los adjuntos de un mensaje como líneas de transcript (resumen, título,
  * memoria, "Pide un cambio"): quien lee la conversación como texto sabe que
- * hubo un archivo y cuál. Solo el nombre, sacado de la parte: estas funciones
- * son puras y no leen filas.
+ * hubo un archivo y cuál. El nombre sale de la parte; la descripción, de
+ * `descriptions` si quien llama la tiene (F10.11: la compactación, para que
+ * el resumen conserve los datos de un adjunto que ya no se va a ver). Puras:
+ * no leen filas.
  */
-export function attachmentLines(message: UIMessage): string[] {
+export function attachmentLines(
+  message: UIMessage,
+  descriptions?: ReadonlyMap<string, string>,
+): string[] {
   return message.parts.flatMap((part) => {
-    const line = attachmentLine(part);
+    const line = attachmentLine(part, descriptions);
     return line ? [line] : [];
   });
 }
 
 /** La línea de una parte, o null si no es un adjunto. */
-export function attachmentLine(part: UIMessage["parts"][number]): string | null {
-  return part.type === "file" && attachmentIdFromUrl(part.url)
-    ? `[El creator adjuntó "${safeName(part.filename ?? "un archivo")}"]`
-    : null;
+export function attachmentLine(
+  part: UIMessage["parts"][number],
+  descriptions?: ReadonlyMap<string, string>,
+): string | null {
+  if (part.type !== "file") return null;
+  const id = attachmentIdFromUrl(part.url);
+  if (!id) return null;
+  const name = safeName(part.filename ?? "un archivo");
+  const description = descriptions?.get(id);
+  return description
+    ? `[El creator adjuntó "${name}": ${safeName(description, 1_500)}]`
+    : `[El creator adjuntó "${name}"]`;
+}
+
+/**
+ * F10.11: los adjuntos que vale la pena describir ya: los que con un turno
+ * más dejarían de viajar completos (o ya no viajan así). Antes se describía
+ * cada adjunto al enviarse, aunque el chat terminara ahí. Se simula el turno
+ * siguiente (el de ahora con su respuesta, y otro mensaje del creator) con la
+ * misma regla de la dieta: así un documento grande, que con el turno siguiente
+ * ya no cabe en el presupuesto, se describe en su mismo turno, y una foto, en
+ * el tercero. Lo que se resume sin haber salido de la ventana lo describe la
+ * compactación antes de resumir (history-compaction.service.ts).
+ */
+export function attachmentIdsToDescribe(
+  messages: UIMessage[],
+  attachments: ReadonlyMap<string, AttachmentForContext> | null,
+  keep = KEEP_ATTACHMENT_USER_TURNS,
+  budget = RECENT_ATTACHMENT_TOKENS,
+): string[] {
+  if (!attachments) return [];
+  const next: UIMessage[] = [
+    ...messages,
+    { id: "turno-siguiente-respuesta", role: "assistant", parts: [] },
+    { id: "turno-siguiente-mensaje", role: "user", parts: [] },
+  ];
+  const stillFull = fullAttachmentIds(next, attachments, keep, budget);
+  return attachmentIdsIn(messages).filter((id) => attachments.has(id) && !stillFull.has(id));
 }
 
 /**
