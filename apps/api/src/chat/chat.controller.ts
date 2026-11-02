@@ -25,6 +25,7 @@ import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { SessionUser } from "../auth/auth.js";
 import { ChatService } from "./chat.service.js";
 import { parseLastUserMessage } from "./last-user-message.js";
+import { WebTurnSink } from "./turn-sink.js";
 
 @Controller("chats")
 export class ChatController {
@@ -128,19 +129,20 @@ export class ChatController {
     // vieja antes de mandar). El historial sale de la base. No hay un campo
     // `messageId` separado que el protocolo real envíe.
     const userMessage = await parseLastUserMessage(body);
+    // F11: el turno no sabe de HTTP; la web lo recibe como stream SSE.
+    const sink = new WebTurnSink(res);
+    const options = {
+      webSearch: trigger.data.webSearch,
+      timezone: user.timezone,
+      channel: "web" as const,
+    };
 
     if (trigger.data.trigger === "regenerate-message") {
-      await this.chatService.regenerateChat(user.id, chatId, userMessage.id, res, {
-        webSearch: trigger.data.webSearch,
-        timezone: user.timezone,
-      });
+      await this.chatService.regenerateChat(user.id, chatId, userMessage.id, sink, options);
       return;
     }
 
-    await this.chatService.streamChat(user.id, chatId, userMessage, res, {
-      webSearch: trigger.data.webSearch,
-      timezone: user.timezone,
-    });
+    await this.chatService.streamChat(user.id, chatId, userMessage, sink, options);
   }
 
   private parseChatId(id: string): string {

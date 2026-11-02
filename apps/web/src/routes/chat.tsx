@@ -368,6 +368,38 @@ function ChatView({
     toast,
   ]);
 
+  // F11: un turno que entró por otro canal (Telegram) se guarda sin pasar por
+  // esta pestaña. El servidor avisa al guardar la respuesta (`chat_changed`),
+  // y el chat llega al store con su `lastMessageAt` al día: si cambia mientras
+  // aquí no hay un turno en curso, se releen los mensajes. Solo se reemplazan
+  // si el servidor trae alguno que esta pestaña no tiene, así el aviso de un
+  // turno propio (mismos ids, F10.8.2) no repinta nada.
+  const remoteLastMessageAt = useChatsStore(
+    (s) =>
+      (s.chats?.find((c) => c.id === chatId) ?? s.archivedChats?.find((c) => c.id === chatId))
+        ?.lastMessageAt ?? null,
+  );
+  const seenRemote = useRef(remoteLastMessageAt);
+  useEffect(() => {
+    const previous = seenRemote.current;
+    if (remoteLastMessageAt === previous) return;
+    seenRemote.current = remoteLastMessageAt;
+    // Sin valor previo es la primera carga del sidebar, no un mensaje nuevo.
+    if (previous === null || status !== "ready") return;
+    // Sin cleanup que la cancele: un re-render no debe tirar la relectura. Lo
+    // que importa se revisa al llegar, sobre el Chat (uno por montaje).
+    fetchChatMessages(chatId)
+      .then((saved) => {
+        // Mientras se releía, el creator empezó a escribir aquí: esa manda.
+        if (chat.status !== "ready") return;
+        const known = new Set(chat.messages.map((m) => m.id));
+        if (saved.some((m) => !known.has(m.id))) setMessages(saved);
+      })
+      .catch((err: unknown) => {
+        console.error("[chat] No se pudo releer el chat tras un aviso del servidor:", err);
+      });
+  }, [remoteLastMessageAt, status, chat, chatId, setMessages]);
+
   // Regenerar (y desde F10.8.2, editar el último mensaje) borra las cards de
   // la respuesta (ADR-006). Desde F10.5 una card puede traer trabajo del
   // usuario encima (ediciones, versiones): antes de tirarlo, se pregunta. Y

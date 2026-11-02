@@ -15,7 +15,6 @@ import {
   type MessageStatus,
 } from "@presencia/shared";
 import { randomUUID } from "node:crypto";
-import type { ServerResponse } from "node:http";
 import { AiUsageService } from "../ai/ai-usage.service.js";
 import { RunTrace } from "../ai/run-trace.js";
 import { AiService } from "../ai/ai.service.js";
@@ -60,6 +59,8 @@ import { forcedSearchStep } from "../web/force-search.js";
 import { buildWebSearchTool } from "../web/web-search.tool.js";
 import { WebSearchService } from "../web/web-search.service.js";
 import { DEFAULT_TIMEZONE, todayInstruction } from "./today.js";
+import type { TurnSink } from "./turn-sink.js";
+import type { MessageChannel } from "./chat.repository.js";
 
 // Margen para: tool call + reintento tras input inválido + texto de cierre.
 // F10.10: buscar y leer también son pasos; el peor caso que los topes
@@ -82,11 +83,19 @@ const ABORTED_TRACE_GRACE_MS = 3_000;
 const TURN_WAIT_MS = 10_000;
 
 /** Lo que un turno trae además del mensaje (F10.10). */
-interface TurnOptions {
+export interface TurnOptions {
   /** "Buscar en la web" del menú ＋. */
   webSearch?: boolean;
-  /** `users.timezone`, que ya viene en la sesión: sin otra consulta por turno. */
+  /**
+   * `users.timezone`: en la web ya viene en la sesión (sin otra consulta por
+   * turno); un canal sin sesión (Telegram, F11) la lee de la base.
+   */
   timezone?: string | null;
+  /**
+   * F11: por dónde entró el mensaje y por dónde sale su respuesta
+   * (`messages.channel`). Default `web`.
+   */
+  channel?: MessageChannel;
 }
 
 @Injectable()
@@ -142,7 +151,7 @@ export class ChatService {
    * mensaje del creator) no se repite, y sin escucharlo el turno corría
    * completo para nadie y se guardaba como completo.
    */
-  private trackTurn(chatId: string, res: ServerResponse): TurnInFlight {
+  private trackTurn(chatId: string, sink: TurnSink): TurnInFlight {
     let resolve!: () => void;
     const done = new Promise<void>((r) => {
       resolve = r;
@@ -151,17 +160,17 @@ export class ChatService {
     const abortController = new AbortController();
     const onClose = () => {
       closed = true;
-      if (!res.writableFinished) abortController.abort();
+      if (!sink.delivered) abortController.abort();
     };
-    res.once("close", onClose);
+    sink.onGone(onClose);
     // El "close" pudo pasar antes (mientras se revisaba la cuota): no se
     // repite. Es el mismo chequeo que hace el pipe del SDK.
-    if (res.destroyed) onClose();
+    if (sink.gone) onClose();
     const turn: TurnInFlight = {
       done,
       // También con el flag: "close" llega un tick después de "finish", y en
       // medio un turno que ya terminó y se está guardando se tiene que esperar.
-      closed: () => closed || res.writableFinished,
+      closed: () => closed || sink.delivered,
       abortController,
       release: () => {
         resolve();
@@ -310,10 +319,12 @@ export class ChatService {
     userId: string,
     chatId: string,
     userMessage: UIMessage,
-    res: ServerResponse,
+    /** F11: quién recibe el turno (la web: `WebTurnSink`; Telegram, el suyo). */
+    sink: TurnSink,
     /** F10.10: lo que trae el body además del mensaje, y la zona del creator (de la sesión). */
     options: TurnOptions = {},
   ): Promise<void> {
+    const channel = options.channel ?? "web";
     // Bloqueo suave (F5, ADR-012): se rechaza antes de tocar la DB o quemar
     // tokens del proveedor — nunca deja un mensaje user huérfano sin respuesta.
     await this.assertQuotaForTurn(userId);
@@ -324,7 +335,7 @@ export class ChatService {
     const running = this.turnsInFlight.get(chatId);
     // Desde aquí, no desde el pipe: un corte mientras se arma el turno también
     // se tiene que esperar.
-    const turn = this.trackTurn(chatId, res);
+    const turn = this.trackTurn(chatId, sink);
     // Cortado antes de empezar: no hay a quién responder, y no se toca nada.
     if (turn.abortController.signal.aborted) {
       turn.release();
@@ -373,6 +384,7 @@ export class ChatService {
             userId,
             role: "user",
             parts: attached.parts,
+            channel,
           });
           // Ya con el id guardado. Un reintento o una edición borraron el
           // mensaje arriba, y el SET NULL de la FK los dejó sueltos un instante.
@@ -397,12 +409,13 @@ export class ChatService {
         chatId,
         history,
         toHistorySummary(summary),
-        res,
+        sink,
         voicePromise,
         turn,
         retitle,
         options.webSearch === true,
         options.timezone ?? DEFAULT_TIMEZONE,
+        channel,
       );
     } catch (error) {
       turn.release();
@@ -499,7 +512,8 @@ export class ChatService {
     userId: string,
     chatId: string,
     userMessageId: string,
-    res: ServerResponse,
+    /** F11: quién recibe el turno (ver streamChat). */
+    sink: TurnSink,
     /**
      * F10.10: si el body trae `webSearch`, se respeta. La UI no lo manda al
      * reintentar: el chip no se guarda con el mensaje, y el modelo decide de
@@ -518,7 +532,7 @@ export class ChatService {
     if (running && !running.closed()) {
       throw new ConflictException("Esta respuesta todavía se está generando.");
     }
-    const turn = this.trackTurn(chatId, res);
+    const turn = this.trackTurn(chatId, sink);
     // Cortado antes de empezar: no se borra la respuesta de un regenerar que
     // nadie va a recibir.
     if (turn.abortController.signal.aborted) {
@@ -544,12 +558,14 @@ export class ChatService {
         chatId,
         history,
         toHistorySummary(summary),
-        res,
+        sink,
         voicePromise,
         turn,
         false,
         options.webSearch === true,
         options.timezone ?? DEFAULT_TIMEZONE,
+        // La respuesta nueva sale por donde se pidió el reintento.
+        options.channel ?? "web",
       );
     } catch (error) {
       turn.release();
@@ -559,13 +575,14 @@ export class ChatService {
 
   // Pipeline compartido por streamChat y regenerateChat: streamText + tools
   // + persistencia en onEnd. `history` ya trae el turno user que
-  // corresponde en cada caso.
+  // corresponde en cada caso. F11: no sabe de canales; el sink decide cómo se
+  // entrega (turn-sink.ts).
   private async runAgentTurn(
     userId: string,
     chatId: string,
     history: UIMessage[],
     summary: HistorySummary | null,
-    res: ServerResponse,
+    sink: TurnSink,
     voicePromise: Promise<BrandVoiceForPrompt | null>,
     /** El turno registrado: su corte, y `release` al final de onEnd. */
     turn: TurnInFlight,
@@ -575,6 +592,8 @@ export class ChatService {
     forceWebSearch = false,
     /** F10.10: la zona del creator (`users.timezone`), para la fecha de hoy en el prompt. */
     timezone = DEFAULT_TIMEZONE,
+    /** F11: con el que se guarda la respuesta (`messages.channel`). */
+    channel: MessageChannel = "web",
   ): Promise<void> {
     const { abortController, release } = turn;
 
@@ -737,6 +756,7 @@ export class ChatService {
           "stopped",
           null,
           [],
+          channel,
         );
       } finally {
         release();
@@ -811,7 +831,15 @@ export class ChatService {
         cardIdsIn([{ ...responseMessage, parts: sanitizeInterruptedParts(responseMessage.parts) }]),
       );
       const linked = turnCards.ids.filter((id) => visible.has(id));
-      await this.persistReply(userId, chatId, responseMessage, status, trace.runId, linked);
+      await this.persistReply(
+        userId,
+        chatId,
+        responseMessage,
+        status,
+        trace.runId,
+        linked,
+        channel,
+      );
       setTimeout(() => {
         void this.dropLateCards(
           userId,
@@ -826,11 +854,11 @@ export class ChatService {
     // Promesa que se cumple cuando el stream deja de escribir. Al cortar, eso
     // pasa ANTES de onEnd (que corre desde el cancel del stream): por eso el
     // turno se da por terminado al final de onEnd, no aquí.
-    // No se espera: los headers ya salieron, así que un rechazo no tiene a
-    // quién responderle (el filtro de Nest intentaría mandar un 500 encima).
-    // Solo se registra; el usuario ya recibió el error por `onError`.
-    void result
-      .pipeUIMessageStreamToResponse(res, {
+    // No se espera: en la web los headers ya salieron, así que un rechazo no
+    // tiene a quién responderle (el filtro de Nest intentaría mandar un 500
+    // encima). Solo se registra; el usuario ya recibió el error por `onError`.
+    void sink
+      .deliver(result, {
         originalMessages: history,
         // El id de la respuesta viaja en el primer chunk y es con el que se
         // guarda abajo (F10.8.2): la web y la base nombran igual al mensaje.
@@ -848,7 +876,7 @@ export class ChatService {
             // `finishReason` el modelo ya terminó: es una respuesta completa
             // aunque la conexión se cerrara antes del final del pipe.
             const cut = !finishReason;
-            if (cut && res.destroyed && !res.writableFinished) abortController.abort();
+            if (cut && sink.gone && !sink.delivered) abortController.abort();
             if (isAborted || (cut && abortController.signal.aborted)) {
               guardarTrazaCortada();
               await saveInterrupted(responseMessage, "stopped");
@@ -903,6 +931,7 @@ export class ChatService {
               failed ? "failed" : "complete",
               trace.runId,
               turnCards.ids,
+              channel,
               // Cobro real con el usage real del turno, en la MISMA
               // transacción que el mensaje que cobra (modelo-de-datos.md: "o
               // se cobra y se produce, o ninguna de las dos"). charge() puede
@@ -976,7 +1005,7 @@ export class ChatService {
         },
       })
       .catch((error: unknown) => {
-        console.error("Error escribiendo el stream del chat:", error);
+        console.error(`Error entregando el turno del chat (${channel}):`, error);
         // No con .finally: al cortar, el pipe se cumple ANTES de que onEnd
         // guarde la respuesta (corre desde el cancel del stream), y soltaría
         // el turno antes de tiempo. Solo si el pipe truena.
@@ -990,6 +1019,11 @@ export class ChatService {
    * terminó completa, lo guardado pasa por `sanitizeInterruptedParts`:
    * vuelve a viajar al modelo. Devuelve el id guardado, o null si falló (se
    * registra; nunca lanza, corre en onEnd).
+   *
+   * F11: avisa a las pestañas abiertas que el chat tiene mensajes nuevos
+   * (`chat_changed`, en la misma transacción: solo llega si se guardó). Aquí y
+   * no al guardar el mensaje del creator: un turno que llegó por otro canal se
+   * ve con su respuesta, nunca a medias como "sin respuesta".
    */
   private async persistReply(
     userId: string,
@@ -999,6 +1033,7 @@ export class ChatService {
     /** null si el turno no llegó a correr: no hay traza que ligar. */
     runId: string | null,
     createdCardIds: readonly string[],
+    channel: MessageChannel,
     charge?: (tx: Tx, messageId: string) => Promise<unknown>,
   ): Promise<string | null> {
     try {
@@ -1014,10 +1049,12 @@ export class ChatService {
               : sanitizeInterruptedParts(responseMessage.parts),
           runId,
           status,
+          channel,
         });
         await this.repo.touchChat(tx, chatId);
         await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
         await charge?.(tx, saved.id);
+        await this.repo.notifyMessagesChanged(tx, userId, chatId);
         return saved.id;
       });
     } catch (error) {

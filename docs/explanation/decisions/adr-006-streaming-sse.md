@@ -96,7 +96,7 @@ La nota provisional de arriba se resolvió así:
 ## Addendum (2026-10-07, F10.8 PR1) — el stream de eventos también trae chats
 
 - **El título automático llega por el mismo puente que las cards (F8.6).** `chat_changed` es un segundo canal de NOTIFY, con el mismo formato de payload (`<userId>:<chatId>`) y la misma conexión LISTEN y cola en serie de `CardListener`. El navegador recibe `event: chat` con el `ChatSummary` de esa fila, leída con el RLS del usuario y traducida por `toChatSummary`, la misma función que usa `GET /api/chats`. El listener lee con `ChatRepository` y no con `ChatService`, que arrastra la IA, los créditos y la voz de marca.
-- **Quién notifica:** el título automático (`ChatRepository.setAutoTitle`) y el renombre (`renameChat`), en la misma transacción que la escritura. Así, otra pestaña o el celular ven el nombre nuevo sin recargar. Los demás cambios del chat (fijar, archivar, mover) no notifican todavía: el contrato del evento es el **título**. Como el evento trae la fila completa, la web la acomoda según `archivedAt` (si se archivó en otra pestaña, sale de Recientes). Los demás cambios se suman cuando otro canal (Telegram, F11) los necesite.
+- **Quién notifica:** el título automático (`ChatRepository.setAutoTitle`) y el renombre (`renameChat`), en la misma transacción que la escritura. Así, otra pestaña o el celular ven el nombre nuevo sin recargar. Los demás cambios del chat (fijar, archivar, mover) no notifican todavía: el contrato del evento es el **título**. Como el evento trae la fila completa, la web la acomoda según `archivedAt` (si se archivó en otra pestaña, sale de Recientes). Los demás cambios se suman cuando otro canal (Telegram, F11) los necesite. _(F11 PR2: también avisa cada respuesta guardada; ver su addendum.)_
 - **Al revalidar** (reconexión, `resync`, la pestaña vuelve a ser visible), la web pide de nuevo la lista de chats, además de las cards, si ya la tenía cargada.
 - **Por qué el stream de eventos y no el stream del turno:** el título se genera después de que la respuesta terminó (necesita el primer intercambio completo), cuando el stream del turno ya se cerró. El de eventos sigue abierto y llega a todas las pestañas.
 
@@ -262,3 +262,35 @@ Desde F10.9 cada adjunto se describía al enviarse (decisión de esa fase, a rev
 - **El resumen lee la descripción:** `[El creator adjuntó "menu.pdf": Menú en PDF: panuchos $95…]` (`transcriptForSummary(messages, descriptions)`). Así conserva los datos de un adjunto que ya no se va a ver completo, y `ver_adjunto` lo alcanza por su nombre.
 - **La memoria entre chats sigue con el nombre.** Se indexa al terminar cada turno, antes de que exista la descripción, y volver a indexar para agregarla queda fuera de esta fase.
 - **La descripción, más larga y con tope fijo:** hasta 1,500 caracteres para todo (antes 1,000; decisión de Jose, 2026-10-31). El prompt (`DIGEST_SYSTEM`) dejó de decir "una a tres frases": pide las frases que hagan falta para conservar los datos, que copie las filas de una tabla, un menú o una lista de precios, y que una foto sin datos se quede en una o dos frases. `maxOutputTokens` sube de 400 a 700 para no cortarla a media frase. Las páginas leídas siguen en 1,000.
+
+## Addendum (F11 PR2, 2026-11-02): el turno ya no depende de HTTP
+
+Para que el bot de Telegram (ADR-030) entre por el mismo turno que la web, el turno dejó de hablar con el `ServerResponse`. Habla con un **`TurnSink`** (`chat/turn-sink.ts`), y cada canal pone el suyo.
+
+- **Las tres preguntas son las mismas que antes,** con la misma semántica, así que el turno web no cambia en nada:
+
+  | Antes (`ServerResponse`)                | Ahora (`TurnSink`)   |
+  | --------------------------------------- | -------------------- |
+  | `res.destroyed`                         | `gone`               |
+  | `res.writableFinished`                  | `delivered`          |
+  | `res.once("close")`                     | `onGone`             |
+  | `pipeUIMessageStreamToResponse(res, …)` | `deliver(result, …)` |
+  - **Web:** `WebTurnSink` hace exactamente el pipe de siempre.
+  - **Telegram (PR4):** leerá `toUIMessageStream` con el mismo `onEnd`, que es donde se guarda y se cobra. Un sink tiene que correr `onEnd` una vez, también si el que recibe se va a la mitad, como el pipe del SDK.
+
+- **No se partió `ChatService` en otra clase.** Mover el turno (~500 líneas) era el cambio más riesgoso posible para el chat que ya funciona. La costura es el sink: `streamChat` y `regenerateChat` reciben el sink en vez de `res`.
+- **Los rechazos siguen siendo excepciones de Nest** (402 sin cuota, 404, 409). Son errores con su status; el adapter de Telegram los traduce a mensajes por el status, como la web los traduce a respuestas HTTP. No hacía falta una jerarquía de errores propia para un segundo canal.
+- **`messages.channel` se escribe.** `TurnOptions.channel` (default `web`) llega al mensaje del creator y a su respuesta. Un reintento guarda la respuesta nueva con el canal desde el que se pidió; el mensaje del creator conserva el suyo.
+- **Cada respuesta guardada avisa a las pestañas** (`chat_changed`, el mismo canal del título, en la transacción de `persistReply`):
+  - el sidebar recibe el chat con su `lastMessageAt` al día;
+  - la pestaña que tiene ese chat abierto, si no tiene un turno en curso, relee sus mensajes y solo los reemplaza si llegó alguno que no tenía. El aviso de un turno propio trae los mismos ids (F10.8.2) y no repinta nada.
+  - **Se avisa al guardar la respuesta, no al guardar el mensaje del creator:** a mitad de un turno de Telegram, una pestaña vería el mensaje sin respuesta y le pintaría la card de "sin respuesta" (`turnNotices`).
+- **Pruebas:** el turno no tenía pruebas propias. `chat.service.spec.ts` lo corre por un sink de mentira contra Postgres real con el modelo simulado y verifica que:
+  - guarda las dos partes con su canal y cobra una vez;
+  - con el sink ya ido antes de empezar, no toca nada ni llama al modelo;
+  - un corte a media respuesta queda `stopped` sin cobro;
+  - un error con usage queda `failed` y se cobra;
+  - regenerar respeta el canal;
+  - avisa una sola vez por turno.
+
+  Dos mutaciones a propósito (quitar el chequeo de `gone` y quitar el aviso) las hicieron fallar.
