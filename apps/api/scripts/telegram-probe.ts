@@ -18,6 +18,7 @@
 // Va pidiendo cada paso en la consola; un paso humano que no llega a tiempo se
 // anota como "sin respuesta" y la sonda sigue. Reporte en docs/reference/telegram/.
 
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { findRepoRoot } from "./repo-root.js";
@@ -241,7 +242,13 @@ const PERSONALES = new Set([
 ]);
 function sinDatosPersonales(clave: string, valor: unknown): unknown {
   if (PERSONALES.has(clave)) return "‹oculto›";
-  if (clave === "id" && typeof valor === "number" && Math.abs(valor) > 100_000) return "‹id›";
+  if (
+    (clave === "id" || clave === "chat_id") &&
+    typeof valor === "number" &&
+    Math.abs(valor) > 100_000
+  )
+    return "‹id›";
+  if (clave === "callback_query_id") return "‹id›";
   if (
     (clave === "file_id" || clave === "file_unique_id" || clave === "file_path") &&
     typeof valor === "string"
@@ -503,7 +510,10 @@ async function main() {
   const fecha = new Date().toLocaleDateString("en-CA", { timeZone: "America/Merida" });
   const dir = path.join(findRepoRoot(process.cwd()), "docs/reference/telegram");
   await mkdir(dir, { recursive: true });
-  const archivo = path.join(dir, `${fecha}-sonda.md`);
+  // Una corrida por cliente el mismo día no pisa la anterior: -2, -3…
+  let archivo = path.join(dir, `${fecha}-sonda.md`);
+  for (let n = 2; existsSync(archivo); n++)
+    archivo = path.join(dir, `${fecha}-sonda-${String(n)}.md`);
   await writeFile(archivo, reporte(fecha, me.result), "utf8");
   console.log(
     `\nReporte: ${archivo}\nLlena el checklist por cliente con lo que viste en cada app.`,

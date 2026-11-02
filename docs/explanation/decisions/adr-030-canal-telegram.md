@@ -1,14 +1,16 @@
 # ADR-030 · Canal Telegram: un tema = un chat, por el mismo turno
 
-> **Borrador (F11, PR1).** Lo que depende de piezas del Bot API todavía no probadas en un cliente real queda marcado como _por confirmar en la sonda_. La sonda (`docs/reference/telegram/`) y el bake-off de transcripción (`docs/reference/transcripcion/`) lo cierran, y este ADR se termina en el PR de docs de F11.
+> **Borrador (F11).** La sonda con un bot real ya corrió (`docs/reference/telegram/2026-11-01-sonda.md` con iOS y Desktop, `-sonda-2.md` con Telegram X en un Android viejo) y sus hallazgos están aquí. Falta el bake-off de transcripción (`docs/reference/transcripcion/`, _por confirmar_). El ADR se termina en el PR de docs de F11.
 
 **Decisión:** el bot de Telegram es otro adapter sobre el mismo chat (ADR-010). Un mensaje que llega por Telegram entra por **el mismo turno** que la web: la misma cadena de modelos con respaldo, las mismas tools (cards, `leer_enlace`, `buscar_en_web`, `ver_adjunto`), la misma traza y el mismo cobro en el ledger. Lo que cambia es solo la entrada (un update de Telegram en vez de un POST del composer) y la salida (mensajes de Telegram en vez del stream SSE).
 
 **1 tema de Telegram = 1 chat de Presencia.** Desde el Bot API 9.3/9.4 (dic 2025 y feb 2026), el chat privado con un bot puede tener temas:
 
-- un tema que crea el creator → chat nuevo;
-- "Continuar en Telegram" en la web → el bot crea el tema de ese chat (`createForumTopic`);
-- el autotítulo del chat renombra el tema (`editForumTopic`; un tema sin nombre llega con `is_name_implicit`).
+- **un tema que crea el creator → chat nuevo.** En iOS basta escribir fuera de un tema: Telegram crea uno implícito (`forum_topic_created.is_name_implicit: true`, nombrado con el principio del mensaje), y la app ya lo presenta como "Nuevo chat" / "Continuar último hilo";
+- **"Continuar en Telegram" en la web → el bot crea el tema de ese chat** (`createForumTopic`);
+- **el autotítulo del chat renombra el tema** (`editForumTopic`). Desktop lo muestra; **la app de iOS no**, ni reabriendo ni reiniciando (sonda, 2026-11-01). Se manda igual: es una limitación de ese cliente;
+- **un mensaje sin `message_thread_id` → el último chat de Telegram de ese creator, con `/nuevo` para empezar otro.** Solo llega de clientes sin temas (Telegram X: todo revuelto en un chat, sin tema en el update), porque iOS crea el tema implícito. Es la degradación del modelo de OpenClaw, solo para ellos. "Fuera de tema = chat nuevo" le abriría un chat por mensaje;
+- **el bot nunca borra un tema:** `deleteForumTopic` borra también los mensajes del bot que había en él.
 
 ## Razón
 
@@ -29,8 +31,15 @@ Los temas resuelven las tres.
 
 - **El texto que se va escribiendo:** `sendMessageDraft` (9.3; abierto a todos los bots desde la 9.5) y `sendRichMessageDraft` (10.1). La spec cruda dice que el draft es una vista previa efímera de 30 s y que al final se manda el mensaje completo.
 - **Detener:** `can_stop` (10.3) muestra el botón, y el update `stopped_message_generation` es el "detener" de la web. Se guarda `stopped` igual (ADR-006).
-- **La respuesta final:** el rich message (`sendRichMessage`, 10.1) acepta markdown compatible con GFM: encabezados, listas, tablas, bloques plegables (`<details>`) y botones (`<tg-button>`), hasta 32,768 caracteres. El markdown del modelo viaja casi sin convertir.
-- _Por confirmar en la sonda:_ que Android, iOS y Desktop pinten todo esto bien.
+- **La respuesta final va en HTML** (`sendMessage` con `parse_mode: "HTML"`), no como rich message (decisión de Jose, 2026-11-01). El rich (`sendRichMessage`, 10.1) acepta markdown con tablas, `<details>` y botones, y en iOS y Desktop se ve bien. Pero en un cliente viejo (Telegram X) sale **"Mensaje no compatible"** en lugar de la respuesta, y la API no dice qué cliente usa cada quien. El HTML se vio en los tres:
+  - el markdown del modelo se convierte a HTML;
+  - las tablas chicas van en `<pre>` alineado y las anchas como lista;
+  - el "🎤 Escuché" va en `<blockquote expandable>`;
+  - los botones son inline keyboard;
+  - lo largo se parte en mensajes de 4,096.
+- **Degradación:** los temas, el draft y el detener no existen en Telegram X, pero ahí simplemente no aparecen: el creator recibe la respuesta final igual. El rich es lo único que rompía.
+- **Drafts con cuidado:** en la sonda, mandar cada 350 ms dio `429`, y un parcial con una etiqueta abierta (`<details>` cortado) dio `RICH_MESSAGE_CONTENT_REQUIRED`. El draft se espacia (~1 por segundo) y nunca se manda con una etiqueta HTML a medias.
+- **Threaded Mode tiene un cargo extra solo sobre las compras con Telegram Stars** (BotFather). Presencia no vende por Stars: no aplica.
 
 **Por qué no un framework de canales.** El Chat SDK de Vercel tiene un adapter de Telegram (`@chat-adapter/telegram`), pero:
 
@@ -55,6 +64,7 @@ Pedido de Jose (2026-11-01). Los temas, los drafts con detener y el rich son de 
 
 - **WhatsApp:** no los tiene. Además, desde el 2026-01-15 Meta prohíbe en su Business API los asistentes de IA de propósito general, y así sacó a ChatGPT, Copilot y Perplexity.
 - **Discord y Slack:** tienen hilos, pero otra forma de streamear y de dar formato.
+- **Dentro del mismo Telegram ya pasa:** Telegram X no tiene temas, drafts ni rich. Por eso la respuesta va en HTML, que es lo que todos los clientes ven.
 
 Un segundo canal daría un flujo distinto en cada lugar. Por eso:
 
@@ -71,3 +81,4 @@ Un segundo canal daría un flujo distinto en cada lugar. Por eso:
 - **Correr el turno en un job de pg-boss:** el candado de turnos (`turnsInFlight`, ADR-006) vive en memoria del proceso `app`. Un turno de Telegram en el worker no se serializaría contra uno web en el mismo chat.
 - **Guardar el audio:** se guarda la transcripción; el audio se queda en Telegram.
 - **Chat SDK de Vercel:** ver arriba.
+- **Rich message para la respuesta final:** "Mensaje no compatible" en clientes viejos; ver arriba.
