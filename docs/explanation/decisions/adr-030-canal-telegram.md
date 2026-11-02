@@ -1,6 +1,6 @@
 # ADR-030 · Canal Telegram: un tema = un chat, por el mismo turno
 
-> **Borrador (F11).** La sonda con un bot real ya corrió (`docs/reference/telegram/2026-11-01-sonda.md` con iOS y Desktop, `-sonda-2.md` con Telegram X en un Android viejo) y sus hallazgos están aquí. Falta el bake-off de transcripción (`docs/reference/transcripcion/`, _por confirmar_). El ADR se termina en el PR de docs de F11.
+> **Borrador (F11).** La sonda con un bot real ya corrió (`docs/reference/telegram/2026-11-01-sonda.md` con iOS y Desktop, `-sonda-2.md` con Telegram X en un Android viejo) y sus hallazgos están aquí. El bake-off de transcripción también (`docs/reference/transcripcion/2026-11-01-bakeoff.md`). El ADR se termina en el PR de docs de F11.
 
 **Decisión:** el bot de Telegram es otro adapter sobre el mismo chat (ADR-010). Un mensaje que llega por Telegram entra por **el mismo turno** que la web: la misma cadena de modelos con respaldo, las mismas tools (cards, `leer_enlace`, `buscar_en_web`, `ver_adjunto`), la misma traza y el mismo cobro en el ledger. Lo que cambia es solo la entrada (un update de Telegram en vez de un POST del composer) y la salida (mensajes de Telegram en vez del stream SSE).
 
@@ -56,7 +56,11 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
 - Por eso es un paso propio, antes del turno.
 - **Cadena:** `groq:whisper-large-v3-turbo` (~$0.0007/min, mínimo de 10 s por llamada), con `openai:gpt-4o-mini-transcribe` de respaldo ($0.003/min).
 - **Whisper local en el VPS:** descartado. Son 4 vCores sin GPU compartidos con Postgres y la app; tarda más o menos lo que dura el audio, para ahorrar centavos al mes.
-- _Por confirmar en el bake-off:_ la calidad con audio real de Mérida.
+- **Bake-off con 9 notas reales de Jose** (6 guiones con lugares mayas, marcas, precios, anglicismos y muletillas, y 3 improvisadas, una con música fuerte y otra de más de 2 minutos):
+  - **Groq:** WER 7.2% y 4.11 de 5 a ciegas; inventó un "¡Gracias!" al final de una nota (la alucinación de Whisper con el silencio); 0.7 s.
+  - **OpenAI mini:** WER 5.2–5.7% y 4.67 de 5; no inventó nada; 1.5–2.3 s.
+  - Los errores de los dos son sobre todo nombres propios.
+- **Jose eligió Groq de principal**, con el texto tal cual y sin filtro de silencio. El público paga en pesos, y ~$1.40 al mes por creator intensivo pesa a esa escala. La diferencia de calidad es chica y el modelo del chat entiende igual. Claude recomendaba lo contrario por la alucinación; queda anotado por si los "¡Gracias!" llegan a molestar en la prueba en vivo. El filtro (`no_speech_prob` de los segmentos) es la salida si pasa.
 
 ## Riesgo anotado: otros canales no tienen estas capacidades
 

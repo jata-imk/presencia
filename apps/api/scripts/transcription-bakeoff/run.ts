@@ -227,14 +227,23 @@ function reporte(fecha: string, cands: Candidato[], notas: Nota[], piezas: Pieza
   for (const n of notas) {
     l.push(`### ${n.nombre}`, "");
     l.push(`Duración: ${n.segundos ? `${n.segundos.toFixed(0)} s` : "desconocida"}`, "");
-    if (n.referencia)
+    // El reporte va al repo público: el habla espontánea puede traer datos
+    // personales (a dónde vas, cuándo no estás). Una nota con "improvisad" o
+    // "privad" en el nombre publica solo sus números; el texto se queda en out/.
+    const privada = /improvisad|privad/i.test(n.nombre);
+    if (privada) {
+      l.push("_Texto no publicado (nota improvisada o privada); queda en `out/`._", "");
+    } else if (n.referencia) {
       l.push("**Referencia (Jose):**", "", `> ${n.referencia.replace(/\n+/g, " ")}`, "");
+    }
     for (const p of piezas.filter((x) => x.nota === n.nombre)) {
       l.push(
         `**\`${p.candidato}\`** · ${p.status === "ok" ? `WER ${pct(p.wer)} (sin acentos ${pct(p.werSinAcentos)}) · ${((p.latenciaMs ?? 0) / 1000).toFixed(1)} s` : "error"}`,
         "",
       );
-      l.push(p.status === "ok" ? `> ${p.texto ?? ""}` : `> ❌ ${p.error ?? ""}`, "");
+      if (!privada) {
+        l.push(p.status === "ok" ? `> ${p.texto ?? ""}` : `> ❌ ${p.error ?? ""}`, "");
+      }
     }
   }
   l.push("## Lectura (Claude)", "", "_Pendiente._", "");
