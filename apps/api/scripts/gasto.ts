@@ -68,6 +68,7 @@ async function main() {
       cacheada?: number | null;
       imagenes?: number | null;
       busquedas?: number | null;
+      audioSegundos?: number | null;
     },
   ) {
     const modelo = `${provider}:${model}`;
@@ -92,6 +93,7 @@ async function main() {
       cachedInputTokens: u.cacheada,
       imagesCount: u.imagenes,
       searchQueries: u.busquedas,
+      audioSeconds: u.audioSegundos,
     });
     fila.llamadas += 1;
     fila.entrada += u.entrada;
@@ -144,6 +146,7 @@ async function main() {
       salida: g.outputTokens,
       imagenes: g.imagesCount,
       busquedas: g.searchQueries,
+      audioSegundos: g.audioSeconds,
     });
   }
 

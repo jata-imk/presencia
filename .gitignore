@@ -38,6 +38,9 @@ test-results/
 # Imágenes del bake-off de generadores (F10): pesan MB y se regeneran con el script.
 apps/api/scripts/image-bakeoff/out/
 apps/api/scripts/search-bakeoff/out/
+apps/api/scripts/transcription-bakeoff/out/
+# Las notas de voz del bake-off son la voz de Jose: nunca a git.
+apps/api/scripts/transcription-bakeoff/notas/
 
 # Assets de Biblioteca en disco (ASSETS_STORAGE=local, solo dev).
 apps/api/.data/
