@@ -39,9 +39,10 @@ export function decodeCardChanged(payload: string | undefined): CardChanged | nu
   return pair ? { userId: pair[0], cardId: pair[1] } : null;
 }
 
-// F10.8: el mismo puente para los chats. Hoy lo usa el título (el automático
-// y el que escribe el creator), para que el sidebar de todas sus pestañas lo
-// vea sin recargar. Mismo formato de payload, otro canal: un NOTIFY de cards
+// F10.8: el mismo puente para los chats. Lo usa el título (el automático y el
+// que escribe el creator), para que el sidebar de todas sus pestañas lo vea
+// sin recargar, y desde F11 cada respuesta guardada: una pestaña con el chat
+// abierto relee sus mensajes (un turno que llegó por Telegram). Mismo formato de payload, otro canal: un NOTIFY de cards
 // nunca se confunde con uno de chats.
 export const CHAT_CHANGED_CHANNEL = "chat_changed";
 

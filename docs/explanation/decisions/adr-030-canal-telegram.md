@@ -72,7 +72,7 @@ Pedido de Jose (2026-11-01). Los temas, los drafts con detener y el rich son de 
 
 Un segundo canal daría un flujo distinto en cada lugar. Por eso:
 
-- **lo compartido es el turno, no la forma de mostrarlo:** el runner del turno no sabe de canales, y cada adapter decide cómo pinta pasos, drafts, cards y errores;
+- **lo compartido es el turno, no la forma de mostrarlo:** el turno no sabe de canales (`TurnSink`, F11 PR2; addendum de ADR-006), y cada adapter decide cómo pinta pasos, drafts, cards y errores;
 - **no se construye una abstracción de "capacidades de canal"** para canales que no existen (YAGNI): se escribe cuando llegue el segundo, con este ADR como punto de partida;
 - **WhatsApp necesita un ADR propio** que revise primero la política de Meta;
 - **la app móvil queda priorizada para después del MVP:** es la única superficie donde la experiencia no depende de lo que permita un tercero.

@@ -112,9 +112,19 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
 
   private async dispatchChat({ userId, chatId }: ChatChanged): Promise<void> {
     if (!this.registry.has(userId)) return;
-    // Con el RLS del usuario, y traducido igual que GET /api/chats.
-    const chat = await this.db.runWithTenant(userId, (tx) => this.chats.getChat(tx, chatId));
-    if (chat) this.registry.send(userId, "chat", toChatSummary(chat));
+    // Con el RLS del usuario, y traducido igual que GET /api/chats. F11: más el
+    // id del último mensaje, para que la pestaña que tiene el chat abierto sepa
+    // si le falta algo (un turno que llegó por Telegram).
+    const found = await this.db.runWithTenant(userId, async (tx) => {
+      const chat = await this.chats.getChat(tx, chatId);
+      return chat ? { chat, lastMessageId: await this.chats.lastMessageId(tx, chatId) } : null;
+    });
+    if (found) {
+      this.registry.send(userId, "chat", {
+        ...toChatSummary(found.chat),
+        lastMessageId: found.lastMessageId,
+      });
+    }
   }
 
   private async dispatch({ userId, cardId }: CardChanged): Promise<void> {

@@ -75,7 +75,7 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 | `user_id`    | uuid FK     | denormalizado a propósito — RLS sin join                                                                                                |
 | `role`       | enum        | `user`, `assistant`, `system`, `tool`                                                                                                   |
 | `parts`      | jsonb       | formato de mensaje del AI SDK (texto, tool calls, tool results) — compatible con `useChat`                                              |
-| `channel`    | enum        | `web`, `telegram`, `whatsapp` — por dónde entró/salió                                                                                   |
+| `channel`    | enum        | `web`, `telegram`, `whatsapp` — por dónde entró/salió (se escribe desde F11 PR2)                                                        |
 | `run_id`     | uuid        | F10.8.1: el turno que produjo la respuesta (`ai_run_steps`); null en las del creator                                                    |
 | `status`     | enum        | F10.8.2 (`0051`): `complete`, `stopped`, `failed` — una respuesta cortada o fallida se guarda con lo que alcanzó a escribirse (ADR-006) |
 | `created_at` | timestamptz |                                                                                                                                         |

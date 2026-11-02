@@ -29,6 +29,13 @@ export interface ChatSummary {
   pinnedAt: string | null;
   lastMessageAt: string | null;
   createdAt: string;
+  /**
+   * F11: el id del último mensaje guardado. Solo lo trae el evento en vivo
+   * (`event: chat` del stream, ADR-006): la pestaña con el chat abierto lo
+   * compara con los suyos para saber si llegó algo por otro canal. `GET
+   * /api/chats` no lo manda.
+   */
+  lastMessageId?: string | null;
 }
 
 // Trigger del body de POST /chats/:id/stream — mismo contrato que

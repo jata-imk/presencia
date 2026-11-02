@@ -26,6 +26,8 @@ import { CHAT_CHANGED_CHANNEL, encodeChatChanged } from "../realtime/card-events
 export type ChatRow = typeof chats.$inferSelect;
 export type MessageRow = typeof messages.$inferSelect;
 export type ChatSummaryRow = typeof chatSummaries.$inferSelect;
+/** F11: por dónde entró o salió un mensaje (`messages.channel`). */
+export type MessageChannel = MessageRow["channel"];
 
 @Injectable()
 export class ChatRepository {
@@ -105,11 +107,24 @@ export class ChatRepository {
       runId?: string | null;
       /** F10.8.2: cómo terminó la respuesta. Default `complete`. */
       status?: MessageStatus;
+      /** F11: por dónde entró (o salió) el mensaje. Default `web`. */
+      channel?: MessageChannel;
     },
   ): Promise<MessageRow> {
     const [message] = await tx.insert(messages).values(input).returning();
     if (!message) throw new Error("No se pudo guardar el mensaje");
     return message;
+  }
+
+  /** F11: el id del último mensaje del chat (para el evento en vivo), o null. */
+  async lastMessageId(tx: Tx, chatId: string): Promise<string | null> {
+    const [row] = await tx
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.chatId, chatId))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    return row?.id ?? null;
   }
 
   async touchChat(tx: Tx, chatId: string): Promise<void> {
@@ -311,7 +326,16 @@ export class ChatRepository {
    * COMMIT, así que ninguna pestaña ve un título que no quedó guardado.
    */
   private async notifyChanged(tx: Tx, chat: ChatRow): Promise<void> {
-    const payload = encodeChatChanged({ userId: chat.userId, chatId: chat.id });
+    await this.notifyMessagesChanged(tx, chat.userId, chat.id);
+  }
+
+  /**
+   * F11: el chat tiene mensajes nuevos (una respuesta guardada). Mismo canal
+   * que el título: el listener manda el ChatSummary al día (`lastMessageAt`
+   * incluido) y la pestaña que tiene el chat abierto relee sus mensajes.
+   */
+  async notifyMessagesChanged(tx: Tx, userId: string, chatId: string): Promise<void> {
+    const payload = encodeChatChanged({ userId, chatId });
     await tx.execute(sql`select pg_notify(${CHAT_CHANGED_CHANNEL}, ${payload})`);
   }
 

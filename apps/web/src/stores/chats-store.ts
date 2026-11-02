@@ -62,6 +62,13 @@ interface ChatsState {
    * lo arma GET /chats.
    */
   applyRemote: (chat: ChatSummary) => void;
+  /**
+   * F11: el último mensaje guardado de cada chat, según el evento en vivo
+   * (`lastMessageId`). Aparte de las listas y para cualquier chat, esté o no
+   * en ellas (uno archivado abierto por URL, o con el sidebar sin cargar): la
+   * pestaña que lo tiene abierto lo compara con sus mensajes.
+   */
+  lastMessageIdByChat: Readonly<Record<string, string>>;
 }
 
 export const useChatsStore = create<ChatsState>()(
@@ -70,7 +77,18 @@ export const useChatsStore = create<ChatsState>()(
       chats: null,
       archivedChats: null,
       error: null,
+      lastMessageIdByChat: {},
       applyRemote: (chat) => {
+        const lastMessageId = chat.lastMessageId;
+        if (lastMessageId) {
+          set(
+            (state) => ({
+              lastMessageIdByChat: { ...state.lastMessageIdByChat, [chat.id]: lastMessageId },
+            }),
+            false,
+            "chats/lastMessageId",
+          );
+        }
         set(
           (state) => {
             const known =
