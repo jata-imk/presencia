@@ -34,6 +34,8 @@ import { createGroq } from "@ai-sdk/groq";
 import { createOpenAI } from "@ai-sdk/openai";
 import { experimental_transcribe as transcribe, type TranscriptionModel } from "ai";
 import { costOf } from "../../src/ai/model-prices.js";
+import { escapeHtml } from "../../src/mailer/layout.js";
+import { barajar } from "../../src/metrics/barajar.js";
 import { registrarGasto, splitModelId } from "../gasto-local.js";
 import { findRepoRoot } from "../repo-root.js";
 import { oggDurationSeconds, wer } from "./medir.js";
@@ -42,15 +44,6 @@ import { oggDurationSeconds, wer } from "./medir.js";
 const NOTAS_DIR = path.resolve("scripts/transcription-bakeoff/notas");
 const OUT_ROOT = path.resolve("scripts/transcription-bakeoff/out");
 const AUDIO_EXT = new Set([".ogg", ".oga", ".opus", ".mp3", ".m4a", ".wav", ".webm"]);
-const MEDIA_TYPE: Record<string, string> = {
-  ".ogg": "audio/ogg",
-  ".oga": "audio/ogg",
-  ".opus": "audio/ogg",
-  ".mp3": "audio/mpeg",
-  ".m4a": "audio/mp4",
-  ".wav": "audio/wav",
-  ".webm": "audio/webm",
-};
 const DEFAULT_MODELS = "groq:whisper-large-v3-turbo,openai:gpt-4o-mini-transcribe";
 
 interface Candidato {
@@ -65,7 +58,6 @@ interface Candidato {
 interface Nota {
   nombre: string;
   archivo: string;
-  mediaType: string;
   data: Uint8Array;
   referencia?: string;
   segundos?: number;
@@ -122,7 +114,6 @@ async function leerNotas(): Promise<Nota[]> {
     notas.push({
       nombre,
       archivo,
-      mediaType: MEDIA_TYPE[ext] ?? "audio/ogg",
       data,
       referencia,
       segundos,
@@ -218,9 +209,10 @@ function reporte(fecha: string, cands: Candidato[], notas: Nota[], piezas: Pieza
       ok.flatMap((p) => (p.werSinAcentos === undefined ? [] : [p.werSinAcentos])),
     );
     const lat = promedio(ok.map((p) => p.latenciaMs ?? 0));
+    const sinPrecio = ok.some((p) => p.costUsd === null || p.costUsd === undefined);
     const costo = ok.reduce((a, p) => a + (p.costUsd ?? 0), 0);
     l.push(
-      `| \`${c.etiqueta}\` | ${String(ok.length)}/${String(mias.length)} | ${pct(w)} | ${pct(ws)} | ${lat === undefined ? "—" : `${(lat / 1000).toFixed(1)} s`} | $${costo.toFixed(4)} |`,
+      `| \`${c.etiqueta}\` | ${String(ok.length)}/${String(mias.length)} | ${pct(w)} | ${pct(ws)} | ${lat === undefined ? "—" : `${(lat / 1000).toFixed(1)} s`} | ${sinPrecio ? "sin precio (falta la duración)" : `$${costo.toFixed(4)}`} |`,
     );
   }
   l.push("", "## Por nota", "");
@@ -251,23 +243,10 @@ function reporte(fecha: string, cands: Candidato[], notas: Nota[], piezas: Pieza
   return l.join("\n");
 }
 
-function barajar<T>(xs: T[]): T[] {
-  const a = [...xs];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const x = a[i] as T;
-    a[i] = a[j] as T;
-    a[j] = x;
-  }
-  return a;
-}
-
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
 async function galeria(dir: string, notas: Nota[], piezas: Pieza[]): Promise<void> {
   const mapa: Record<string, Record<string, string>> = {};
   const bloques: string[] = [];
-  for (const n of notas) {
+  for (const [idx, n] of notas.entries()) {
     await copyFile(path.join(NOTAS_DIR, n.archivo), path.join(dir, n.archivo));
     const mias = barajar(piezas.filter((p) => p.nota === n.nombre && p.status === "ok"));
     const letras: Record<string, string> = {};
@@ -278,13 +257,13 @@ async function galeria(dir: string, notas: Nota[], piezas: Pieza[]): Promise<voi
       const radios = [1, 2, 3, 4, 5]
         .map(
           (v) =>
-            `<label><input type="radio" name="${esc(n.nombre)}|${letra}" value="${String(v)}"> ${String(v)}</label>`,
+            `<label><input type="radio" name="r${String(idx)}-${letra}" data-nota="${escapeHtml(n.nombre)}" data-letra="${letra}" value="${String(v)}"> ${String(v)}</label>`,
         )
         .join(" ");
-      return `<div class="t"><b>${letra}</b><p>${esc(p.texto ?? "")}</p><div>${radios}</div></div>`;
+      return `<div class="t"><b>${letra}</b><p>${escapeHtml(p.texto ?? "")}</p><div>${radios}</div></div>`;
     });
     bloques.push(
-      `<section><h2>${esc(n.nombre)}</h2><audio controls src="${esc(n.archivo)}"></audio>${filas.join("")}</section>`,
+      `<section><h2>${escapeHtml(n.nombre)}</h2><audio controls src="${escapeHtml(encodeURIComponent(n.archivo))}"></audio>${filas.join("")}</section>`,
     );
   }
   const html = `<!doctype html><meta charset="utf-8"><title>Bake-off de transcripción</title>
@@ -294,7 +273,7 @@ async function galeria(dir: string, notas: Nota[], piezas: Pieza[]): Promise<voi
 ${bloques.join("\n")}
 <button id="copiar">Copiar calificaciones</button> <span id="ok"></span>
 <script>
-document.getElementById('copiar').onclick=async()=>{const r={};for(const i of document.querySelectorAll('input:checked')){const[n,l]=i.name.split('|');(r[n]??={})[l]=Number(i.value)}await navigator.clipboard.writeText(JSON.stringify(r,null,2));document.getElementById('ok').textContent='Copiado'}
+document.getElementById('copiar').onclick=async()=>{const r={};for(const i of document.querySelectorAll('input:checked')){const n=i.dataset.nota,l=i.dataset.letra;(r[n]??={})[l]=Number(i.value)}await navigator.clipboard.writeText(JSON.stringify(r,null,2));document.getElementById('ok').textContent='Copiado'}
 </script>`;
   await writeFile(path.join(dir, "index.html"), html, "utf8");
   await writeFile(path.join(dir, "mapa.json"), JSON.stringify(mapa, null, 2), "utf8");

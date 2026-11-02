@@ -9,6 +9,10 @@ describe("normalizar", () => {
   it("sin acentos quita las tildes pero deja la ñ", () => {
     expect(normalizar("Año más café", { sinAcentos: true })).toEqual(["año", "mas", "cafe"]);
   });
+
+  it("un acento descompuesto (NFD) no parte la palabra", () => {
+    expect(normalizar("Mérida")).toEqual(["mérida"]);
+  });
 });
 
 describe("wer", () => {

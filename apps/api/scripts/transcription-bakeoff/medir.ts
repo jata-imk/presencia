@@ -6,7 +6,9 @@
  * queda: "año" y "ano" no son la misma palabra).
  */
 export function normalizar(texto: string, { sinAcentos = false } = {}): string[] {
-  let t = texto.toLowerCase();
+  // NFC primero: un acento descompuesto (un .txt guardado en macOS) partiría
+  // la palabra en dos al quitar la puntuación.
+  let t = texto.normalize("NFC").toLowerCase();
   if (sinAcentos) {
     // Solo las tildes y diéresis de las vocales: la ñ se queda.
     t = t
@@ -64,7 +66,8 @@ export function oggDurationSeconds(data: Uint8Array): number | undefined {
   if (head === -1) return undefined;
   if (head + 12 <= data.length) preSkip = view.getUint16(head + 10, true);
   for (let i = data.length - 27; i >= 0; i--) {
-    if (!esOggS(i)) continue;
+    // Versión 0 del formato: filtra un "OggS" que caiga por azar dentro de un paquete.
+    if (!esOggS(i) || data[i + 4] !== 0) continue;
     const granulo = view.getBigUint64(i + 6, true);
     if (granulo === 0xffffffffffffffffn) continue;
     return Math.max(0, Number(granulo) - preSkip) / 48_000;

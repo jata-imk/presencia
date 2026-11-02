@@ -61,12 +61,19 @@ const recorta = (v: unknown, max = 900) => {
 };
 
 async function api(metodo: string, params: Record<string, unknown> = {}): Promise<Respuesta> {
-  const res = await fetch(`https://api.telegram.org/bot${token}/${metodo}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  const json = (await res.json()) as Respuesta;
+  // Nunca tira: un 502 en HTML o la red caída a media sonda no puede perder
+  // los pasos que Jose ya hizo a mano (el reporte se escribe al final).
+  let json: Respuesta;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/${metodo}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(params),
+    });
+    json = (await res.json()) as Respuesta;
+  } catch (error) {
+    json = { ok: false, description: error instanceof Error ? error.message : String(error) };
+  }
   // Los textos largos no van completos al reporte: lo que importa es si pasó.
   const visibles = Object.fromEntries(
     Object.entries(params).map(([k, v]) => [
@@ -104,12 +111,17 @@ async function leer(): Promise<void> {
       offset,
       timeout: 20,
       allowed_updates: ["message", "callback_query", "stopped_message_generation"],
-    }).catch((): Respuesta => ({ ok: false }));
+    });
     if (r.ok && Array.isArray(r.result)) {
       for (const u of r.result as Update[]) {
         offset = u.update_id + 1;
         cola.push(u);
       }
+    } else {
+      // 409 (otro proceso leyendo el mismo bot), 401 o sin red: sin pausa,
+      // el ciclo martillaría a Telegram y se comería un núcleo.
+      if (r.error_code === 409) console.warn("   ⚠️ Otro proceso lee este bot (¿la API de dev?).");
+      await dormir(1000);
     }
   }
 }
@@ -248,7 +260,9 @@ function sinDatosPersonales(clave: string, valor: unknown): unknown {
     Math.abs(valor) > 100_000
   )
     return "‹id›";
-  if (clave === "callback_query_id") return "‹id›";
+  // Ids estables por usuario que llegan como string.
+  if (clave === "callback_query_id" || clave === "chat_instance") return "‹id›";
+  if (clave === "id" && typeof valor === "string" && /^\d{6,}$/.test(valor)) return "‹id›";
   if (
     (clave === "file_id" || clave === "file_unique_id" || clave === "file_path") &&
     typeof valor === "string"
@@ -265,7 +279,9 @@ function reporte(fecha: string, me: unknown): string {
       "Corrida con el bot de dev por `pnpm --filter @presencia/api sonda:telegram`. El token no aparece en el reporte.",
     "",
   );
-  l.push("## getMe", "", "```json", JSON.stringify(me, null, 2), "```", "");
+  // Del bot solo se oculta el id: es el prefijo de su token.
+  const meVisible = JSON.stringify(me, (k: string, v: unknown) => (k === "id" ? "‹id›" : v), 2);
+  l.push("## getMe", "", "```json", meVisible, "```", "");
   l.push("## Pasos", "");
   for (const p of pasos) {
     l.push(`### ${p.titulo}`, "");
