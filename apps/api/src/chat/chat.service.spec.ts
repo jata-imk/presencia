@@ -375,6 +375,60 @@ describe("ChatService · el turno por un TurnSink", () => {
   );
 
   it(
+    "si la entrega se cae, el modelo se corta y el chat queda libre para otro turno",
+    { timeout: 20_000 },
+    async () => {
+      let abortado = false;
+      const colgado = new MockLanguageModelV4({
+        provider: "openai",
+        modelId: "mock-chat",
+        doStream: ({ abortSignal }) =>
+          Promise.resolve({
+            stream: new ReadableStream<LanguageModelV4StreamPart>({
+              start(controller) {
+                controller.enqueue({ type: "stream-start", warnings: [] });
+                // Ya cortado al llegar (el catch corre antes que el modelo), o
+                // cortado después: un proveedor real rechaza en los dos casos.
+                if (abortSignal?.aborted) {
+                  abortado = true;
+                  controller.error(abortSignal.reason);
+                  return;
+                }
+                abortSignal?.addEventListener("abort", () => {
+                  abortado = true;
+                  controller.error(abortSignal.reason);
+                });
+              },
+            }),
+          }),
+      });
+      // Un sink cuyo envío truena (Telegram caído a media respuesta).
+      const roto = new SinkDePrueba();
+      roto.deliver = () => Promise.reject(new Error("El envío falló"));
+      await crear(colgado).streamChat(userId, chatId, userMsg("Hola"), roto, {
+        channel: "telegram",
+      });
+      await vi.waitFor(() => expect(abortado).toBe(true), { timeout: 5_000 });
+
+      // El chat ya acepta otro turno: no hay uno corriendo para nadie.
+      await crear(modeloQueContesta("Ahora sí")).streamChat(
+        userId,
+        chatId,
+        userMsg("¿Sigues ahí?"),
+        new SinkDePrueba(),
+        { channel: "telegram" },
+      );
+      await vi.waitFor(
+        async () => {
+          const rows = await filas();
+          expect(JSON.stringify(rows.at(-1)?.parts)).toContain("Ahora sí");
+        },
+        { timeout: 10_000, interval: 100 },
+      );
+    },
+  );
+
+  it(
     "avisa a las pestañas abiertas (chat_changed) cuando se guarda la respuesta",
     { timeout: 20_000 },
     async () => {

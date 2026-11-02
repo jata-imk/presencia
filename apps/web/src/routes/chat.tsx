@@ -369,36 +369,44 @@ function ChatView({
   ]);
 
   // F11: un turno que entró por otro canal (Telegram) se guarda sin pasar por
-  // esta pestaña. El servidor avisa al guardar la respuesta (`chat_changed`),
-  // y el chat llega al store con su `lastMessageAt` al día: si cambia mientras
-  // aquí no hay un turno en curso, se releen los mensajes. Solo se reemplazan
-  // si el servidor trae alguno que esta pestaña no tiene, así el aviso de un
-  // turno propio (mismos ids, F10.8.2) no repinta nada.
-  const remoteLastMessageAt = useChatsStore(
-    (s) =>
-      (s.chats?.find((c) => c.id === chatId) ?? s.archivedChats?.find((c) => c.id === chatId))
-        ?.lastMessageAt ?? null,
-  );
-  const seenRemote = useRef(remoteLastMessageAt);
+  // esta pestaña. Al guardar cada respuesta el servidor avisa (`chat_changed`)
+  // con el id del último mensaje del chat. Si esta pestaña no lo tiene y no hay
+  // un turno en curso aquí, relee los mensajes. Es una comparación de estado,
+  // no de eventos: un aviso que llega mientras aquí se responde se atiende al
+  // quedar libre. El aviso de un turno propio trae un id que ya está (F10.8.2)
+  // y no relee nada.
+  const remoteLastId = useChatsStore((s) => s.lastMessageIdByChat[chatId] ?? null);
+  // El último id por el que ya se releyó: un aviso se atiende una vez.
+  const syncedFor = useRef<string | null>(null);
   useEffect(() => {
-    const previous = seenRemote.current;
-    if (remoteLastMessageAt === previous) return;
-    seenRemote.current = remoteLastMessageAt;
-    // Sin valor previo es la primera carga del sidebar, no un mensaje nuevo.
-    if (previous === null || status !== "ready") return;
-    // Sin cleanup que la cancele: un re-render no debe tirar la relectura. Lo
-    // que importa se revisa al llegar, sobre el Chat (uno por montaje).
+    if (!remoteLastId || status !== "ready") return;
+    if (syncedFor.current === remoteLastId) return;
+    if (chat.messages.some((m) => m.id === remoteLastId)) return;
+    syncedFor.current = remoteLastId;
     fetchChatMessages(chatId)
       .then((saved) => {
-        // Mientras se releía, el creator empezó a escribir aquí: esa manda.
-        if (chat.status !== "ready") return;
+        // Mientras se releía, el creator empezó a escribir aquí: esa manda, y
+        // el aviso se vuelve a atender cuando esta pestaña quede libre.
+        if (chat.status !== "ready") {
+          syncedFor.current = null;
+          return;
+        }
+        // Un turno de otro canal a medias (otro aviso, como un renombre, puede
+        // llegar entre el mensaje del creator y su respuesta): se espera a la
+        // respuesta, que avisa de nuevo. Pintarlo ahora sería "sin respuesta".
+        if (saved.at(-1)?.role !== "assistant") return;
         const known = new Set(chat.messages.map((m) => m.id));
-        if (saved.some((m) => !known.has(m.id))) setMessages(saved);
+        if (!saved.some((m) => !known.has(m.id))) return;
+        setMessages(saved);
+        // El reintento que estuviera en curso aquí ya no es el último turno.
+        retryingId.current = null;
+        setFailedAgain(false);
       })
       .catch((err: unknown) => {
+        syncedFor.current = null;
         console.error("[chat] No se pudo releer el chat tras un aviso del servidor:", err);
       });
-  }, [remoteLastMessageAt, status, chat, chatId, setMessages]);
+  }, [remoteLastId, status, chat, chatId, setMessages]);
 
   // Regenerar (y desde F10.8.2, editar el último mensaje) borra las cards de
   // la respuesta (ADR-006). Desde F10.5 una card puede traer trabajo del

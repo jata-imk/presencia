@@ -1006,6 +1006,11 @@ export class ChatService {
       })
       .catch((error: unknown) => {
         console.error(`Error entregando el turno del chat (${channel}):`, error);
+        // F11: la entrega se cayó (la web: el pipe; Telegram: un envío). Se
+        // corta el turno antes de soltarlo: si no, el modelo seguiría
+        // generando (y onEnd guardaría y cobraría) mientras el chat ya acepta
+        // otro turno.
+        abortController.abort();
         // No con .finally: al cortar, el pipe se cumple ANTES de que onEnd
         // guarde la respuesta (corre desde el cancel del stream), y soltaría
         // el turno antes de tiempo. Solo si el pipe truena.
@@ -1021,9 +1026,10 @@ export class ChatService {
    * registra; nunca lanza, corre en onEnd).
    *
    * F11: avisa a las pestañas abiertas que el chat tiene mensajes nuevos
-   * (`chat_changed`, en la misma transacción: solo llega si se guardó). Aquí y
-   * no al guardar el mensaje del creator: un turno que llegó por otro canal se
-   * ve con su respuesta, nunca a medias como "sin respuesta".
+   * (`chat_changed`). Aquí y no al guardar el mensaje del creator: un turno
+   * que llegó por otro canal se ve con su respuesta, nunca a medias como "sin
+   * respuesta". Después del commit y aparte: el aviso es una comodidad, y un
+   * fallo suyo no puede costar la respuesta ni su cobro.
    */
   private async persistReply(
     userId: string,
@@ -1036,8 +1042,9 @@ export class ChatService {
     channel: MessageChannel,
     charge?: (tx: Tx, messageId: string) => Promise<unknown>,
   ): Promise<string | null> {
+    let savedId: string;
     try {
-      return await this.dbService.runWithTenant(userId, async (tx) => {
+      savedId = await this.dbService.runWithTenant(userId, async (tx) => {
         const saved = await this.repo.insertMessage(tx, {
           id: responseMessage.id,
           chatId,
@@ -1054,7 +1061,6 @@ export class ChatService {
         await this.repo.touchChat(tx, chatId);
         await this.cardsRepo.linkCardsToMessage(tx, createdCardIds, saved.id);
         await charge?.(tx, saved.id);
-        await this.repo.notifyMessagesChanged(tx, userId, chatId);
         return saved.id;
       });
     } catch (error) {
@@ -1066,6 +1072,15 @@ export class ChatService {
       );
       return null;
     }
+    // Ya guardada: el aviso va solo, y su fallo solo se registra.
+    try {
+      await this.dbService.runWithTenant(userId, (tx) =>
+        this.repo.notifyMessagesChanged(tx, userId, chatId),
+      );
+    } catch (error) {
+      console.error(`[chat] No se pudo avisar a las pestañas del chat ${chatId}:`, error);
+    }
+    return savedId;
   }
 
   /** Ver saveInterrupted en runAgentTurn. Nunca lanza: corre en un timer. */

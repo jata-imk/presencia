@@ -116,6 +116,17 @@ export class ChatRepository {
     return message;
   }
 
+  /** F11: el id del último mensaje del chat (para el evento en vivo), o null. */
+  async lastMessageId(tx: Tx, chatId: string): Promise<string | null> {
+    const [row] = await tx
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.chatId, chatId))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    return row?.id ?? null;
+  }
+
   async touchChat(tx: Tx, chatId: string): Promise<void> {
     await tx
       .update(chats)

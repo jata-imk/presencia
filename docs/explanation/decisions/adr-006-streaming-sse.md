@@ -281,16 +281,22 @@ Para que el bot de Telegram (ADR-030) entre por el mismo turno que la web, el tu
 - **No se partió `ChatService` en otra clase.** Mover el turno (~500 líneas) era el cambio más riesgoso posible para el chat que ya funciona. La costura es el sink: `streamChat` y `regenerateChat` reciben el sink en vez de `res`.
 - **Los rechazos siguen siendo excepciones de Nest** (402 sin cuota, 404, 409). Son errores con su status; el adapter de Telegram los traduce a mensajes por el status, como la web los traduce a respuestas HTTP. No hacía falta una jerarquía de errores propia para un segundo canal.
 - **`messages.channel` se escribe.** `TurnOptions.channel` (default `web`) llega al mensaje del creator y a su respuesta. Un reintento guarda la respuesta nueva con el canal desde el que se pidió; el mensaje del creator conserva el suyo.
-- **Cada respuesta guardada avisa a las pestañas** (`chat_changed`, el mismo canal del título, en la transacción de `persistReply`):
-  - el sidebar recibe el chat con su `lastMessageAt` al día;
-  - la pestaña que tiene ese chat abierto, si no tiene un turno en curso, relee sus mensajes y solo los reemplaza si llegó alguno que no tenía. El aviso de un turno propio trae los mismos ids (F10.8.2) y no repinta nada.
-  - **Se avisa al guardar la respuesta, no al guardar el mensaje del creator:** a mitad de un turno de Telegram, una pestaña vería el mensaje sin respuesta y le pintaría la card de "sin respuesta" (`turnNotices`).
+- **Cada respuesta guardada avisa a las pestañas** (`chat_changed`, el mismo canal del título):
+  - **El aviso sale después del commit y aparte** de la transacción de `persistReply`. Es una comodidad: un fallo de `pg_notify` no puede costar la respuesta ni su cobro.
+  - **El evento en vivo trae `lastMessageId`** (el listener lo lee junto con el chat; `GET /api/chats` no lo manda). El store de la web lo guarda por chat, esté o no ese chat en las listas: uno archivado abierto por URL también se entera.
+  - **La pestaña que tiene el chat abierto compara estado, no eventos.** Si no tiene ese id y aquí no hay un turno en curso, relee los mensajes. Un aviso que llega mientras responde se atiende al quedar libre.
+    - **El aviso de un turno propio trae un id que la pestaña ya tiene** (F10.8.2) y no relee nada. Verificado en la red: la pestaña que mandó no vuelve a pedir los mensajes; la otra los pide una vez.
+  - **Solo se aplica lo releído si termina en una respuesta.** Otro aviso (un renombre) puede llegar entre el mensaje del creator y su respuesta, y pintarlo ahí sería la card de "sin respuesta" (`turnNotices`). La respuesta avisa de nuevo. Por lo mismo, el aviso sale al guardar la respuesta y no al guardar el mensaje del creator.
+  - **Al reemplazar los mensajes se limpia el reintento local** (`retryingId`, `failedAgain`): ya no es el último turno.
+  - Un turno cortado antes de empezar guarda su respuesta vacía con un id que el cliente no vio; su aviso hace que esa misma pestaña relea y quede con lo guardado, que pinta la misma card de "detenida".
+- **Si la entrega se cae** (el sink rechaza), el turno **se aborta antes de soltarlo**. Si no, el modelo seguiría generando (y `onEnd` guardaría y cobraría) mientras el chat ya acepta otro turno.
 - **Pruebas:** el turno no tenía pruebas propias. `chat.service.spec.ts` lo corre por un sink de mentira contra Postgres real con el modelo simulado y verifica que:
   - guarda las dos partes con su canal y cobra una vez;
   - con el sink ya ido antes de empezar, no toca nada ni llama al modelo;
   - un corte a media respuesta queda `stopped` sin cobro;
   - un error con usage queda `failed` y se cobra;
   - regenerar respeta el canal;
-  - avisa una sola vez por turno.
+  - avisa una sola vez por turno;
+  - si la entrega se cae, el modelo se corta y el chat queda libre.
 
-  Dos mutaciones a propósito (quitar el chequeo de `gone` y quitar el aviso) las hicieron fallar.
+  Tres mutaciones a propósito (quitar el chequeo de `gone`, el aviso y el aborto al caerse la entrega) las hicieron fallar. En la web, `chats-store.spec.ts` cubre que el id se guarde aunque el chat no esté en las listas.
