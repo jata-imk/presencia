@@ -12,6 +12,7 @@ import {
   smallint,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   vector,
   uuid,
@@ -753,7 +754,9 @@ export const channelLinks = pgTable(
     status: channelLinkStatus("status").notNull().default("pending"),
     /**
      * F11: sha256 (hex) del código de un solo uso del deep link
-     * (`/start <código>`). Nunca el código en claro. Se borra al canjearlo.
+     * (`/start <código>`). Nunca el código en claro. Al canjearlo se queda en
+     * la fila activa (reabrir el mismo enlace es "ya conectado"); se borra al
+     * desconectar.
      */
     linkTokenHash: text("link_token_hash"),
     linkTokenExpiresAt: timestamp("link_token_expires_at", { withTimezone: true }),
@@ -777,6 +780,45 @@ export const channelLinks = pgTable(
       "channel_links_active_has_external",
       sql`${t.status} <> 'active' OR ${t.externalId} IS NOT NULL`,
     ),
+  ],
+);
+
+/**
+ * F11 PR4 (ADR-030): qué chat de Presencia es cada tema de Telegram. Un tema
+ * es un chat; un mensaje sin tema (clientes sin temas, como Telegram X) va al
+ * chat de la fila con `message_thread_id` nulo, hasta que `/new` la borra.
+ * Borrar el chat en la web borra su fila (cascade): el siguiente mensaje de
+ * ese tema empieza un chat nuevo.
+ */
+export const telegramThreads = pgTable(
+  "telegram_threads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Un chat vive en un solo tema. */
+    chatId: uuid("chat_id")
+      .notNull()
+      .unique("telegram_threads_chat")
+      .references(() => chats.id, { onDelete: "cascade" }),
+    /** El chat privado con el bot (en un privado, el id del usuario de Telegram). */
+    telegramChatId: bigint("telegram_chat_id", { mode: "number" }).notNull(),
+    /** El tema; null = la conversación sin tema. */
+    messageThreadId: integer("message_thread_id"),
+    /**
+     * El título automático del chat renombra el tema. False si el creator le
+     * puso nombre al tema él mismo (`is_name_implicit: false`): ese se respeta.
+     */
+    renameTopic: boolean("rename_topic").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Un tema (o la conversación sin tema) es UN chat. Con NULLS NOT DISTINCT:
+    // sin él, dos filas con el tema nulo no chocarían.
+    unique("telegram_threads_place")
+      .on(t.userId, t.telegramChatId, t.messageThreadId)
+      .nullsNotDistinct(),
   ],
 );
 

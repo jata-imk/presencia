@@ -300,3 +300,9 @@ Para que el bot de Telegram (ADR-030) entre por el mismo turno que la web, el tu
   - si la entrega se cae, el modelo se corta y el chat queda libre.
 
   Tres mutaciones a propósito (quitar el chequeo de `gone`, el aviso y el aborto al caerse la entrega) las hicieron fallar. En la web, `chats-store.spec.ts` cubre que el id se guarde aunque el chat no esté en las listas.
+
+## Addendum (F11 PR4, 2026-11-02): el canal en el prompt y el sink de Telegram
+
+- **El prompt de sistema de un turno de Telegram lleva un apéndice del canal** (`channelInstruction` en `system-prompt.ts`): respuestas más cortas, formato simple y sin mencionar botones de la web. Va **después de la voz y antes de la fecha de hoy**: lo que no cambia queda al principio para el caché del proveedor, y la fecha sigue al final (addendum F10.10 PR7). La web no lleva apéndice: el prompt base ya es de la web. Es puro, para que la suite cultural (PR8) arme el mismo prompt.
+- **`TelegramSink` lee `toUIMessageStream` con el mismo `onEnd`** que el pipe de la web. La lectura termina después de que `onEnd` guardó y cobró, así que el mensaje final de Telegram sale con el turno ya guardado. Detener (`stopped_message_generation`) es `gone` para el turno, igual que cerrar la pestaña.
+- **Una pestaña web suma a Recientes el chat que no conoce** cuando le llega su aviso en vivo (un tema nuevo de Telegram). Antes los avisos de chats desconocidos solo guardaban su `lastMessageId`.

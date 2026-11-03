@@ -4,12 +4,16 @@ import {
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from "@nestjs/common";
+import { autoRetry } from "@grammyjs/auto-retry";
 import { Bot } from "grammy";
-import type { Update } from "grammy/types";
+import type { Message, Update } from "grammy/types";
+import { ChatEvents } from "../chat/chat-events.js";
 import { env } from "../env.js";
 import { TELEGRAM_COMMANDS } from "./telegram.copy.js";
 import { TelegramCommandsService } from "./telegram-commands.service.js";
+import { TelegramConversationService } from "./telegram-conversation.service.js";
 import { isUserContent } from "./telegram-message.js";
+import type { TelegramPlace } from "./telegram-threads.repository.js";
 
 // El bot de Telegram (F11, ADR-030 y ADR-010): grammY como cliente del Bot API.
 //
@@ -23,8 +27,28 @@ import { isUserContent } from "./telegram-message.js";
 // de la app sigue y se reintenta solo (sin reintento, un 5xx de Telegram en el
 // deploy dejaba el canal muerto hasta reiniciar el proceso).
 
-/** Los updates que pedimos. F11 PR3: solo mensajes (el PR4 suma los de detener). */
-const ALLOWED_UPDATES = ["message"] as const;
+/**
+ * Los updates que pedimos: los mensajes, el "Reintentar" (callback_query) y
+ * el botón de detener de los drafts (F11 PR4).
+ */
+const ALLOWED_UPDATES = ["message", "callback_query", "stopped_message_generation"] as const;
+
+/** El callback de "Reintentar": el id del mensaje del creator a volver a contestar. */
+const RETRY_DATA = /^retry:([0-9a-f-]{36})$/;
+
+/**
+ * Lo que corre sin que el bot lo espere no puede rechazar suelto: Node mata el
+ * proceso con un rechazo sin manejar, y con él la web y el SSE. La
+ * conversación ya no lanza; esto es la segunda red.
+ */
+function logLoose(error: unknown): void {
+  console.error("[telegram] Un mensaje falló fuera del handler:", error);
+}
+
+/** Dónde se escribió. Sin tema (Telegram X) no llega `message_thread_id` (sonda de F11). */
+function placeOf(message: Pick<Message, "chat" | "message_thread_id">): TelegramPlace {
+  return { telegramChatId: message.chat.id, threadId: message.message_thread_id ?? null };
+}
 
 /** Cuántos update_id recientes se recuerdan para no atender dos veces el mismo. */
 const RECENT_UPDATES = 500;
@@ -47,8 +71,14 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
   // inserción: el primero es el más viejo.
   private readonly recent = new Set<number>();
 
+  /** Deja de escuchar los títulos nuevos al apagar. */
+  private stopTitles: (() => void) | null = null;
+
   constructor(
     @Inject(TelegramCommandsService) private readonly commands: TelegramCommandsService,
+    @Inject(TelegramConversationService)
+    private readonly conversation: TelegramConversationService,
+    @Inject(ChatEvents) private readonly chatEvents: ChatEvents,
   ) {}
 
   /** Hay token: el canal existe en este entorno. */
@@ -73,8 +103,16 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
       return;
     }
     const bot = new Bot(token);
+    // Un 429 (demasiados envíos) o un 5xx pasajero se reintenta solo, con la
+    // espera que pide Telegram. Tope corto: un draft viejo no vale la espera.
+    bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 10 }));
     this.register(bot);
     this.bot = bot;
+    // F11 PR4: el título nuevo de un chat renombra su tema.
+    this.stopTitles = this.chatEvents.onTitled((event) => {
+      if (!this.ready) return;
+      return this.conversation.renameTopic(bot.api, event);
+    });
     void this.launch(bot);
   }
 
@@ -147,6 +185,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
     // ya no llega a bot.start, y no queda un polling huérfano tras un reload.
     this.stopped = true;
     this.ready = false;
+    this.stopTitles?.();
     if (this.retryTimer) clearTimeout(this.retryTimer);
     if (this.bot?.isRunning()) await this.bot.stop();
   }
@@ -191,11 +230,48 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
     dm.command("disconnect", async (ctx) => {
       await ctx.reply(await this.commands.disconnect(ctx.from));
     });
+    dm.command("new", async (ctx) => {
+      await ctx.reply(await this.conversation.newChat(ctx.from, placeOf(ctx.msg)));
+    });
     dm.on("message", async (ctx) => {
-      // Los avisos de servicio ("tema creado"…) no se contestan: un tema
-      // implícito de iOS duplicaba la respuesta (telegram-message.ts).
-      if (!isUserContent(ctx.message)) return;
+      const message = ctx.message;
+      // "Tema creado": no se contesta (un tema implícito de iOS duplicaba la
+      // respuesta), pero su nombre sirve al crear el chat del tema.
+      const topic = message.forum_topic_created;
+      if (topic) {
+        this.conversation.topicCreated(
+          placeOf(message),
+          topic.name,
+          topic.is_name_implicit === true,
+        );
+        return;
+      }
+      // Los demás avisos de servicio, tampoco (telegram-message.ts).
+      if (!isUserContent(message)) return;
+      if (message.text !== undefined) {
+        // Sin esperar: el turno corre aparte, y el bot sigue atendiendo
+        // (también el botón de detener).
+        void this.conversation
+          .text(ctx.api, ctx.from, placeOf(message), message.text)
+          .catch(logLoose);
+        return;
+      }
       await ctx.reply(await this.commands.message(ctx.from));
+    });
+    dm.on("callback_query:data", async (ctx) => {
+      await ctx.answerCallbackQuery().catch(() => undefined);
+      const match = RETRY_DATA.exec(ctx.callbackQuery.data);
+      const message = ctx.callbackQuery.message;
+      if (!match || !message) return;
+      // El botón se va: un segundo toque no regenera otra vez.
+      await ctx
+        .editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } })
+        .catch(() => undefined);
+      void this.conversation.retry(ctx.api, ctx.from, placeOf(message), match[1]!).catch(logLoose);
+    });
+    bot.on("stopped_message_generation", (ctx) => {
+      const stopped = ctx.update.stopped_message_generation;
+      this.conversation.stop(stopped.chat.id, stopped.draft_id);
     });
   }
 }

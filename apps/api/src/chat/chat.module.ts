@@ -10,6 +10,7 @@ import { WebModule } from "../web/web.module.js";
 import { CardRewriteController } from "./card-rewrite.controller.js";
 import { CardRewriteService } from "./card-rewrite.service.js";
 import { ChatController } from "./chat.controller.js";
+import { ChatEvents } from "./chat-events.js";
 import { ChatRepository } from "./chat.repository.js";
 import { ChatService } from "./chat.service.js";
 import { ChatTitleService } from "./chat-title.service.js";
@@ -31,12 +32,15 @@ import { MemoryService } from "./memory.service.js";
   providers: [
     ChatService,
     ChatRepository,
+    ChatEvents,
     CardRewriteService,
     ChatTitleService,
     HistoryCompactionService,
     MemoryService,
   ],
   // ChatJobs vive en ScheduledJobsModule, con la lista completa de colas.
-  exports: [HistoryCompactionService, MemoryService],
+  // F11: ChatService, ChatEvents y ChatRepository, para el canal Telegram
+  // (TelegramModule): el turno, los títulos y crear el chat de un tema.
+  exports: [HistoryCompactionService, MemoryService, ChatService, ChatEvents, ChatRepository],
 })
 export class ChatModule {}

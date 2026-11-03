@@ -8,6 +8,7 @@ import { TELEGRAM_LINK_TTL_MINUTES } from "@presencia/shared";
 export const TELEGRAM_COMMANDS = [
   { command: "start", description: "Empezar o conectar tu cuenta de Presencia" },
   { command: "help", description: "Qué puedo hacer por ti aquí" },
+  { command: "new", description: "Empezar un chat nuevo (si tu Telegram no tiene temas)" },
   { command: "disconnect", description: "Desconectar este Telegram de tu cuenta" },
 ] as const;
 
@@ -33,7 +34,8 @@ export const copy = {
   help:
     "Puedo ayudarte a crear contenido desde aquí, igual que en la web.\n\n" +
     "Cada tema de este chat es un chat de Presencia: abre uno nuevo para empezar otra idea.\n\n" +
-    "/help — esta ayuda\n/disconnect — desconectar este Telegram de tu cuenta",
+    "Si tu Telegram no muestra temas, todo va al mismo chat: escribe /new para empezar otro.\n\n" +
+    "/help — esta ayuda\n/new — empezar un chat nuevo\n/disconnect — desconectar este Telegram de tu cuenta",
   disconnected:
     "Listo, desconecté este Telegram de tu cuenta. Tus chats siguen en Presencia. Para volver " +
     "a conectarte, genera un enlace en Configuración → Canales conectados.",
@@ -41,7 +43,27 @@ export const copy = {
   unlinkedFromWeb:
     "Desconectaste este Telegram desde Presencia. Tus chats siguen en la web. Si fue un error, " +
     "vuelve a conectarte en Configuración → Canales conectados.",
-  /** F11 PR3: el bot ya vincula, pero todavía no conversa (llega en el PR4). */
-  comingSoon: (webUrl: string) =>
-    `Ya estamos conectados. Muy pronto vas a poder crear contenido desde aquí; por ahora, sigue en la web:\n${webUrl}`,
+  // --- La conversación (F11 PR4) ---
+  /** F11 PR4: solo texto. Fotos y archivos llegan en el PR5; notas de voz, en el PR6. */
+  notYet:
+    "Por ahora solo leo texto por aquí. Las fotos, los archivos y las notas de voz llegan muy " +
+    "pronto; mientras, mándamelos desde la web.",
+  newChat: "Listo: lo que escribas ahora empieza un chat nuevo.",
+  newInTopic:
+    "Aquí cada tema es un chat. Para empezar otro, abre un tema nuevo (o escribe fuera de los temas).",
+  queueFull: "Voy con tus mensajes anteriores. Espera a que termine y me cuentas lo siguiente.",
+  noQuota: (webUrl: string) =>
+    `Se acabó tu cuota de este periodo, así que no puedo responder. Revisa tu plan:\n${webUrl}/configuracion/plan`,
+  busy: "Estoy terminando otra respuesta en este chat. Escríbeme en cuanto acabe.",
+  turnFailed: "Algo salió mal generando la respuesta. Inténtalo de nuevo.",
+  cantRetry: "Esa respuesta ya no se puede reintentar: el chat siguió después.",
+  chatGone: "Ese chat ya no existe en Presencia. Escribe algo para empezar uno nuevo.",
+  thinking: "Pensando…",
+  stoppedNote: "Detuviste la respuesta.",
+  emptyReply: "No me salió una respuesta. Inténtalo de nuevo.",
+  retryButton: "Reintentar",
+  openButton: "Abrir en Presencia",
+  openInWeb: (url: string) => `Ábrelo en Presencia: ${url}`,
+  sourcesTitle: "Fuentes",
+  cardTitle: (red: string) => `Borrador para ${red}`,
 };
