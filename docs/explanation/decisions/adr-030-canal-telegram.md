@@ -116,8 +116,26 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
 - **Apéndice del canal en el prompt** (`channelInstruction`, `chat/system-prompt.ts`): respuestas más cortas, formato simple, sin botones de la web, y que los borradores llegan con un botón para abrirlos en Presencia. Va después de la voz y antes de la fecha de hoy (addendum F11 PR4 de ADR-006).
 - **`@grammyjs/auto-retry`:** un 429 o un 5xx pasajero de Telegram se reintenta solo, con tope corto.
 - **Updates que se piden:** `message`, `callback_query` (Reintentar) y `stopped_message_generation` (detener).
-- **Por ahora, solo texto.** Una foto, un archivo o una nota de voz reciben "por ahora solo leo texto" (PR5 y PR6).
+- **Fotos y archivos desde el PR5** (sección siguiente). Una nota de voz recibe "llegan muy pronto" hasta el PR6.
 - **La web ve el chat nacer:** el aviso en vivo de un chat que la pestaña no conoce lo suma a Recientes (antes se ignoraba). Verificado: el chat de un tema apareció con su título automático en una pestaña abierta antes de crearse.
+
+## Fotos, álbumes y documentos (F11 PR5)
+
+- **Entran como un adjunto de la web.** El bot baja el archivo (`getFile`, `telegram/telegram-files.ts`) y lo sube con `AttachmentsService.upload` (F10.9): las mismas validaciones por contenido, el mismo storage, las mismas partes `file` en el mensaje y el mismo `ver_adjunto` después. El caption es el texto del mensaje, y va después de los archivos, como en el composer.
+- **Qué entra:** una foto (el tamaño más grande que trae; `processAttachment` la achica), y un documento PDF, de imagen o `.md/.txt/.csv/.json`.
+  - Un documento se revisa por nombre y tipo **antes de bajarlo**: un `.docx` de 19 MB no se baja para rechazarlo.
+  - Una foto HEIC mandada "como archivo" recibe "mándala como foto" (como foto, Telegram la convierte a JPEG).
+  - Video, sticker, ubicación… reciben "eso todavía no lo leo", sin cobro.
+- **20 MB:** es lo que el Bot API deja bajar a un bot (el tope de la web es 25 MB). Si Telegram dice que pesa más, ni se pide; si no lo dice, la bajada se corta al pasarse. El aviso: "súbelo desde la web". La URL de bajada lleva el token del bot, así que nunca va a un log ni a un error.
+- **Un álbum es un mensaje.** Telegram manda un update por foto con el mismo `media_group_id`. La primera abre una ventana de 1.5 s (antes de cualquier `await`: con webhook las demás llegan en paralelo), toma su lugar en la fila del tema y resuelve al creator una sola vez (a quien no está conectado, un aviso por álbum, no diez). Las siguientes se suman y reinician la ventana; con 10 (el máximo de Telegram, y `ATTACHMENTS_PER_MESSAGE`) se cierra al instante. Las fotos se nombran `foto-1.jpg`, `foto-2.jpg`… para que el modelo y `ver_adjunto` las distingan.
+- **Un archivo que falla se salta con aviso y el resto sigue,** como el chip con error que se quita en la web. Los avisos salen antes de la respuesta. Si ninguno entró, no hay turno ni cobro, aunque traiga caption: el caption hablaba de ese archivo ("resúmelo"), y solo el modelo no tendría qué leer.
+- **Se suben sin chat** (`chatId: null`) y el turno los liga al enviar, como en la pantalla de chat nuevo de la web. Si todos fallan, no queda un chat vacío; los que se quedan sin mensaje los borra el barrido de adjuntos al día.
+- **Mientras baja:** el draft dice _Leyendo tus archivos…_ con el botón de detener, que ya sirve, y el turno sigue en el mismo draft. Se refresca cada 20 s (un draft dura 30) y el turno no arranca hasta que el último llegó: si no, podía caer encima del _Pensando…_ (revisión del PR5). Detener en ese momento no guarda nada: "Lo detuviste antes de que empezara". Se bajan de 3 en 3, en el orden en que llegaron.
+- **El lugar en la fila se toma antes de cualquier `await`**, también para el texto (revisión del PR5): saber de quién es el mensaje va dentro de la fila. Antes, una foto y el texto que la sigue, o dos textos seguidos, podían contestarse al revés según qué búsqueda volviera primero.
+- **Un audio** (no nota de voz) recibe lo mismo que una nota de voz: llega en el PR6, que transcribe los dos.
+- **Aceptado, sin arreglo:** un "detener" justo mientras se crea el chat (una transacción de milisegundos) deja ese chat vacío; y una foto de un álbum que llegue más de 1.5 s después de la anterior abre otro mensaje. Con webhook, Telegram manda el álbum junto y solo reenvía lo que no aceptamos con un 200.
+- **Foto sin caption y el texto aparte son dos turnos** (decisión de Jose, 2026-11-02): cada mensaje de Telegram es uno, igual que en la web. Se descartó esperar unos segundos un texto que acompañe a la foto: retrasaría toda foto sin caption.
+- **413** (los archivos del mensaje pasan del presupuesto de 60k tokens, F10.9): "mándamelos en mensajes separados".
 
 ## Riesgo anotado: otros canales no tienen estas capacidades
 

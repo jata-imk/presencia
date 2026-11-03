@@ -69,16 +69,22 @@ describe("TelegramCommandsService", () => {
   });
 
   it("un mensaje de quien no está conectado recibe cómo conectarse", async () => {
-    expect(await crear({ resolveUser: () => Promise.resolve(null) }).message(yo)).toBe(
+    expect(await crear({ resolveUser: () => Promise.resolve(null) }).message(yo, "voice")).toBe(
       copy.notLinked(webUrl),
     );
+  });
+
+  it("al conectado: la voz llega pronto (PR6); lo demás no se lee", async () => {
+    const conectado = crear({ resolveUser: () => Promise.resolve("u1") });
+    expect(await conectado.message(yo, "voice")).toBe(copy.voiceSoon);
+    expect(await conectado.message(yo, "other")).toBe(copy.unsupported);
   });
 
   it("todo lo que dice el bot tutea y lleva a Configuración cuando hace falta", () => {
     const textos = [copy.notLinked(webUrl), copy.invalid(webUrl), copy.expired(webUrl)];
     for (const t of textos) expect(t).toContain(`${webUrl}/configuracion/canales`);
     const todo = Object.values(copy)
-      .map((v) => (typeof v === "function" ? v(webUrl) : v))
+      .map((v) => (typeof v === "function" ? v(webUrl, "motivo", "motivo") : v))
       .join(" ");
     expect(todo).not.toMatch(/\b(vos|querés|podés|tenés|usted)\b/i);
   });

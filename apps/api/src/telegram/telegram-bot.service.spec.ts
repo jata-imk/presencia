@@ -141,3 +141,106 @@ describe("TelegramBotService: arranque", () => {
     expect(bot.init).toHaveBeenCalledTimes(1);
   });
 });
+
+// F11 PR5: a dónde va cada mensaje. Con un Bot de grammY de verdad (sus
+// filtros son lo que se prueba) y la API interceptada: nada sale a Telegram.
+describe("TelegramBotService: a dónde va cada mensaje", () => {
+  async function montarRuteo() {
+    const { Bot } = await import("grammy");
+    const bot = new Bot("123:abc", {
+      botInfo: {
+        id: 123,
+        is_bot: true,
+        first_name: "Presencia",
+        username: "bot_de_prueba",
+        can_join_groups: false,
+        can_read_all_group_messages: false,
+        supports_inline_queries: false,
+        can_connect_to_business: false,
+        has_main_web_app: false,
+      } as never,
+    });
+    const respuestas: string[] = [];
+    bot.api.config.use((_prev, method, payload) => {
+      if (method === "sendMessage") respuestas.push((payload as { text: string }).text);
+      return Promise.resolve({ ok: true, result: true } as never);
+    });
+    const conversation = {
+      text: vi.fn(() => Promise.resolve()),
+      media: vi.fn(() => Promise.resolve()),
+    };
+    const commands = { message: vi.fn((_from: unknown, kind: string) => Promise.resolve(kind)) };
+    const s = new TelegramBotService(
+      commands as never,
+      conversation as never,
+      { onTitled: () => () => undefined } as never,
+    );
+    (s as unknown as { register(b: unknown): void }).register(bot);
+    let id = 0;
+    const enviar = (message: Record<string, unknown>) =>
+      bot.handleUpdate({
+        update_id: ++id,
+        message: {
+          message_id: id,
+          date: 0,
+          chat: { id: 5, type: "private", first_name: "Jose" },
+          from: { id: 5, is_bot: false, first_name: "Jose" },
+          ...message,
+        },
+      } as never);
+    return { conversation, commands, respuestas, enviar };
+  }
+
+  it("foto y documento van a la conversación; la voz y el sticker reciben su aviso", async () => {
+    const t = await montarRuteo();
+    await t.enviar({
+      photo: [{ file_id: "p", file_unique_id: "p", width: 10, height: 10 }],
+      caption: "mira",
+    });
+    await t.enviar({
+      document: { file_id: "d", file_unique_id: "d", file_name: "plan.docx" },
+    });
+    await t.enviar({ voice: { file_id: "v", file_unique_id: "v", duration: 3 } });
+    await t.enviar({
+      sticker: {
+        file_id: "s",
+        file_unique_id: "s",
+        type: "regular",
+        width: 1,
+        height: 1,
+        is_animated: false,
+        is_video: false,
+      },
+    });
+    // Un video suelto no es del turno; en un álbum sí, para avisar junto con el resto.
+    await t.enviar({
+      video: { file_id: "x", file_unique_id: "x", width: 1, height: 1, duration: 1 },
+    });
+    await t.enviar({
+      video: { file_id: "y", file_unique_id: "y", width: 1, height: 1, duration: 1 },
+      media_group_id: "g1",
+    });
+    const items = t.conversation.media.mock.calls.map(
+      (c) => (c as unknown[])[3] as { caption?: string; albumId?: string; media: object },
+    );
+    expect(items.map((i) => [i.caption, i.albumId, i.media])).toEqual([
+      [
+        "mira",
+        undefined,
+        { kind: "file", file: expect.objectContaining({ photo: true }) as object },
+      ],
+      [
+        undefined,
+        undefined,
+        { kind: "rejected", filename: "plan.docx", label: "un archivo", reason: "unsupported" },
+      ],
+      [
+        undefined,
+        "g1",
+        { kind: "rejected", filename: null, label: "un video", reason: "unsupported" },
+      ],
+    ]);
+    expect(t.respuestas).toEqual(["voice", "other", "other"]);
+    expect(t.conversation.text).not.toHaveBeenCalled();
+  });
+});
