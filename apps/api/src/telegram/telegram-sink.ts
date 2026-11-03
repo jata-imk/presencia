@@ -5,7 +5,10 @@ import { NETWORK_LABELS, buildPostText, webSources } from "@presencia/shared";
 import type { TurnSink, TurnStream } from "../chat/turn-sink.js";
 import { copy } from "./telegram.copy.js";
 import {
+  escapeAttr,
   escapeHtml,
+  safeHref,
+  stripTags,
   toTelegramDraft,
   toTelegramMessages,
   TELEGRAM_MESSAGE_LIMIT,
@@ -62,6 +65,12 @@ export function buttonUrlAllowed(url: string): boolean {
   }
 }
 
+/** Un enlace, si su URL es de las que Telegram abre; si no, el texto solo. */
+function link(url: string, inner: string): string {
+  const href = safeHref(url);
+  return href ? `<a href="${escapeAttr(href)}">${inner}</a>` : inner;
+}
+
 /** El error de grammY cuando el HTML no le gustó a Telegram. */
 function isParseError(error: unknown): boolean {
   return error instanceof Error && /can't parse entities/i.test(error.message);
@@ -69,8 +78,7 @@ function isParseError(error: unknown): boolean {
 
 /** El HTML como texto plano, para reintentar sin formato. */
 function toPlain(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, "")
+  return stripTags(html)
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
@@ -150,19 +158,22 @@ export class TelegramSink implements TurnSink {
   // --- El draft ---
 
   private tick(): void {
+    // Detenido: ni un draft más (cada uno sale con el botón de detener).
+    if (this.goneFlag) return;
     const stale = Date.now() - this.lastDraftAt > DRAFT_KEEPALIVE_MS;
     if (this.progress.version === this.drafted && !stale) return;
     const text = this.progress.text;
     const step = this.progress.currentStep;
     const body = text ? toTelegramDraft(text, TELEGRAM_MESSAGE_LIMIT - 200) : "";
     const html = step ? `${body ? `${body}\n\n` : ""}<i>${escapeHtml(step)}</i>` : body;
-    this.drafted = this.progress.version;
-    this.sendDraft(html);
+    // Solo cuenta como mandada si salió: uno que se saltó se intenta en el
+    // siguiente tick, aunque el turno no cambie (una tool larga).
+    if (this.sendDraft(html)) this.drafted = this.progress.version;
   }
 
-  /** Sin esperar ni encimar: si el anterior sigue en camino, este se salta. */
-  private sendDraft(html: string): void {
-    if (this.draftInFlight || this.deliveredFlag) return;
+  /** Sin esperar ni encimar: si el anterior sigue en camino, este se salta (false). */
+  private sendDraft(html: string): boolean {
+    if (this.draftInFlight || this.deliveredFlag) return false;
     const { api, place, draftId } = this.options;
     this.lastDraftAt = Date.now();
     const other = {
@@ -189,23 +200,24 @@ export class TelegramSink implements TurnSink {
       .finally(() => {
         this.draftInFlight = null;
       });
+    return true;
   }
 
   // --- Lo que se queda en el chat ---
 
   private async sendFinal(): Promise<void> {
     const { progress } = this;
-    const stopped = this.goneFlag;
+    // Lo mismo que decide el turno al guardarla: detenida si el stream se
+    // abortó, o si se fue sin terminar. Un "detener" que llegó con la
+    // respuesta ya completa no la vuelve detenida.
+    const stopped = progress.aborted || (this.goneFlag && progress.finishReason === null);
     const failed = progress.error !== null;
     const messages = progress.text ? toTelegramMessages(progress.text) : [];
 
     const sources = webSources({ parts: progress.sourceParts }).slice(0, SOURCES_SHOWN);
     if (sources.length > 0) {
       const list = sources
-        .map(
-          (s) =>
-            `• <a href="${escapeHtml(s.url).replace(/"/g, "&quot;")}">${escapeHtml(s.titulo)}</a> · ${escapeHtml(s.dominio)}`,
-        )
+        .map((s) => `• ${link(s.url, escapeHtml(s.titulo))} · ${escapeHtml(s.dominio)}`)
         .join("\n");
       const block = `<b>${copy.sourcesTitle}</b>\n${list}`;
       const last = messages.at(-1);

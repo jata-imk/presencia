@@ -103,7 +103,7 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
     - Se refresca una vez por segundo como mucho, sin encimar envíos, y se reenvía antes de 20 s porque un draft dura 30.
   - **Al terminar:** la respuesta en mensajes HTML (`telegram/telegram-html.ts`), las **fuentes** al final (la misma `webSources` de la web, movida a `packages/shared`), un mensaje por card con su red y el texto recortado, y el botón **"Abrir en Presencia"**.
     - Telegram rechaza un botón de URL a `localhost` o a una IP, así que en dev el enlace va en el texto.
-  - **Detenida o fallida:** la nota con **"Reintentar"** (callback `retry:<id del mensaje>` → `regenerateChat`). El botón se quita al tocarlo.
+  - **Detenida o fallida:** la nota con **"Reintentar"** (callback `retry:<id del mensaje>` → `regenerateChat`), en el chat de ese mensaje y no en el del lugar: tras `/new`, o con el chat borrado en la web, el lugar ya es de otro chat. El botón se quita al tocarlo.
 - **El HTML se arma desde los tokens de `marked`, nunca pegando strings:** cada etiqueta que se abre se cierra, también con el markdown a medias de un draft. Así:
   - lo que Telegram no tiene se traduce: un encabezado es negritas, una lista son viñetas;
   - una tabla de hasta 40 columnas de ancho va en `<pre>` alineada, y una más ancha se vuelve una lista por fila (como `markdown.tables` de OpenClaw);
@@ -111,7 +111,7 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
   - si Telegram rechaza el HTML de todos modos, el mismo texto va sin formato.
 - **En fila por tema, en memoria:**
   - Dos mensajes del mismo tema se contestan uno tras otro, y temas distintos corren en paralelo. Con más de 3 en espera, el bot pide calma.
-  - **El handler nunca espera el turno:** con polling, grammY atiende un update a la vez, y esperar ahí detendría todo, también el botón de detener. Es el mismo criterio de OpenClaw (una cola por sesión) y del Chat SDK de Vercel (el turno fuera del handler del webhook).
+  - **El handler nunca espera el turno:** con polling, grammY atiende un update a la vez, y esperar ahí detendría todo, también el botón de detener. **Tampoco lanza:** lo que corre sin que el bot lo espere no puede rechazar suelto (Node mataría el proceso `app`, con la web y el SSE), así que un fallo de la base se le dice al creator y se registra (revisión del PR4). Es el mismo criterio de OpenClaw (una cola por sesión) y del Chat SDK de Vercel (el turno fuera del handler del webhook).
 - **Errores antes del turno** (las excepciones de Nest, por status): 402 → sin cuota, con el enlace a Plan; 409 → "estoy terminando otra respuesta"; 404 → el chat ya no existe, o esa respuesta ya no se puede reintentar.
 - **Apéndice del canal en el prompt** (`channelInstruction`, `chat/system-prompt.ts`): respuestas más cortas, formato simple, sin botones de la web, y que los borradores llegan con un botón para abrirlos en Presencia. Va después de la voz y antes de la fecha de hoy (addendum F11 PR4 de ADR-006).
 - **`@grammyjs/auto-retry`:** un 429 o un 5xx pasajero de Telegram se reintenta solo, con tope corto.

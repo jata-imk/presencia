@@ -296,6 +296,72 @@ describe("TelegramSink", () => {
   });
 });
 
+describe("TelegramSink · detener y el ritmo del draft", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("detener con la respuesta ya completa no la vuelve detenida", async () => {
+    const api = apiFalsa();
+    const s = sink(api);
+    const { stream, push, end } = streamControlado();
+    const entrega = s.deliver(stream, {});
+    for (const c of texto("t1", "Respuesta completa")) push(c);
+    push({ type: "finish", finishReason: "stop" });
+    await vi.advanceTimersByTimeAsync(0);
+    s.stop();
+    end();
+    await entrega;
+    expect(enviados(api)).toEqual(["Respuesta completa"]);
+  });
+
+  it("después de detener no sale ni un draft más", async () => {
+    const api = apiFalsa();
+    const s = sink(api);
+    const { stream, push, end } = streamControlado();
+    const entrega = s.deliver(stream, {});
+    await vi.advanceTimersByTimeAsync(0);
+    s.stop();
+    const antes = api.sendMessageDraft.mock.calls.length;
+    for (const c of texto("t1", "algo que alcanzó a llegar")) push(c);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(api.sendMessageDraft.mock.calls.length).toBe(antes);
+    end();
+    await entrega;
+  });
+
+  it("un draft que se saltó (el anterior seguía en camino) sale en el siguiente tick", async () => {
+    const api = apiFalsa();
+    let soltar!: () => void;
+    api.sendMessageDraft.mockImplementationOnce(
+      () => new Promise<true>((r) => (soltar = () => r(true))),
+    );
+    const s = sink(api);
+    const { stream, push, end } = streamControlado();
+    const entrega = s.deliver(stream, {});
+    push({ type: "tool-input-start", toolCallId: "c1", toolName: "leer_enlace" });
+    push({
+      type: "tool-input-available",
+      toolCallId: "c1",
+      toolName: "leer_enlace",
+      input: { url: "https://www.diario.mx/nota" },
+    });
+    // El "Pensando…" sigue en camino: este tick se salta.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(api.sendMessageDraft).toHaveBeenCalledTimes(1);
+    soltar();
+    // Sin chunks nuevos, el siguiente tick igual manda el paso.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(api.sendMessageDraft.mock.calls.at(-1)?.[2]).toBe("<i>Leyendo diario.mx…</i>");
+    end();
+    await entrega;
+  });
+});
+
 describe("buttonUrlAllowed", () => {
   it("solo dominios públicos", () => {
     expect(buttonUrlAllowed("https://presencia.josetejero.com/chats/1")).toBe(true);

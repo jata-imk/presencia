@@ -278,6 +278,15 @@ export class ChatRepository {
       .sort((a, b) => b.similarity - a.similarity);
   }
 
+  /** F11: el chat de un mensaje ("Reintentar" de Telegram lo trae solo por su id). */
+  async chatIdOfMessage(tx: Tx, messageId: string): Promise<string | undefined> {
+    const [row] = await tx
+      .select({ chatId: messages.chatId })
+      .from(messages)
+      .where(eq(messages.id, messageId));
+    return row?.chatId;
+  }
+
   async deleteMessage(tx: Tx, messageId: string): Promise<void> {
     await tx.delete(messages).where(eq(messages.id, messageId));
   }

@@ -36,6 +36,15 @@ const ALLOWED_UPDATES = ["message", "callback_query", "stopped_message_generatio
 /** El callback de "Reintentar": el id del mensaje del creator a volver a contestar. */
 const RETRY_DATA = /^retry:([0-9a-f-]{36})$/;
 
+/**
+ * Lo que corre sin que el bot lo espere no puede rechazar suelto: Node mata el
+ * proceso con un rechazo sin manejar, y con él la web y el SSE. La
+ * conversación ya no lanza; esto es la segunda red.
+ */
+function logLoose(error: unknown): void {
+  console.error("[telegram] Un mensaje falló fuera del handler:", error);
+}
+
 /** Dónde se escribió. Sin tema (Telegram X) no llega `message_thread_id` (sonda de F11). */
 function placeOf(message: Pick<Message, "chat" | "message_thread_id">): TelegramPlace {
   return { telegramChatId: message.chat.id, threadId: message.message_thread_id ?? null };
@@ -242,7 +251,9 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
       if (message.text !== undefined) {
         // Sin esperar: el turno corre aparte, y el bot sigue atendiendo
         // (también el botón de detener).
-        void this.conversation.text(ctx.api, ctx.from, placeOf(message), message.text);
+        void this.conversation
+          .text(ctx.api, ctx.from, placeOf(message), message.text)
+          .catch(logLoose);
         return;
       }
       await ctx.reply(await this.commands.message(ctx.from));
@@ -256,7 +267,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
       await ctx
         .editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } })
         .catch(() => undefined);
-      void this.conversation.retry(ctx.api, ctx.from, placeOf(message), match[1]!);
+      void this.conversation.retry(ctx.api, ctx.from, placeOf(message), match[1]!).catch(logLoose);
     });
     bot.on("stopped_message_generation", (ctx) => {
       const stopped = ctx.update.stopped_message_generation;

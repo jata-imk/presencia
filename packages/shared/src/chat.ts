@@ -3,8 +3,11 @@ import { z } from "zod";
 // Contratos del módulo de chat (F1). La conversación canónica vive en
 // la tabla messages; estos schemas cubren solo la superficie HTTP.
 
+/** El título más largo de un chat (también el que llega de un tema de Telegram, F11). */
+export const CHAT_TITLE_MAX = 120;
+
 export const createChatBodySchema = z.object({
-  title: z.string().trim().min(1).max(120).optional(),
+  title: z.string().trim().min(1).max(CHAT_TITLE_MAX).optional(),
 });
 
 export type CreateChatBody = z.infer<typeof createChatBodySchema>;
@@ -86,6 +89,6 @@ export interface ChatMessageMetadata {
 export const MAX_MESSAGE_CHARS = 50_000;
 
 export const renameChatBodySchema = z.object({
-  title: z.string().trim().min(1).max(120),
+  title: z.string().trim().min(1).max(CHAT_TITLE_MAX),
 });
 export type RenameChatBody = z.infer<typeof renameChatBodySchema>;

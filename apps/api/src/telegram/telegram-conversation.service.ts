@@ -1,6 +1,7 @@
 import { HttpException, Inject, Injectable } from "@nestjs/common";
 import type { UIMessage } from "ai";
 import type { Api } from "grammy";
+import { CHAT_TITLE_MAX } from "@presencia/shared";
 import { randomUUID } from "node:crypto";
 import type { ChatTitled } from "../chat/chat-events.js";
 import { ChatRepository } from "../chat/chat.repository.js";
@@ -82,8 +83,10 @@ export class TelegramConversationService {
     place: TelegramPlace,
     text: string,
   ): Promise<void> {
-    const userId = await this.links.resolveUser(String(from.id));
-    if (!userId) return this.reply(api, place, copy.notLinked(env.WEB_URL));
+    // Nunca lanza: el bot no lo espera (un rechazo suelto tumbaría el proceso
+    // `app` entero, con la web y el SSE). Lo que falle antes de encolar se dice.
+    const userId = await this.resolveOrSay(api, from, place);
+    if (!userId) return;
     this.enqueue(api, place, async () => {
       const chatId = await this.chatFor(userId, place);
       const message: UIMessage = {
@@ -91,7 +94,7 @@ export class TelegramConversationService {
         role: "user",
         parts: [{ type: "text", text }],
       };
-      await this.runTurn(api, place, userId, chatId, message.id, (sink, timezone) =>
+      await this.runTurn(api, place, userId, chatId, message.id, copy.chatGone, (sink, timezone) =>
         this.chat.streamChat(userId, chatId, message, sink, { channel: "telegram", timezone }),
       );
     });
@@ -104,18 +107,47 @@ export class TelegramConversationService {
     place: TelegramPlace,
     userMessageId: string,
   ): Promise<void> {
-    const userId = await this.links.resolveUser(String(from.id));
-    if (!userId) return this.reply(api, place, copy.notLinked(env.WEB_URL));
-    const row = await this.db.runWithTenant(userId, (tx) => this.threads.findByPlace(tx, place));
-    if (!row) return this.reply(api, place, copy.chatGone);
+    // Nunca lanza (ver `text`).
+    const userId = await this.resolveOrSay(api, from, place);
+    if (!userId) return;
+    // El chat del mensaje, no el del lugar: tras `/new` (o un chat borrado en
+    // la web) el lugar ya es de otro chat, y el mensaje sigue en el suyo.
+    let chatId: string | undefined;
+    try {
+      chatId = await this.db.runWithTenant(userId, (tx) =>
+        this.chats.chatIdOfMessage(tx, userMessageId),
+      );
+    } catch (error) {
+      console.error("[telegram] No se pudo buscar el chat del mensaje a reintentar:", error);
+      return this.reply(api, place, copy.turnFailed);
+    }
+    if (!chatId) return this.reply(api, place, copy.chatGone);
+    const target = chatId;
     this.enqueue(api, place, () =>
-      this.runTurn(api, place, userId, row.chatId, userMessageId, (sink, timezone) =>
-        this.chat.regenerateChat(userId, row.chatId, userMessageId, sink, {
+      this.runTurn(api, place, userId, target, userMessageId, copy.cantRetry, (sink, timezone) =>
+        this.chat.regenerateChat(userId, target, userMessageId, sink, {
           channel: "telegram",
           timezone,
         }),
       ),
     );
+  }
+
+  /** De quién es este Telegram; si no está conectado o la base falla, lo dice y da null. */
+  private async resolveOrSay(
+    api: TelegramApi,
+    from: TelegramFrom,
+    place: TelegramPlace,
+  ): Promise<string | null> {
+    try {
+      const userId = await this.links.resolveUser(String(from.id));
+      if (!userId) await this.reply(api, place, copy.notLinked(env.WEB_URL));
+      return userId;
+    } catch (error) {
+      console.error("[telegram] No se pudo saber de quién es el mensaje:", error);
+      await this.reply(api, place, copy.turnFailed);
+      return null;
+    }
   }
 
   /** El botón de detener de un draft. */
@@ -158,7 +190,11 @@ export class TelegramConversationService {
       if (existing) return existing.chatId;
       // Un tema con nombre puesto por el creator le da su título al chat
       // (como renombrarlo: el automático ya no lo toca, ni se cobra).
-      const named = note && !note.implicit ? note.name.trim() : "";
+      // Con el tope de un título (Telegram permite 128 en un tema).
+      const named =
+        note && !note.implicit
+          ? [...note.name.trim()].slice(0, CHAT_TITLE_MAX).join("").trim()
+          : "";
       const chat = await this.chats.createChat(tx, userId, named || undefined);
       const row = await this.threads.insert(tx, {
         userId,
@@ -180,6 +216,8 @@ export class TelegramConversationService {
     userId: string,
     chatId: string,
     userMessageId: string,
+    /** Lo que se lee con un 404: el chat ya no existe, o esa respuesta ya no se puede reintentar. */
+    notFound: string,
     run: (sink: TelegramSink, timezone: string | null) => Promise<void>,
   ): Promise<void> {
     const draftId = this.newDraftId();
@@ -201,21 +239,19 @@ export class TelegramConversationService {
       // fila del tema espera a que esta respuesta termine de llegar.
       if (sink.started) await sink.finished;
     } catch (error) {
-      await this.reply(api, place, this.errorCopy(error));
+      await this.reply(api, place, this.errorCopy(error, notFound));
     } finally {
       this.sinks.delete(key);
     }
   }
 
   /** Lo que el creator lee cuando el turno ni empezó. */
-  private errorCopy(error: unknown): string {
+  private errorCopy(error: unknown, notFound: string): string {
     if (error instanceof HttpException) {
       const status = error.getStatus();
       if (status === 402) return copy.noQuota(env.WEB_URL);
       if (status === 409) return copy.busy;
-      if (status === 404) {
-        return error.message.includes("reintentar") ? copy.cantRetry : copy.chatGone;
-      }
+      if (status === 404) return notFound;
     }
     console.error("[telegram] El turno no arrancó:", error);
     return copy.turnFailed;

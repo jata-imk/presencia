@@ -28,12 +28,12 @@ export function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function escapeAttr(text: string): string {
+export function escapeAttr(text: string): string {
   return escapeHtml(text).replace(/"/g, "&quot;");
 }
 
 /** Solo enlaces que Telegram abre y que no ejecutan nada. */
-function safeHref(href: string): string | null {
+export function safeHref(href: string): string | null {
   try {
     const url = new URL(href);
     return ["http:", "https:", "mailto:", "tg:"].includes(url.protocol) ? url.toString() : null;
@@ -214,7 +214,7 @@ export function telegramBlocks(markdown: string): string[] {
 }
 
 /** Sin etiquetas: el texto visible (las entidades se quedan, siguen siendo HTML válido). */
-function stripTags(html: string): string {
+export function stripTags(html: string): string {
   return html.replace(/<[^>]+>/g, "");
 }
 
@@ -238,10 +238,15 @@ function splitPlain(text: string, limit: number): string[] {
 
 /** Un bloque que no cabe en un mensaje, en pedazos que sí. */
 function splitBlock(block: string, limit: number): string[] {
-  const pre = block.match(/^<pre>([\s\S]*)<\/pre>$/);
+  // Un bloque de código (con o sin lenguaje): varios, cortados por líneas, cada
+  // uno con la misma etiqueta de apertura.
+  const pre = /^(<pre>(?:<code[^>]*>)?)([\s\S]*?)((?:<\/code>)?<\/pre>)$/.exec(block);
   if (pre) {
-    // Un bloque de código: varios <pre>, cortados por líneas.
-    return splitPlain(pre[1]!, limit - "<pre></pre>".length).map((p) => `<pre>${p}</pre>`);
+    const open = pre[1]!;
+    const close = pre[3]!;
+    return splitPlain(pre[2]!, limit - open.length - close.length).map(
+      (p) => `${open}${p}${close}`,
+    );
   }
   // Cualquier otro: pierde el formato solo ese bloque, nunca el mensaje.
   return splitPlain(stripTags(block), limit);

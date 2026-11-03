@@ -106,6 +106,20 @@ describe("toTelegramMessages", () => {
     }
   });
 
+  it("un bloque de código con lenguaje se reparte conservando su etiqueta", () => {
+    const fence = "```";
+    const code = Array.from({ length: 400 }, (_, i) => `"clave_${String(i)}": ${String(i)},`).join(
+      "\n",
+    );
+    const messages = toTelegramMessages(`${fence}json\n${code}\n${fence}`);
+    expect(messages.length).toBeGreaterThan(1);
+    for (const m of messages) {
+      expect(m.length).toBeLessThanOrEqual(TELEGRAM_MESSAGE_LIMIT);
+      expect(m.startsWith('<pre><code class="language-json">')).toBe(true);
+      expect(m.endsWith("</code></pre>")).toBe(true);
+    }
+  });
+
   it("un párrafo enorme pierde el formato solo él, y no corta una entidad", () => {
     const md = `${"Tom & Jerry ".repeat(600)}`;
     const messages = toTelegramMessages(md);

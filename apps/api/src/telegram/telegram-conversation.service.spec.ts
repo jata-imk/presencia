@@ -34,7 +34,10 @@ const flush = async () => {
   for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
 };
 
-function montar({ conectado = true } = {}) {
+function montar({
+  conectado = true,
+  resolveUser,
+}: { conectado?: boolean; resolveUser?: () => Promise<string | null> } = {}) {
   const filas: TelegramThreadRow[] = [];
   let chats = 0;
   const mismoLugar = (r: TelegramThreadRow, p: TelegramPlace) =>
@@ -78,10 +81,13 @@ function montar({ conectado = true } = {}) {
     turnos.push({ chatId, sink, terminar: () => s.resolveFinished() });
     return Promise.resolve();
   };
+  // De qué chat es cada mensaje del creator ("Reintentar" lo busca así).
+  const mensajes = new Map<string, string>();
   const chat = {
-    streamChat: vi.fn((_u: string, chatId: string, _m: unknown, sink: TelegramSink) =>
-      correr(chatId, sink),
-    ),
+    streamChat: vi.fn((_u: string, chatId: string, m: { id: string }, sink: TelegramSink) => {
+      mensajes.set(m.id, chatId);
+      return correr(chatId, sink);
+    }),
     regenerateChat: vi.fn((_u: string, chatId: string, _id: string, sink: TelegramSink) =>
       correr(chatId, sink),
     ),
@@ -93,14 +99,19 @@ function montar({ conectado = true } = {}) {
   };
   const service = new Service(
     { runWithTenant: (_u: string, fn: (tx: unknown) => unknown) => fn({}) } as never,
-    { resolveUser: () => Promise.resolve(conectado ? "u1" : null) } as never,
+    { resolveUser: resolveUser ?? (() => Promise.resolve(conectado ? "u1" : null)) } as never,
     threads,
-    { createChat } as never,
+    {
+      createChat,
+      chatIdOfMessage: (_tx: unknown, id: string) => Promise.resolve(mensajes.get(id)),
+    } as never,
     chat as never,
     { findById: () => Promise.resolve({ timezone: "America/Merida" }) } as never,
   );
   const avisos = () => api.sendMessage.mock.calls.map((c) => c[1]);
-  return { service, api, chat, createChat, filas, turnos, avisos };
+  /** El id del mensaje del creator de cada turno, en orden. */
+  const idsDeMensajes = () => [...mensajes.keys()];
+  return { service, api, chat, createChat, filas, turnos, avisos, idsDeMensajes };
 }
 
 describe("TelegramConversationService", () => {
@@ -198,20 +209,67 @@ describe("TelegramConversationService", () => {
     expect(sink.gone).toBe(true);
   });
 
-  it("Reintentar regenera ese mensaje en el chat del tema; sin chat, lo dice", async () => {
+  it("Reintentar regenera ese mensaje en su chat; un mensaje que ya no existe, lo dice", async () => {
     const t = montar();
-    await t.service.retry(t.api, YO, TEMA, "m-1");
+    await t.service.retry(t.api, YO, TEMA, "no-existe");
     expect(t.avisos()).toEqual([copy.chatGone]);
 
     await t.service.text(t.api, YO, TEMA, "hola");
     await flush();
     t.turnos[0]!.terminar();
-    await t.service.retry(t.api, YO, TEMA, "m-1");
+    const [id] = t.idsDeMensajes();
+    await t.service.retry(t.api, YO, TEMA, id!);
     await flush();
-    expect(t.chat.regenerateChat).toHaveBeenCalledWith("u1", "chat-1", "m-1", expect.anything(), {
+    expect(t.chat.regenerateChat).toHaveBeenCalledWith("u1", "chat-1", id, expect.anything(), {
       channel: "telegram",
       timezone: "America/Merida",
     });
+  });
+
+  it("Reintentar después de /new va al chat del mensaje, no al que ahora ocupa el lugar", async () => {
+    const t = montar();
+    await t.service.text(t.api, YO, SIN_TEMA, "primero");
+    await flush();
+    t.turnos[0]!.terminar();
+    const [viejo] = t.idsDeMensajes();
+    await t.service.newChat(YO, SIN_TEMA);
+    await t.service.text(t.api, YO, SIN_TEMA, "otro chat");
+    await flush();
+    t.turnos[1]!.terminar();
+    await t.service.retry(t.api, YO, SIN_TEMA, viejo!);
+    await flush();
+    expect(t.chat.regenerateChat.mock.calls[0]?.[1]).toBe("chat-1");
+  });
+
+  it("un 404 se dice según el caso: al reintentar, que ya no se puede; al escribir, que el chat no existe", async () => {
+    const t = montar();
+    await t.service.text(t.api, YO, TEMA, "hola");
+    await flush();
+    t.turnos[0]!.terminar();
+    const [id] = t.idsDeMensajes();
+    t.chat.regenerateChat.mockRejectedValueOnce(new HttpException("cualquier texto", 404));
+    await t.service.retry(t.api, YO, TEMA, id!);
+    await flush();
+    t.chat.streamChat.mockRejectedValueOnce(new HttpException("otro texto", 404));
+    await t.service.text(t.api, YO, TEMA, "sigue");
+    await flush();
+    expect(t.avisos()).toEqual([copy.cantRetry, copy.chatGone]);
+  });
+
+  it("si la base falla al saber de quién es el mensaje, se dice y nada truena", async () => {
+    const t = montar({ resolveUser: () => Promise.reject(new Error("túnel caído")) });
+    await expect(t.service.text(t.api, YO, TEMA, "hola")).resolves.toBeUndefined();
+    await expect(t.service.retry(t.api, YO, TEMA, "m-1")).resolves.toBeUndefined();
+    expect(t.avisos()).toEqual([copy.turnFailed, copy.turnFailed]);
+    expect(t.chat.streamChat).not.toHaveBeenCalled();
+  });
+
+  it("el nombre del tema entra al título con el tope de un título", async () => {
+    const t = montar();
+    t.service.topicCreated(TEMA, "n".repeat(128), false);
+    await t.service.text(t.api, YO, TEMA, "hola");
+    await flush();
+    expect(t.createChat.mock.calls[0]?.[2]).toBe("n".repeat(120));
   });
 
   it("/new sin tema suelta el chat actual; en un tema explica que basta abrir otro", async () => {

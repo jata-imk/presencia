@@ -41,6 +41,13 @@ function sortLikeServer(rows: ChatSummary[]): ChatSummary[] {
 // aparte por ArchivedView — nunca se mezclan (mismo criterio que el mockup:
 // ArchivedView es una pantalla distinta, no un filtro de Recientes).
 
+/**
+ * Los chats que esta pestaña borró. Un aviso en vivo que ya venía en camino
+ * (su título automático, el final de un turno) no los revive en Recientes
+ * como fantasma (F11: los avisos de chats desconocidos ahora suman el chat).
+ */
+const deletedHere = new Set<string>();
+
 interface ChatsState {
   chats: ChatSummary[] | null;
   archivedChats: ChatSummary[] | null;
@@ -100,7 +107,7 @@ export const useChatsStore = create<ChatsState>()(
             // archivado que no conoce se queda fuera, como antes: su lista se
             // pide al abrirla.
             if (!known) {
-              if (archived || !state.chats) return {};
+              if (archived || !state.chats || deletedHere.has(chat.id)) return {};
               return { chats: sortLikeServer([chat, ...state.chats]) };
             }
             const without = (rows: ChatSummary[] | null) =>
@@ -225,6 +232,7 @@ export const useChatsStore = create<ChatsState>()(
       },
       remove: async (id) => {
         await apiFetch<undefined>(`/api/chats/${id}`, { method: "DELETE" });
+        deletedHere.add(id);
         set(
           (state) => ({
             chats: state.chats?.filter((c) => c.id !== id) ?? null,

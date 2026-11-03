@@ -73,6 +73,10 @@ export class TurnProgress {
   private readonly tools = new Map<string, ToolState>();
   /** El texto del error que mandó el turno (`onError`), si lo hubo. */
   error: string | null = null;
+  /** El turno se abortó (detener): el stream mandó `abort`. */
+  aborted = false;
+  /** Por qué terminó el modelo; null si el stream acabó sin terminar (cortado). */
+  finishReason: string | null = null;
   /** Cambia con cada chunk que mueve lo que se ve: el draft solo se manda si cambió. */
   version = 0;
 
@@ -124,6 +128,12 @@ export class TurnProgress {
       case "error":
         this.error = chunk.errorText;
         this.version++;
+        break;
+      case "abort":
+        this.aborted = true;
+        break;
+      case "finish":
+        this.finishReason = chunk.finishReason ?? null;
         break;
       default:
         break;
