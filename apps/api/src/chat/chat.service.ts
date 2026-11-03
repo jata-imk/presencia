@@ -30,6 +30,7 @@ import { DbService, type Tx } from "../db/db.service.js";
 import { isUniqueViolation } from "../db/pg-error.js";
 import { env } from "../env.js";
 import { FoldersService } from "../folders/folders.service.js";
+import { ChatEvents } from "./chat-events.js";
 import { ChatTitleService } from "./chat-title.service.js";
 import { toChatSummary, toUIMessage } from "./chat-summary.js";
 import { blocksOf, contextTokensOf } from "./history-compaction.js";
@@ -49,7 +50,7 @@ import { ChatRepository, type ChatSummaryRow, type MessageRow } from "./chat.rep
 import { cardIdsIn, type CompressedCardOutput, type LiveCard } from "./context-diet.js";
 import { sanitizeInterruptedParts } from "./interrupted-turn.js";
 import { lastTurnOf, storableMessageId } from "./last-user-message.js";
-import { buildSystemPrompt } from "./system-prompt.js";
+import { buildSystemPrompt, channelInstruction } from "./system-prompt.js";
 import { TurnCards } from "./turn-cards.js";
 import { buildReadLinkTool } from "../web/read-link.tool.js";
 import { buildViewAttachmentTool } from "../attachments/view-attachment.tool.js";
@@ -117,6 +118,7 @@ export class ChatService {
     @Inject(WebReadsService) private readonly webReads: WebReadsService,
     @Inject(WebReadDigestService) private readonly webReadDigests: WebReadDigestService,
     @Inject(WebSearchService) private readonly webSearch: WebSearchService,
+    @Inject(ChatEvents) private readonly events: ChatEvents,
   ) {}
 
   /**
@@ -204,13 +206,16 @@ export class ChatService {
     });
   }
 
-  renameChat(userId: string, chatId: string, title: string): Promise<ChatSummary> {
-    return this.dbService.runWithTenant(userId, async (tx) => {
+  async renameChat(userId: string, chatId: string, title: string): Promise<ChatSummary> {
+    const summary = await this.dbService.runWithTenant(userId, async (tx) => {
       const chat = await this.repo.getChat(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const updated = await this.repo.renameChat(tx, chatId, title);
       return toChatSummary(updated);
     });
+    // F11: ya guardado, a los canales (el tema de Telegram se renombra).
+    this.events.titled({ userId, chatId, title: summary.title, source: "user" });
+    return summary;
   }
 
   listArchivedChats(userId: string): Promise<ChatSummary[]> {
@@ -729,9 +734,12 @@ export class ChatService {
     // loadVoiceForPrompt. buildSystemPrompt cae al prompt base en ese caso,
     // el chat nunca se bloquea por esto.
     const voice = await voicePromise;
-    // F10.10: la fecha de hoy va al final (today.ts dice por qué).
+    // F10.10: la fecha de hoy va al final (today.ts dice por qué). F11: el
+    // apéndice del canal va antes de ella (system-prompt.ts).
     const today = todayInstruction(new Date(), timezone);
-    const system = [buildSystemPrompt(voice), today].join("\n\n");
+    const system = [buildSystemPrompt(voice), channelInstruction(channel), today]
+      .filter((part): part is string => part !== null)
+      .join("\n\n");
     // F10.9: los bytes de los adjuntos que sobrevivieron al techo, al final.
     // F10.10: con las tools, para que las páginas leídas en turnos anteriores
     // pasen por el `toModelOutput` de leer_enlace, que les da forma a lo que la

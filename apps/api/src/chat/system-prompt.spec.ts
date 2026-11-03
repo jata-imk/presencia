@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BrandVoiceForPrompt } from "@presencia/shared";
-import { BASE_SYSTEM_PROMPT, buildSystemPrompt } from "./system-prompt.js";
+import { BASE_SYSTEM_PROMPT, buildSystemPrompt, channelInstruction } from "./system-prompt.js";
 
 // system-prompt.ts no depende de Nest/DB (comentario en el archivo) — a
 // diferencia de brand-voice.service.spec.ts, este test importa directo sin
@@ -164,5 +164,18 @@ describe("buildSystemPrompt — tope defensivo de ejemplos de referencia", () =>
     const occurrences = prompt.split("<ejemplo_de_referencia>").length - 1;
     expect(occurrences).toBe(2);
     expect(prompt).not.toContain("tres");
+  });
+});
+
+describe("channelInstruction (F11)", () => {
+  it("la web no lleva apéndice: el prompt base ya es de la web", () => {
+    expect(channelInstruction("web")).toBeNull();
+  });
+
+  it("Telegram pide respuestas cortas, sin botones de la web, y tutea", () => {
+    const texto = channelInstruction("telegram");
+    expect(texto).toContain("Telegram");
+    expect(texto).toContain("No menciones botones");
+    expect(texto).not.toMatch(/\b(vos|querés|podés|tenés)\b/i);
   });
 });

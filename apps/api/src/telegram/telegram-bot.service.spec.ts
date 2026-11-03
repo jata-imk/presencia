@@ -54,7 +54,11 @@ function botFalso(opts: { init?: () => Promise<void>; start?: () => Promise<void
 }
 
 function servicio(bot: ReturnType<typeof botFalso>) {
-  const s = new TelegramBotService({} as never);
+  const s = new TelegramBotService(
+    {} as never,
+    {} as never,
+    { onTitled: () => () => undefined } as never,
+  );
   (s as unknown as { bot: unknown }).bot = bot;
   const launch = () => (s as unknown as { launch(b: unknown): Promise<void> }).launch(bot);
   return { s, launch };

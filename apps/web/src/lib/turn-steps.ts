@@ -1,7 +1,7 @@
 import {
+  domainOfUrl,
   isSessionHost,
   normalizeAttachmentRef,
-  normalizeTrendSource,
   READ_LINK_TOOL_NAME,
   WEB_READS_PER_TURN,
   WEB_SEARCHES_PER_TURN,
@@ -71,23 +71,8 @@ export interface StepsHeader {
 
 type StepPart = CardToolPart | WebToolPart | ViewToolPart;
 
-/**
- * Host sin `www.` de una URL, con el mismo helper con que la API llena
- * `dominio` (read-output.ts): una lectura en curso o fallida y su fuente ya
- * leída nombran igual al sitio. Para lo que ese helper no acepta (una IP,
- * localhost, otro protocolo), el host a secas: nunca la URL completa, que
- * puede traer una ruta o un token.
- */
-export function domainOfUrl(url: string | undefined): string {
-  if (!url) return "la página";
-  const domain = normalizeTrendSource(url);
-  if (domain) return domain;
-  try {
-    return new URL(url).hostname.replace(/^www\./, "") || "la página";
-  } catch {
-    return "la página";
-  }
-}
+// F11: vive en shared (las fuentes lo usan, también las de Telegram).
+export { domainOfUrl };
 
 // Redes que piden sesión: se dice así ("pide iniciar sesión"); en cualquier
 // otro sitio la misma respuesta del servidor es una cuenta o un muro de pago.

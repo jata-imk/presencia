@@ -94,10 +94,17 @@ export const useChatsStore = create<ChatsState>()(
             const known =
               (state.chats?.some((c) => c.id === chat.id) ?? false) ||
               (state.archivedChats?.some((c) => c.id === chat.id) ?? false);
-            if (!known) return {};
+            const archived = chat.archivedAt !== null;
+            // F11: un chat que esta pestaña no conoce nació en otro lado (un
+            // tema de Telegram, otra pestaña): entra a Recientes en vivo. Uno
+            // archivado que no conoce se queda fuera, como antes: su lista se
+            // pide al abrirla.
+            if (!known) {
+              if (archived || !state.chats) return {};
+              return { chats: sortLikeServer([chat, ...state.chats]) };
+            }
             const without = (rows: ChatSummary[] | null) =>
               rows?.filter((c) => c.id !== chat.id) ?? null;
-            const archived = chat.archivedAt !== null;
             return {
               chats: archived
                 ? without(state.chats)
@@ -133,7 +140,12 @@ export const useChatsStore = create<ChatsState>()(
       },
       create: async (title) => {
         const chat = await apiFetch<ChatSummary>("/api/chats", { method: "POST", body: { title } });
-        set({ chats: [chat, ...(get().chats ?? [])] }, false, "chats/create");
+        // Sin duplicar: el aviso en vivo de este mismo chat pudo llegar antes.
+        set(
+          { chats: [chat, ...(get().chats ?? []).filter((c) => c.id !== chat.id)] },
+          false,
+          "chats/create",
+        );
         return chat;
       },
       rename: async (id, title) => {

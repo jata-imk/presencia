@@ -55,13 +55,14 @@ export class TelegramCommandsService {
   }
 
   /**
-   * Cualquier otro mensaje. Quien no está conectado recibe cómo conectarse, y
-   * nada se cobra. F11 PR3: el que sí lo está, el aviso de que la
-   * conversación llega pronto (el turno entra en el PR4).
+   * Un mensaje que no es texto (el texto va al turno, en
+   * TelegramConversationService). Quien no está conectado recibe cómo
+   * conectarse, y nada se cobra. F11 PR4: el que sí lo está, que por ahora
+   * solo se lee texto (fotos y archivos en el PR5, notas de voz en el PR6).
    */
   async message(from: TelegramSender): Promise<string> {
     return (await this.links.resolveUser(String(from.id)))
-      ? copy.comingSoon(env.WEB_URL)
+      ? copy.notYet
       : copy.notLinked(env.WEB_URL);
   }
 }

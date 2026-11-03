@@ -1,0 +1,159 @@
+import { normalizeTrendSource } from "./trends.js";
+import {
+  READ_LINK_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
+  type ReadLinkOutput,
+  type WebSearchOutput,
+} from "./web.js";
+
+// F10.10 (Chat Web.html): las fuentes de una respuesta, la evidencia debajo
+// del texto. Puro: sale de los tool parts y del texto del mensaje. F11: vive
+// en shared porque Telegram las pone al final de su respuesta, con el mismo
+// criterio que la web.
+//
+// Qué cuenta como fuente:
+// - una página que se leyó (bien, o a medias, con su marca);
+// - un resultado de búsqueda que la respuesta cita (su URL aparece en el
+//   texto). Los demás resultados se quedan fuera: cinco por búsqueda llenarían
+//   la lista de lo que el modelo ni usó.
+// - Si se buscó y no se leyó ni se citó nada, se listan los resultados: algo
+//   tuvo que salir de ahí, y es mejor mostrarlo que esconder de dónde.
+// Lo que no se pudo leer no es fuente: vive en la lista de pasos.
+
+/**
+ * Host sin `www.` de una URL, con el mismo helper con que la API llena
+ * `dominio` (read-output.ts): una lectura en curso o fallida y su fuente ya
+ * leída nombran igual al sitio. Para lo que ese helper no acepta (una IP,
+ * localhost, otro protocolo), el host a secas: nunca la URL completa, que
+ * puede traer una ruta o un token.
+ */
+export function domainOfUrl(url: string | undefined): string {
+  if (!url) return "la página";
+  const domain = normalizeTrendSource(url);
+  if (domain) return domain;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "") || "la página";
+  } catch {
+    return "la página";
+  }
+}
+
+export interface WebSource {
+  titulo: string;
+  dominio: string;
+  url: string;
+  fecha: string | null;
+  /** El fragmento del buscador; solo lo traen los resultados de búsqueda. */
+  fragmento: string | null;
+  /** Una lectura a medias: la página era muy larga, o solo había su descripción. */
+  marca: "parcial" | "descripcion" | null;
+}
+
+/** Lo que `webSources` lee de cada parte del mensaje (un `UIMessage` del AI SDK cabe). */
+export interface WebSourcePart {
+  type: string;
+  text?: string;
+  state?: string;
+  output?: unknown;
+}
+
+/** Para comparar URLs: sin `#`, sin la barra final y sin `www.`. */
+function urlKey(url: string): string {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    return `${u.hostname.replace(/^www\./, "")}${u.pathname.replace(/\/$/, "")}${u.search}`;
+  } catch {
+    return url;
+  }
+}
+
+const SHORT_DATE = new Intl.DateTimeFormat("es-MX", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/**
+ * La fecha del buscador para leerla: Brave manda ISO ("2026-06-12T14:13:00"),
+ * que se vuelve "12 jun 2026"; lo que ya viene escrito ("hace 2 días") pasa
+ * tal cual. Solo el día: la hora no dice nada y su zona no viene.
+ */
+export function displayDate(fecha: string | null): string | null {
+  const iso = fecha?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!iso) return fecha;
+  const date = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
+  return Number.isNaN(date.getTime()) ? fecha : SHORT_DATE.format(date);
+}
+
+/**
+ * Las URLs que cita el texto: en un link markdown (con un nivel de paréntesis
+ * dentro, como `Mérida_(Yucatán)` de Wikipedia) o sueltas.
+ */
+function citedUrls(text: string): Set<string> {
+  const keys = new Set<string>();
+  for (const match of text.matchAll(/\]\((https?:\/\/(?:[^()\s]|\([^()\s]*\))+)\)/g)) {
+    keys.add(urlKey(match[1]!));
+  }
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"'\]]+/g)) {
+    // Suelta: sin el punto o la coma que la cierran en la frase, y sin el
+    // paréntesis de cierre si no abrió uno.
+    let url = match[0].replace(/[.,;:!?]+$/, "");
+    if (url.endsWith(")") && !url.includes("(")) url = url.slice(0, -1);
+    keys.add(urlKey(url));
+  }
+  return keys;
+}
+
+export function webSources(message: { parts: readonly WebSourcePart[] }): WebSource[] {
+  const text = message.parts
+    .flatMap((p) => (p.type === "text" && typeof p.text === "string" ? [p.text] : []))
+    .join("\n");
+  const cited = citedUrls(text);
+  const sources: WebSource[] = [];
+  const seen = new Set<string>();
+  const add = (source: WebSource) => {
+    const key = urlKey(source.url);
+    if (seen.has(key)) return;
+    seen.add(key);
+    sources.push(source);
+  };
+
+  const done = message.parts.filter((p) => p.state === "output-available");
+
+  const searchResults: WebSource[] = done
+    .filter((p) => p.type === `tool-${WEB_SEARCH_TOOL_NAME}`)
+    .flatMap((p) =>
+      (p.output as WebSearchOutput).resultados.map((r) => ({
+        titulo: r.titulo,
+        dominio: r.dominio,
+        url: r.url,
+        fecha: displayDate(r.fecha),
+        fragmento: r.fragmento || null,
+        marca: null,
+      })),
+    );
+  const fromSearch = new Map(searchResults.map((r) => [urlKey(r.url), r]));
+
+  for (const p of done.filter((p) => p.type === `tool-${READ_LINK_TOOL_NAME}`)) {
+    const out = p.output as ReadLinkOutput;
+    if (out.estado !== "ok") continue;
+    const url = out.urlFinal ?? out.url;
+    // Una página que se abrió desde la búsqueda conserva su fecha y su fragmento.
+    const result = fromSearch.get(urlKey(url)) ?? fromSearch.get(urlKey(out.url));
+    add({
+      titulo: out.titulo ?? result?.titulo ?? out.dominio ?? domainOfUrl(url),
+      dominio: out.dominio ?? domainOfUrl(url),
+      url,
+      fecha: result?.fecha ?? null,
+      fragmento: result?.fragmento ?? null,
+      marca: out.soloDescripcion ? "descripcion" : out.truncado ? "parcial" : null,
+    });
+  }
+
+  const citedResults = searchResults.filter((r) => cited.has(urlKey(r.url)));
+  for (const r of citedResults) add(r);
+  if (sources.length === 0) for (const r of searchResults) add(r);
+  return sources;
+}

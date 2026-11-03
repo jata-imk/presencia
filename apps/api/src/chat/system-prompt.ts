@@ -147,3 +147,23 @@ export function buildSystemPrompt(voice?: BrandVoiceForPrompt | null): string {
 
   return lines.join("\n");
 }
+
+// F11 (ADR-030): por Telegram el creator lee en el celular, y ahí no existen
+// los botones de la web. Va entre la voz y la fecha de hoy (chat.service.ts):
+// después de lo que no cambia, para no romper el caché del proveedor, y antes
+// de la fecha, que va al final (today.ts). Puro, para que la suite cultural
+// arme el mismo prompt que producción.
+const TELEGRAM_INSTRUCTION =
+  "Esta conversación es por Telegram, en el celular del creator. Responde más " +
+  "corto que en la web: ve al grano, con párrafos breves y listas cortas. Usa " +
+  "solo formato simple (negritas, cursivas, listas y enlaces); evita tablas de " +
+  "más de tres columnas y los encabezados largos. No menciones botones ni " +
+  "pantallas de la web (el menú ＋, «Usar una que adjuntaste», el panel de la " +
+  "publicación): aquí no existen. Cada borrador que crees le llega como un " +
+  "mensaje con un botón para abrirlo en Presencia, donde lo edita, le pone " +
+  "imagen y lo programa; si algo solo se puede hacer en la web, díselo así.";
+
+/** Lo que cambia según el canal del turno; null en la web (el prompt base ya es de la web). */
+export function channelInstruction(channel: string): string | null {
+  return channel === "telegram" ? TELEGRAM_INSTRUCTION : null;
+}

@@ -9,6 +9,7 @@ import { aiUsageEvents, chats, creditLedger, messages, users } from "../db/schem
 import type { DbService as DbServiceType } from "../db/db.service.js";
 import type { ChatService as ChatServiceType } from "./chat.service.js";
 import type { TurnSink, TurnStream } from "./turn-sink.js";
+import { ChatEvents } from "./chat-events.js";
 
 // El turno del chat sin HTTP (F11, PR2; addendum de ADR-006). Hasta aquí el
 // turno no tenía pruebas propias: vivía amarrado al ServerResponse. Ahora
@@ -214,6 +215,7 @@ describe("ChatService · el turno por un TurnSink", () => {
         { forContext: () => Promise.resolve(new Map()) } as never,
         { enqueue: noop } as never,
         {} as never,
+        new ChatEvents(),
       );
     };
   }, 30_000);

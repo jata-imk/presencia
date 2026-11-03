@@ -5,6 +5,7 @@ import { AiUsageService } from "../ai/ai-usage.service.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { chargeUsageOf } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
+import { ChatEvents } from "./chat-events.js";
 import { ChatRepository } from "./chat.repository.js";
 import {
   TITLE_ATTEMPTS,
@@ -45,6 +46,7 @@ export class ChatTitleService {
     @Inject(AiService) private readonly ai: AiService,
     @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
     @Inject(CreditsService) private readonly credits: CreditsService,
+    @Inject(ChatEvents) private readonly events: ChatEvents,
   ) {}
 
   /**
@@ -85,11 +87,11 @@ export class ChatTitleService {
       const title = cleanTitle(respuesta.text);
 
       if (title) {
-        await this.dbService.runWithTenant(userId, async (tx) => {
+        const saved = await this.dbService.runWithTenant(userId, async (tx) => {
           const saved = await this.repo.setAutoTitle(tx, chatId, title, replacesAuto);
           // Lo renombró el creator mientras el modelo pensaba: gana el suyo,
           // y un título que no quedó no se cobra.
-          if (!saved) return;
+          if (!saved) return false;
           // En la MISMA transacción que el título que cobra. La referencia es
           // el chat: el dedup del ledger impide cobrar dos títulos al mismo.
           // Al reemplazar uno automático, el turno (ver la cabecera).
@@ -103,7 +105,10 @@ export class ChatTitleService {
             reason: "chat_title",
             ...reference,
           });
+          return true;
         });
+        // F11: ya guardado, a los canales (el tema de Telegram se renombra).
+        if (saved) this.events.titled({ userId, chatId, title, source: "auto" });
       }
 
       // Siempre que hubo llamada, aunque no saliera título: los tokens se

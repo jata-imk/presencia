@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { aiUsageEvents, chats, creditLedger, users } from "../db/schema.js";
 import type { DbService as DbServiceType } from "../db/db.service.js";
 import type { ChatTitleService as ChatTitleServiceType } from "./chat-title.service.js";
+import { ChatEvents } from "./chat-events.js";
 import { TITLE_ATTEMPTS, assistantTurns, cleanTitle, transcriptForTitle } from "./chat-title.js";
 
 // Título automático del chat (F10.8). Las funciones puras, y el servicio contra
@@ -121,7 +122,14 @@ describe("ChatTitleService", { timeout: 30_000 }, () => {
           modelName: "mock-utility",
         }),
       };
-      return new ChatTitleService(dbService, new ChatRepository(), ai as never, aiUsage, credits);
+      return new ChatTitleService(
+        dbService,
+        new ChatRepository(),
+        ai as never,
+        aiUsage,
+        credits,
+        new ChatEvents(),
+      );
     };
     const [user] = await dbService.db
       .insert(users)
