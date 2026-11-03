@@ -2,7 +2,7 @@
 // Los comandos van en inglés por convención (decisión de Jose, 2026-11-02);
 // lo que el creator lee, siempre en español.
 
-import { TELEGRAM_LINK_TTL_MINUTES } from "@presencia/shared";
+import { ATTACHMENT_TEXT_EXTENSIONS, TELEGRAM_LINK_TTL_MINUTES } from "@presencia/shared";
 
 /** Los comandos del menú de Telegram (`setMyCommands`), con su descripción. */
 export const TELEGRAM_COMMANDS = [
@@ -13,6 +13,17 @@ export const TELEGRAM_COMMANDS = [
 ] as const;
 
 const settings = (webUrl: string) => `${webUrl}/configuracion/canales`;
+
+/**
+ * Lo que entra por aquí (F11 PR5), con las extensiones de texto de
+ * `packages/shared`: si se agrega una, el bot la anuncia sola. Las imágenes
+ * mandadas como archivo también entran ("imágenes").
+ */
+const FORMATS = (() => {
+  const ext = [...ATTACHMENT_TEXT_EXTENSIONS];
+  const list = ext.length > 1 ? `${ext.slice(0, -1).join(", ")} y ${ext.at(-1)!}` : ext.join("");
+  return `fotos e imágenes, PDF o archivos ${list}`;
+})();
 
 export const copy = {
   notLinked: (webUrl: string) =>
@@ -32,7 +43,8 @@ export const copy = {
     "Este Telegram ya está conectado a otra cuenta de Presencia. Escribe /disconnect para " +
     "desconectarlo y vuelve a abrir el enlace.",
   help:
-    "Puedo ayudarte a crear contenido desde aquí, igual que en la web.\n\n" +
+    "Puedo ayudarte a crear contenido desde aquí, igual que en la web. Mándame texto, " +
+    `${FORMATS} (sueltos o en álbum).\n\n` +
     "Cada tema de este chat es un chat de Presencia: abre uno nuevo para empezar otra idea.\n\n" +
     "Si tu Telegram no muestra temas, todo va al mismo chat: escribe /new para empezar otro.\n\n" +
     "/help — esta ayuda\n/new — empezar un chat nuevo\n/disconnect — desconectar este Telegram de tu cuenta",
@@ -43,11 +55,27 @@ export const copy = {
   unlinkedFromWeb:
     "Desconectaste este Telegram desde Presencia. Tus chats siguen en la web. Si fue un error, " +
     "vuelve a conectarte en Configuración → Canales conectados.",
+  // --- Los adjuntos (F11 PR5) ---
+  /** Las notas de voz y los audios llegan en el PR6. */
+  voiceSoon:
+    "Las notas de voz y los audios llegan muy pronto. Mientras, escríbeme o mándame fotos y archivos.",
+  audioSoon: "los audios llegan muy pronto.",
+  unsupported: `Eso todavía no lo leo por aquí. Mándame texto, ${FORMATS}.`,
+  readingFiles: "Leyendo tus archivos…",
+  /**
+   * Un archivo que no entró: el resto del mensaje sigue. Sin nombre (un video
+   * del carrete), lo que es, sin comillas: "No pude leer un video".
+   */
+  skipped: (filename: string | null, label: string | null, reason: string) =>
+    `No pude leer ${filename ? `«${filename}»` : (label ?? "un archivo")}: ${reason}`,
+  unsupportedFile: `por aquí entran ${FORMATS}.`,
+  heicAsFile: "es una foto HEIC mandada como archivo. Mándala como foto y la leo.",
+  fileTooBig: "pesa más de 20 MB y Telegram no me deja bajarlo. Súbelo desde la web.",
+  fileFailed: "algo falló al bajarlo. Vuelve a mandarlo.",
+  tooMuchToRead:
+    "Esos archivos son demasiado largos para leerlos juntos. Mándamelos en mensajes separados.",
+  stoppedBeforeStart: "Lo detuviste antes de que empezara. Mándamelo otra vez cuando quieras.",
   // --- La conversación (F11 PR4) ---
-  /** F11 PR4: solo texto. Fotos y archivos llegan en el PR5; notas de voz, en el PR6. */
-  notYet:
-    "Por ahora solo leo texto por aquí. Las fotos, los archivos y las notas de voz llegan muy " +
-    "pronto; mientras, mándamelos desde la web.",
   newChat: "Listo: lo que escribas ahora empieza un chat nuevo.",
   newInTopic:
     "Aquí cada tema es un chat. Para empezar otro, abre un tema nuevo (o escribe fuera de los temas).",

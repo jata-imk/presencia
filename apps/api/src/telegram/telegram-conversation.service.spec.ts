@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TelegramConversationService as Conversation } from "./telegram-conversation.service.js";
 import type { TelegramSink } from "./telegram-sink.js";
 import type { TelegramPlace, TelegramThreadRow } from "./telegram-threads.repository.js";
@@ -96,6 +96,26 @@ function montar({
     sendMessage: vi.fn<(...a: unknown[]) => Promise<never>>(() => Promise.resolve({} as never)),
     sendMessageDraft: vi.fn<(...a: unknown[]) => Promise<true>>(() => Promise.resolve(true)),
     editForumTopic: vi.fn<(...a: unknown[]) => Promise<true>>(() => Promise.resolve(true)),
+    getFile: vi.fn((fileId: string) =>
+      Promise.resolve({
+        file_id: fileId,
+        file_unique_id: fileId,
+        file_path: `photos/${fileId}.jpg`,
+      }),
+    ),
+  };
+  // F11 PR5: la subida de adjuntos (la prueba attachments.service.spec).
+  let subidos = 0;
+  const attachments = {
+    upload: vi.fn((input: { userId: string; chatId: string | null; filename: string }) => {
+      const id = `adj-${String(++subidos)}`;
+      return Promise.resolve({
+        id,
+        mediaType: "image/jpeg",
+        filename: input.filename,
+        url: `/api/attachments/${id}/content`,
+      });
+    }),
   };
   const service = new Service(
     { runWithTenant: (_u: string, fn: (tx: unknown) => unknown) => fn({}) } as never,
@@ -107,11 +127,12 @@ function montar({
     } as never,
     chat as never,
     { findById: () => Promise.resolve({ timezone: "America/Merida" }) } as never,
+    attachments as never,
   );
   const avisos = () => api.sendMessage.mock.calls.map((c) => c[1]);
   /** El id del mensaje del creator de cada turno, en orden. */
   const idsDeMensajes = () => [...mensajes.keys()];
-  return { service, api, chat, createChat, filas, turnos, avisos, idsDeMensajes };
+  return { service, api, chat, createChat, filas, turnos, avisos, idsDeMensajes, attachments };
 }
 
 describe("TelegramConversationService", () => {
@@ -260,6 +281,7 @@ describe("TelegramConversationService", () => {
     const t = montar({ resolveUser: () => Promise.reject(new Error("túnel caído")) });
     await expect(t.service.text(t.api, YO, TEMA, "hola")).resolves.toBeUndefined();
     await expect(t.service.retry(t.api, YO, TEMA, "m-1")).resolves.toBeUndefined();
+    await flush();
     expect(t.avisos()).toEqual([copy.turnFailed, copy.turnFailed]);
     expect(t.chat.streamChat).not.toHaveBeenCalled();
   });
@@ -320,5 +342,290 @@ describe("TelegramConversationService", () => {
       [500, 7, { name: "x".repeat(128) }],
       [500, 8, { name: "De la web" }],
     ]);
+  });
+});
+
+// F11 PR5: fotos, álbumes y documentos. La bajada usa el fetch de mentira; la
+// subida, AttachmentsService de mentira (montar).
+describe("TelegramConversationService · adjuntos", () => {
+  let ALBUM_WINDOW_MS: number;
+  beforeAll(async () => {
+    ({ ALBUM_WINDOW_MS } = await import("./telegram-conversation.service.js"));
+  });
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response(new Uint8Array([1, 2, 3])))),
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  const foto = (id: string, extra: { caption?: string; albumId?: string } = {}) => ({
+    media: {
+      kind: "file" as const,
+      file: { fileId: id, fileSize: 1000, filename: "foto.jpg", photo: true },
+    },
+    caption: extra.caption,
+    albumId: extra.albumId,
+  });
+  const docx = {
+    media: {
+      kind: "rejected" as const,
+      filename: "plan.docx",
+      label: "un archivo",
+      reason: "unsupported" as const,
+    },
+    caption: "resúmelo",
+    albumId: undefined,
+  };
+  const partesDe = (t: ReturnType<typeof montar>, i = 0) =>
+    (t.chat.streamChat.mock.calls[i]?.[2] as unknown as { parts: unknown[] }).parts;
+
+  it("una foto con caption: se sube sin chat todavía y el turno lleva el archivo y el texto", async () => {
+    const t = montar();
+    await t.service.media(t.api, YO, TEMA, foto("f1", { caption: "¿qué le pongo?" }));
+    await flush();
+    expect(t.attachments.upload).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", chatId: null, filename: "foto.jpg" }),
+    );
+    expect(partesDe(t)).toEqual([
+      {
+        type: "file",
+        mediaType: "image/jpeg",
+        filename: "foto.jpg",
+        url: "/api/attachments/adj-1/content",
+      },
+      { type: "text", text: "¿qué le pongo?" },
+    ]);
+    // El draft de espera y el turno son el mismo draft.
+    const [, draftId, html, other] = t.api.sendMessageDraft.mock.calls[0]!;
+    expect(html).toBe(`<i>${copy.readingFiles}</i>`);
+    expect(other).toMatchObject({ message_thread_id: 7, can_stop: true });
+    const sink = t.turnos[0]!.sink as unknown as { options: { draftId: number } };
+    expect(sink.options.draftId).toBe(draftId);
+  });
+
+  it("una foto sin caption corre su turno sola (decisión de Jose: como la web)", async () => {
+    const t = montar();
+    await t.service.media(t.api, YO, TEMA, foto("f1"));
+    await flush();
+    expect(partesDe(t)).toHaveLength(1);
+  });
+
+  it("un álbum que llega en paralelo es un solo mensaje, con las fotos numeradas", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const t = montar();
+    await Promise.all([
+      t.service.media(t.api, YO, TEMA, foto("f1", { albumId: "g1" })),
+      t.service.media(t.api, YO, TEMA, foto("f2", { albumId: "g1", caption: "mis fotos" })),
+      t.service.media(t.api, YO, TEMA, foto("f3", { albumId: "g1" })),
+    ]);
+    await flush();
+    expect(t.chat.streamChat).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(ALBUM_WINDOW_MS);
+    await flush();
+    expect(t.chat.streamChat).toHaveBeenCalledTimes(1);
+    expect(t.attachments.upload.mock.calls.map((c) => c[0].filename)).toEqual([
+      "foto-1.jpg",
+      "foto-2.jpg",
+      "foto-3.jpg",
+    ]);
+    expect(partesDe(t).at(-1)).toEqual({ type: "text", text: "mis fotos" });
+  });
+
+  it("con 10 fotos el álbum se cierra sin esperar la ventana", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const t = montar();
+    for (let i = 1; i <= 10; i++) {
+      await t.service.media(t.api, YO, TEMA, foto(`f${String(i)}`, { albumId: "g1" }));
+    }
+    await flush();
+    expect(t.chat.streamChat).toHaveBeenCalledTimes(1);
+    expect(partesDe(t)).toHaveLength(10);
+  });
+
+  it("a quien no está conectado, un solo aviso por álbum", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const t = montar({ conectado: false });
+    await Promise.all(
+      ["f1", "f2", "f3"].map((id) => t.service.media(t.api, YO, TEMA, foto(id, { albumId: "g1" }))),
+    );
+    vi.advanceTimersByTime(ALBUM_WINDOW_MS);
+    await flush();
+    expect(t.avisos()).toEqual([copy.notLinked(webUrl)]);
+    expect(t.attachments.upload).not.toHaveBeenCalled();
+  });
+
+  it("un archivo que no entra se avisa antes de la respuesta, y el resto sigue", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const t = montar();
+    t.attachments.upload.mockRejectedValueOnce(
+      new HttpException("Este PDF escaneado tiene demasiadas páginas.", 422),
+    );
+    await Promise.all([
+      t.service.media(t.api, YO, TEMA, foto("f1", { albumId: "g1" })),
+      t.service.media(t.api, YO, TEMA, foto("f2", { albumId: "g1" })),
+    ]);
+    vi.advanceTimersByTime(ALBUM_WINDOW_MS);
+    await flush();
+    expect(t.avisos()).toEqual([
+      copy.skipped("foto-1.jpg", null, "este PDF escaneado tiene demasiadas páginas."),
+    ]);
+    expect(partesDe(t)).toHaveLength(1);
+  });
+
+  it("un documento que no se lee: solo el aviso, sin bajarlo, sin chat y sin turno", async () => {
+    const t = montar();
+    await t.service.media(t.api, YO, TEMA, docx);
+    await flush();
+    expect(t.avisos()).toEqual([copy.skipped("plan.docx", "un archivo", copy.unsupportedFile)]);
+    expect(t.api.getFile).not.toHaveBeenCalled();
+    expect(t.api.sendMessageDraft).not.toHaveBeenCalled();
+    expect(t.createChat).not.toHaveBeenCalled();
+    expect(t.chat.streamChat).not.toHaveBeenCalled();
+  });
+
+  it("un archivo de más de 20 MB que Telegram no deja bajar se avisa", async () => {
+    const t = montar();
+    t.api.getFile.mockRejectedValueOnce(
+      new Error("Call to 'getFile' failed! (400: Bad Request: file is too big)"),
+    );
+    await t.service.media(t.api, YO, TEMA, foto("f1"));
+    await flush();
+    expect(t.avisos()).toEqual([copy.skipped("foto.jpg", null, copy.fileTooBig)]);
+    expect(t.chat.streamChat).not.toHaveBeenCalled();
+  });
+
+  it("detener mientras se bajan los archivos: no corre el turno y se dice", async () => {
+    const t = montar();
+    let terminarSubida!: () => void;
+    t.attachments.upload.mockImplementationOnce(
+      (input) =>
+        new Promise((resolve) => {
+          terminarSubida = () =>
+            resolve({
+              id: "adj-x",
+              mediaType: "image/jpeg",
+              filename: input.filename,
+              url: "/api/attachments/adj-x/content",
+            });
+        }),
+    );
+    await t.service.media(t.api, YO, TEMA, foto("f1"));
+    await flush();
+    const draftId = t.api.sendMessageDraft.mock.calls[0]![1] as number;
+    t.service.stop(500, draftId);
+    terminarSubida();
+    await flush();
+    expect(t.chat.streamChat).not.toHaveBeenCalled();
+    expect(t.createChat).not.toHaveBeenCalled();
+    expect(t.avisos()).toEqual([copy.stoppedBeforeStart]);
+  });
+
+  it("los archivos que pasan del presupuesto del mensaje (413) se dicen", async () => {
+    const t = montar();
+    t.chat.streamChat.mockRejectedValueOnce(new HttpException("muy largos", 413));
+    await t.service.media(t.api, YO, TEMA, foto("f1"));
+    await flush();
+    expect(t.avisos()).toEqual([copy.tooMuchToRead]);
+  });
+
+  it("un álbum y luego un texto en el mismo tema se contestan en ese orden", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const t = montar();
+    await t.service.media(t.api, YO, TEMA, foto("f1", { albumId: "g1" }));
+    await t.service.text(t.api, YO, TEMA, "y otra cosa");
+    vi.advanceTimersByTime(ALBUM_WINDOW_MS);
+    await flush();
+    expect(t.chat.streamChat).toHaveBeenCalledTimes(1);
+    expect(partesDe(t)[0]).toMatchObject({ type: "file" });
+    t.turnos[0]!.terminar();
+    await flush();
+    expect(partesDe(t, 1)).toEqual([{ type: "text", text: "y otra cosa" }]);
+  });
+});
+
+describe("TelegramConversationService · hallazgos de la revisión del PR5", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response(new Uint8Array([1, 2, 3])))),
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  const foto = (id: string) => ({
+    media: {
+      kind: "file" as const,
+      file: { fileId: id, fileSize: 1000, filename: "foto.jpg", photo: true },
+    },
+    caption: undefined,
+    albumId: undefined,
+  });
+
+  it("la fila se toma antes de saber de quién es: una foto y el texto que la sigue van en orden", async () => {
+    // La búsqueda de la foto tarda más que la del texto.
+    let primera = true;
+    const t = montar({
+      resolveUser: () => {
+        const lenta = primera;
+        primera = false;
+        return new Promise((r) => setTimeout(() => r("u1"), lenta ? 20 : 0));
+      },
+    });
+    void t.service.media(t.api, YO, TEMA, foto("f1"));
+    void t.service.text(t.api, YO, TEMA, "resúmela");
+    await new Promise((r) => setTimeout(r, 40));
+    await flush();
+    expect(t.chat.streamChat).toHaveBeenCalledTimes(1);
+    const partes = (
+      t.chat.streamChat.mock.calls[0]?.[2] as unknown as { parts: { type: string }[] }
+    ).parts;
+    expect(partes[0]?.type).toBe("file");
+  });
+
+  it("el draft de espera se refresca antes de que Telegram lo quite (30 s)", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const t = montar();
+    let terminar!: () => void;
+    t.attachments.upload.mockImplementationOnce(
+      (input) =>
+        new Promise((resolve) => {
+          terminar = () =>
+            resolve({
+              id: "adj-x",
+              mediaType: "image/jpeg",
+              filename: input.filename,
+              url: "/api/attachments/adj-x/content",
+            });
+        }),
+    );
+    await t.service.media(t.api, YO, TEMA, foto("f1"));
+    await flush();
+    expect(t.api.sendMessageDraft).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(25_000);
+    await flush();
+    expect(t.api.sendMessageDraft).toHaveBeenCalledTimes(2);
+    terminar();
+    await flush();
+    // Ya en el turno: el de espera no vuelve a salir.
+    vi.advanceTimersByTime(25_000);
+    await flush();
+    expect(t.api.sendMessageDraft).toHaveBeenCalledTimes(2);
+  });
+
+  it("un archivo de un álbum sin nombre se nombra por lo que es, sin comillas", () => {
+    expect(copy.skipped(null, "un video", copy.unsupportedFile)).toMatch(/^No pude leer un video:/);
+    expect(copy.skipped("menu.docx", "un archivo", copy.unsupportedFile)).toMatch(
+      /^No pude leer «menu\.docx»:/,
+    );
   });
 });
