@@ -69,7 +69,9 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
   2. Telegram le muestra al creator "Iniciar", y el bot recibe `/start <código>` del usuario de Telegram que lo abrió. Es el único momento en que se sabe que esa cuenta de Telegram es de esa cuenta de Presencia.
   - **El código:** 32 bytes al azar en base64url (43 caracteres, dentro del límite de 64 de `start`). Vive 15 minutos y se usa una vez.
   - **Se guarda su sha256, nunca en claro:** quien lea la base no puede vincular su Telegram a otra cuenta.
-  - **Un enlace nuevo invalida el anterior.**
+  - **Un enlace nuevo invalida el anterior,** y nunca pisa un vínculo activo: la condición va en el mismo `ON CONFLICT`. Con una lectura previa, un `/start` canjeado entre la lectura y la escritura quedaba desconectado sin aviso (revisión del PR3).
+  - **El vencimiento lo decide también Postgres** (`link_token_expires_at > now()` en el `UPDATE` que activa), no solo el reloj de la app.
+  - **Al canjearlo, el hash se queda en la fila activa.** Así, reabrir el mismo enlace contesta "ya conectado". Si un Telegram ya conectado abre un código de otra cuenta, recibe "ese enlace ya no sirve": decirle "ya conectado" haría creer al dueño de ese código que se conectó.
 - **Una fila por usuario y canal en `channel_links`** (migración 0059), que pasa por pendiente → activa → revocada y vuelve a pendiente al reconectar.
   - **Un Telegram activo en una sola cuenta,** con índice único parcial sobre las activas: una revocada no bloquea volver a vincular.
   - Si el Telegram ya está en otra cuenta, el bot pide `/disconnect`, y el código no se gasta.
@@ -85,7 +87,7 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
   - contesta 200 en cuanto acepta el update y lo atiende después.
 - **Sin tabla de updates para deduplicar,** que el plan proponía. Telegram solo reenvía lo que no aceptamos, y aceptamos antes de atender. Un `update_id` repetido por una respuesta perdida en la red lo frena un recuerdo en memoria de los últimos 500. Lo que no se aceptó, Telegram lo vuelve a mandar.
 - **Los avisos de servicio no se contestan.** Telegram también manda como `message` cosas que nadie escribió: "tema creado", "mensaje fijado"… En iOS, escribir fuera de un tema manda dos updates: el aviso `forum_topic_created` y el mensaje. En la prueba en vivo del PR3 el bot contestó los dos, y la respuesta salió doble. Ahora solo se contesta lo que trae contenido del creator (`telegram-message.ts`). Es una lista de lo que sí se contesta, así que un aviso nuevo del Bot API se queda sin respuesta. Desde el PR4, el chat se crea con el primer mensaje real del tema, no con el aviso.
-- **El bot vive solo en el proceso `app`** (TelegramModule no está en el worker): el turno se serializa con el candado en memoria de ese proceso. Sin `TELEGRAM_BOT_TOKEN` el canal está apagado y la API arranca igual. `env.ts` exige el secret en modo webhook y prohíbe el polling en producción.
+- **El bot vive solo en el proceso `app`** (TelegramModule no está en el worker): el turno se serializa con el candado en memoria de ese proceso. Sin `TELEGRAM_BOT_TOKEN` el canal está apagado y la API arranca igual. Si Telegram falla al arrancar (`init`, `setWebhook`, o el polling se cae con un 409), se reintenta solo a los 5 s, 15 s, 1 min y luego cada 5 min. El menú de comandos es cosmético y no frena el arranque. Apagar el módulo corta un arranque a medias, para que un reload de `tsx watch` no deje un polling huérfano. `env.ts` exige el secret en modo webhook y prohíbe el polling en producción.
 
 ## Riesgo anotado: otros canales no tienen estas capacidades
 

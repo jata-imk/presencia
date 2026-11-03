@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import { channelLinks } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
@@ -29,13 +29,18 @@ export class TelegramLinksRepository {
    * Deja el vínculo pendiente con un código nuevo (lo crea si no existe). Un
    * enlace anterior sin usar deja de servir: el hash se reemplaza. Lo que
    * hubiera de un vínculo revocado se limpia.
+   *
+   * Nunca pisa un vínculo activo: la condición va en el mismo `ON CONFLICT`,
+   * no en una lectura previa, porque un /start que se canjea entre la lectura
+   * y la escritura quedaría desconectado sin aviso. `undefined` si ya estaba
+   * activo.
    */
   async upsertPending(
     tx: Tx,
     userId: string,
     tokenHash: string,
     expiresAt: Date,
-  ): Promise<ChannelLinkRow> {
+  ): Promise<ChannelLinkRow | undefined> {
     const values = {
       status: "pending" as const,
       externalId: null,
@@ -47,16 +52,23 @@ export class TelegramLinksRepository {
     const [row] = await tx
       .insert(channelLinks)
       .values({ userId, channel: TELEGRAM, ...values })
-      .onConflictDoUpdate({ target: [channelLinks.userId, channelLinks.channel], set: values })
+      .onConflictDoUpdate({
+        target: [channelLinks.userId, channelLinks.channel],
+        set: values,
+        setWhere: ne(channelLinks.status, "active"),
+      })
       .returning();
-    if (!row) throw new Error("No se pudo guardar el vínculo de Telegram");
     return row;
   }
 
   /**
    * Canjea el código: activa SOLO si la fila sigue pendiente con ese mismo
-   * hash (un código se usa una vez, aunque lleguen dos /start a la vez).
-   * `undefined` si ya no estaba pendiente.
+   * hash y sin vencer, según el reloj de Postgres (un código se usa una vez,
+   * aunque lleguen dos /start a la vez). `undefined` si ya no lo estaba.
+   *
+   * El hash se queda en la fila activa: así, reabrir el mismo enlace ya
+   * canjeado se reconoce como "ya conectado", y el código de otra cuenta no.
+   * Ya no sirve para canjear (solo se canjean filas pendientes).
    */
   async activate(
     tx: Tx,
@@ -72,7 +84,6 @@ export class TelegramLinksRepository {
         externalId,
         username,
         linkedAt: sql`now()`,
-        linkTokenHash: null,
         linkTokenExpiresAt: null,
       })
       .where(
@@ -80,6 +91,7 @@ export class TelegramLinksRepository {
           eq(channelLinks.id, linkId),
           eq(channelLinks.status, "pending"),
           eq(channelLinks.linkTokenHash, tokenHash),
+          gt(channelLinks.linkTokenExpiresAt, sql`now()`),
         ),
       )
       .returning();

@@ -72,7 +72,7 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
     const telegram = tgId();
     const codigo = codigoDe((await links.createLink(userId, "bot")).url);
 
-    expect(await links.redeem(codigo, telegram, "creator_mid")).toEqual({ kind: "linked", userId });
+    expect(await links.redeem(codigo, telegram, "creator_mid")).toEqual({ kind: "linked" });
     expect(await links.status(userId)).toMatchObject({
       state: "connected",
       username: "creator_mid",
@@ -80,7 +80,7 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
     expect(await links.resolveUser(telegram)).toBe(userId);
 
     // El mismo código otra vez: para quien ya está conectado no es un error.
-    expect(await links.redeem(codigo, telegram, null)).toEqual({ kind: "already_linked", userId });
+    expect(await links.redeem(codigo, telegram, null)).toEqual({ kind: "already_linked" });
     // Y desde otro Telegram, el código ya no existe.
     expect(await links.redeem(codigo, tgId(), null)).toEqual({ kind: "invalid" });
   });
@@ -108,7 +108,7 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
     expect(await links.redeem(codigo, telegram, null)).toEqual({ kind: "taken" });
     // El código no se gastó: tras desconectar en la otra cuenta, sí conecta.
     expect(await links.unlinkByExternalId(telegram)).toBe(true);
-    expect(await links.redeem(codigo, telegram, null)).toEqual({ kind: "linked", userId });
+    expect(await links.redeem(codigo, telegram, null)).toEqual({ kind: "linked" });
   });
 
   it("con un Telegram ya conectado no se genera otro enlace", async () => {
@@ -127,7 +127,7 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
     expect(await links.unlink(userId)).toBeNull();
 
     const codigo = codigoDe((await links.createLink(userId, "bot")).url);
-    expect(await links.redeem(codigo, telegram, null)).toEqual({ kind: "linked", userId });
+    expect(await links.redeem(codigo, telegram, null)).toEqual({ kind: "linked" });
   });
 
   it("dos /start con el mismo código a la vez lo canjean una sola vez", async () => {
@@ -137,6 +137,26 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
       links.redeem(codigo, tgId(), null),
     ]);
     expect([a.kind, b.kind].sort()).toEqual(["invalid", "linked"]);
+  });
+
+  it("un Telegram ya conectado que abre el código de otra cuenta no oye 'ya conectado'", async () => {
+    const telegram = tgId();
+    await links.redeem(codigoDe((await links.createLink(userId, "bot")).url), telegram, null);
+    // Un código de otra cuenta que ya no está pendiente (reemplazado).
+    const otra = await nuevoUsuario();
+    const reemplazado = codigoDe((await links.createLink(otra, "bot")).url);
+    await links.createLink(otra, "bot");
+    expect(await links.redeem(reemplazado, telegram, null)).toEqual({ kind: "invalid" });
+    // Y uno inventado, tampoco.
+    expect(await links.redeem("b".repeat(43), telegram, null)).toEqual({ kind: "invalid" });
+  });
+
+  it("el vencimiento lo decide también Postgres, no solo el reloj de la app", async () => {
+    const hace20min = new Date(Date.now() - 20 * 60_000);
+    const codigo = codigoDe((await links.createLink(userId, "bot", hace20min)).url);
+    // La app cree que es hace 20 min (el código "sigue vigente"); el UPDATE no.
+    expect(await links.redeem(codigo, tgId(), null, hace20min)).toEqual({ kind: "invalid" });
+    expect(await links.status(userId)).toMatchObject({ state: "expired" });
   });
 
   it("de un Telegram que nadie conectó no se sabe de quién es", async () => {

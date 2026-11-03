@@ -2,6 +2,8 @@
 // Los comandos van en inglés por convención (decisión de Jose, 2026-11-02);
 // lo que el creator lee, siempre en español.
 
+import { TELEGRAM_LINK_TTL_MINUTES } from "@presencia/shared";
+
 /** Los comandos del menú de Telegram (`setMyCommands`), con su descripción. */
 export const TELEGRAM_COMMANDS = [
   { command: "start", description: "Empezar o conectar tu cuenta de Presencia" },
@@ -23,7 +25,7 @@ export const copy = {
   invalid: (webUrl: string) =>
     `Ese enlace ya no sirve. Genera uno nuevo en Configuración → Canales conectados:\n${settings(webUrl)}`,
   expired: (webUrl: string) =>
-    "Ese enlace ya venció (dura 15 minutos). Genera uno nuevo en Configuración → Canales " +
+    `Ese enlace ya venció (dura ${String(TELEGRAM_LINK_TTL_MINUTES)} minutos). Genera uno nuevo en Configuración → Canales ` +
     `conectados:\n${settings(webUrl)}`,
   taken:
     "Este Telegram ya está conectado a otra cuenta de Presencia. Escribe /disconnect para " +

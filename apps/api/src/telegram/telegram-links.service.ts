@@ -19,12 +19,7 @@ import { TelegramLinksRepository, type ChannelLinkRow } from "./telegram-links.r
 // El código (link-token.ts) vive 15 minutos y se usa una vez.
 
 /** Cómo terminó un `/start <código>`, para que el bot conteste lo que toca. */
-export type RedeemResult =
-  | { kind: "linked"; userId: string }
-  | { kind: "already_linked"; userId: string }
-  | { kind: "invalid" }
-  | { kind: "expired" }
-  | { kind: "taken" };
+export type RedeemResult = { kind: "linked" | "already_linked" | "invalid" | "expired" | "taken" };
 
 @Injectable()
 export class TelegramLinksService {
@@ -41,15 +36,14 @@ export class TelegramLinksService {
   ): Promise<TelegramLinkDto> {
     const token = newLinkToken();
     const expiresAt = new Date(now.getTime() + TELEGRAM_LINK_TTL_MINUTES * 60_000);
-    await this.db.runWithTenant(userId, async (tx) => {
-      const current = await this.repo.findOwn(tx);
-      if (current?.status === "active") {
-        throw new ConflictException(
-          "Tu cuenta ya tiene un Telegram conectado. Desconéctalo antes de conectar otro.",
-        );
-      }
-      await this.repo.upsertPending(tx, userId, hashLinkToken(token), expiresAt);
-    });
+    const row = await this.db.runWithTenant(userId, (tx) =>
+      this.repo.upsertPending(tx, userId, hashLinkToken(token), expiresAt),
+    );
+    if (!row) {
+      throw new ConflictException(
+        "Tu cuenta ya tiene un Telegram conectado. Desconéctalo antes de conectar otro.",
+      );
+    }
     return {
       url: `https://t.me/${botUsername}?start=${token}`,
       expiresAt: expiresAt.toISOString(),
@@ -88,21 +82,25 @@ export class TelegramLinksService {
       active: await this.repo.findActiveByExternalId(tx, externalId),
     }));
     if (!pending) {
-      // Un /start viejo de quien ya está conectado: no es un error para él.
-      return active ? { kind: "already_linked", userId: active.userId } : { kind: "invalid" };
+      // Reabrir el enlace que este mismo Telegram ya canjeó no es un error
+      // (la fila activa conserva el hash). Cualquier otro código —de otra
+      // cuenta, reemplazado o inventado— ya no sirve, aunque este Telegram
+      // esté conectado a alguna cuenta: decirle "ya conectado" haría creer al
+      // dueño de ese código que se conectó.
+      return { kind: active?.linkTokenHash === tokenHash ? "already_linked" : "invalid" };
     }
     if (!pending.linkTokenExpiresAt || pending.linkTokenExpiresAt <= now)
       return { kind: "expired" };
-    if (active && active.userId !== pending.userId) return { kind: "taken" };
-    if (active) return { kind: "already_linked", userId: active.userId };
+    // Una cuenta tiene una sola fila de Telegram: si este Telegram está activo,
+    // es en otra cuenta (la de `pending` sigue pendiente).
+    if (active) return { kind: "taken" };
 
     try {
       const linked = await this.db.runWithTenant(pending.userId, (tx) =>
         this.repo.activate(tx, pending.id, tokenHash, externalId, username),
       );
-      // Otro /start con el mismo código ganó la carrera.
-      if (!linked) return { kind: "invalid" };
-      return { kind: "linked", userId: pending.userId };
+      // Otro /start con el mismo código ganó la carrera, o venció justo ahora.
+      return { kind: linked ? "linked" : "invalid" };
     } catch (error) {
       // Este Telegram se activó en otra cuenta entre la lectura y la escritura.
       if (isUniqueViolation(error, "channel_links_active_external")) return { kind: "taken" };

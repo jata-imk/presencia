@@ -46,8 +46,8 @@ describe("TelegramCommandsService", () => {
 
   it("/start con código: un texto por resultado, y canjea con el id y el @usuario", async () => {
     const casos: [RedeemResult, string][] = [
-      [{ kind: "linked", userId: "u1" }, copy.linked],
-      [{ kind: "already_linked", userId: "u1" }, copy.alreadyLinked],
+      [{ kind: "linked" }, copy.linked],
+      [{ kind: "already_linked" }, copy.alreadyLinked],
       [{ kind: "expired" }, copy.expired(webUrl)],
       [{ kind: "taken" }, copy.taken],
       [{ kind: "invalid" }, copy.invalid(webUrl)],

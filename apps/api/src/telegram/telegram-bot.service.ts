@@ -19,8 +19,9 @@ import { isUserContent } from "./telegram-message.js";
 //
 // Dos modos (TELEGRAM_MODE): en dev, polling con un bot aparte (la laptop no
 // tiene URL pública); en prod, webhook con secret (env.ts lo exige). El
-// arranque no bloquea a la API: si Telegram no contesta, se registra y el
-// resto de la app sigue.
+// arranque no bloquea a la API: si Telegram no contesta, se registra, el resto
+// de la app sigue y se reintenta solo (sin reintento, un 5xx de Telegram en el
+// deploy dejaba el canal muerto hasta reiniciar el proceso).
 
 /** Los updates que pedimos. F11 PR3: solo mensajes (el PR4 suma los de detener). */
 const ALLOWED_UPDATES = ["message"] as const;
@@ -28,16 +29,23 @@ const ALLOWED_UPDATES = ["message"] as const;
 /** Cuántos update_id recientes se recuerdan para no atender dos veces el mismo. */
 const RECENT_UPDATES = 500;
 
+/** Espera antes de cada reintento de arranque; el último se repite. */
+export const LAUNCH_RETRY_MS = [5_000, 15_000, 60_000, 300_000] as const;
+
 @Injectable()
 export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestroy {
   private bot: Bot | null = null;
   private ready = false;
+  /** El módulo se está apagando: no arrancar ni reintentar nada más. */
+  private stopped = false;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private launchAttempts = 0;
   // El webhook contesta 200 antes de atender el update, así que Telegram no
   // reenvía uno que ya aceptamos; esto cubre un reintento raro (la respuesta
   // se perdió en la red). No sobrevive a un reinicio, y no hace falta: lo que
-  // no se aceptó, Telegram lo vuelve a mandar.
+  // no se aceptó, Telegram lo vuelve a mandar. Un Set guarda el orden de
+  // inserción: el primero es el más viejo.
   private readonly recent = new Set<number>();
-  private readonly recentOrder: number[] = [];
 
   constructor(
     @Inject(TelegramCommandsService) private readonly commands: TelegramCommandsService,
@@ -71,26 +79,40 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
   }
 
   private async launch(bot: Bot): Promise<void> {
+    if (this.stopped) return;
     try {
-      await bot.init();
-      await bot.api.setMyCommands(TELEGRAM_COMMANDS.map((c) => ({ ...c })));
+      if (!bot.isInited()) await bot.init();
+      if (this.stopped) return;
+      // El menú de comandos es cosmético: si falla, el bot arranca igual.
+      await bot.api
+        .setMyCommands(TELEGRAM_COMMANDS.map((c) => ({ ...c })))
+        .catch((error: unknown) => {
+          console.warn("[telegram] No se pudo registrar el menú de comandos:", error);
+        });
+      if (this.stopped) return;
       if (env.TELEGRAM_MODE === "webhook") {
         const url = `${env.BETTER_AUTH_URL}/api/telegram/webhook`;
         await bot.api.setWebhook(url, {
           secret_token: env.TELEGRAM_WEBHOOK_SECRET,
           allowed_updates: [...ALLOWED_UPDATES],
         });
+        if (this.stopped) return;
         this.ready = true;
+        this.launchAttempts = 0;
         console.info(`[telegram] @${bot.botInfo.username} recibe por webhook en ${url}`);
         return;
       }
       this.ready = true;
       // bot.start borra el webhook que hubiera y lee con getUpdates. La promesa
-      // se cumple al detenerlo; un 409 es otro proceso leyendo el mismo bot.
+      // se cumple al detenerlo (onModuleDestroy) y se rechaza si el polling se
+      // cae; un 409 es otro proceso leyendo el mismo bot, que puede morir solo.
       void bot
         .start({
           allowed_updates: [...ALLOWED_UPDATES],
-          onStart: (info) => console.info(`[telegram] @${info.username} escuchando por polling`),
+          onStart: (info) => {
+            this.launchAttempts = 0;
+            console.info(`[telegram] @${info.username} escuchando por polling`);
+          },
         })
         .catch((error: unknown) => {
           this.ready = false;
@@ -99,13 +121,33 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
               "o el bot de prod con este token):",
             error,
           );
+          this.scheduleLaunch(bot);
         });
     } catch (error) {
       console.error("[telegram] El bot no arrancó; el resto de la API sigue:", error);
+      this.scheduleLaunch(bot);
     }
   }
 
+  private scheduleLaunch(bot: Bot): void {
+    if (this.stopped) return;
+    const delay = LAUNCH_RETRY_MS[Math.min(this.launchAttempts, LAUNCH_RETRY_MS.length - 1)]!;
+    this.launchAttempts += 1;
+    console.info(`[telegram] Reintento de arranque en ${String(delay / 1000)} s.`);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      void this.launch(bot);
+    }, delay);
+    // Un reintento pendiente no detiene el apagado del proceso.
+    this.retryTimer.unref();
+  }
+
   async onModuleDestroy(): Promise<void> {
+    // Antes que nada: un launch a medio camino (esperando init o setWebhook)
+    // ya no llega a bot.start, y no queda un polling huérfano tras un reload.
+    this.stopped = true;
+    this.ready = false;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
     if (this.bot?.isRunning()) await this.bot.stop();
   }
 
@@ -114,9 +156,8 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
     if (!this.bot || !this.ready) throw new Error("El bot de Telegram no está listo");
     if (this.recent.has(update.update_id)) return;
     this.recent.add(update.update_id);
-    this.recentOrder.push(update.update_id);
-    if (this.recentOrder.length > RECENT_UPDATES) {
-      this.recent.delete(this.recentOrder.shift()!);
+    if (this.recent.size > RECENT_UPDATES) {
+      this.recent.delete(this.recent.values().next().value!);
     }
     await this.bot.handleUpdate(update);
   }
