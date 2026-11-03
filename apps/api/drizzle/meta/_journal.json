@@ -414,6 +414,13 @@
       "when": 1793161429437,
       "tag": "0058_busqueda_web",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1793664249770,
+      "tag": "0059_vincular_telegram",
+      "breakpoints": true
     }
   ]
 }

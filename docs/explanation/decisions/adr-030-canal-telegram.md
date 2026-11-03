@@ -9,7 +9,7 @@
 - **un tema que crea el creator → chat nuevo.** En iOS basta escribir fuera de un tema: Telegram crea uno implícito (`forum_topic_created.is_name_implicit: true`, nombrado con el principio del mensaje), y la app ya lo presenta como "Nuevo chat" / "Continuar último hilo";
 - **"Continuar en Telegram" en la web → el bot crea el tema de ese chat** (`createForumTopic`);
 - **el autotítulo del chat renombra el tema** (`editForumTopic`). Desktop lo muestra; **la app de iOS no**, ni reabriendo ni reiniciando (sonda, 2026-11-01). Se manda igual: es una limitación de ese cliente;
-- **un mensaje sin `message_thread_id` → el último chat de Telegram de ese creator, con `/nuevo` para empezar otro.** Solo llega de clientes sin temas (Telegram X: todo revuelto en un chat, sin tema en el update), porque iOS crea el tema implícito. Es la degradación del modelo de OpenClaw, solo para ellos. "Fuera de tema = chat nuevo" le abriría un chat por mensaje;
+- **un mensaje sin `message_thread_id` → el último chat de Telegram de ese creator, con `/new` para empezar otro.** Solo llega de clientes sin temas (Telegram X: todo revuelto en un chat, sin tema en el update), porque iOS crea el tema implícito. Es la degradación del modelo de OpenClaw, solo para ellos. "Fuera de tema = chat nuevo" le abriría un chat por mensaje;
 - **el bot nunca borra un tema:** `deleteForumTopic` borra también los mensajes del bot que había en él.
 
 ## Razón
@@ -62,6 +62,31 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
   - Los errores de los dos son sobre todo nombres propios.
 - **Jose eligió Groq de principal**, con el texto tal cual y sin filtro de silencio. El público paga en pesos, y ~$1.40 al mes por creator intensivo pesa a esa escala. La diferencia de calidad es chica y el modelo del chat entiende igual. Claude recomendaba lo contrario por la alucinación; queda anotado por si los "¡Gracias!" llegan a molestar en la prueba en vivo. El filtro (`no_speech_prob` de los segmentos) es la salida si pasa.
 
+## Vincular la cuenta (F11 PR3)
+
+- **Deep link con código de un solo uso.**
+  1. Configuración genera `https://t.me/<bot>?start=<código>` (`POST /api/telegram/link`).
+  2. Telegram le muestra al creator "Iniciar", y el bot recibe `/start <código>` del usuario de Telegram que lo abrió. Es el único momento en que se sabe que esa cuenta de Telegram es de esa cuenta de Presencia.
+  - **El código:** 32 bytes al azar en base64url (43 caracteres, dentro del límite de 64 de `start`). Vive 15 minutos y se usa una vez.
+  - **Se guarda su sha256, nunca en claro:** quien lea la base no puede vincular su Telegram a otra cuenta.
+  - **Un enlace nuevo invalida el anterior.**
+- **Una fila por usuario y canal en `channel_links`** (migración 0059), que pasa por pendiente → activa → revocada y vuelve a pendiente al reconectar.
+  - **Un Telegram activo en una sola cuenta,** con índice único parcial sobre las activas: una revocada no bloquea volver a vincular.
+  - Si el Telegram ya está en otra cuenta, el bot pide `/disconnect`, y el código no se gasta.
+  - Dos `/start` simultáneos con el mismo código canjean una sola vez: el `UPDATE` exige que la fila siga pendiente con ese hash.
+- **Leer sin tenant con la policy `worker_scan`,** no con funciones `SECURITY DEFINER` como decía el plan. Es el patrón que el repo ya usa y prueba (0017, 0055).
+  - El bot no sabe de quién es un update hasta buscarlo: `external_id` → `user_id` y hash del código → `user_id`.
+  - Lee en modo barrido (`runWorkerScan`): solo `SELECT`, solo filas pendientes o activas, nunca revocadas.
+  - Toda escritura vuelve a entrar con el tenant. `rls.spec.ts` lo prueba.
+- **Desconectar:** desde la web (`DELETE /api/telegram/link`, y el bot avisa en Telegram) o con `/disconnect`. Los chats y sus mensajes se quedan: son la historia canónica.
+- **Comandos en inglés** (`/start`, `/help`, `/disconnect` y, desde el PR4, `/new`) por convención (decisión de Jose, 2026-11-02). Su descripción en el menú de Telegram y todo lo que el bot contesta va en español.
+- **El webhook** (`POST /api/telegram/webhook`, público):
+  - compara el `X-Telegram-Bot-Api-Secret-Token` en tiempo constante;
+  - contesta 200 en cuanto acepta el update y lo atiende después.
+- **Sin tabla de updates para deduplicar,** que el plan proponía. Telegram solo reenvía lo que no aceptamos, y aceptamos antes de atender. Un `update_id` repetido por una respuesta perdida en la red lo frena un recuerdo en memoria de los últimos 500. Lo que no se aceptó, Telegram lo vuelve a mandar.
+- **Los avisos de servicio no se contestan.** Telegram también manda como `message` cosas que nadie escribió: "tema creado", "mensaje fijado"… En iOS, escribir fuera de un tema manda dos updates: el aviso `forum_topic_created` y el mensaje. En la prueba en vivo del PR3 el bot contestó los dos, y la respuesta salió doble. Ahora solo se contesta lo que trae contenido del creator (`telegram-message.ts`). Es una lista de lo que sí se contesta, así que un aviso nuevo del Bot API se queda sin respuesta. Desde el PR4, el chat se crea con el primer mensaje real del tema, no con el aviso.
+- **El bot vive solo en el proceso `app`** (TelegramModule no está en el worker): el turno se serializa con el candado en memoria de ese proceso. Sin `TELEGRAM_BOT_TOKEN` el canal está apagado y la API arranca igual. `env.ts` exige el secret en modo webhook y prohíbe el polling en producción.
+
 ## Riesgo anotado: otros canales no tienen estas capacidades
 
 Pedido de Jose (2026-11-01). Los temas, los drafts con detener y el rich son de Telegram:
@@ -79,7 +104,7 @@ Un segundo canal daría un flujo distinto en cada lugar. Por eso:
 
 ## Descartado
 
-- **Chat rodante + `/nuevo` (+ corte diario o por inactividad):** ver arriba.
+- **Chat rodante + `/new` (+ corte diario o por inactividad):** ver arriba.
 - **Un chat nuevo por mensaje o por día, sin temas:** no deja seguir una conversación.
 - **Long polling en producción:** ADR-010 ya eligió webhook, que no deja un proceso consultando a Telegram. El polling queda solo para dev, con un bot aparte: un bot no puede tener las dos cosas a la vez, y la laptop no tiene URL pública.
 - **Correr el turno en un job de pg-boss:** el candado de turnos (`turnsInFlight`, ADR-006) vive en memoria del proceso `app`. Un turno de Telegram en el worker no se serializaría contra uno web en el mismo chat.

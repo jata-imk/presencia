@@ -161,8 +161,13 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 
 **`channel_links`** — identidades de mensajería vinculadas.
 
-- `id`, `user_id`, `channel` (reúsa el enum global `channel` — un solo tipo que mantener — con `CHECK (channel <> 'web')` porque solo se vinculan canales de mensajería externos; migración 0003), `external_id` (chat_id de Telegram), `status` (`pending`, `active`, `revoked`), `linked_at`.
-- El webhook de grammY resuelve `external_id → user_id` aquí; si no existe, flujo de vinculación.
+- `id`, `user_id`, `channel` (reúsa el enum global `channel` — un solo tipo que mantener — con `CHECK (channel <> 'web')` porque solo se vinculan canales de mensajería externos; migración 0003), `external_id` (el id del usuario de Telegram, `from.id`; null mientras está pendiente), `status` (`pending`, `active`, `revoked`), `linked_at`.
+- F11 (migración 0059, ADR-030): `link_token_hash` y `link_token_expires_at` (el sha256 del código de un solo uso del deep link, 15 min; se borran al canjearlo) y `username` (el @usuario de Telegram).
+- **Una fila por usuario y canal** (`channel_links_user_channel`), que pasa por pendiente → activa → revocada.
+  - `channel_links_active_external` es único parcial `WHERE status = 'active'`: un Telegram activo en una sola cuenta, y una revocada no bloquea volver a vincular.
+  - `channel_links_token` es único sobre el hash.
+  - El CHECK `channel_links_active_has_external` exige `external_id` en las activas.
+- El bot resuelve `external_id → user_id` y el hash del código → `user_id` en modo barrido (policy `worker_scan`: solo SELECT, solo pendientes y activas). Si no existe, contesta cómo vincular.
 
 **`social_accounts`** — cuentas de redes conectadas para publicar.
 

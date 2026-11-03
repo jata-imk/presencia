@@ -126,6 +126,23 @@ const envSchema = z
     // sin ninguna key no truena el boot.
     WEB_SEARCH_PROVIDER: z.enum(["fake", "brave"]).default("fake"),
     BRAVE_SEARCH_API_KEY: z.string().min(1).optional(),
+    // --- Canal Telegram (F11, ADR-030) ---
+    // Opcional: sin token, el canal queda apagado (Configuración lo dice) y la
+    // API arranca igual. En dev, un bot APARTE del de prod: un bot no puede
+    // tener webhook y polling a la vez.
+    TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
+    // polling: el proceso le pregunta a Telegram (dev: la laptop no tiene URL
+    // pública). webhook: Telegram llama a `${BETTER_AUTH_URL}/api/telegram/webhook`
+    // (prod). Validado abajo: en producción, webhook con secret.
+    TELEGRAM_MODE: z.enum(["polling", "webhook"]).default("polling"),
+    // El `secret_token` de setWebhook: Telegram lo manda en el header
+    // X-Telegram-Bot-Api-Secret-Token y el webhook rechaza lo que no lo traiga.
+    // Solo [A-Za-z0-9_-], 1-256 (spec del Bot API); generarlo con
+    // `openssl rand -hex 32`.
+    TELEGRAM_WEBHOOK_SECRET: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{32,256}$/, "32 a 256 caracteres de [A-Za-z0-9_-]")
+      .optional(),
     // --- Backup diario (F8.5, ADR-011) ---
     // Opcionales como grupo: sin configurar, el job no se registra y la API
     // arranca igual (en dev nadie tiene bucket). Pero configurado a medias es
@@ -328,6 +345,26 @@ const envSchema = z
         message:
           'WEB_SEARCH_PROVIDER="fake" no se permite en producción: usa "brave" con BRAVE_SEARCH_API_KEY',
       });
+    }
+    // F11: con el bot prendido en modo webhook, el secret es obligatorio: sin
+    // él, cualquiera que adivine la URL mandaría updates a nombre de Telegram.
+    // Y en producción el modo es webhook (ADR-010): un polling en prod competiría
+    // con el bot de dev si alguien copiara el token.
+    if (value.TELEGRAM_BOT_TOKEN) {
+      if (value.TELEGRAM_MODE === "webhook" && !value.TELEGRAM_WEBHOOK_SECRET) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["TELEGRAM_WEBHOOK_SECRET"],
+          message: 'TELEGRAM_MODE="webhook" requiere TELEGRAM_WEBHOOK_SECRET',
+        });
+      }
+      if (value.TELEGRAM_MODE === "polling" && value.NODE_ENV === "production") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["TELEGRAM_MODE"],
+          message: 'TELEGRAM_MODE="polling" no se permite en producción: usa "webhook"',
+        });
+      }
     }
     if (value.WEB_SEARCH_PROVIDER === "brave" && !value.BRAVE_SEARCH_API_KEY) {
       ctx.addIssue({

@@ -745,12 +745,39 @@ export const channelLinks = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     channel: channel("channel").notNull(),
-    externalId: text("external_id").notNull(),
+    /**
+     * El id del usuario en el canal (Telegram: `from.id`). Null mientras el
+     * vínculo está pendiente (F11): se conoce al canjear el código.
+     */
+    externalId: text("external_id"),
     status: channelLinkStatus("status").notNull().default("pending"),
+    /**
+     * F11: sha256 (hex) del código de un solo uso del deep link
+     * (`/start <código>`). Nunca el código en claro. Se borra al canjearlo.
+     */
+    linkTokenHash: text("link_token_hash"),
+    linkTokenExpiresAt: timestamp("link_token_expires_at", { withTimezone: true }),
+    /** F11: el @usuario del canal al vincular, para que Configuración diga con quién. */
+    username: text("username"),
     linkedAt: timestamp("linked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("channel_links_external").on(t.channel, t.externalId)],
+  (t) => [
+    // F11: una cuenta del canal activa en UNA sola cuenta de Presencia. Solo
+    // entre las activas: una revocada no bloquea volver a vincular.
+    uniqueIndex("channel_links_active_external")
+      .on(t.channel, t.externalId)
+      .where(sql`${t.status} = 'active'`),
+    // F11: una fila por usuario y canal, que pasa por pendiente → activa →
+    // revocada (y vuelve a pendiente al reconectar).
+    uniqueIndex("channel_links_user_channel").on(t.userId, t.channel),
+    // F11: el canje del código busca por su hash, sin saber de quién es.
+    uniqueIndex("channel_links_token").on(t.linkTokenHash),
+    check(
+      "channel_links_active_has_external",
+      sql`${t.status} <> 'active' OR ${t.externalId} IS NOT NULL`,
+    ),
+  ],
 );
 
 export const socialAccounts = pgTable(
