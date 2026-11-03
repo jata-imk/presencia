@@ -162,12 +162,22 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 **`channel_links`** — identidades de mensajería vinculadas.
 
 - `id`, `user_id`, `channel` (reúsa el enum global `channel` — un solo tipo que mantener — con `CHECK (channel <> 'web')` porque solo se vinculan canales de mensajería externos; migración 0003), `external_id` (el id del usuario de Telegram, `from.id`; null mientras está pendiente), `status` (`pending`, `active`, `revoked`), `linked_at`.
-- F11 (migración 0059, ADR-030): `link_token_hash` y `link_token_expires_at` (el sha256 del código de un solo uso del deep link, 15 min). Al canjearlo se borra el vencimiento y el hash se queda en la fila activa: reabrir el mismo enlace se reconoce como "ya conectado" y el código de otra cuenta no. Se borra al desconectar y lo reemplaza el siguiente enlace y `username` (el @usuario de Telegram).
+- F11 (migración 0059, ADR-030): `link_token_hash` y `link_token_expires_at`, el sha256 del código de un solo uso del deep link (15 min), y `username` (el @usuario de Telegram).
+  - Al canjearlo se borra el vencimiento y el hash se queda en la fila activa: reabrir el mismo enlace se reconoce como "ya conectado", y el código de otra cuenta no.
+  - El hash se borra al desconectar, y lo reemplaza el siguiente enlace.
 - **Una fila por usuario y canal** (`channel_links_user_channel`), que pasa por pendiente → activa → revocada.
   - `channel_links_active_external` es único parcial `WHERE status = 'active'`: un Telegram activo en una sola cuenta, y una revocada no bloquea volver a vincular.
   - `channel_links_token` es único sobre el hash.
   - El CHECK `channel_links_active_has_external` exige `external_id` en las activas.
 - El bot resuelve `external_id → user_id` y el hash del código → `user_id` en modo barrido (policy `worker_scan`: solo SELECT, solo pendientes y activas). Si no existe, contesta cómo vincular.
+
+**`telegram_threads`** — qué chat de Presencia es cada tema de Telegram (F11 PR4, migración 0060, ADR-030).
+
+- `id`, `user_id`, `chat_id` (único: un chat vive en un solo tema), `telegram_chat_id` (el chat privado con el bot), `message_thread_id` (el tema; null = la conversación sin tema de los clientes sin temas, como Telegram X), `rename_topic` (false si el creator le puso nombre al tema: el título automático no lo pisa), `created_at`.
+- **`telegram_threads_place`** es único `NULLS NOT DISTINCT` sobre (`user_id`, `telegram_chat_id`, `message_thread_id`): un tema es un chat, y también la conversación sin tema. Sin `NULLS NOT DISTINCT`, dos filas con el tema nulo no chocarían.
+- `/new` borra la fila sin tema: el siguiente mensaje empieza otro chat, y el anterior se queda.
+- Borrar el chat en la web borra su fila (cascade): el siguiente mensaje de ese tema empieza un chat nuevo.
+- RLS `tenant_isolation`, sin `worker_scan`: el bot ya sabe de quién es el update (`channel_links`) antes de buscar el tema.
 
 **`social_accounts`** — cuentas de redes conectadas para publicar.
 

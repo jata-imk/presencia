@@ -58,6 +58,7 @@ export const copy = {
   turnFailed: "Algo salió mal generando la respuesta. Inténtalo de nuevo.",
   cantRetry: "Esa respuesta ya no se puede reintentar: el chat siguió después.",
   chatGone: "Ese chat ya no existe en Presencia. Escribe algo para empezar uno nuevo.",
+  thinking: "Pensando…",
   stoppedNote: "Detuviste la respuesta.",
   emptyReply: "No me salió una respuesta. Inténtalo de nuevo.",
   retryButton: "Reintentar",

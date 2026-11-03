@@ -122,8 +122,10 @@ export class TelegramSink implements TurnSink {
   ): Promise<void> {
     this.started = true;
     const interval = this.options.draftIntervalMs ?? 1_000;
-    // El "Pensando…" de Telegram (texto vacío) en cuanto empieza el turno.
-    this.sendDraft("");
+    // "Pensando…" en cuanto empieza el turno. Con texto vacío Telegram pone su
+    // propio indicador, pero en iOS es un globo sin texto que dura todo lo que
+    // el modelo tarda en arrancar (prueba en vivo del PR4).
+    this.sendDraft(`<i>${copy.thinking}</i>`);
     const timer = setInterval(() => this.tick(), interval);
     try {
       for await (const chunk of stream.toUIMessageStream(streamOptions)) {

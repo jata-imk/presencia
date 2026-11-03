@@ -89,6 +89,36 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
 - **Los avisos de servicio no se contestan.** Telegram también manda como `message` cosas que nadie escribió: "tema creado", "mensaje fijado"… En iOS, escribir fuera de un tema manda dos updates: el aviso `forum_topic_created` y el mensaje. En la prueba en vivo del PR3 el bot contestó los dos, y la respuesta salió doble. Ahora solo se contesta lo que trae contenido del creator (`telegram-message.ts`). Es una lista de lo que sí se contesta, así que un aviso nuevo del Bot API se queda sin respuesta. Desde el PR4, el chat se crea con el primer mensaje real del tema, no con el aviso.
 - **El bot vive solo en el proceso `app`** (TelegramModule no está en el worker): el turno se serializa con el candado en memoria de ese proceso. Sin `TELEGRAM_BOT_TOKEN` el canal está apagado y la API arranca igual. Si Telegram falla al arrancar (`init`, `setWebhook`, o el polling se cae con un 409), se reintenta solo a los 5 s, 15 s, 1 min y luego cada 5 min. El menú de comandos es cosmético y no frena el arranque. Apagar el módulo corta un arranque a medias, para que un reload de `tsx watch` no deje un polling huérfano. `env.ts` exige el secret en modo webhook y prohíbe el polling en producción.
 
+## Conversar por Telegram (F11 PR4)
+
+- **Un mensaje de texto entra por el turno de la web** (`ChatService.streamChat`), con `channel: "telegram"` y la zona del creator leída de la base (`users.timezone`; Telegram no trae sesión). La entrega la hace `TelegramSink` (`telegram/telegram-sink.ts`), el `TurnSink` del canal (addendum F11 PR2 de ADR-006).
+- **Qué chat recibe** (`telegram_threads`, migración 0060):
+  - El primer mensaje de un tema crea el chat; los siguientes caen en él.
+  - Un tema con nombre puesto por el creator (`forum_topic_created.is_name_implicit` falso) le da su título al chat, como un renombre: el automático ya no lo toca ni se cobra, y el tema no se renombra. El aviso de "tema creado" llega antes que el mensaje y se recuerda 10 minutos.
+  - Sin tema (Telegram X): el chat de la fila sin tema, hasta que `/new` la borra. Dentro de un tema, `/new` explica que basta con abrir otro.
+  - Borrar el chat en la web suelta su tema: el siguiente mensaje empieza uno nuevo.
+- **El título renombra el tema** (`editForumTopic`). `ChatEvents` (`chat/chat-events.ts`) avisa en el mismo proceso cuando se guarda un título: el automático renombra solo si el tema no tiene nombre del creator, y el que se escribe en la web, siempre.
+- **Cómo se ve:**
+  - **Mientras corre:** un draft con botón de detener (`sendMessageDraft` + `can_stop`). Empieza en _Pensando…_: con texto vacío Telegram pone su indicador, que en iOS es un globo sin texto durante todo el arranque del modelo (prueba en vivo). Luego muestra el texto o, si todavía no hay, la línea del paso ("Buscando 'café en Mérida'…", "Creando borrador para Instagram…"), con las mismas palabras que la lista de pasos de la web.
+    - Se refresca una vez por segundo como mucho, sin encimar envíos, y se reenvía antes de 20 s porque un draft dura 30.
+  - **Al terminar:** la respuesta en mensajes HTML (`telegram/telegram-html.ts`), las **fuentes** al final (la misma `webSources` de la web, movida a `packages/shared`), un mensaje por card con su red y el texto recortado, y el botón **"Abrir en Presencia"**.
+    - Telegram rechaza un botón de URL a `localhost` o a una IP, así que en dev el enlace va en el texto.
+  - **Detenida o fallida:** la nota con **"Reintentar"** (callback `retry:<id del mensaje>` → `regenerateChat`). El botón se quita al tocarlo.
+- **El HTML se arma desde los tokens de `marked`, nunca pegando strings:** cada etiqueta que se abre se cierra, también con el markdown a medias de un draft. Así:
+  - lo que Telegram no tiene se traduce: un encabezado es negritas, una lista son viñetas;
+  - una tabla de hasta 40 columnas de ancho va en `<pre>` alineada, y una más ancha se vuelve una lista por fila (como `markdown.tables` de OpenClaw);
+  - lo largo se corta por bloques en mensajes de hasta 4,096; un bloque que no cabe pierde el formato solo él;
+  - si Telegram rechaza el HTML de todos modos, el mismo texto va sin formato.
+- **En fila por tema, en memoria:**
+  - Dos mensajes del mismo tema se contestan uno tras otro, y temas distintos corren en paralelo. Con más de 3 en espera, el bot pide calma.
+  - **El handler nunca espera el turno:** con polling, grammY atiende un update a la vez, y esperar ahí detendría todo, también el botón de detener. Es el mismo criterio de OpenClaw (una cola por sesión) y del Chat SDK de Vercel (el turno fuera del handler del webhook).
+- **Errores antes del turno** (las excepciones de Nest, por status): 402 → sin cuota, con el enlace a Plan; 409 → "estoy terminando otra respuesta"; 404 → el chat ya no existe, o esa respuesta ya no se puede reintentar.
+- **Apéndice del canal en el prompt** (`channelInstruction`, `chat/system-prompt.ts`): respuestas más cortas, formato simple, sin botones de la web, y que los borradores llegan con un botón para abrirlos en Presencia. Va después de la voz y antes de la fecha de hoy (addendum F11 PR4 de ADR-006).
+- **`@grammyjs/auto-retry`:** un 429 o un 5xx pasajero de Telegram se reintenta solo, con tope corto.
+- **Updates que se piden:** `message`, `callback_query` (Reintentar) y `stopped_message_generation` (detener).
+- **Por ahora, solo texto.** Una foto, un archivo o una nota de voz reciben "por ahora solo leo texto" (PR5 y PR6).
+- **La web ve el chat nacer:** el aviso en vivo de un chat que la pestaña no conoce lo suma a Recientes (antes se ignoraba). Verificado: el chat de un tema apareció con su título automático en una pestaña abierta antes de crearse.
+
 ## Riesgo anotado: otros canales no tienen estas capacidades
 
 Pedido de Jose (2026-11-01). Los temas, los drafts con detener y el rich son de Telegram:

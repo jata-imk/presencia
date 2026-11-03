@@ -98,8 +98,8 @@ describe("TelegramSink", () => {
     const { stream, push, end } = streamControlado();
     const entrega = s.deliver(stream, {});
     await vi.advanceTimersByTimeAsync(0);
-    // El primero, vacío y con el botón de detener.
-    expect(api.sendMessageDraft).toHaveBeenNthCalledWith(1, 99, 42, "", {
+    // El primero, "Pensando…" y con el botón de detener.
+    expect(api.sendMessageDraft).toHaveBeenNthCalledWith(1, 99, 42, "<i>Pensando…</i>", {
       message_thread_id: 7,
       can_stop: true,
       parse_mode: "HTML",
