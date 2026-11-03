@@ -13,6 +13,7 @@ import { ImagesModule } from "./images/images.module.js";
 import { ScheduledJobsModule } from "./jobs/scheduled-jobs.module.js";
 import { ProfileModule } from "./profile/profile.module.js";
 import { RealtimeModule } from "./realtime/realtime.module.js";
+import { TelegramModule } from "./telegram/telegram.module.js";
 import { RitmoModule } from "./ritmo/ritmo.module.js";
 import { SearchModule } from "./search/search.module.js";
 
@@ -28,6 +29,9 @@ import { SearchModule } from "./search/search.module.js";
     SearchModule,
     RitmoModule,
     RealtimeModule,
+    // F11: el canal Telegram. Solo aquí, nunca en el worker: el bot atiende en el
+    // proceso que serializa los turnos del chat (ADR-030).
+    TelegramModule,
     // F10: la generación de imágenes. Tiene que estar acá y no solo en
     // ScheduledJobsModule: con WORKER_INLINE=false (prod) esa lista no se
     // carga en la API, y sin esto los endpoints de imágenes no existirían.

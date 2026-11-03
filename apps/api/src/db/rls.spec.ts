@@ -5,6 +5,7 @@ import {
   aiRunSteps,
   aiUsageEvents,
   brandVoices,
+  channelLinks,
   chatSummaries,
   chats,
   folders,
@@ -670,6 +671,66 @@ describe("RLS tenant_isolation", () => {
       },
     );
   });
+  // F11 (ADR-030): los vínculos de Telegram. El bot lee sin tenant para saber
+  // de quién es un update (policy worker_scan de 0059): solo pendientes y
+  // activos, nunca revocados, y solo lectura.
+  describe("channel_links", () => {
+    let linkA: string;
+    const externalA = `tg-${randomUUID()}`;
+
+    beforeAll(async () => {
+      linkA = await dbService.runWithTenant(userA, async (tx) => {
+        const [row] = await tx
+          .insert(channelLinks)
+          .values({ userId: userA, channel: "telegram", status: "active", externalId: externalA })
+          .returning({ id: channelLinks.id });
+        if (!row) throw new Error("No se pudo crear el vínculo de prueba");
+        return row.id;
+      });
+    }, 15_000);
+
+    it("el dueño ve su vínculo y otro tenant no", { timeout: 15_000 }, async () => {
+      const mio = await dbService.runWithTenant(userA, (tx) =>
+        tx.select().from(channelLinks).where(eq(channelLinks.id, linkA)),
+      );
+      const ajeno = await dbService.runWithTenant(userB, (tx) =>
+        tx.select().from(channelLinks).where(eq(channelLinks.id, linkA)),
+      );
+      expect(mio).toHaveLength(1);
+      expect(ajeno).toHaveLength(0);
+    });
+
+    it(
+      "el barrido ve el vínculo activo, pero no puede escribirlo",
+      { timeout: 15_000 },
+      async () => {
+        const visto = await dbService.runWorkerScan((tx) =>
+          tx.select().from(channelLinks).where(eq(channelLinks.externalId, externalA)),
+        );
+        expect(visto.map((r) => r.userId)).toEqual([userA]);
+        // Sin policy de UPDATE para el barrido: no toca ninguna fila.
+        const tocadas = await dbService.runWorkerScan((tx) =>
+          tx
+            .update(channelLinks)
+            .set({ status: "revoked" })
+            .where(eq(channelLinks.id, linkA))
+            .returning({ id: channelLinks.id }),
+        );
+        expect(tocadas).toHaveLength(0);
+      },
+    );
+
+    it("el barrido no ve un vínculo revocado", { timeout: 15_000 }, async () => {
+      await dbService.runWithTenant(userA, (tx) =>
+        tx.update(channelLinks).set({ status: "revoked" }).where(eq(channelLinks.id, linkA)),
+      );
+      const visto = await dbService.runWorkerScan((tx) =>
+        tx.select().from(channelLinks).where(eq(channelLinks.id, linkA)),
+      );
+      expect(visto).toHaveLength(0);
+    });
+  });
+
   // F8.7: la tabla que acumula el historial del que aprende Ritmo. Su fuga
   // sería peor que la de una card: son los números de negocio del creator.
   describe("post_metrics", () => {
