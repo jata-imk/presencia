@@ -109,6 +109,8 @@ export class ChatRepository {
       status?: MessageStatus;
       /** F11: por dónde entró (o salió) el mensaje. Default `web`. */
       channel?: MessageChannel;
+      /** F11: duración de la nota de voz transcrita; null si se escribió. */
+      voiceSeconds?: number | null;
     },
   ): Promise<MessageRow> {
     const [message] = await tx.insert(messages).values(input).returning();

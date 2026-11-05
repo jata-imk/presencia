@@ -273,6 +273,58 @@ describe("ChatService · el turno por un TurnSink", () => {
     },
   );
 
+  it(
+    "una nota de voz guarda su duración y la devuelve como metadata (F11 PR6)",
+    { timeout: 20_000 },
+    async () => {
+      const { toUIMessage } = await import("./chat-summary.js");
+      await crear(modeloQueContesta("Va.")).streamChat(
+        userId,
+        chatId,
+        userMsg("hazme tres ideas para reels"),
+        new SinkDePrueba(),
+        { channel: "telegram", voiceSeconds: 42 },
+      );
+      await hastaQueHaya(2);
+      const [user, reply] = await filas();
+      expect(user).toMatchObject({ role: "user", voiceSeconds: 42 });
+      expect(reply!.voiceSeconds).toBeNull();
+      expect(toUIMessage(user!).metadata).toEqual({ voice: { seconds: 42 } });
+      expect(toUIMessage(reply!).metadata).toBeUndefined();
+    },
+  );
+
+  it(
+    "reintentar una nota de voz desde la web conserva su duración; editarla, no (revisión del PR6)",
+    { timeout: 30_000 },
+    async () => {
+      const nota = userMsg("hazme tres ideas para reels");
+      await crear(modeloQueContesta("Va.")).streamChat(userId, chatId, nota, new SinkDePrueba(), {
+        channel: "telegram",
+        voiceSeconds: 42,
+      });
+      await hastaQueHaya(2);
+      // La web reenvía el mismo id con el mismo texto (Reintentar).
+      await crear(modeloQueContesta("Otra vez.")).streamChat(
+        userId,
+        chatId,
+        nota,
+        new SinkDePrueba(),
+      );
+      await hastaQueHaya(2);
+      expect((await filas())[0]!.voiceSeconds).toBe(42);
+      // Editada: ya no es la nota.
+      await crear(modeloQueContesta("Editado.")).streamChat(
+        userId,
+        chatId,
+        { ...nota, parts: [{ type: "text", text: "mejor dos ideas" }] },
+        new SinkDePrueba(),
+      );
+      await hastaQueHaya(2);
+      expect((await filas())[0]!.voiceSeconds).toBeNull();
+    },
+  );
+
   it("sin canal, el turno es de la web", { timeout: 20_000 }, async () => {
     await crear(modeloQueContesta("Listo.")).streamChat(
       userId,

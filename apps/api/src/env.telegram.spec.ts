@@ -13,6 +13,10 @@ const BASE_ENV = {
   ZEPTOMAIL_TOKEN: "test-token",
   MAIL_FROM: "test@example.com",
   GOOGLE_GENERATIVE_AI_API_KEY: "google-key",
+  // F11 PR6: con el bot prendido, la cadena de transcripción por default
+  // (Groq y OpenAI de respaldo) necesita sus keys.
+  GROQ_API_KEY: "groq-key",
+  OPENAI_API_KEY: "openai-key",
 };
 
 const TOUCHED = [
@@ -21,6 +25,7 @@ const TOUCHED = [
   "TELEGRAM_BOT_TOKEN",
   "TELEGRAM_MODE",
   "TELEGRAM_WEBHOOK_SECRET",
+  "AI_MODEL_TRANSCRIBE",
 ];
 const ORIGINAL = Object.fromEntries(TOUCHED.map((key) => [key, process.env[key]]));
 
@@ -28,6 +33,8 @@ async function loadEnv(extra: Record<string, string>) {
   vi.resetModules();
   for (const key of TOUCHED) delete process.env[key];
   Object.assign(process.env, BASE_ENV, extra);
+  // "" = sin la variable (p. ej. quitar una key de BASE_ENV).
+  for (const [key, value] of Object.entries(extra)) if (value === "") delete process.env[key];
   return import("./env.js");
 }
 
@@ -81,5 +88,37 @@ describe("env: canal Telegram", () => {
     await expect(
       loadEnv({ NODE_ENV: "production", TELEGRAM_BOT_TOKEN: TOKEN, TELEGRAM_MODE: "polling" }),
     ).rejects.toThrow(/TELEGRAM_MODE/);
+  });
+
+  // F11 PR6: la cadena que transcribe las notas de voz.
+  it("sin bot, la transcripción no exige la key de Groq", async () => {
+    const { env } = await loadEnv({ GROQ_API_KEY: "" });
+    expect(env.AI_MODEL_TRANSCRIBE).toBeUndefined();
+  });
+
+  it("con bot, la cadena por default exige la key de Groq", async () => {
+    await expect(loadEnv({ TELEGRAM_BOT_TOKEN: TOKEN, GROQ_API_KEY: "" })).rejects.toThrow(
+      /AI_MODEL_TRANSCRIBE usa el proveedor .*groq.* pero falta GROQ_API_KEY/,
+    );
+    const { env } = await loadEnv({ TELEGRAM_BOT_TOKEN: TOKEN });
+    expect(env.TELEGRAM_BOT_TOKEN).toBe(TOKEN);
+  });
+
+  it("la cadena no acepta @esfuerzo ni proveedores sin transcripción", async () => {
+    await expect(
+      loadEnv({
+        TELEGRAM_BOT_TOKEN: TOKEN,
+        AI_MODEL_TRANSCRIBE: "openai:gpt-4o-mini-transcribe@high",
+      }),
+    ).rejects.toThrow(/no razona/);
+    await expect(
+      loadEnv({ TELEGRAM_BOT_TOKEN: TOKEN, AI_MODEL_TRANSCRIBE: "google:gemini-3.6-flash" }),
+    ).rejects.toThrow(/solo acepta modelos de groq u openai/);
+    const { env } = await loadEnv({
+      TELEGRAM_BOT_TOKEN: TOKEN,
+      AI_MODEL_TRANSCRIBE: "openai:gpt-4o-mini-transcribe",
+      GROQ_API_KEY: "",
+    });
+    expect(env.AI_MODEL_TRANSCRIBE).toBe("openai:gpt-4o-mini-transcribe");
   });
 });

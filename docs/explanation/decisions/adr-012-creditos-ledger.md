@@ -139,3 +139,21 @@ Igual que el título y la compactación: **se cobra** con la tarifa utility (`pe
 ## Addendum (2026-11-01, F10.11 PR4) — se describe menos, y la descripción pesa un poco más
 
 `content_digest` sigue igual: tarifa utility, una vez por adjunto. Lo que cambia es cuándo se pide (ADR-006, addendum F10.11 PR4): solo cuando el adjunto está por salir de la ventana, o cuando la compactación lo va a resumir. Un chat que termina dentro de sus primeros turnos ya no paga las ~3 unidades por foto ni las ~12 por texto. A cambio, la descripción puede llegar a 1,500 caracteres (~430 tokens): unas 2.6 unidades de salida en el peor caso, y ~1 unidad más por turno mientras viaja como línea.
+
+## Addendum (2026-11-04, F11 PR6) — `audio_transcription`: la nota de voz se cobra por minuto
+
+Decisión de Jose:
+
+- **Tarifa:** 10 unidades por **minuto iniciado** de nota de voz transcrita (`flat.audio_transcription`).
+  - Sale del costo de Groq, el principal ($0.00067/min), con la misma relación de ~15k unidades por dólar de `web_search`.
+  - El respaldo (OpenAI, 4.5× más caro) cobra igual, como los dos generadores de imagen. Cuando cae, el negocio absorbe la diferencia.
+  - Por minuto iniciado, una nota de 12 s paga 60: ese es el margen.
+  - Un creator con 20 notas de un minuto al día gasta ~6,000 unidades al mes (20% de la cuota creator).
+  - Entró a la tabla v1 sin subir versión, como `web_search`.
+- **`spend` gana `count`:** la tarifa × los minutos, en **un** asiento.
+  - Uno por minuto no serviría: el dedup del ledger es por referencia, y se tragaría el segundo minuto.
+  - La referencia es el mensaje del creator que lleva la transcripción (`reference_type = 'message'`).
+- **Se cobra en cuanto contesta el proveedor,** con `allowOverdraft`, aunque el texto venga vacío o el creator detenga justo después: ya se pagó.
+  - Una cadena caída o un detener antes de la respuesta no cobran.
+  - Un cobro que falla se registra en el log y la nota sigue (como `web_search`).
+- **Gate antes de bajar el audio:** que alcance para la nota **más** `minimumTurnUnits`. Sin él se cobraría una nota cuyo turno el chat después rechaza con 402.

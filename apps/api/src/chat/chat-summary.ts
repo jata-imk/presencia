@@ -32,9 +32,12 @@ export function toUIMessage(row: MessageRow): UIMessage {
     parts: row.parts as UIMessage["parts"],
   };
   // F10.8.2: solo si la respuesta no terminó completa (la card de estado).
-  if (row.status !== "complete") {
-    message.metadata = { status: row.status } satisfies ChatMessageMetadata;
-  }
+  const metadata: ChatMessageMetadata = {};
+  if (row.status !== "complete") metadata.status = row.status;
+  // F11: un mensaje que llegó como nota de voz (la etiqueta "Nota de voz · 0:42"
+  // de la web llega en el PR7 de F11; hasta entonces, la metadata solo viaja).
+  if (row.voiceSeconds !== null) metadata.voice = { seconds: row.voiceSeconds };
+  if (Object.keys(metadata).length > 0) message.metadata = metadata;
   return message;
 }
 

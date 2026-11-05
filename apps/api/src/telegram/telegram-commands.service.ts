@@ -57,11 +57,11 @@ export class TelegramCommandsService {
   /**
    * Un mensaje que el turno no lee (el texto, las fotos y los archivos van a
    * TelegramConversationService). Quien no está conectado recibe cómo
-   * conectarse, y nada se cobra. El que sí lo está: que las notas de voz
-   * llegan pronto (F11 PR6) o que eso no se lee (un video, un sticker…).
+   * conectarse, y nada se cobra. El que sí lo está: que eso no se lee (un
+   * video, una video-nota, un sticker…).
    */
-  async message(from: TelegramSender, kind: "voice" | "other"): Promise<string> {
+  async message(from: TelegramSender): Promise<string> {
     if (!(await this.links.resolveUser(String(from.id)))) return copy.notLinked(env.WEB_URL);
-    return kind === "voice" ? copy.voiceSoon : copy.unsupported;
+    return copy.unsupported;
   }
 }

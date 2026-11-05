@@ -3,6 +3,9 @@
 // lo que el creator lee, siempre en español.
 
 import { ATTACHMENT_TEXT_EXTENSIONS, TELEGRAM_LINK_TTL_MINUTES } from "@presencia/shared";
+import { MAX_VOICE_SECONDS } from "../transcription/voice.js";
+
+const MAX_VOICE_MINUTES = MAX_VOICE_SECONDS / 60;
 
 /** Los comandos del menú de Telegram (`setMyCommands`), con su descripción. */
 export const TELEGRAM_COMMANDS = [
@@ -44,7 +47,7 @@ export const copy = {
     "desconectarlo y vuelve a abrir el enlace.",
   help:
     "Puedo ayudarte a crear contenido desde aquí, igual que en la web. Mándame texto, " +
-    `${FORMATS} (sueltos o en álbum).\n\n` +
+    `notas de voz y audios de hasta ${String(MAX_VOICE_MINUTES)} minutos, y ${FORMATS} (sueltos o en álbum).\n\n` +
     "Cada tema de este chat es un chat de Presencia: abre uno nuevo para empezar otra idea.\n\n" +
     "Si tu Telegram no muestra temas, todo va al mismo chat: escribe /new para empezar otro.\n\n" +
     "/help — esta ayuda\n/new — empezar un chat nuevo\n/disconnect — desconectar este Telegram de tu cuenta",
@@ -56,11 +59,7 @@ export const copy = {
     "Desconectaste este Telegram desde Presencia. Tus chats siguen en la web. Si fue un error, " +
     "vuelve a conectarte en Configuración → Canales conectados.",
   // --- Los adjuntos (F11 PR5) ---
-  /** Las notas de voz y los audios llegan en el PR6. */
-  voiceSoon:
-    "Las notas de voz y los audios llegan muy pronto. Mientras, escríbeme o mándame fotos y archivos.",
-  audioSoon: "los audios llegan muy pronto.",
-  unsupported: `Eso todavía no lo leo por aquí. Mándame texto, ${FORMATS}.`,
+  unsupported: `Eso todavía no lo leo por aquí. Mándame texto, notas de voz, ${FORMATS}.`,
   readingFiles: "Leyendo tus archivos…",
   /**
    * Un archivo que no entró: el resto del mensaje sigue. Sin nombre (un video
@@ -75,6 +74,18 @@ export const copy = {
   tooMuchToRead:
     "Esos archivos son demasiado largos para leerlos juntos. Mándamelos en mensajes separados.",
   stoppedBeforeStart: "Lo detuviste antes de que empezara. Mándamelo otra vez cuando quieras.",
+  // --- Las notas de voz (F11 PR6) ---
+  listening: "Escuchando tu nota…",
+  /** El eco de lo que se transcribió, en un bloque plegable (HTML ya escapado). */
+  heard: (escapedText: string) => `<blockquote expandable>🎤 Escuché: ${escapedText}</blockquote>`,
+  voiceTooLong:
+    `Tu nota dura más de ${String(MAX_VOICE_MINUTES)} minutos y no la puedo escuchar completa. ` +
+    "Mándamela en partes más cortas.",
+  voiceEmpty: "No alcancé a oír nada en tu nota. ¿Me la mandas otra vez?",
+  voiceFailed: "No pude escuchar tu nota. ¿Me la mandas otra vez?",
+  voiceTooBig:
+    "Tu audio pesa más de 20 MB y Telegram no me deja bajarlo. Mándamelo más corto o como nota de voz.",
+  audioInAlbum: "los audios mándamelos de uno en uno, fuera del álbum.",
   // --- La conversación (F11 PR4) ---
   newChat: "Listo: lo que escribas ahora empieza un chat nuevo.",
   newInTopic:

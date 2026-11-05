@@ -189,6 +189,8 @@ describe("MODEL_BY_TASK", () => {
     "memory_search",
     // F10.10: una búsqueda web no es un modelo; la contesta el buscador.
     "web_search",
+    // F11: transcribir pide un modelo de transcripción (AI_MODEL_TRANSCRIBE).
+    "transcription",
   ];
 
   it("cubre toda tarea de AI_TASK_KINDS menos las que piden una capacidad", () => {

@@ -36,6 +36,8 @@ export interface RegistroDeUso {
   searchQueries?: number | null;
   /** Solo las tareas de imagen. `null` es "esta llamada no dibuja", no "cero". */
   imagesCount?: number | null;
+  /** Solo la transcripción (F11): segundos de audio. `null` es "esta llamada no transcribe". */
+  audioSeconds?: number | null;
   /** Crudo del proveedor, sin normalizar. */
   providerRaw: unknown;
   /**
@@ -82,6 +84,7 @@ export class AiUsageService {
           durationMs: Date.now() - registro.arranque,
           searchQueries: registro.searchQueries ?? null,
           imagesCount: registro.imagesCount ?? null,
+          audioSeconds: registro.audioSeconds ?? null,
           fallbackFrom: modelo.fallbackFrom ?? null,
           runId: registro.runId ?? null,
           // Los intentos que fallaron viajan con el crudo: son el porqué del

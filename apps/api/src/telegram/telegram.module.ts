@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AttachmentsModule } from "../attachments/attachments.module.js";
 import { ChatModule } from "../chat/chat.module.js";
 import { ProfileModule } from "../profile/profile.module.js";
+import { TranscriptionModule } from "../transcription/transcription.module.js";
 import { TelegramBotService } from "./telegram-bot.service.js";
 import { TelegramCommandsService } from "./telegram-commands.service.js";
 import { TelegramConversationService } from "./telegram-conversation.service.js";
@@ -16,7 +17,8 @@ import { TelegramWebhookController } from "./telegram-webhook.controller.js";
 @Module({
   // F11 PR4: el turno del chat (ChatService) y la zona del creator (ProfileRepository).
   // F11 PR5: las fotos y los archivos entran como adjuntos (AttachmentsService).
-  imports: [ChatModule, ProfileModule, AttachmentsModule],
+  // F11 PR6: las notas de voz se transcriben (TranscriptionService).
+  imports: [ChatModule, ProfileModule, AttachmentsModule, TranscriptionModule],
   controllers: [TelegramWebhookController, TelegramLinksController],
   providers: [
     TelegramLinksRepository,

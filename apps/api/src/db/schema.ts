@@ -145,6 +145,10 @@ export const creditReason = pgEnum("credit_reason", [
   // el refresco de tendencias: el costo es el fee del buscador por consulta;
   // los resultados ya se cobran como tokens del turno.
   "web_search",
+  // F11: transcribir una nota de voz de Telegram. Tarifa fija POR MINUTO
+  // iniciado (`flat.audio_transcription` × minutos, un solo asiento): el
+  // proveedor cobra por segundo de audio, no por token.
+  "audio_transcription",
   "refund",
   "adjustment",
 ]);
@@ -454,6 +458,10 @@ export const messages = pgTable(
     // alcanzó a escribirse, y la UI muestra su card de estado. Los mensajes
     // del creator siempre quedan en `complete`.
     status: messageStatus("status").notNull().default("complete"),
+    // F11: el mensaje del creator llegó como nota de voz (Telegram) y su texto
+    // es la transcripción; cuánto duraba, en segundos. `null` = se escribió.
+    // El audio no se guarda (ADR-030).
+    voiceSeconds: smallint("voice_seconds"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("messages_by_chat").on(t.chatId, t.createdAt)],
@@ -1092,6 +1100,10 @@ export const aiUsageEvents = pgTable(
     // imagen se suma por imagen, no escarbando tokens. `null` = la llamada no
     // dibuja; `0` = debía dibujar y el proveedor no devolvió nada (bloqueo).
     imagesCount: smallint("images_count"),
+    // F11: segundos de audio que transcribió la llamada (task `transcription`).
+    // El proveedor cobra por segundo de audio, igual que las imágenes por
+    // imagen. `null` = la llamada no transcribe.
+    audioSeconds: smallint("audio_seconds"),
     // F10.7: el principal que se pidió cuando respondió un respaldo de la
     // cadena (ADR-004); `provider`/`model` son siempre el que corrió. `null`
     // = respondió el principal. Columna y no jsonb: "¿cuántas veces caímos, y

@@ -8,10 +8,12 @@ import {
   EMBEDDING_DIMENSIONS,
   EMBEDDING_PROVIDERS,
   DEFAULT_TRENDS_MODEL_ID,
+  DEFAULT_TRANSCRIPTION_CHAIN,
   MODEL_TIER_ENV_VARS,
   parseModelChain,
   PROVIDERS,
   SEARCH_PROVIDER,
+  TRANSCRIPTION_PROVIDERS,
 } from "./ai/provider-registry.js";
 
 // Validación fail-fast del entorno (se invoca en main.ts antes de crear la app).
@@ -45,6 +47,8 @@ const envSchema = z
     XAI_API_KEY: z.string().min(1).optional(),
     OPENROUTER_API_KEY: z.string().min(1).optional(),
     OPENROUTER_BASE_URL: z.url().optional(),
+    // F11: transcripción de notas de voz (Groq whisper, ADR-030).
+    GROQ_API_KEY: z.string().min(1).optional(),
     // Modelo default con formato "proveedor:modelo" (ADR-004). Cambiar de
     // proveedor es cambiar esta variable y reiniciar el proceso. El formato
     // y el inventario de proveedores los valida parseModelEntry (fuente única), que acepta un `@esfuerzo` opcional (F10.7).
@@ -67,6 +71,10 @@ const envSchema = z
     // F10.8: el modelo de embeddings de la memoria entre chats. Sin setear,
     // DEFAULT_EMBEDDING_MODEL_ID. Cambiarlo obliga a re-indexar la memoria.
     AI_MODEL_EMBEDDING: z.string().optional(),
+    // F11: la cadena que transcribe las notas de voz de Telegram. Sin setear,
+    // DEFAULT_TRANSCRIPTION_CHAIN (Groq y OpenAI de respaldo). Solo se valida
+    // con TELEGRAM_BOT_TOKEN: sin bot, nadie transcribe.
+    AI_MODEL_TRANSCRIBE: z.string().optional(),
     // Solo dev (F10.7): proveedores que la cadena de respaldo finge caídos
     // (503), para ver el respaldo en el navegador sin romper nada. Separados
     // por coma: "openai" o "openai,google".
@@ -192,8 +200,14 @@ const envSchema = z
       {
         image = false,
         single = false,
+        transcription = false,
         onlyProvider,
-      }: { image?: boolean; single?: boolean; onlyProvider?: string } = {},
+      }: {
+        image?: boolean;
+        single?: boolean;
+        transcription?: boolean;
+        onlyProvider?: string;
+      } = {},
     ) => {
       try {
         const entries = parseModelChain(modelChain);
@@ -208,6 +222,16 @@ const envSchema = z
         for (const { id, provider, reasoning } of entries) {
           if (image && reasoning) {
             throw new Error(`${path} no acepta "@${reasoning}": un modelo de imagen no razona`);
+          }
+          if (transcription && reasoning) {
+            throw new Error(
+              `${path} no acepta "@${reasoning}": un modelo de transcripción no razona`,
+            );
+          }
+          if (transcription && !(TRANSCRIPTION_PROVIDERS as readonly string[]).includes(provider)) {
+            throw new Error(
+              `${path} solo acepta modelos de ${TRANSCRIPTION_PROVIDERS.join(" u ")} y "${id}" no lo es`,
+            );
           }
           if (!image && (PROVIDERS[provider] as { imageOnly?: boolean }).imageOnly) {
             throw new Error(`${path}: "${provider}" solo genera imágenes`);
@@ -351,6 +375,10 @@ const envSchema = z
     // Y en producción el modo es webhook (ADR-010): un polling en prod competiría
     // con el bot de dev si alguien copiara el token.
     if (value.TELEGRAM_BOT_TOKEN) {
+      // La cadena efectiva, como las imágenes: sin setear cae a Groq, y sin su
+      // key la primera nota de voz fallaría en vez de tronar el boot.
+      const transcribe = value.AI_MODEL_TRANSCRIBE ?? DEFAULT_TRANSCRIPTION_CHAIN;
+      validateModelEnv("AI_MODEL_TRANSCRIBE", transcribe, { transcription: true });
       if (value.TELEGRAM_MODE === "webhook" && !value.TELEGRAM_WEBHOOK_SECRET) {
         ctx.addIssue({
           code: "custom",

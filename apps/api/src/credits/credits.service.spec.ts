@@ -302,4 +302,33 @@ describe("CreditsService", () => {
       expect(ids).not.toContain(userSinVerificar);
     },
   );
+
+  it(
+    "spend con count: un asiento de tarifa × count, y un count que no es entero positivo lanza (F11 PR6)",
+    { timeout: 15_000 },
+    async () => {
+      const referenceId = randomUUID();
+      await dbService.runWithTenant(userC, (tx) =>
+        creditsService.spend(tx, {
+          userId: userC,
+          reason: "audio_transcription",
+          referenceType: "message",
+          referenceId,
+          count: 3,
+          allowOverdraft: true,
+        }),
+      );
+      const asientos = await dbService.runWithTenant(userC, (tx) =>
+        tx.select().from(creditLedger).where(eq(creditLedger.referenceId, referenceId)),
+      );
+      expect(asientos.map((a) => a.delta)).toEqual([-30]);
+      for (const count of [0, -1, 1.5]) {
+        await expect(
+          dbService.runWithTenant(userC, (tx) =>
+            creditsService.spend(tx, { userId: userC, reason: "audio_transcription", count }),
+          ),
+        ).rejects.toThrow(/count entero y positivo/);
+      }
+    },
+  );
 });

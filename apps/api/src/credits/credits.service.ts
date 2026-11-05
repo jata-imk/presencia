@@ -44,6 +44,13 @@ export interface SpendInput {
    * misma doctrina que `charge()`, que sobregira a propósito.
    */
   allowOverdraft?: boolean;
+  /**
+   * Cuántas veces la tarifa fija, en UN asiento (default 1). F11: una nota de
+   * voz se cobra por minuto iniciado (`audio_transcription` × minutos). Un
+   * asiento y no uno por minuto: el dedup del ledger es por referencia, y el
+   * segundo minuto de la misma nota se lo tragaría.
+   */
+  count?: number;
 }
 
 export interface ChargeInput {
@@ -103,7 +110,11 @@ export class CreditsService {
    * las dos (modelo-de-datos.md).
    */
   async spend(tx: Tx, input: SpendInput): Promise<void> {
-    const units = quoteFlatAction(input.reason);
+    const count = input.count ?? 1;
+    if (!Number.isInteger(count) || count < 1) {
+      throw new Error(`spend necesita un count entero y positivo (llegó ${String(count)}).`);
+    }
+    const units = quoteFlatAction(input.reason) * count;
     await this.repo.lockUser(tx, input.userId);
     const { cycleStartId } = await this.ensureCurrentCycle(tx, input.userId);
     const balance = await this.repo.balanceFrom(tx, input.userId, cycleStartId);

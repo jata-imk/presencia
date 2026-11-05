@@ -1,7 +1,7 @@
 import { HttpException, Inject, Injectable } from "@nestjs/common";
 import type { FileUIPart, UIMessage } from "ai";
 import type { Api } from "grammy";
-import { ATTACHMENTS_PER_MESSAGE, CHAT_TITLE_MAX } from "@presencia/shared";
+import { ATTACHMENTS_PER_MESSAGE, CHAT_TITLE_MAX, MAX_MESSAGE_CHARS } from "@presencia/shared";
 import { randomUUID } from "node:crypto";
 import { AttachmentsService } from "../attachments/attachments.service.js";
 import type { ChatTitled } from "../chat/chat-events.js";
@@ -10,16 +10,20 @@ import { ChatService } from "../chat/chat.service.js";
 import { DbService } from "../db/db.service.js";
 import { env } from "../env.js";
 import { ProfileRepository } from "../profile/profile.repository.js";
+import { TranscriptionService } from "../transcription/transcription.service.js";
+import { MAX_VOICE_SECONDS } from "../transcription/voice.js";
 import { copy } from "./telegram.copy.js";
 import {
+  TELEGRAM_DOWNLOAD_MAX_BYTES,
   TelegramFileTooBigError,
   downloadTelegramFile,
   type TelegramMedia,
   type TelegramRejection,
+  type TelegramVoice,
 } from "./telegram-files.js";
 import { TelegramLinksService } from "./telegram-links.service.js";
 import { escapeHtml } from "./telegram-html.js";
-import { TelegramSink, type TelegramApi } from "./telegram-sink.js";
+import { TelegramSink, sendHtml, type TelegramApi } from "./telegram-sink.js";
 import { TelegramThreadsRepository, type TelegramPlace } from "./telegram-threads.repository.js";
 
 // La conversación por Telegram (F11 PR4, ADR-030): de un mensaje al turno del
@@ -37,6 +41,9 @@ import { TelegramThreadsRepository, type TelegramPlace } from "./telegram-thread
 // - **Fotos y archivos (F11 PR5)** se bajan de Telegram y se suben con
 //   AttachmentsService, como un adjunto de la web. Un álbum llega en un update
 //   por foto: se junta en un solo mensaje.
+// - **Notas de voz y audios (F11 PR6)** se transcriben antes del turno
+//   (TranscriptionService) y la transcripción es el texto del mensaje. El
+//   audio no se guarda.
 
 /** Mensajes en espera por tema, contando el que corre. Más, y se pide calma. */
 const MAX_QUEUED = 3;
@@ -51,6 +58,12 @@ export const ALBUM_WINDOW_MS = 1_500;
 const UPLOAD_CONCURRENCY = 3;
 /** Un draft que no se refresca desaparece a los 30 s (con su botón de detener). */
 const WAITING_DRAFT_KEEPALIVE_MS = 20_000;
+/**
+ * Lo más largo que sale el eco "🎤 Escuché" (el tope de un mensaje es 4,096).
+ * Una nota de 10 minutos ronda los 9,000 caracteres: el eco se recorta, y la
+ * transcripción completa se guarda igual en el mensaje.
+ */
+export const ECHO_MAX_CHARS = 3_500;
 
 /** Lo que usa la conversación del cliente de grammY: el sink, más bajar archivos. */
 export type TelegramMediaApi = TelegramApi & Pick<Api, "getFile">;
@@ -61,6 +74,13 @@ export interface TelegramIncomingMedia {
   caption: string | undefined;
   /** `media_group_id`: las fotos de un álbum lo comparten. */
   albumId: string | undefined;
+}
+
+/** Una nota de voz o un audio que llegó (F11 PR6). */
+export interface TelegramIncomingVoice {
+  voice: TelegramVoice;
+  /** Un audio puede traer caption; una nota de voz, casi nunca. */
+  caption: string | undefined;
 }
 
 /** Un álbum que se está juntando. */
@@ -114,6 +134,7 @@ export class TelegramConversationService {
     @Inject(ChatService) private readonly chat: ChatService,
     @Inject(ProfileRepository) private readonly profiles: ProfileRepository,
     @Inject(AttachmentsService) private readonly attachments: AttachmentsService,
+    @Inject(TranscriptionService) private readonly transcription: TranscriptionService,
   ) {}
 
   /** El creator abrió un tema (aviso de servicio). Se usa al crear su chat. */
@@ -189,6 +210,136 @@ export class TelegramConversationService {
       if (userId) await this.runMedia(api, place, userId, items);
     });
     return Promise.resolve();
+  }
+
+  /**
+   * Una nota de voz o un audio suelto (F11 PR6). Vuelve en cuanto lo encola,
+   * como `text`: el lugar en la fila se toma antes de cualquier `await`.
+   */
+  voice(
+    api: TelegramMediaApi,
+    from: TelegramFrom,
+    place: TelegramPlace,
+    item: TelegramIncomingVoice,
+  ): Promise<void> {
+    // Nunca lanza (ver `text`).
+    this.enqueue(api, place, async () => {
+      const userId = await this.resolveOrSay(api, from, place);
+      if (userId) await this.runVoice(api, place, userId, item);
+    });
+    return Promise.resolve();
+  }
+
+  /**
+   * Revisa la duración y la cuota, baja el audio y lo transcribe con
+   * "Escuchando tu nota…" y el botón de detener, manda el eco y corre el turno
+   * en un draft nuevo, debajo del eco. Una nota que no se transcribe no abre
+   * chat ni turno.
+   */
+  private async runVoice(
+    api: TelegramMediaApi,
+    place: TelegramPlace,
+    userId: string,
+    { voice, caption }: TelegramIncomingVoice,
+  ): Promise<void> {
+    // Antes de bajar nada: Telegram da la duración y el peso en el update.
+    if (voice.seconds > MAX_VOICE_SECONDS) return this.reply(api, place, copy.voiceTooLong);
+    if (voice.fileSize !== undefined && voice.fileSize > TELEGRAM_DOWNLOAD_MAX_BYTES) {
+      return this.reply(api, place, copy.voiceTooBig);
+    }
+    // Que alcance para la nota y para el turno que la contesta: sin cuota no
+    // se transcribe (se cobraría una nota sin respuesta).
+    try {
+      await this.transcription.assertQuota(userId, voice.seconds);
+    } catch (error) {
+      return this.reply(api, place, this.errorCopy(error, copy.chatGone));
+    }
+    const draftId = this.newDraftId();
+    const key = draftKey(place.telegramChatId, draftId);
+    const listening = new WaitingDraft(api, place, draftId, copy.listening);
+    this.sinks.set(key, listening);
+    // El id del mensaje desde ya: es la referencia del cobro de la nota.
+    const messageId = randomUUID();
+    try {
+      listening.start();
+      let text: string;
+      try {
+        const audio = await downloadTelegramFile(api, env.TELEGRAM_BOT_TOKEN ?? "", voice.fileId, {
+          signal: listening.signal,
+        });
+        text = await this.transcription.transcribe({
+          userId,
+          messageId,
+          audio,
+          seconds: voice.seconds,
+          signal: listening.signal,
+        });
+      } catch (error) {
+        await listening.end();
+        if (listening.stopped) return await this.reply(api, place, copy.stoppedBeforeStart);
+        if (error instanceof TelegramFileTooBigError) {
+          return await this.reply(api, place, copy.voiceTooBig);
+        }
+        console.error("[telegram] No se pudo transcribir una nota de voz:", error);
+        return await this.reply(api, place, copy.voiceFailed);
+      }
+      // El de espera ya no se refresca: se apaga solo.
+      await listening.end();
+      // Detenida con la nota ya transcrita: se cobró (el proveedor ya
+      // facturó), pero no hay turno.
+      if (listening.stopped) return await this.reply(api, place, copy.stoppedBeforeStart);
+      if (!text) return await this.reply(api, place, copy.voiceEmpty);
+      // El tope de un mensaje de la web (413 allá). La duración de un `audio`
+      // la pone quien lo manda (revisión del PR6): un mp3 que dice durar 30 s
+      // y dura una hora pasa el tope de 10 min y cobra un minuto. Lo que
+      // cuesta es centavos de Groq; lo que no puede pasar es que entre al
+      // turno un texto que la web rechazaría.
+      if (text.length > MAX_MESSAGE_CHARS) return await this.reply(api, place, copy.voiceTooLong);
+      // El eco, al instante y aparte (decisión de Jose): se ve si oyó mal un
+      // nombre antes de que el modelo termine.
+      await sendHtml(api, place, copy.heard(escapeHtml(echoOf(text))));
+      const chatId = await this.chatFor(userId, place);
+      if (listening.stopped) return await this.reply(api, place, copy.stoppedBeforeStart);
+      const extra = caption?.trim();
+      const message: UIMessage = {
+        id: messageId,
+        role: "user",
+        parts: [{ type: "text", text: extra ? `${text}\n\n${extra}` : text }],
+      };
+      // El turno, en un draft NUEVO (prueba en vivo del PR6): un draft se queda
+      // donde nació. Con el mismo id que "Escuchando tu nota…", la respuesta se
+      // escribía ARRIBA del eco y la final salía abajo: por un momento, dos
+      // veces. Con otro id nace debajo del eco, donde va a quedar.
+      const turnDraftId = this.newDraftId();
+      // El botón de detener de "Escuchando tu nota…" puede seguir a la vista
+      // unos segundos: desde aquí detiene el turno (revisión del PR6; antes no
+      // hacía nada). Y antes de que el turno arranque, lo marca como detenido.
+      this.sinks.set(key, {
+        stop: () => {
+          listening.stop();
+          this.stop(place.telegramChatId, turnDraftId);
+        },
+      });
+      await this.runTurn(
+        api,
+        place,
+        userId,
+        chatId,
+        message.id,
+        copy.chatGone,
+        (sink, timezone) =>
+          this.chat.streamChat(userId, chatId, message, sink, {
+            channel: "telegram",
+            timezone,
+            voiceSeconds: voice.seconds,
+          }),
+        turnDraftId,
+      );
+    } finally {
+      await listening.end();
+      // El de espera o el que lo reenvía al turno: los dos son de esta nota.
+      this.sinks.delete(key);
+    }
   }
 
   private openAlbum(key: string, first: TelegramIncomingMedia): Album {
@@ -530,7 +681,7 @@ export class TelegramConversationService {
 function rejectionCopy(reason: TelegramRejection): string {
   if (reason === "heic") return copy.heicAsFile;
   if (reason === "too_big") return copy.fileTooBig;
-  if (reason === "audio") return copy.audioSoon;
+  if (reason === "audio") return copy.audioInAlbum;
   return copy.unsupportedFile;
 }
 
@@ -542,6 +693,9 @@ function rejectionCopy(reason: TelegramRejection): string {
  */
 class WaitingDraft {
   stopped = false;
+  /** Lo corta el botón de detener: la transcripción lo escucha (F11 PR6). */
+  private readonly controller = new AbortController();
+  readonly signal = this.controller.signal;
   private timer: ReturnType<typeof setInterval> | null = null;
   private inFlight: Promise<void> | null = null;
 
@@ -559,6 +713,7 @@ class WaitingDraft {
 
   stop(): void {
     this.stopped = true;
+    this.controller.abort();
     this.clear();
   }
 
@@ -591,6 +746,14 @@ class WaitingDraft {
         this.inFlight = null;
       });
   }
+}
+
+/** El texto del eco: recortado si no cabe en un mensaje (la transcripción entera se guarda igual). */
+export function echoOf(text: string): string {
+  const chars = [...text];
+  return chars.length <= ECHO_MAX_CHARS
+    ? text
+    : `${chars.slice(0, ECHO_MAX_CHARS).join("").trimEnd()}…`;
 }
 
 /** Por qué un archivo no se pudo adjuntar, para el aviso. */

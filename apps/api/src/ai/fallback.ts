@@ -167,6 +167,128 @@ export function describeError(error: unknown): string {
   return String(error).slice(0, 300);
 }
 
+/** Un eslabón de una cadena de una sola llamada (imagen, transcripción): quién es. */
+export interface ChainLink {
+  provider: string;
+  modelName: string;
+}
+
+/** Quién respondió en una cadena de una sola llamada, para `ai_usage_events`. */
+export interface ChainRan {
+  provider: string;
+  modelName: string;
+  /** El principal que se pidió si respondió un respaldo; `null` = el principal. */
+  fallbackFrom: string | null;
+  attempts: FallbackAttempt[];
+}
+
+export interface ChainRunOptions {
+  /** Proveedores que se fingen caídos (503). Solo dev: lo rechaza `env.ts` en producción. */
+  simulateDown?: readonly string[];
+  /** Lo más que se le espera a un intento. */
+  attemptTimeoutMs: number;
+  /** Lo más que se le espera a la cadena entera; cada intento recibe lo que quede. */
+  budgetMs: number;
+  /** Con menos de esto no se empieza otro intento: no alcanzaría. */
+  minAttemptMs: number;
+  retryDelayMs: number;
+  /** El detener del usuario: corta el intento en curso y nunca pasa al siguiente. */
+  signal?: AbortSignal;
+}
+
+/**
+ * La cadena de respaldo de una llamada SIN stream: dibujar una imagen
+ * (F10.7, ADR-025) o transcribir una nota de voz (F11, ADR-030). Misma regla
+ * que la de texto (`createFallbackChain`): solo cae al siguiente si el
+ * proveedor se CAE (`isFallbackError`), con un reintento por modelo y nunca
+ * tras un timeout. Una sola copia para las dos: antes cada una tenía su loop
+ * (revisión del F11 PR6).
+ */
+export async function runFallbackChain<L extends ChainLink, R>(
+  links: readonly L[],
+  call: (link: L, signal: AbortSignal) => Promise<R>,
+  options: ChainRunOptions,
+): Promise<{ result: R; ran: ChainRan }> {
+  const [first] = links;
+  if (!first) throw new Error("Una cadena necesita al menos un modelo.");
+  const { signal } = options;
+  const simulateDown = new Set(options.simulateDown ?? []);
+  const deadline = Date.now() + options.budgetMs;
+  const principal = `${first.provider}:${first.modelName}`;
+  const attempts: FallbackAttempt[] = [];
+  let lastError: unknown;
+
+  chain: for (const link of links) {
+    const id = `${link.provider}:${link.modelName}`;
+    for (let attempt = 0; attempt <= RETRIES_PER_MODEL; attempt++) {
+      // Tras un timeout no se reintenta el mismo: ya se esperó el plazo entero.
+      if (attempt > 0 && lastError instanceof AttemptTimeoutError) break;
+      if (attempt > 0) await pause(options.retryDelayMs, signal);
+      signal?.throwIfAborted();
+      const remaining = deadline - Date.now();
+      if (remaining < options.minAttemptMs) break chain;
+      const timeoutMs = Math.min(options.attemptTimeoutMs, remaining);
+      const controller = new AbortController();
+      const timeout = new AttemptTimeoutError(timeoutMs);
+      const timer = setTimeout(() => controller.abort(timeout), timeoutMs);
+      const attemptSignal = signal
+        ? AbortSignal.any([controller.signal, signal])
+        : controller.signal;
+      try {
+        if (simulateDown.has(link.provider)) throw simulatedOutage(link.provider);
+        const result = await call(link, attemptSignal);
+        return {
+          result,
+          ran: {
+            provider: link.provider,
+            modelName: link.modelName,
+            fallbackFrom: id === principal ? null : principal,
+            attempts,
+          },
+        };
+      } catch (error) {
+        // El usuario detuvo: no es una caída, y no hay para quién seguir.
+        if (signal?.aborted) throw signal.reason ?? error;
+        const timedOut = controller.signal.aborted && controller.signal.reason === timeout;
+        const cause = timedOutWith(timedOut, error) ? timeout : error;
+        if (!isFallbackError(cause)) {
+          // Un error que no es caída (400, key mala) se lanza tal cual. Si
+          // falló un RESPALDO, con lo que pasó antes: sin eso, el log diría que
+          // falló el principal. Si fue el reintento del principal, no: decir
+          // "tras caer el principal" mandaría a buscar en el respaldo.
+          if (id === principal) throw cause;
+          throw new Error(
+            `${id} falló tras caer el principal (${attempts.map((a) => `${a.id}: ${String(a.status ?? "sin status")}`).join(", ")}): ${describeError(error)}`,
+            // Aquí `cause` es `error`: un timeout siempre es caída y no llega.
+            { cause: error },
+          );
+        }
+        attempts.push({ id, status: statusOf(cause), error: describeError(cause) });
+        lastError = cause;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+  }
+  throw new FallbackExhaustedError(attempts, { cause: lastError });
+}
+
+/** La pausa antes de un reintento, que el detener del usuario corta. */
+function pause(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason as Error);
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal!.reason as Error);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /** Lo que el stream manda antes de producir algo: no cuenta como salida. */
 const PREAMBLE = new Set<LanguageModelV4StreamPart["type"]>([
   "stream-start",

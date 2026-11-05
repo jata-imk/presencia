@@ -116,7 +116,7 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
 - **Apéndice del canal en el prompt** (`channelInstruction`, `chat/system-prompt.ts`): respuestas más cortas, formato simple, sin botones de la web, y que los borradores llegan con un botón para abrirlos en Presencia. Va después de la voz y antes de la fecha de hoy (addendum F11 PR4 de ADR-006).
 - **`@grammyjs/auto-retry`:** un 429 o un 5xx pasajero de Telegram se reintenta solo, con tope corto.
 - **Updates que se piden:** `message`, `callback_query` (Reintentar) y `stopped_message_generation` (detener).
-- **Fotos y archivos desde el PR5** (sección siguiente). Una nota de voz recibe "llegan muy pronto" hasta el PR6.
+- **Fotos y archivos desde el PR5,** y notas de voz desde el PR6 (secciones siguientes).
 - **La web ve el chat nacer:** el aviso en vivo de un chat que la pestaña no conoce lo suma a Recientes (antes se ignoraba). Verificado: el chat de un tema apareció con su título automático en una pestaña abierta antes de crearse.
 
 ## Fotos, álbumes y documentos (F11 PR5)
@@ -132,10 +132,55 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
 - **Se suben sin chat** (`chatId: null`) y el turno los liga al enviar, como en la pantalla de chat nuevo de la web. Si todos fallan, no queda un chat vacío; los que se quedan sin mensaje los borra el barrido de adjuntos al día.
 - **Mientras baja:** el draft dice _Leyendo tus archivos…_ con el botón de detener, que ya sirve, y el turno sigue en el mismo draft. Se refresca cada 20 s (un draft dura 30) y el turno no arranca hasta que el último llegó: si no, podía caer encima del _Pensando…_ (revisión del PR5). Detener en ese momento no guarda nada: "Lo detuviste antes de que empezara". Se bajan de 3 en 3, en el orden en que llegaron.
 - **El lugar en la fila se toma antes de cualquier `await`**, también para el texto (revisión del PR5): saber de quién es el mensaje va dentro de la fila. Antes, una foto y el texto que la sigue, o dos textos seguidos, podían contestarse al revés según qué búsqueda volviera primero.
-- **Un audio** (no nota de voz) recibe lo mismo que una nota de voz: llega en el PR6, que transcribe los dos.
+- **Un audio** (no nota de voz) se transcribe igual que una nota de voz (PR6). Dentro de un álbum recibe "mándamelos de uno en uno".
 - **Aceptado, sin arreglo:** un "detener" justo mientras se crea el chat (una transacción de milisegundos) deja ese chat vacío; y una foto de un álbum que llegue más de 1.5 s después de la anterior abre otro mensaje. Con webhook, Telegram manda el álbum junto y solo reenvía lo que no aceptamos con un 200.
 - **Foto sin caption y el texto aparte son dos turnos** (decisión de Jose, 2026-11-02): cada mensaje de Telegram es uno, igual que en la web. Se descartó esperar unos segundos un texto que acompañe a la foto: retrasaría toda foto sin caption.
 - **413** (los archivos del mensaje pasan del presupuesto de 60k tokens, F10.9): "mándamelos en mensajes separados".
+
+## Notas de voz y audios (F11 PR6)
+
+- **La transcripción es el texto del mensaje del creator,** por el mismo turno:
+  - el título, la memoria y la compactación la leen sin cambios;
+  - `messages.voice_seconds` (migración `0061`) guarda cuánto duraba, y la web la recibe como `metadata.voice` para pintar "Nota de voz · 0:42" (PR7);
+  - el caption de un audio va después de la transcripción.
+  - **El audio no se guarda.**
+- **Qué entra:** `voice` y `audio` sueltos (`voiceOf`, `telegram/telegram-files.ts`).
+  - Telegram manda un mp3 o un m4a como `audio`, con duración.
+  - Un audio "como archivo" sigue el camino de los archivos y recibe su aviso.
+  - La video-nota y el video no se leen.
+- **Antes de bajar nada,** con lo que trae el update:
+  - más de 10 minutos (`MAX_VOICE_SECONDS`) → aviso;
+  - más de 20 MB → aviso;
+  - sin cuota para la nota más el turno → el aviso de Plan.
+  - Ninguno de los tres cobra.
+- **Mientras escucha:** el draft _Escuchando tu nota…_ con el botón de detener, que corta la transcripción. El turno sigue en el mismo draft, como con los archivos.
+- **El eco va aparte y al instante** (decisión de Jose, 2026-11-03): `<blockquote expandable>🎤 Escuché: …</blockquote>` en cuanto termina la transcripción, antes de que el modelo empiece. Es el `echoTranscript` de OpenClaw.
+  - Se ve si oyó mal un nombre sin esperar la respuesta.
+  - Se recorta a 3,500 caracteres; la transcripción completa se guarda igual.
+- **Sin texto** (una nota en silencio): "no alcancé a oír nada", sin chat ni turno. Se cobra igual: el proveedor ya facturó.
+- **El modelo sabe que puede venir de voz:** el apéndice del canal dice que muchos mensajes son transcripciones con muletillas y nombres mal oídos. Le pide entender la intención y preguntar cómo se escribe un nombre que importa para el borrador.
+  - Es una línea fija, para no romper el caché.
+  - No hay marcador por mensaje en el contexto (regla dura #8: no hizo falta tocar `context-builder`).
+- **Límites del plan gratis de Groq** (revisados el 2026-11-03):
+  - 20 llamadas por minuto, 2,000 al día, 7,200 s de audio por hora y 28,800 s por día, para toda la cuenta;
+  - 25 MB por archivo, que no aplica: Telegram corta en 20;
+  - pasarse da 429, que la cadena trata como caída: responde OpenAI y el plan gratis no factura.
+  - Si `fallback_from = 'groq:…'` empieza a salir seguido en `ai_usage_events`, toca el plan Developer de Groq.
+- **La respuesta va en un draft nuevo, no en el de _Escuchando tu nota…_** (prueba en vivo, 2026-11-04). Un draft se queda donde nació: con el mismo id, la respuesta se escribía arriba del eco, la final salía abajo, y por un momento se veía dos veces. Con otro id nace debajo del eco.
+- **Prueba en vivo con Groq** (2026-11-04, iOS):
+  - cobro y traza bien: −10 por minuto iniciado, −20 una nota de 61 s, `audio_seconds` en cada fila;
+  - detener mientras escucha contesta "Lo detuviste antes de que empezara". Si Groq ya había contestado, la nota se cobra, como está decidido;
+  - un MP3 viejo y ruidoso de 61 s salió incompleto: es Whisper con audio de mala calidad, no un recorte nuestro (el eco no se recortó);
+  - **una nota en silencio de 5 s salió "Thank you."** (en inglés: sin idioma fijo, Whisper lo adivina), y el modelo la contestó. Jose mantuvo la decisión del bake-off: el texto tal cual, sin el filtro de `no_speech_prob`. Si se reconsidera, el filtro va solo para Groq: `gpt-4o-mini-transcribe` no acepta `verbose_json`, y su 400 no saltaría al respaldo.
+- **Una nota de voz en el general no abre tema:** iOS solo crea el tema implícito con un mensaje de texto. La nota llega sin `message_thread_id` y cae en el chat sin tema, como en Telegram X, y `/new` lo corta. Se deja así (decisión de Jose, 2026-11-04): si el bot abriera un tema, la nota quedaría en el general y la respuesta en el tema.
+- **Revisión del PR6 (`/code-review medium`):**
+  - **arreglado:**
+    - el detener de _Escuchando tu nota…_, que sigue a la vista unos segundos, ahora detiene el turno (antes no hacía nada);
+    - el detener también corta la bajada del audio y la pausa antes de un reintento;
+    - reintentar una nota desde la web con el mismo texto conserva `voice_seconds` (editarla la vuelve texto escrito).
+  - **Aceptado: la duración de un `audio` la pone quien lo manda.** Un mp3 que dice durar 30 s y dura una hora pasa el tope de 10 minutos y cobra un minuto. Eso cuesta centavos de Groq, y el turno se sigue cobrando por tokens. Lo que sí se cierra es que entre al turno un texto que la web rechazaría: una transcripción de más de 50k caracteres (`MAX_MESSAGE_CHARS`) recibe el aviso de nota larga.
+  - **Aceptado: cobrada y sin mensaje.** Si después de transcribir falla crear el chat, la cuota se acabó por un turno web en ese instante, o borraron el chat, la nota queda cobrada y el texto solo vive en el eco. Son carreras de milisegundos; el eco deja ver lo que se dijo para reenviarlo.
+- Cadena, respaldo y cobro: addendum F11 PR6 de ADR-004 y de ADR-012.
 
 ## Riesgo anotado: otros canales no tienen estas capacidades
 
