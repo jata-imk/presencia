@@ -157,7 +157,11 @@ function montar({
       createChat,
       // F11 PR7b: los chats de la web que se llevan a Telegram.
       getChat: (_tx: unknown, id: string) =>
-        Promise.resolve(id === "no-existe" ? undefined : { id, title: "Precios del café" }),
+        Promise.resolve(
+          id === "no-existe"
+            ? undefined
+            : { id, title: "Precios del café", archivedAt: id === "archivado" ? new Date() : null },
+        ),
       chatIdOfMessage: (_tx: unknown, id: string) => Promise.resolve(mensajes.get(id)),
     } as never,
     chat as never,
@@ -268,6 +272,10 @@ describe("Continuar en Telegram (F11 PR7b)", () => {
     t.conectarComo(String(YO.id));
     await expect(t.service.continueChat(t.api, "u1", "no-existe")).rejects.toMatchObject({
       status: HttpStatus.NOT_FOUND,
+    });
+    // Archivado: 409 (en Recientes no se vería lo que hablara ahí).
+    await expect(t.service.continueChat(t.api, "u1", "archivado")).rejects.toMatchObject({
+      status: HttpStatus.CONFLICT,
     });
     expect(t.api.createForumTopic).not.toHaveBeenCalled();
     expect(t.api.sendMessage).not.toHaveBeenCalled();

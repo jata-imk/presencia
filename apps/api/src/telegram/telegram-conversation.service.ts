@@ -176,12 +176,15 @@ export class TelegramConversationService {
    * con el bot bloqueado, 404 sin chat, 503 si Telegram falla.
    */
   continueChat(api: TelegramContinueApi, userId: string, chatId: string): Promise<void> {
-    const running = this.continuing.get(chatId);
+    // Por creator y chat: con solo el chat, otro usuario recibiría la promesa
+    // de este sin pasar por su RLS (revisión del PR7b).
+    const key = `${userId}:${chatId}`;
+    const running = this.continuing.get(key);
     if (running) return running;
     const run = this.openTopicFor(api, userId, chatId).finally(() => {
-      if (this.continuing.get(chatId) === run) this.continuing.delete(chatId);
+      if (this.continuing.get(key) === run) this.continuing.delete(key);
     });
-    this.continuing.set(chatId, run);
+    this.continuing.set(key, run);
     return run;
   }
 
@@ -206,11 +209,16 @@ export class TelegramConversationService {
       // en el de ahora no existe.
       if (row && row.telegramChatId !== telegramChatId) {
         await this.threads.deleteByChat(tx, chatId);
-        return { title: chat.title, row: undefined };
+        return { title: chat.title, archived: chat.archivedAt !== null, row: undefined };
       }
-      return { title: chat.title, row };
+      return { title: chat.title, archived: chat.archivedAt !== null, row };
     });
     if (!found) throw new NotFoundException("Ese chat no existe.");
+    if (found.archived) {
+      throw new ConflictException(
+        "Ese chat está archivado. Desarchívalo para seguirlo en Telegram.",
+      );
+    }
     const { title, row } = found;
 
     try {
@@ -232,9 +240,12 @@ export class TelegramConversationService {
       // La fila antes del mensaje: si el creator contesta en el instante, su
       // mensaje ya cae en este chat y no abre otro. El nombre lo puso el bot,
       // así que el título automático puede renombrar el tema.
-      await this.db.runWithTenant(userId, (tx) =>
+      const linked = await this.db.runWithTenant(userId, (tx) =>
         this.threads.insert(tx, { userId, chatId, place, renameTopic: true }),
       );
+      // Sin fila (otro camino ligó el chat entre la lectura y aquí), lo que
+      // contestara en ese tema abriría otro chat: no se escribe ahí.
+      if (!linked) throw new Error("El chat ya tenía tema al ligarlo");
       await api.sendMessage(telegramChatId, copy.continued(title), {
         message_thread_id: topic.message_thread_id,
       });
