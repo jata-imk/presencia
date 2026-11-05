@@ -10,10 +10,14 @@ export const TELEGRAM_LINK_TTL_MINUTES = 15;
  * - `disconnected`: nunca se conectó, o se desconectó;
  * - `waiting`: hay un enlace generado que todavía no vence;
  * - `expired`: el último enlace venció sin usarse;
+ * - `taken`: alguien abrió el enlace desde un Telegram que ya está conectado a
+ *   otra cuenta de Presencia (F11 PR7a). El mismo enlace sigue sirviendo: si
+ *   se desconecta allá y lo vuelve a abrir, conecta. Al vencer pasa a
+ *   `expired`;
  * - `connected`: activo, con el @usuario de Telegram si lo tiene.
  */
 export type TelegramLinkState =
-  "unavailable" | "disconnected" | "waiting" | "expired" | "connected";
+  "unavailable" | "disconnected" | "waiting" | "expired" | "taken" | "connected";
 
 export interface TelegramLinkStatusDto {
   state: TelegramLinkState;
@@ -21,8 +25,13 @@ export interface TelegramLinkStatusDto {
   username: string | null;
   /** ISO 8601: desde cuándo está conectado. */
   linkedAt: string | null;
-  /** ISO 8601: cuándo vence el enlace pendiente (`waiting` o `expired`). */
+  /** ISO 8601: cuándo vence el enlace pendiente (`waiting`, `expired` o `taken`). */
   expiresAt: string | null;
+  /**
+   * @usuario del bot (sin la @), para el "Abrir Telegram" de una cuenta ya
+   * conectada. Null sin bot o mientras el bot no termina de arrancar.
+   */
+  botUsername: string | null;
 }
 
 /** Lo que devuelve generar un enlace: el deep link y cuándo vence. */

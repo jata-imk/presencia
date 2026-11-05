@@ -170,6 +170,7 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
   - `channel_links_active_external` es único parcial `WHERE status = 'active'`: un Telegram activo en una sola cuenta, y una revocada no bloquea volver a vincular.
   - `channel_links_token` es único sobre el hash.
   - El CHECK `channel_links_active_has_external` exige `external_id` en las activas.
+- F11 PR7a (migración 0062): `link_error` (enum `channel_link_error`, hoy solo `taken`): el último canje de este enlace llegó de un Telegram que ya está activo en otra cuenta, para que Configuración lo diga. El CHECK `channel_links_error_only_pending` lo deja solo en filas pendientes; generar otro enlace, conectar o desconectar lo limpian.
 - El bot resuelve `external_id → user_id` y el hash del código → `user_id` en modo barrido (policy `worker_scan`: solo SELECT, solo pendientes y activas). Si no existe, contesta cómo vincular.
 
 **`telegram_threads`** — qué chat de Presencia es cada tema de Telegram (F11 PR4, migración 0060, ADR-030).

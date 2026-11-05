@@ -359,8 +359,10 @@ export class ChatService {
           const all = await this.repo.listMessages(tx, chatId);
           let previous = all;
           let retitle = false;
-          // F11 PR6: la duración de la nota de voz que se vuelve a enviar.
+          // F11 PR6: la duración de la nota de voz que se vuelve a enviar, y
+          // (PR7a) el canal por el que llegó el mensaje.
           let resentVoiceSeconds: number | null = null;
+          let resentChannel: MessageRow["channel"] | null = null;
           if (all.some((m) => m.id === userMessage.id)) {
             const last = lastTurnOf(all, userMessage.id);
             // Un mensaje viejo con el mismo id, o el turno sigue corriendo: un
@@ -377,9 +379,12 @@ export class ChatService {
             // Una nota de voz reintentada desde la web llega con su mismo
             // texto: sigue siendo la nota. Editada, ya la escribió el creator
             // (revisión del PR6: el reenvío borraba la marca).
+            // El canal también: lo escribió por Telegram aunque se reintente
+            // desde la web.
             const old = all[last.index]!;
-            if (old.voiceSeconds !== null && textOf(old.parts) === textOf(userMessage.parts)) {
+            if (textOf(old.parts) === textOf(userMessage.parts)) {
               resentVoiceSeconds = old.voiceSeconds;
+              resentChannel = old.channel;
             }
             await this.dropStaleReply(tx, last.staleReply);
             await this.repo.deleteMessage(tx, userMessage.id);
@@ -403,7 +408,7 @@ export class ChatService {
             userId,
             role: "user",
             parts: attached.parts,
-            channel,
+            channel: resentChannel ?? channel,
             voiceSeconds: options.voiceSeconds ?? resentVoiceSeconds,
           });
           // Ya con el id guardado. Un reintento o una edición borraron el

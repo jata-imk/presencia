@@ -27,9 +27,15 @@ export class TelegramLinksController {
   @Get()
   async status(@CurrentUser() user: SessionUser): Promise<TelegramLinkStatusDto> {
     if (!this.bot.enabled) {
-      return { state: "unavailable", username: null, linkedAt: null, expiresAt: null };
+      return {
+        state: "unavailable",
+        username: null,
+        linkedAt: null,
+        expiresAt: null,
+        botUsername: null,
+      };
     }
-    return this.links.status(user.id);
+    return this.links.status(user.id, this.bot.username);
   }
 
   /** Genera el enlace de un solo uso (deep link a `/start <código>`). */

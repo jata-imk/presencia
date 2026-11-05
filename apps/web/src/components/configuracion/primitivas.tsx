@@ -1,4 +1,11 @@
-import { Check, Info, LoaderCircle, TriangleAlert, type LucideIcon } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  Info,
+  LoaderCircle,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import type { EstadoDeCampo } from "../../lib/autoguardado.js";
 
@@ -149,12 +156,29 @@ export function Invitacion({ children }: { children: ReactNode }) {
   return <p className="mt-2 text-xs text-warning-fg italic">{children}</p>;
 }
 
-/** Aviso ámbar dentro de una sección (ej. modismo en las dos listas). */
-export function Aviso({ children }: { children: ReactNode }) {
+const TONO_AVISO = {
+  warning: {
+    Icono: TriangleAlert,
+    caja: "border-warning-border bg-warning-bg",
+    texto: "text-warning-fg",
+  },
+  // F11 PR7a: algo que no se pudo hacer ("ya está conectada a otro perfil").
+  error: { Icono: CircleAlert, caja: "border-error-border bg-error-bg", texto: "text-error-fg" },
+} as const;
+
+/** Aviso dentro de una sección: ámbar (ej. modismo en las dos listas) o rojo. */
+export function Aviso({
+  children,
+  tono = "warning",
+}: {
+  children: ReactNode;
+  tono?: keyof typeof TONO_AVISO;
+}) {
+  const { Icono, caja, texto } = TONO_AVISO[tono];
   return (
-    <div className="flex items-start gap-2.5 rounded-md border border-warning-border bg-warning-bg px-3.5 py-3">
-      <TriangleAlert size={17} strokeWidth={1.8} className="mt-px shrink-0 text-warning-fg" />
-      <div className="text-xs leading-normal text-warning-fg">{children}</div>
+    <div className={`flex items-start gap-2.5 rounded-md border px-3.5 py-3 ${caja}`}>
+      <Icono size={17} strokeWidth={1.8} className={`mt-px shrink-0 ${texto}`} aria-hidden />
+      <div className={`text-xs leading-normal ${texto}`}>{children}</div>
     </div>
   );
 }

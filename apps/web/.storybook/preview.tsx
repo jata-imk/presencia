@@ -3,6 +3,7 @@ import type { Decorator, Preview } from "@storybook/react-vite";
 import { useCardSelectionStore } from "../src/stores/card-selection-store.js";
 import { useCardsStore } from "../src/stores/cards-store.js";
 import { usePublicationPanelStore } from "../src/stores/publication-panel-store.js";
+import { resetTelegramLinkStore } from "../src/stores/telegram-link-store.js";
 import { useToastStore } from "../src/stores/toast-store.js";
 import "../src/styles/app.css";
 import { installMockApi, usarRespuestas, type RespuestaDeHistoria } from "./mock-api.js";
@@ -79,6 +80,7 @@ const preview: Preview = {
     usePublicationPanelStore.setState(usePublicationPanelStore.getInitialState(), true);
     useCardSelectionStore.setState(useCardSelectionStore.getInitialState(), true);
     useToastStore.setState(useToastStore.getInitialState(), true);
+    resetTelegramLinkStore();
     const cards = (parameters.cards ?? []) as PublicationCardDto[];
     const chatIds: Record<string, string[]> = {};
     for (const c of cards) if (c.chatId) (chatIds[c.chatId] ??= []).push(c.id);

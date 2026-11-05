@@ -1,4 +1,4 @@
-import { ExternalLink, Plug } from "lucide-react";
+import { ExternalLink, MessageCircle, Plug } from "lucide-react";
 import { useState } from "react";
 import type { ChannelAccountDto } from "@presencia/shared";
 import { Link } from "react-router";
@@ -10,15 +10,23 @@ import {
   Seccion,
   SkeletonDePagina,
 } from "../../components/configuracion/primitivas.js";
+import { ModalDisconnectTelegram } from "../../components/configuracion/ModalDisconnectTelegram.js";
+import { TelegramCard } from "../../components/configuracion/TelegramCard.js";
 import { Button } from "../../components/ui/Button.js";
 import { ApiError } from "../../lib/api.js";
 import { useChannels } from "../../lib/use-channels.js";
+import { useTelegramLink } from "../../lib/use-telegram-link.js";
+import { useTelegramLinkStore } from "../../stores/telegram-link-store.js";
 
 // Configuración > Canales conectados (F6, ADR-009 addendum). El workspace de
 // PostFast es compartido entre todos los usuarios de Presencia — "conectar"
 // abre postfa.st en una pestaña nueva y, al volver, el usuario confirma acá
 // para que el backend reclame la(s) cuenta(s) nueva(s) por diff (ver
 // ChannelsService.claimConnectIntent). No hay webhook que nos avise solo.
+//
+// F11 PR7a: la página tiene dos partes (Claude Design "Chat Telegram" §1):
+// "Chatear desde" (Telegram, para hablar con Presencia) arriba de "Redes para
+// publicar" (PostFast). Son cosas distintas y no se mezclan.
 
 const STATUS_LABELS: Record<ChannelAccountDto["status"], string> = {
   active: "Conectada",
@@ -85,14 +93,18 @@ export function CanalesPage() {
     }
   }
 
-  if (channels === null && !error) return <SkeletonDePagina />;
+  const telegram = useTelegramLink();
+  const telegramLoading = telegram.view === null && !telegram.loadError;
+  if ((channels === null && !error) || telegramLoading) return <SkeletonDePagina />;
 
   return (
     <div>
       <EncabezadoDePagina
         titulo="Canales conectados"
-        subtitulo="Las redes a las que Presencia puede publicar por ti."
+        subtitulo="Desde dónde hablas con Presencia y en dónde publica por ti."
       />
+
+      <ChatearDesde view={telegram.view} loadError={telegram.loadError} />
 
       {connectStep && (
         <NotaInfo>
@@ -109,7 +121,11 @@ export function CanalesPage() {
         </NotaInfo>
       )}
 
-      <Seccion icono={Plug} titulo="Tus redes">
+      <Seccion
+        icono={Plug}
+        titulo="Redes para publicar"
+        subtitulo="Presencia programa y publica en estas cuentas."
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Button
             onClick={() => void handleStartConnect()}
@@ -182,5 +198,62 @@ export function CanalesPage() {
         )}
       </Seccion>
     </div>
+  );
+}
+
+/** Telegram (F11 PR7a). Sin bot en el servidor, la sección no se pinta. */
+function ChatearDesde({
+  view,
+  loadError,
+}: Pick<ReturnType<typeof useTelegramLink>, "view" | "loadError">) {
+  const createLink = useTelegramLinkStore((s) => s.createLink);
+  const unlink = useTelegramLinkStore((s) => s.unlink);
+  const username = useTelegramLinkStore((s) => s.status?.username ?? null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  if (view?.kind === "hidden") return null;
+
+  async function handleConnect() {
+    setBusy(true);
+    setError(null);
+    try {
+      await createLink();
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "No pudimos generar el enlace. Inténtalo de nuevo.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Seccion
+      icono={MessageCircle}
+      titulo="Chatear desde"
+      subtitulo="Habla con Presencia fuera de la web."
+    >
+      {view ? (
+        <TelegramCard
+          view={view}
+          busy={busy}
+          error={error}
+          onConnect={() => void handleConnect()}
+          onDisconnect={() => setConfirming(true)}
+        />
+      ) : (
+        <p className="text-sm text-error-fg">{loadError}</p>
+      )}
+      {confirming && (
+        <ModalDisconnectTelegram
+          username={username}
+          onClose={() => setConfirming(false)}
+          onConfirm={unlink}
+          onDisconnected={() => setConfirming(false)}
+        />
+      )}
+    </Seccion>
   );
 }

@@ -156,6 +156,21 @@ El visor a pantalla completa (`components/ui/ImageViewer.tsx`) es oscuro **en lo
 
 Nota de F10.6.1: con Tailwind 4.3 `bg-card/90` y `bg-fg/85` **sí** emitieron regla (`color-mix(in oklab, var(--bg-card) 90%, transparent)`), a diferencia de lo que pasó en F6. La regla de arriba no cambia: verificar el CSS generado antes de confiar en un `/NN`.
 
+## Telegram, QR y texto sobre la burbuja (F11 PR7a)
+
+**La marca de Telegram** pinta solo su cuadrito en Configuración → Canales conectados (Claude Design "Chat Telegram"). Fuera de ahí el canal se marca monocromo (el ícono `Send` de lucide en el color de texto de la fila): el azul de Telegram en cada fila de Recientes sería ruido. Ícono y no logo: no hay un SVG oficial con fuente (misma regla que `NetworkLogos.tsx`).
+
+| Token                 | Claro     | Oscuro    | Utility            |
+| --------------------- | --------- | --------- | ------------------ |
+| `--brand-telegram`    | `#229ED9` | `#3AAEE6` | `bg-telegram`      |
+| `--brand-telegram-fg` | `#FFFFFF` | `#08202C` | `text-on-telegram` |
+
+En oscuro se aclara y el ícono va oscuro, como el CTA primario.
+
+**El QR** para conectar Telegram (`--qr-bg` `#FFFFFF`, `--qr-fg` `#1C1520`; `bg-qr-bg`, `text-qr-fg`) es **igual en los dos temas**: un lector de QR necesita módulos oscuros sobre fondo claro, y uno invertido no lo leen todas las cámaras. Mismo criterio que el visor de imágenes.
+
+**Texto secundario sobre la burbuja del creator** (la cabecera "Nota de voz · 0:42"): `--interactive-primary-fg-muted` (`text-primary-fg-muted`, 75%) y `--interactive-primary-divider` (`border-primary-divider`, 20%). Son `color-mix` de `--interactive-primary-fg`, así voltean solos con el tema y no hay que escribir un `/NN` sobre un token (la trampa de arriba).
+
 ## Movimiento (ADR-014)
 
 Decisión completa en [ADR-014](../explanation/decisions/adr-014-estrategia-de-animacion.md); acá el resumen operativo.

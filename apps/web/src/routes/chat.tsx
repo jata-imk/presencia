@@ -636,6 +636,8 @@ function ChatView({
                       <MessageUser
                         text={messageText(message)}
                         files={messageFiles(message)}
+                        voice={message.metadata?.voice}
+                        channel={message.metadata?.channel}
                         // Sin cuota, editar daría el mismo rechazo.
                         canEdit={isLastUser && !busy && !quotaExhaustedError}
                         editing={isLastUser && editingId === message.id && !busy}

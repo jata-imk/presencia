@@ -31,6 +31,12 @@ const FOLDER = "Estados del turno";
 
 type Turn = {
   prompt: string;
+  /**
+   * F11 PR7a: el turno llegó por Telegram (los dos mensajes), y el del creator
+   * como nota de voz de tantos segundos: la etiqueta "Nota de voz · 0:42" sin
+   * bot ni transcripción.
+   */
+  telegram?: { voiceSeconds?: number };
   /** Sin respuesta: el mensaje del creator queda solo (huérfano de antes de F10.8.2). */
   reply?: {
     text: string;
@@ -99,6 +105,30 @@ const SEEDED_CHATS: { title: string; turns: Turn[] }[] = [
     title: "Último turno: sin respuesta",
     turns: [{ prompt: PROMPT }],
   },
+  {
+    // F11 PR7a: un turno que llegó por Telegram como nota de voz, y uno
+    // escrito después en la web.
+    title: "Nota de voz desde Telegram",
+    turns: [
+      {
+        prompt:
+          "Oye, ayer fui a tres cafeterías en Santa Ana y los precios cambian un montón. " +
+          "Quiero hacer un carrusel comparando cuánto cuesta un americano y un latte en cada una, " +
+          "con un tono relajado, nada de reseña seria.",
+        telegram: { voiceSeconds: 42 },
+        reply: {
+          text:
+            "Va. Lo armo con un tono de plática: una slide por cafetería con el precio del " +
+            "americano y del latte, y al final tu favorita. ¿Me pasas los nombres y los precios?",
+          status: "complete",
+        },
+      },
+      {
+        prompt: "Es este mismo, ahora desde la web.",
+        reply: { text: "Aquí sigo.", status: "complete" },
+      },
+    ],
+  },
 ];
 
 /** Borra lo sembrado antes y lo vuelve a crear. Devuelve cuántos chats creó. */
@@ -145,8 +175,14 @@ export async function seedTurnStates(tx: Tx, userId: string): Promise<number> {
   const next = () => new Date((clock += 60 * 1000));
 
   for (const { title, turns } of SEEDED_CHATS) {
-    const rows = turns.flatMap(({ prompt, reply }) => [
-      { role: "user" as const, parts: [{ type: "text", text: prompt }], createdAt: next() },
+    const rows = turns.flatMap(({ prompt, reply, telegram }) => [
+      {
+        role: "user" as const,
+        parts: [{ type: "text", text: prompt }],
+        createdAt: next(),
+        channel: telegram ? ("telegram" as const) : ("web" as const),
+        voiceSeconds: telegram?.voiceSeconds ?? null,
+      },
       ...(reply
         ? [
             {
@@ -158,6 +194,7 @@ export async function seedTurnStates(tx: Tx, userId: string): Promise<number> {
                   : [{ type: "step-start" }],
               status: reply.status,
               createdAt: next(),
+              channel: telegram ? ("telegram" as const) : ("web" as const),
             },
           ]
         : []),

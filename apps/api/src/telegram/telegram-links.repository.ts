@@ -48,6 +48,7 @@ export class TelegramLinksRepository {
       linkedAt: null,
       linkTokenHash: tokenHash,
       linkTokenExpiresAt: expiresAt,
+      linkError: null,
     };
     const [row] = await tx
       .insert(channelLinks)
@@ -85,6 +86,7 @@ export class TelegramLinksRepository {
         username,
         linkedAt: sql`now()`,
         linkTokenExpiresAt: null,
+        linkError: null,
       })
       .where(
         and(
@@ -98,11 +100,32 @@ export class TelegramLinksRepository {
     return row;
   }
 
+  /**
+   * Anota que el canje de este código no conectó porque ese Telegram ya está
+   * en otra cuenta (F11 PR7a), para que Configuración lo diga. Solo si la fila
+   * sigue pendiente con ESE código: si el creator ya generó otro enlace, el
+   * aviso no le cae al nuevo. El código no se gasta. `true` si se anotó.
+   */
+  async markTaken(tx: Tx, linkId: string, tokenHash: string): Promise<boolean> {
+    const rows = await tx
+      .update(channelLinks)
+      .set({ linkError: "taken" })
+      .where(
+        and(
+          eq(channelLinks.id, linkId),
+          eq(channelLinks.status, "pending"),
+          eq(channelLinks.linkTokenHash, tokenHash),
+        ),
+      )
+      .returning({ id: channelLinks.id });
+    return rows.length > 0;
+  }
+
   /** Desconecta (o cancela un enlace pendiente). Devuelve la fila como quedó. */
   async revokeOwn(tx: Tx): Promise<ChannelLinkRow | undefined> {
     const [row] = await tx
       .update(channelLinks)
-      .set({ status: "revoked", linkTokenHash: null, linkTokenExpiresAt: null })
+      .set({ status: "revoked", linkTokenHash: null, linkTokenExpiresAt: null, linkError: null })
       .where(
         and(
           eq(channelLinks.channel, TELEGRAM),

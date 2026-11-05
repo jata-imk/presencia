@@ -69,6 +69,16 @@ export type ChatStreamBody = z.infer<typeof chatStreamBodySchema>;
  * esos. `failed`: el proveedor o el turno fallaron. Lo que alcanzó a
  * escribirse se guarda en los dos casos.
  */
+/**
+ * Por dónde entró o salió un mensaje (columna `messages.channel`, F11). La web
+ * es el canal por defecto; los demás son adapters sobre la misma
+ * conversación (regla dura #5).
+ */
+export const MESSAGE_CHANNELS = ["web", "telegram", "whatsapp"] as const;
+export type MessageChannel = (typeof MESSAGE_CHANNELS)[number];
+/** Un canal que no es la web: el que la UI marca con ícono o etiqueta. */
+export type ExternalChannel = Exclude<MessageChannel, "web">;
+
 export const MESSAGE_STATUSES = ["complete", "stopped", "failed"] as const;
 export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 
@@ -81,6 +91,11 @@ export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 export interface ChatMessageMetadata {
   status?: Exclude<MessageStatus, "complete">;
   voice?: { seconds: number };
+  /**
+   * Por dónde llegó un mensaje del creator, si no fue la web (F11 PR7a): la
+   * etiqueta "Telegram" de la nota de voz. Las respuestas no lo traen.
+   */
+  channel?: ExternalChannel;
 }
 
 /**
