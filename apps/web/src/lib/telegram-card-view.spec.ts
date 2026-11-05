@@ -55,9 +55,14 @@ describe("telegramCardView", () => {
   });
 
   it("ya en otra cuenta, conectado y desconectado", () => {
-    expect(telegramCardView(status({ state: "taken", expiresAt: EN_10MIN }), null, NOW)).toEqual({
+    expect(telegramCardView(status({ state: "taken", expiresAt: EN_10MIN }), LINK, NOW)).toEqual({
       kind: "err",
+      url: LINK.url,
     });
+    // Vencido, ya no se puede reabrir: el aviso se vuelve "vencido".
+    expect(
+      telegramCardView(status({ state: "taken", expiresAt: EN_10MIN }), LINK, NOW + 10 * 60_000),
+    ).toEqual({ kind: "exp", url: LINK.url });
     expect(
       telegramCardView(
         status({ state: "connected", username: "jose", linkedAt: "2026-10-28T12:00:00.000Z" }),

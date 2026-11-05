@@ -63,7 +63,7 @@ export const VencidoSinEnlace: Story = {
 /** Ese Telegram ya está conectado a otro perfil de Presencia. */
 export const NoSeConecto: Story = {
   name: "No se conectó",
-  args: { view: { kind: "err" } },
+  args: { view: { kind: "err", url: URL_DEMO } },
 };
 
 export const Conectado: Story = {

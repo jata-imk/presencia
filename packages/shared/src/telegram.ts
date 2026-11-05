@@ -11,9 +11,9 @@ export const TELEGRAM_LINK_TTL_MINUTES = 15;
  * - `waiting`: hay un enlace generado que todavía no vence;
  * - `expired`: el último enlace venció sin usarse;
  * - `taken`: alguien abrió el enlace desde un Telegram que ya está conectado a
- *   otra cuenta de Presencia (F11 PR7a). Se queda así hasta generar otro
- *   enlace; el mismo enlace sigue sirviendo mientras no venza (si se
- *   desconecta allá y lo vuelve a abrir, conecta);
+ *   otra cuenta de Presencia (F11 PR7a). El mismo enlace sigue sirviendo: si
+ *   se desconecta allá y lo vuelve a abrir, conecta. Al vencer pasa a
+ *   `expired`;
  * - `connected`: activo, con el @usuario de Telegram si lo tiene.
  */
 export type TelegramLinkState =

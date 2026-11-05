@@ -120,14 +120,28 @@ export function TelegramCard({
               Esta cuenta de Telegram ya está conectada a otro perfil de Presencia. Desconéctala
               allá o usa otra cuenta.
             </Aviso>
-            <Button
-              onClick={onConnect}
-              disabled={busy}
-              className="inline-flex items-center gap-1.5"
-            >
-              <RefreshCw size={14} strokeWidth={2} aria-hidden />
-              Intentar de nuevo
-            </Button>
+            {/* El mismo enlace sigue sirviendo: si esta pestaña lo tiene, se
+                reabre (generar otro tiraría uno bueno). Si no, uno nuevo. */}
+            {view.url ? (
+              <a
+                href={view.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${buttonClass("primary")} inline-flex items-center gap-1.5`}
+              >
+                <RefreshCw size={14} strokeWidth={2} aria-hidden />
+                Intentar de nuevo
+              </a>
+            ) : (
+              <Button
+                onClick={onConnect}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5"
+              >
+                <RefreshCw size={14} strokeWidth={2} aria-hidden />
+                Intentar de nuevo
+              </Button>
+            )}
           </div>
         )}
 

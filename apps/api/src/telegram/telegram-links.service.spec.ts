@@ -136,14 +136,14 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
     expect(await links.status(userId, null)).toMatchObject({ state: "disconnected" });
   });
 
-  it("'ya en otra cuenta' sigue aunque el enlace venza", async () => {
+  it("'ya en otra cuenta' se vuelve 'vencido' cuando el enlace vence", async () => {
     const telegram = tgId();
     const otra = await nuevoUsuario();
     await links.redeem(codigoDe((await links.createLink(otra, "bot")).url), telegram, null);
     const codigo = codigoDe((await links.createLink(userId, "bot")).url);
     await links.redeem(codigo, telegram, null);
     const en20min = new Date(Date.now() + 20 * 60_000);
-    expect(await links.status(userId, null, en20min)).toMatchObject({ state: "taken" });
+    expect(await links.status(userId, null, en20min)).toMatchObject({ state: "expired" });
   });
 
   it("con un Telegram ya conectado no se genera otro enlace", async () => {

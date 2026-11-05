@@ -227,7 +227,6 @@
      el CTA primario. Fuera de Configuración el canal se marca monocromo. */
   --brand-telegram: #229ed9;
   --brand-telegram-fg: #ffffff;
-  --brand-telegram-soft: #e7f4fb;
   /* F11 PR7a: el QR de conectar Telegram. Igual en los dos temas: un lector
      de QR necesita módulos oscuros sobre fondo claro, y uno invertido no lo
      leen todas las cámaras. */
@@ -480,7 +479,6 @@
 
   --brand-telegram: #3aaee6;
   --brand-telegram-fg: #08202c;
-  --brand-telegram-soft: rgba(58, 174, 230, 0.14);
 
   /* Las sombras plum están calibradas para fondo claro: sobre #0f0a12 no
      se ven. Se voltea el COLOR (no --shadow-*, que Tailwind ya inlineó)
@@ -586,7 +584,6 @@
   --color-primary-divider: var(--interactive-primary-divider);
   --color-telegram: var(--brand-telegram);
   --color-on-telegram: var(--brand-telegram-fg);
-  --color-telegram-soft: var(--brand-telegram-soft);
   --color-qr-bg: var(--qr-bg);
   --color-qr-fg: var(--qr-fg);
   --color-accent-cta: var(--interactive-accent);

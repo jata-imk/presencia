@@ -193,12 +193,13 @@ Diseño en Claude Design, proyecto "Presencia - Chat", `Chat Telegram.html`.
   - `channel_links.link_error` (migración `0062`, enum `channel_link_error`) se anota cuando el canje da `taken`, y el estado sale como `taken`. Un CHECK lo deja solo en filas pendientes.
   - Se anota con el tenant del dueño del código (la policy de siempre) y solo si la fila sigue pendiente con ESE hash: un enlace regenerado mientras tanto no hereda el aviso. Si anotarlo falla, el bot contesta igual.
   - El código sigue sin gastarse: si el creator desconecta allá y reabre el mismo enlace, conecta. Por eso la web sigue preguntando mientras el enlace no vence.
-  - Se queda aunque el enlace venza (regenerar sin desconectar allá fallaría igual). Generar otro enlace, conectar o desconectar lo limpian.
+  - Solo mientras el enlace no vence: vencido ya no se puede reabrir, y el aviso quedaría viejo si mientras tanto desconectó la otra cuenta (revisión del PR7a). Generar otro enlace, conectar o desconectar limpian la columna.
+  - "Intentar de nuevo" reabre ese mismo enlace si la pestaña lo tiene (generar otro tiraría uno que sigue sirviendo); si no, genera otro.
 - **La web se entera sola:** nadie le avisa cuando el creator toca Iniciar, así que pregunta cada 3 s mientras el enlace está `waiting` o `taken`, no ha vencido y la pestaña está visible (`use-telegram-link.ts`). Al volver a la pestaña pregunta de inmediato. La cuenta regresiva es local y marca vencido sin esperar al servidor.
 - **El enlace (con el código) vive solo en memoria** (`telegram-link-store.ts`), nunca en `localStorage`: quien lo tenga conecta su Telegram a esta cuenta. Tras recargar con un enlace pendiente, la web ya no lo tiene (el servidor solo guarda su hash): la tarjeta sigue esperando, sin QR ni "Abrir Telegram", y ofrece "Generar otro". No lo regenera sola: mataría un enlace que el creator quizá está por confirmar en el cel.
 - **El deep link es un `<a>`**, no un `window.open` después de un `await` (el navegador lo bloquea). El QR (`qrcode.react`) usa tokens fijos en los dos temas (`--qr-*`): un QR invertido no lo leen todas las cámaras. En el cel va escondido tras "¿Telegram está en otro dispositivo? Mostrar QR".
 - **La nota de voz en el chat:** "Nota de voz · 0:42" arriba del texto, dentro de la burbuja, con la etiqueta del canal. **Sin botón para escucharla** (decisión de Jose): el audio no se guarda.
-  - `toUIMessage` manda `metadata.channel` cuando el mensaje no llegó por la web.
+  - `toUIMessage` manda `metadata.channel` cuando un mensaje del creator no llegó por la web (las respuestas no: nada lo pinta).
   - Reintentar desde la web un mensaje con el mismo texto conserva su canal, además de `voice_seconds`: lo escribió (o lo dijo) por Telegram.
 - `seed:dev` siembra el chat "Nota de voz desde Telegram" en "Estados del turno", para ver la etiqueta sin bot.
 

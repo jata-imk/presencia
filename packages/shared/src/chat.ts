@@ -91,7 +91,10 @@ export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 export interface ChatMessageMetadata {
   status?: Exclude<MessageStatus, "complete">;
   voice?: { seconds: number };
-  /** Por dónde llegó el mensaje, si no fue la web (F11 PR7a): la etiqueta "Telegram" de la nota de voz. */
+  /**
+   * Por dónde llegó un mensaje del creator, si no fue la web (F11 PR7a): la
+   * etiqueta "Telegram" de la nota de voz. Las respuestas no lo traen.
+   */
   channel?: ExternalChannel;
 }
 

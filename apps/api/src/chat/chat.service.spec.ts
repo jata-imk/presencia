@@ -293,7 +293,7 @@ describe("ChatService · el turno por un TurnSink", () => {
         voice: { seconds: 42 },
         channel: "telegram",
       });
-      expect(toUIMessage(reply!).metadata).toEqual({ channel: "telegram" });
+      expect(toUIMessage(reply!).metadata).toBeUndefined();
     },
   );
 

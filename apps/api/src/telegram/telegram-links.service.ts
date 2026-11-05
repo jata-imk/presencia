@@ -163,9 +163,11 @@ function toStatus(
     };
   }
   const expiresAt = row.linkTokenExpiresAt;
-  // Se queda aunque el enlace venza: generar otro sin desconectar el Telegram
-  // de la otra cuenta fallaría igual. Un enlace nuevo lo limpia.
-  if (row.linkError === "taken") {
+  const live = expiresAt !== null && expiresAt > now;
+  // Solo mientras el enlace sirve: vencido ya no se puede reabrir, y el aviso
+  // quedaría viejo si mientras tanto desconectó la otra cuenta (revisión del
+  // PR7a). Un enlace nuevo lo limpia.
+  if (row.linkError === "taken" && live) {
     return {
       state: "taken",
       username: null,
@@ -174,7 +176,7 @@ function toStatus(
     };
   }
   return {
-    state: expiresAt && expiresAt > now ? "waiting" : "expired",
+    state: live ? "waiting" : "expired",
     username: null,
     linkedAt: null,
     expiresAt: expiresAt?.toISOString() ?? null,

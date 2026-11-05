@@ -17,8 +17,6 @@ interface TelegramLinkState {
   link: TelegramLinkDto | null;
   loadError: string | null;
   refresh: () => Promise<void>;
-  /** Carga una vez y reusa la petición en curso (para quien solo lee). */
-  ensureLoaded: () => Promise<void>;
   /** Genera un enlace nuevo; el anterior deja de servir. Lanza ApiError. */
   createLink: () => Promise<void>;
   /** Desconecta, o cancela el enlace pendiente. Lanza ApiError. */
@@ -26,6 +24,18 @@ interface TelegramLinkState {
 }
 
 let inFlight: Promise<void> | null = null;
+/**
+ * Sube con cada cambio que hace esta pestaña (generar, desconectar). Una
+ * consulta que salió antes llega con el estado viejo, y no debe pisar el nuevo
+ * (revisión del PR7a: el polling cada 3 s casi siempre tiene una en camino).
+ */
+let generation = 0;
+
+/** Lo que salió antes de este punto ya no cuenta, y la siguiente consulta va de nuevo. */
+function forgetInFlight(): void {
+  generation += 1;
+  inFlight = null;
+}
 
 export const useTelegramLinkStore = create<TelegramLinkState>()(
   devtools(
@@ -35,8 +45,10 @@ export const useTelegramLinkStore = create<TelegramLinkState>()(
       loadError: null,
 
       refresh: () => {
+        const startedAt = generation;
         inFlight ??= apiFetch<TelegramLinkStatusDto>("/api/telegram/link")
           .then((status) => {
+            if (startedAt !== generation) return;
             set({
               status,
               loadError: null,
@@ -46,18 +58,20 @@ export const useTelegramLinkStore = create<TelegramLinkState>()(
                 : {}),
             });
           })
-          .catch(() => set({ loadError: "No pudimos revisar tu conexión con Telegram." }))
+          .catch(() => {
+            if (startedAt !== generation) return;
+            set({ loadError: "No pudimos revisar tu conexión con Telegram." });
+          })
           .finally(() => {
-            inFlight = null;
+            if (startedAt === generation) inFlight = null;
           });
         return inFlight;
       },
 
-      ensureLoaded: () => (get().status ? Promise.resolve() : get().refresh()),
-
       createLink: async () => {
         try {
           const link = await apiFetch<TelegramLinkDto>("/api/telegram/link", { method: "POST" });
+          forgetInFlight();
           set({
             link,
             status: {
@@ -70,6 +84,7 @@ export const useTelegramLinkStore = create<TelegramLinkState>()(
           });
         } catch (error) {
           // Un 409 (ya se conectó desde otra pestaña) deja la verdad a la vista.
+          forgetInFlight();
           void get().refresh();
           throw error;
         }
@@ -77,6 +92,7 @@ export const useTelegramLinkStore = create<TelegramLinkState>()(
 
       unlink: async () => {
         await apiFetch<void>("/api/telegram/link", { method: "DELETE" });
+        forgetInFlight();
         set({ link: null });
         await get().refresh();
       },
@@ -87,6 +103,6 @@ export const useTelegramLinkStore = create<TelegramLinkState>()(
 
 /** Para Storybook y tests: vuelve al estado inicial. */
 export function resetTelegramLinkStore(): void {
-  inFlight = null;
+  forgetInFlight();
   useTelegramLinkStore.setState({ status: null, link: null, loadError: null });
 }

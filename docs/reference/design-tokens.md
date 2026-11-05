@@ -160,11 +160,10 @@ Nota de F10.6.1: con Tailwind 4.3 `bg-card/90` y `bg-fg/85` **sí** emitieron re
 
 **La marca de Telegram** pinta solo su cuadrito en Configuración → Canales conectados (Claude Design "Chat Telegram"). Fuera de ahí el canal se marca monocromo (el ícono `Send` de lucide en el color de texto de la fila): el azul de Telegram en cada fila de Recientes sería ruido. Ícono y no logo: no hay un SVG oficial con fuente (misma regla que `NetworkLogos.tsx`).
 
-| Token                   | Claro     | Oscuro                  | Utility            |
-| ----------------------- | --------- | ----------------------- | ------------------ |
-| `--brand-telegram`      | `#229ED9` | `#3AAEE6`               | `bg-telegram`      |
-| `--brand-telegram-fg`   | `#FFFFFF` | `#08202C`               | `text-on-telegram` |
-| `--brand-telegram-soft` | `#E7F4FB` | `rgba(58,174,230,0.14)` | `bg-telegram-soft` |
+| Token                 | Claro     | Oscuro    | Utility            |
+| --------------------- | --------- | --------- | ------------------ |
+| `--brand-telegram`    | `#229ED9` | `#3AAEE6` | `bg-telegram`      |
+| `--brand-telegram-fg` | `#FFFFFF` | `#08202C` | `text-on-telegram` |
 
 En oscuro se aclara y el ícono va oscuro, como el CTA primario.
 
