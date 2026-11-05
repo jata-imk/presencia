@@ -126,3 +126,22 @@ El enum `ai_task_kind` (`chat`, `chat_title`, `history_compaction`, `post_adapt`
 - **No se cobra.** Un intercambio son ~500 tokens: menos de una unidad del ledger. `memory_index` y `memory_search` están en `AI_TASK_KINDS` para el registro, pero fuera de `RoutedTaskKind` (no pasan por `resolveForTask`) y de la tarifa por tokens.
 - **Umbral de similitud `MIN_SIMILARITY = 0.62`** (`chat/memory.ts`). La búsqueda siempre devuelve "los 5 más cercanos", aunque nada se parezca. Calibrado sobre los chats de dev: lo relacionado sacó 0.72–0.78; lo que no tenía nada que ver nunca pasó de 0.58. **Cambiar de modelo obliga a recalibrar** y a reindexar: cada fila guarda su `model`, la búsqueda filtra por el vigente y `memoria:reindexar -- --modelo-nuevo` borra los vectores del modelo anterior y arma la memoria de nuevo.
 - **Addendum (F10.8.1 PR6) — la memoria alcanza la parte resumida del chat actual.** Antes excluía el chat actual entero, y lo que la compactación dejaba fuera del resumen era irrecuperable. Ahora excluye solo lo que el modelo ve completo: del chat actual entra lo anterior a `oldestVisibleMessageId` (ContextBuilder). Es el patrón de Mastra (búsqueda semántica en el mismo hilo junto a la memoria comprimida). La nota de la web dice "Recordé lo que hablamos antes en este chat".
+
+**Addendum (F11 PR6, 2026-11-04) — modelos de transcripción.**
+
+- **Mismo inventario, otra capacidad.**
+  - Groq entra a `PROVIDERS` (`GROQ_API_KEY`). Tiene modelos de texto, pero ninguno pasó la suite cultural y no se usan.
+  - `createTranscriptionModelResolver` (`provider-registry.ts`) devuelve `registry.transcriptionModel(id)`, igual que el de imágenes.
+  - `transcription` entra al enum de tareas y, como `web_search`, queda fuera de `RoutedTaskKind` y de la tarifa por tokens (`NonLanguageTaskKind`).
+- **Cadena con default propio** en `AI_MODEL_TRANSCRIBE`: `DEFAULT_TRANSCRIPTION_CHAIN` = `groq:whisper-large-v3-turbo,openai:gpt-4o-mini-transcribe`.
+  - Se eligió en el bake-off de ADR-030, decisión de Jose.
+  - No hereda `AI_MODEL`, igual que las imágenes: un modelo de texto no transcribe.
+  - `env.ts` la valida **solo con `TELEGRAM_BOT_TOKEN`**: sin bot nadie transcribe, y CI no tiene por qué tener la key de Groq.
+  - Solo acepta Groq y OpenAI (`TRANSCRIPTION_PROVIDERS`, los del bake-off), sin `@esfuerzo`.
+- **Respaldo con `runFallbackChain`** (`ai/fallback.ts`), el loop de las cadenas de una sola llamada. Lo comparten la transcripción (`transcription/transcription-chain.ts`) y las imágenes, que antes tenían su propia copia (revisión del PR6).
+  - `createFallbackChain` envuelve un `LanguageModelV4` con stream y primera salida. Transcribir es una llamada sola, sin stream.
+  - El arreglo de la revisión quedó en un solo lugar: si el **reintento del principal** falla con un error que no es caída, se lanza ese error tal cual. Antes decía "falló tras caer el principal", como si hubiera fallado un respaldo.
+  - Reusa las reglas de `ai/fallback.ts`: caer solo ante una caída (un 429 del plan gratis de Groq es caída) y un reintento por modelo. `AI_FALLBACK_SIMULATE=groq` la ejercita en dev.
+  - Topes: 30 s por intento y 60 s para la cadena.
+  - **El detener del creator corta la llamada y no salta al respaldo.**
+- `ai_usage_events.audio_seconds` (migración `0061`): el proveedor cobra por segundo de audio, igual que las imágenes por imagen. `costOf` ya sabía leerlo (bake-off), y `pnpm gasto` lo lee de la base.

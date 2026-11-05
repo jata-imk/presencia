@@ -74,10 +74,13 @@ export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 
 /**
  * La metadata de un mensaje del chat como llega a la web (UIMessage.metadata).
- * `status` solo viene si la respuesta no terminó completa.
+ * `status` solo viene si la respuesta no terminó completa; `voice`, si el
+ * mensaje del creator llegó como nota de voz (F11) y su texto es la
+ * transcripción.
  */
 export interface ChatMessageMetadata {
   status?: Exclude<MessageStatus, "complete">;
+  voice?: { seconds: number };
 }
 
 /**

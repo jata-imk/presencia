@@ -38,6 +38,19 @@ function montar({
   conectado = true,
   resolveUser,
 }: { conectado?: boolean; resolveUser?: () => Promise<string | null> } = {}) {
+  // F11 PR6: la transcripción (la prueba transcription.service.spec).
+  const transcription = {
+    assertQuota: vi.fn<(userId: string, seconds: number) => Promise<void>>(() => Promise.resolve()),
+    transcribe: vi.fn<
+      (input: {
+        userId: string;
+        messageId: string;
+        audio: Uint8Array;
+        seconds: number;
+        signal?: AbortSignal;
+      }) => Promise<string>
+    >(() => Promise.resolve("hazme 3 ideas para reels")),
+  };
   const filas: TelegramThreadRow[] = [];
   let chats = 0;
   const mismoLugar = (r: TelegramThreadRow, p: TelegramPlace) =>
@@ -128,11 +141,23 @@ function montar({
     chat as never,
     { findById: () => Promise.resolve({ timezone: "America/Merida" }) } as never,
     attachments as never,
+    transcription as never,
   );
   const avisos = () => api.sendMessage.mock.calls.map((c) => c[1]);
   /** El id del mensaje del creator de cada turno, en orden. */
   const idsDeMensajes = () => [...mensajes.keys()];
-  return { service, api, chat, createChat, filas, turnos, avisos, idsDeMensajes, attachments };
+  return {
+    service,
+    api,
+    chat,
+    createChat,
+    filas,
+    turnos,
+    avisos,
+    idsDeMensajes,
+    attachments,
+    transcription,
+  };
 }
 
 describe("TelegramConversationService", () => {
@@ -627,5 +652,228 @@ describe("TelegramConversationService · hallazgos de la revisión del PR5", () 
     expect(copy.skipped("menu.docx", "un archivo", copy.unsupportedFile)).toMatch(
       /^No pude leer «menu\.docx»:/,
     );
+  });
+});
+
+// F11 PR6: notas de voz y audios. La bajada usa el fetch de mentira; la
+// transcripción, TranscriptionService de mentira (montar).
+describe("TelegramConversationService · notas de voz", () => {
+  let ECHO_MAX_CHARS: number;
+  let echoOf: (text: string) => string;
+  beforeAll(async () => {
+    ({ ECHO_MAX_CHARS, echoOf } = await import("./telegram-conversation.service.js"));
+  });
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response(new Uint8Array([1, 2, 3])))),
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const nota = (seconds = 42, extra: { caption?: string; fileSize?: number } = {}) => ({
+    voice: { fileId: "v1", fileSize: extra.fileSize ?? 50_000, seconds },
+    caption: extra.caption,
+  });
+  const mensajeDe = (t: ReturnType<typeof montar>, i = 0) =>
+    t.chat.streamChat.mock.calls[i]?.[2] as unknown as { id: string; parts: unknown[] };
+  const opcionesDe = (t: ReturnType<typeof montar>, i = 0) =>
+    (t.chat.streamChat.mock.calls[i] as unknown[] | undefined)?.[4] as Record<string, unknown>;
+
+  it("se transcribe, sale el eco plegable y el turno lleva la transcripción con su duración", async () => {
+    const t = montar();
+    await t.service.voice(t.api, YO, TEMA, nota(42));
+    await flush();
+    expect(t.transcription.assertQuota).toHaveBeenCalledWith("u1", 42);
+    const input = t.transcription.transcribe.mock.calls[0]![0];
+    expect(input).toMatchObject({ userId: "u1", seconds: 42 });
+    expect(input.audio).toEqual(new Uint8Array([1, 2, 3]));
+    // El cobro va con el id del mensaje que lleva la transcripción.
+    expect(mensajeDe(t).id).toBe(input.messageId);
+    expect(mensajeDe(t).parts).toEqual([{ type: "text", text: "hazme 3 ideas para reels" }]);
+    expect(opcionesDe(t)).toMatchObject({ channel: "telegram", voiceSeconds: 42 });
+    // El eco: HTML, plegable, en el tema.
+    const [, html, other] = t.api.sendMessage.mock.calls[0]!;
+    expect(html).toBe("<blockquote expandable>🎤 Escuché: hazme 3 ideas para reels</blockquote>");
+    expect(other).toMatchObject({ message_thread_id: 7, parse_mode: "HTML" });
+    // El turno va en otro draft que "Escuchando tu nota…": un draft se queda
+    // donde nació, y el de la respuesta tiene que nacer debajo del eco.
+    const [, draftId, espera, opciones] = t.api.sendMessageDraft.mock.calls[0]!;
+    expect(espera).toBe(`<i>${copy.listening}</i>`);
+    expect(opciones).toMatchObject({ message_thread_id: 7, can_stop: true });
+    const sink = t.turnos[0]!.sink as unknown as { options: { draftId: number } };
+    expect(sink.options.draftId).not.toBe(draftId);
+  });
+
+  it("el eco se escapa: lo que dijo el creator nunca es HTML", async () => {
+    const t = montar();
+    t.transcription.transcribe.mockResolvedValueOnce("<b>2 & 3</b>");
+    await t.service.voice(t.api, YO, TEMA, nota());
+    await flush();
+    expect(t.avisos()[0]).toContain("&lt;b&gt;2 &amp; 3&lt;/b&gt;");
+    // El mensaje guarda el texto tal cual.
+    expect(mensajeDe(t).parts).toEqual([{ type: "text", text: "<b>2 & 3</b>" }]);
+  });
+
+  it("el eco de una nota larga se recorta; el mensaje guarda la transcripción completa", () => {
+    const larga = "palabra ".repeat(1_000);
+    expect([...echoOf(larga)].length).toBeLessThanOrEqual(ECHO_MAX_CHARS + 1);
+    expect(echoOf(larga).endsWith("…")).toBe(true);
+    expect(echoOf("corta")).toBe("corta");
+  });
+
+  it("un audio con caption: la transcripción y después el caption", async () => {
+    const t = montar();
+    await t.service.voice(t.api, YO, TEMA, nota(30, { caption: " es de mi cliente " }));
+    await flush();
+    expect(mensajeDe(t).parts).toEqual([
+      { type: "text", text: "hazme 3 ideas para reels\n\nes de mi cliente" },
+    ]);
+  });
+
+  it("más de 10 minutos: el aviso, sin bajarla, sin transcribir ni cobrar", async () => {
+    const t = montar();
+    await t.service.voice(t.api, YO, TEMA, nota(601));
+    await flush();
+    expect(t.avisos()).toEqual([copy.voiceTooLong]);
+    expect(t.api.getFile).not.toHaveBeenCalled();
+    expect(t.transcription.assertQuota).not.toHaveBeenCalled();
+    expect(t.transcription.transcribe).not.toHaveBeenCalled();
+    // 10 minutos justos sí entran.
+    const u = montar();
+    await u.service.voice(u.api, YO, TEMA, nota(600));
+    await flush();
+    expect(u.transcription.transcribe).toHaveBeenCalled();
+  });
+
+  it("un audio de más de 20 MB: el aviso, sin bajarlo", async () => {
+    const t = montar();
+    await t.service.voice(t.api, YO, TEMA, nota(300, { fileSize: 21 * 1024 * 1024 }));
+    await flush();
+    expect(t.avisos()).toEqual([copy.voiceTooBig]);
+    expect(t.api.getFile).not.toHaveBeenCalled();
+  });
+
+  it("sin cuota: el aviso con el enlace a Plan, sin transcribir", async () => {
+    const t = montar();
+    t.transcription.assertQuota.mockRejectedValueOnce(
+      new HttpException("sin cuota", HttpStatus.PAYMENT_REQUIRED),
+    );
+    await t.service.voice(t.api, YO, TEMA, nota());
+    await flush();
+    expect(t.avisos()).toEqual([copy.noQuota(webUrl)]);
+    expect(t.api.getFile).not.toHaveBeenCalled();
+    expect(t.transcription.transcribe).not.toHaveBeenCalled();
+  });
+
+  it("una nota en silencio: el aviso, sin chat ni turno", async () => {
+    const t = montar();
+    t.transcription.transcribe.mockResolvedValueOnce("");
+    await t.service.voice(t.api, YO, TEMA, nota());
+    await flush();
+    expect(t.avisos()).toEqual([copy.voiceEmpty]);
+    expect(t.createChat).not.toHaveBeenCalled();
+    expect(t.chat.streamChat).not.toHaveBeenCalled();
+  });
+
+  it("si la transcripción falla: el aviso, sin chat ni turno", async () => {
+    const t = montar();
+    t.transcription.transcribe.mockRejectedValueOnce(new Error("todos cayeron"));
+    await t.service.voice(t.api, YO, TEMA, nota());
+    await flush();
+    expect(t.avisos()).toEqual([copy.voiceFailed]);
+    expect(t.createChat).not.toHaveBeenCalled();
+  });
+
+  it("detener mientras escucha corta la transcripción, y no corre el turno", async () => {
+    const t = montar();
+    let señal: AbortSignal | undefined;
+    t.transcription.transcribe.mockImplementationOnce(
+      (input) =>
+        new Promise((_resolve, reject) => {
+          señal = input.signal;
+          input.signal?.addEventListener("abort", () => reject(new Error("abortado")));
+        }),
+    );
+    await t.service.voice(t.api, YO, TEMA, nota());
+    await flush();
+    const draftId = t.api.sendMessageDraft.mock.calls[0]![1] as number;
+    t.service.stop(500, draftId);
+    await flush();
+    expect(señal?.aborted).toBe(true);
+    expect(t.avisos()).toEqual([copy.stoppedBeforeStart]);
+    expect(t.chat.streamChat).not.toHaveBeenCalled();
+  });
+
+  it("detener justo cuando terminó de transcribir: sin eco ni turno", async () => {
+    const t = montar();
+    let terminar!: (text: string) => void;
+    t.transcription.transcribe.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          terminar = resolve;
+        }),
+    );
+    await t.service.voice(t.api, YO, TEMA, nota());
+    await flush();
+    const draftId = t.api.sendMessageDraft.mock.calls[0]![1] as number;
+    t.service.stop(500, draftId);
+    terminar("ya la oí");
+    await flush();
+    expect(t.avisos()).toEqual([copy.stoppedBeforeStart]);
+    expect(t.chat.streamChat).not.toHaveBeenCalled();
+  });
+
+  it("una nota y luego un texto en el mismo tema se contestan en ese orden", async () => {
+    const t = montar();
+    let terminar!: (text: string) => void;
+    t.transcription.transcribe.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          terminar = resolve;
+        }),
+    );
+    void t.service.voice(t.api, YO, TEMA, nota());
+    void t.service.text(t.api, YO, TEMA, "y otra cosa");
+    await flush();
+    expect(t.chat.streamChat).not.toHaveBeenCalled();
+    terminar("primero la nota");
+    await flush();
+    expect(mensajeDe(t).parts).toEqual([{ type: "text", text: "primero la nota" }]);
+    t.turnos[0]!.terminar();
+    await flush();
+    expect(mensajeDe(t, 1).parts).toEqual([{ type: "text", text: "y otra cosa" }]);
+  });
+
+  it('el detener de "Escuchando tu nota…" que sigue a la vista detiene el turno (revisión del PR6)', async () => {
+    const t = montar();
+    await t.service.voice(t.api, YO, TEMA, nota());
+    await flush();
+    const escuchando = t.api.sendMessageDraft.mock.calls[0]![1] as number;
+    const turno = t.turnos[0]!.sink as unknown as { options: { draftId: number } };
+    const parar = vi.spyOn(t.turnos[0]!.sink, "stop");
+    t.service.stop(500, escuchando);
+    expect(parar).toHaveBeenCalled();
+    expect(turno.options.draftId).not.toBe(escuchando);
+  });
+
+  it("una transcripción más larga que un mensaje de la web no entra al turno", async () => {
+    const t = montar();
+    t.transcription.transcribe.mockResolvedValueOnce("a".repeat(50_001));
+    await t.service.voice(t.api, YO, TEMA, nota(30));
+    await flush();
+    expect(t.avisos()).toEqual([copy.voiceTooLong]);
+    expect(t.chat.streamChat).not.toHaveBeenCalled();
+  });
+
+  it("a quien no está conectado: cómo conectarse, sin transcribir", async () => {
+    const t = montar({ conectado: false });
+    await t.service.voice(t.api, YO, TEMA, nota());
+    await flush();
+    expect(t.avisos()).toEqual([copy.notLinked(webUrl)]);
+    expect(t.transcription.transcribe).not.toHaveBeenCalled();
   });
 });

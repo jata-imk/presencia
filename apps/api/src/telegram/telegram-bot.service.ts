@@ -12,7 +12,7 @@ import { env } from "../env.js";
 import { TELEGRAM_COMMANDS } from "./telegram.copy.js";
 import { TelegramCommandsService } from "./telegram-commands.service.js";
 import { TelegramConversationService } from "./telegram-conversation.service.js";
-import { mediaOf } from "./telegram-files.js";
+import { mediaOf, voiceOf } from "./telegram-files.js";
 import { isUserContent } from "./telegram-message.js";
 import type { TelegramPlace } from "./telegram-threads.repository.js";
 
@@ -271,8 +271,16 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
           .catch(logLoose);
         return;
       }
-      const kind = message.voice || message.audio ? "voice" : "other";
-      await ctx.reply(await this.commands.message(ctx.from, kind));
+      // F11 PR6: una nota de voz o un audio suelto se transcribe. Un audio en
+      // un álbum va arriba, con su aviso; la video-nota no se lee.
+      const voice = voiceOf(message);
+      if (voice) {
+        void this.conversation
+          .voice(ctx.api, ctx.from, placeOf(message), { voice, caption: message.caption })
+          .catch(logLoose);
+        return;
+      }
+      await ctx.reply(await this.commands.message(ctx.from));
     });
     dm.on("callback_query:data", async (ctx) => {
       await ctx.answerCallbackQuery().catch(() => undefined);

@@ -97,6 +97,11 @@ export interface TurnOptions {
    * (`messages.channel`). Default `web`.
    */
   channel?: MessageChannel;
+  /**
+   * F11: el mensaje llegó como nota de voz y su texto es la transcripción;
+   * cuánto duraba (`messages.voice_seconds`). Sin él, se escribió.
+   */
+  voiceSeconds?: number;
 }
 
 @Injectable()
@@ -354,6 +359,8 @@ export class ChatService {
           const all = await this.repo.listMessages(tx, chatId);
           let previous = all;
           let retitle = false;
+          // F11 PR6: la duración de la nota de voz que se vuelve a enviar.
+          let resentVoiceSeconds: number | null = null;
           if (all.some((m) => m.id === userMessage.id)) {
             const last = lastTurnOf(all, userMessage.id);
             // Un mensaje viejo con el mismo id, o el turno sigue corriendo: un
@@ -367,6 +374,13 @@ export class ChatService {
             // reintento llega igual. Un título que no cambia es una llamada
             // utility de más, nada más.
             retitle = last.index === 0;
+            // Una nota de voz reintentada desde la web llega con su mismo
+            // texto: sigue siendo la nota. Editada, ya la escribió el creator
+            // (revisión del PR6: el reenvío borraba la marca).
+            const old = all[last.index]!;
+            if (old.voiceSeconds !== null && textOf(old.parts) === textOf(userMessage.parts)) {
+              resentVoiceSeconds = old.voiceSeconds;
+            }
             await this.dropStaleReply(tx, last.staleReply);
             await this.repo.deleteMessage(tx, userMessage.id);
             previous = all.slice(0, last.index);
@@ -390,6 +404,7 @@ export class ChatService {
             role: "user",
             parts: attached.parts,
             channel,
+            voiceSeconds: options.voiceSeconds ?? resentVoiceSeconds,
           });
           // Ya con el id guardado. Un reintento o una edición borraron el
           // mensaje arriba, y el SET NULL de la FK los dejó sueltos un instante.
@@ -1130,4 +1145,14 @@ function toHistorySummary(row: ChatSummaryRow | undefined): HistorySummary | nul
     throughMessageId: row.throughMessageId,
     cards: row.cards as CompressedCardOutput[],
   };
+}
+
+/** El texto de un mensaje, sin los archivos: para saber si un reenvío lo cambió. */
+function textOf(parts: unknown): string {
+  if (!Array.isArray(parts)) return "";
+  return parts
+    .flatMap((p: { type?: unknown; text?: unknown }) =>
+      p.type === "text" && typeof p.text === "string" ? [p.text] : [],
+    )
+    .join(" ");
 }

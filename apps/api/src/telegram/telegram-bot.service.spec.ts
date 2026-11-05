@@ -168,8 +168,9 @@ describe("TelegramBotService: a dónde va cada mensaje", () => {
     const conversation = {
       text: vi.fn(() => Promise.resolve()),
       media: vi.fn(() => Promise.resolve()),
+      voice: vi.fn(() => Promise.resolve()),
     };
-    const commands = { message: vi.fn((_from: unknown, kind: string) => Promise.resolve(kind)) };
+    const commands = { message: vi.fn(() => Promise.resolve("no lo leo")) };
     const s = new TelegramBotService(
       commands as never,
       conversation as never,
@@ -191,7 +192,7 @@ describe("TelegramBotService: a dónde va cada mensaje", () => {
     return { conversation, commands, respuestas, enviar };
   }
 
-  it("foto y documento van a la conversación; la voz y el sticker reciben su aviso", async () => {
+  it("foto, documento y voz van a la conversación; el sticker y el video reciben su aviso", async () => {
     const t = await montarRuteo();
     await t.enviar({
       photo: [{ file_id: "p", file_unique_id: "p", width: 10, height: 10 }],
@@ -240,7 +241,40 @@ describe("TelegramBotService: a dónde va cada mensaje", () => {
         { kind: "rejected", filename: null, label: "un video", reason: "unsupported" },
       ],
     ]);
-    expect(t.respuestas).toEqual(["voice", "other", "other"]);
+    // F11 PR6: la nota de voz se transcribe; el sticker y el video suelto, no.
+    expect(t.conversation.voice).toHaveBeenCalledTimes(1);
+    expect(t.respuestas).toEqual(["no lo leo", "no lo leo"]);
     expect(t.conversation.text).not.toHaveBeenCalled();
+  });
+
+  it("nota de voz y audio suelto se transcriben, con duración y caption; en un álbum, el audio va con su aviso", async () => {
+    const t = await montarRuteo();
+    await t.enviar({ voice: { file_id: "v", file_unique_id: "v", duration: 42, file_size: 900 } });
+    await t.enviar({
+      audio: { file_id: "a", file_unique_id: "a", duration: 61, file_name: "cliente.m4a" },
+      caption: "es de mi cliente",
+    });
+    await t.enviar({
+      audio: { file_id: "b", file_unique_id: "b", duration: 5, file_name: "uno.mp3" },
+      media_group_id: "g2",
+    });
+    await t.enviar({
+      video_note: { file_id: "n", file_unique_id: "n", length: 1, duration: 3 },
+    });
+    const notas = t.conversation.voice.mock.calls.map((c) => (c as unknown[])[3]);
+    expect(notas).toEqual([
+      { voice: { fileId: "v", fileSize: 900, seconds: 42 }, caption: undefined },
+      { voice: { fileId: "a", fileSize: undefined, seconds: 61 }, caption: "es de mi cliente" },
+    ]);
+    const enAlbum = t.conversation.media.mock.calls.map((c) => (c as unknown[])[3]);
+    expect(enAlbum).toEqual([
+      {
+        media: { kind: "rejected", filename: "uno.mp3", label: "un audio", reason: "audio" },
+        caption: undefined,
+        albumId: "g2",
+      },
+    ]);
+    // La video-nota no se lee.
+    expect(t.respuestas).toEqual(["no lo leo"]);
   });
 });

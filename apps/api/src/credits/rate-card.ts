@@ -1,6 +1,11 @@
 import type { LanguageModelUsage } from "ai";
 import { creditReason, planTier } from "../db/schema.js";
-import type { AiTaskKind, ImageTaskKind, MemoryTaskKind } from "../ai/provider-registry.js";
+import type {
+  AiTaskKind,
+  ImageTaskKind,
+  MemoryTaskKind,
+  NonLanguageTaskKind,
+} from "../ai/provider-registry.js";
 
 // F5 (ADR-012 addendum, 2026-08-09): la unidad normalizada del ledger.
 // Nunca tokens directos (no expresan el costo de una imagen), nunca
@@ -22,10 +27,13 @@ export type CreditReason = (typeof creditReason.enumValues)[number];
  * Las de imagen (F10) tampoco: una imagen cuesta lo mismo siempre
  * (`flat.image_generation`, por imagen), sin importar los tokens que el
  * proveedor reporte por ella.
+ *
+ * Ni la búsqueda web ni la transcripción (F11): no son modelos de texto, y
+ * cobran con tarifa fija (`flat.web_search`, `flat.audio_transcription`).
  */
 export type TokenBilledTaskKind = Exclude<
   AiTaskKind,
-  "trends_search" | "trends_structure" | "web_search" | ImageTaskKind | MemoryTaskKind
+  "trends_search" | "trends_structure" | NonLanguageTaskKind | ImageTaskKind | MemoryTaskKind
 >;
 
 export interface TokenRate {
@@ -110,6 +118,15 @@ const V1: RateCard = {
     // Entró a la tabla v1 (y v2, que la extiende) sin subir versión: es una
     // razón nueva, ningún asiento viejo la usa.
     web_search: 75,
+    // F11: un minuto iniciado de nota de voz transcrita (ADR-030), cobrado con
+    // `spend({ count: minutos })`. Sale de Groq, el principal ($0.00067 por
+    // minuto): la misma relación de ~15k unidades por dólar da 10. El
+    // respaldo (OpenAI, 4.5× más caro) cobra igual, como los dos generadores
+    // de imagen: cuando cae, el negocio absorbe la diferencia. Por minuto
+    // iniciado, una nota de 12 s paga 60: ese es el margen (decisión de Jose,
+    // 2026-11-03). Un creator con 20 notas de un minuto al día gasta ~20% de
+    // su cuota en transcribir. Sin subir versión, igual que `web_search`.
+    audio_transcription: 10,
     // `ritmo_narration` NO está acá, y no es un olvido: se cobra por tokens
     // (perThousandTokens.analytics_narration), no con tarifa fija, porque su
     // costo depende del texto que produce.

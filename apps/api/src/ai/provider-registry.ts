@@ -1,10 +1,17 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI, google } from "@ai-sdk/google";
+import { createGroq } from "@ai-sdk/groq";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";
-import { createProviderRegistry, wrapLanguageModel, type ImageModel, type LanguageModel } from "ai";
+import {
+  createProviderRegistry,
+  wrapLanguageModel,
+  type ImageModel,
+  type LanguageModel,
+  type TranscriptionModel,
+} from "ai";
 import { createOpenRouterImages, OPENROUTER_BASE_URL } from "./openrouter-images.js";
 
 // Capa de proveedor de ADR-004: los modelos se nombran "proveedor:modelo"
@@ -66,6 +73,12 @@ export const PROVIDERS = {
     envKey: "XAI_API_KEY",
     create: (apiKey) => createXai({ apiKey }),
   },
+  // F11: transcripción de notas de voz (whisper-large-v3-turbo, ADR-030).
+  // También tiene modelos de texto, que nadie usa: ninguno pasó la suite.
+  groq: {
+    envKey: "GROQ_API_KEY",
+    create: (apiKey) => createGroq({ apiKey }),
+  },
   // F10.7: Muse (Meta) y MAI-Image (Microsoft) con una sola key. Adapter
   // propio y solo de imágenes: ver ai/openrouter-images.ts.
   openrouter: {
@@ -121,6 +134,9 @@ export const AI_TASK_KINDS = [
   // servicio de búsqueda (Brave) que cobra por consulta. Tiene fila para que
   // `pnpm gasto` la vea (`search_queries` = 1, precio en model-prices.ts).
   "web_search",
+  // F11: transcribir una nota de voz de Telegram (ADR-030). No es un modelo de
+  // texto: se mide en segundos de audio (`ai_usage_events.audio_seconds`).
+  "transcription",
 ] as const;
 export type AiTaskKind = (typeof AI_TASK_KINDS)[number];
 
@@ -133,6 +149,9 @@ export type ImageTaskKind = "image_generate" | "image_edit";
  */
 export type MemoryTaskKind = "memory_index" | "memory_search";
 
+/** Las que no piden un modelo de texto: no se enrutan por tier ni se cobran por tokens. */
+export type NonLanguageTaskKind = "web_search" | "transcription";
+
 /**
  * Las tareas que se enrutan por tier.
  *
@@ -144,7 +163,7 @@ export type MemoryTaskKind = "memory_index" | "memory_search";
  */
 export type RoutedTaskKind = Exclude<
   AiTaskKind,
-  "trends_search" | "web_search" | ImageTaskKind | MemoryTaskKind
+  "trends_search" | NonLanguageTaskKind | ImageTaskKind | MemoryTaskKind
 >;
 
 // Tiers de modelo (F4.5, addendum ADR-004): AI_MODEL_CHAT es el moat
@@ -225,6 +244,21 @@ export const DEFAULT_IMAGE_MODEL_ID = "google:gemini-3.1-flash-image";
  */
 export const DEFAULT_EMBEDDING_MODEL_ID = "google:gemini-embedding-001";
 
+/**
+ * La cadena de transcripción de notas de voz cuando nadie configuró
+ * AI_MODEL_TRANSCRIBE (F11, ADR-030): Groq de principal (bake-off del
+ * 2026-11-01, decisión de Jose: 4.5× más barato) y OpenAI de respaldo.
+ *
+ * Default propio y no AI_MODEL, como las imágenes: un modelo de texto no
+ * transcribe. Solo se valida con el bot prendido (env.ts): sin Telegram nadie
+ * transcribe, y CI no tiene por qué tener la key de Groq.
+ */
+export const DEFAULT_TRANSCRIPTION_CHAIN =
+  "groq:whisper-large-v3-turbo,openai:gpt-4o-mini-transcribe";
+
+/** Los proveedores con modelos de transcripción en el AI SDK que probamos en el bake-off. */
+export const TRANSCRIPTION_PROVIDERS = ["groq", "openai"] as const;
+
 /** Cuántas dimensiones guarda la memoria (≤ 2000: el tope del índice HNSW de pgvector). */
 export const EMBEDDING_DIMENSIONS = 1536;
 
@@ -241,6 +275,8 @@ export type ModelResolver = (modelId?: string) => LanguageModel;
 /** El modelo ya resuelto (nunca el id en texto que `ImageModel` también admite). */
 export type ResolvedImageModel = Exclude<ImageModel, string>;
 export type ImageModelResolver = (modelId: string) => ResolvedImageModel;
+/** El modelo ya resuelto (nunca el id en texto que `TranscriptionModel` también admite). */
+export type ResolvedTranscriptionModel = Exclude<TranscriptionModel, string>;
 
 /**
  * El esfuerzo de razonamiento que se puede pedir con `@` (F10.7): el vocabulario
@@ -412,5 +448,20 @@ export function createImageModelResolver(source: EnvSource): ImageModelResolver 
   return (modelId: string): ResolvedImageModel => {
     assertConfigured(modelId);
     return registry.imageModel(modelId as `${string}:${string}`);
+  };
+}
+
+/**
+ * Lo mismo para la transcripción (F11). Groq y OpenAI la exponen por el mismo
+ * registry; un proveedor sin modelos de transcripción truena al resolver, pero
+ * env.ts ya lo limita a TRANSCRIPTION_PROVIDERS.
+ */
+export function createTranscriptionModelResolver(
+  source: EnvSource,
+): (modelId: string) => ResolvedTranscriptionModel {
+  const { registry, assertConfigured } = buildRegistry(source);
+  return (modelId: string): ResolvedTranscriptionModel => {
+    assertConfigured(modelId);
+    return registry.transcriptionModel(modelId as `${string}:${string}`);
   };
 }

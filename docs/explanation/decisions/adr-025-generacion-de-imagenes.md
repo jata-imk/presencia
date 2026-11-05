@@ -172,7 +172,7 @@ Desde `ai` 7.0.1xx, `generateImage` vuelve a llamar al modelo cuando responde si
 ## Addendum (2026-10-06, F10.7 PR5) — la cadena de respaldo de imagen
 
 - **`AI_MODEL_IMAGE` es una cadena**, como las de texto (ADR-004) pero sin `@esfuerzo`. El primero es el principal. `AI_MODEL_IMAGE_ALT` siguió siendo de un solo modelo hasta el PR6, que la volvió obsoleta.
-- **`FallbackImageProvider`** (`images/fallback-image.provider.ts`) aplica la misma regla que la cadena de texto (`isFallbackError`):
+- **`FallbackImageProvider`** (`images/fallback-image.provider.ts`) aplica la misma regla que la cadena de texto (`isFallbackError`). Desde F11 PR6, con el loop compartido `runFallbackChain` (`ai/fallback.ts`), el mismo de la transcripción:
   - cae al siguiente con 5xx, 408, 409, 429, sin saldo, red o timeout;
   - un reintento por generador antes de pasar al siguiente, salvo tras un timeout;
   - **un bloqueo nunca pasa al siguiente**: probar con otro generador una imagen que uno se negó a dibujar sería esquivar la moderación.

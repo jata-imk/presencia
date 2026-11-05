@@ -69,15 +69,14 @@ describe("TelegramCommandsService", () => {
   });
 
   it("un mensaje de quien no está conectado recibe cómo conectarse", async () => {
-    expect(await crear({ resolveUser: () => Promise.resolve(null) }).message(yo, "voice")).toBe(
+    expect(await crear({ resolveUser: () => Promise.resolve(null) }).message(yo)).toBe(
       copy.notLinked(webUrl),
     );
   });
 
-  it("al conectado: la voz llega pronto (PR6); lo demás no se lee", async () => {
+  it("al conectado: eso no se lee (la voz ya va a la conversación, PR6)", async () => {
     const conectado = crear({ resolveUser: () => Promise.resolve("u1") });
-    expect(await conectado.message(yo, "voice")).toBe(copy.voiceSoon);
-    expect(await conectado.message(yo, "other")).toBe(copy.unsupported);
+    expect(await conectado.message(yo)).toBe(copy.unsupported);
   });
 
   it("todo lo que dice el bot tutea y lleva a Configuración cuando hace falta", () => {

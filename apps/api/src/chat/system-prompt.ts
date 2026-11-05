@@ -161,7 +161,12 @@ const TELEGRAM_INSTRUCTION =
   "pantallas de la web (el menú ＋, «Usar una que adjuntaste», el panel de la " +
   "publicación): aquí no existen. Cada borrador que crees le llega como un " +
   "mensaje con un botón para abrirlo en Presencia, donde lo edita, le pone " +
-  "imagen y lo programa; si algo solo se puede hacer en la web, díselo así.";
+  "imagen y lo programa; si algo solo se puede hacer en la web, díselo así. " +
+  // F11 PR6: las notas de voz llegan como su transcripción automática (ADR-030).
+  "Muchos mensajes son notas de voz transcritas en automático: pueden traer " +
+  "muletillas, frases a medias y nombres propios mal oídos (lugares, marcas, " +
+  "personas). Entiende la intención sin corregirle cómo habla, y si un nombre " +
+  "importa para el borrador y suena raro, pregúntale cómo se escribe.";
 
 /** Lo que cambia según el canal del turno; null en la web (el prompt base ya es de la web). */
 export function channelInstruction(channel: string): string | null {

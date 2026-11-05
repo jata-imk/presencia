@@ -26,6 +26,8 @@ export interface InsertAiUsageEventInput {
   searchQueries: number | null;
   // Imágenes producidas (F10). `null` = la llamada no dibuja.
   imagesCount: number | null;
+  // Segundos de audio transcritos (F11). `null` = la llamada no transcribe.
+  audioSeconds?: number | null;
   // F10.7: el principal pedido si respondió un respaldo; `null` = el principal.
   fallbackFrom: string | null;
   // Crudo del proveedor (usage + providerMetadata por step, finishReason).

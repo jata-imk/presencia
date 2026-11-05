@@ -119,9 +119,10 @@ async function main() {
       cached_input_tokens: number | null;
       images_count: number | null;
       search_queries: number | null;
+      audio_seconds: number | null;
     }>(
       `select created_at, provider, model, task_kind, input_tokens, output_tokens,
-              cached_input_tokens, images_count, search_queries
+              cached_input_tokens, images_count, search_queries, audio_seconds
          from ai_usage_events where created_at >= $1`,
       [desde],
     );
@@ -132,6 +133,8 @@ async function main() {
         cacheada: r.cached_input_tokens,
         imagenes: r.images_count,
         busquedas: r.search_queries,
+        // F11: las notas de voz transcritas (Groq cobra mínimo 10 s por llamada).
+        audioSegundos: r.audio_seconds,
       });
     }
   } finally {

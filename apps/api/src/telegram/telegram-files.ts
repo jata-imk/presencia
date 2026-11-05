@@ -24,8 +24,32 @@ export interface TelegramFile {
   photo: boolean;
 }
 
-/** Por qué un archivo no entra, sin bajarlo. `audio`: llega con las notas de voz (F11 PR6). */
+/**
+ * Por qué un archivo no entra, sin bajarlo. `audio`: un audio dentro de un
+ * álbum; suelto, se transcribe (F11 PR6, `voiceOf`).
+ */
 export type TelegramRejection = "too_big" | "heic" | "unsupported" | "audio";
+
+/** Una nota de voz o un audio que se transcribe (F11 PR6). */
+export interface TelegramVoice {
+  fileId: string;
+  fileSize: number | undefined;
+  /** La duración que da Telegram (entera y obligatoria en `Voice` y `Audio`). */
+  seconds: number;
+}
+
+/**
+ * La nota de voz o el audio suelto de un mensaje, o null. Telegram manda un
+ * mp3 o un m4a como `audio` (con duración); uno que llegue "como archivo" es
+ * un `document` y sigue el camino de los archivos. La duración viene antes de
+ * bajar nada: con ella se rechaza una nota de más de 10 minutos y se calcula
+ * el cobro.
+ */
+export function voiceOf(message: Message): TelegramVoice | null {
+  const voice = message.voice ?? message.audio;
+  if (!voice) return null;
+  return { fileId: voice.file_id, fileSize: voice.file_size, seconds: voice.duration };
+}
 
 export type TelegramMedia =
   | { kind: "file"; file: TelegramFile }
@@ -110,7 +134,13 @@ export async function downloadTelegramFile(
   {
     maxBytes = TELEGRAM_DOWNLOAD_MAX_BYTES,
     fetchImpl = fetch,
-  }: { maxBytes?: number; fetchImpl?: typeof fetch } = {},
+    signal,
+  }: {
+    maxBytes?: number;
+    fetchImpl?: typeof fetch;
+    /** F11 PR6: el detener del creator corta la bajada (una nota de 20 MB no se baja para tirarla). */
+    signal?: AbortSignal;
+  } = {},
 ): Promise<Uint8Array> {
   let file;
   try {
@@ -129,7 +159,9 @@ export async function downloadTelegramFile(
   let response: Response;
   try {
     response = await fetchImpl(`https://api.telegram.org/file/bot${token}/${file.file_path}`, {
-      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+      signal: signal
+        ? AbortSignal.any([AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS), signal])
+        : AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
     });
   } catch (error) {
     // Sin el error original: su texto (o su `cause`) podría llevar la URL.

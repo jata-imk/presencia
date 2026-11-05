@@ -276,26 +276,38 @@ export class TelegramSink implements TurnSink {
 
   /** Un mensaje que se queda. Nunca lanza: lo que no salió se registra. */
   private async send(html: string, keyboard?: InlineKeyboardMarkup): Promise<void> {
-    const { api, place } = this.options;
-    const other = {
-      ...(place.threadId !== null ? { message_thread_id: place.threadId } : {}),
-      ...(keyboard ? { reply_markup: keyboard } : {}),
-      link_preview_options: { is_disabled: true },
-    };
+    await sendHtml(this.options.api, this.options.place, html, keyboard);
+  }
+}
+
+/**
+ * Un mensaje HTML en el tema. Si Telegram no acepta el HTML (no debería: sale
+ * de tokens o de `escapeHtml`), el mismo texto sin formato. Nunca lanza.
+ * También lo usa el eco de una nota de voz (F11 PR6).
+ */
+export async function sendHtml(
+  api: TelegramApi,
+  place: TelegramPlace,
+  html: string,
+  keyboard?: InlineKeyboardMarkup,
+): Promise<void> {
+  const other = {
+    ...(place.threadId !== null ? { message_thread_id: place.threadId } : {}),
+    ...(keyboard ? { reply_markup: keyboard } : {}),
+    link_preview_options: { is_disabled: true },
+  };
+  try {
+    await api.sendMessage(place.telegramChatId, html, { ...other, parse_mode: "HTML" });
+  } catch (error) {
+    if (!isParseError(error)) {
+      console.error("[telegram] No se pudo mandar la respuesta:", error);
+      return;
+    }
+    console.warn("[telegram] Telegram no aceptó el HTML; va sin formato:", error);
     try {
-      await api.sendMessage(place.telegramChatId, html, { ...other, parse_mode: "HTML" });
-    } catch (error) {
-      if (!isParseError(error)) {
-        console.error("[telegram] No se pudo mandar la respuesta:", error);
-        return;
-      }
-      // El HTML no pasó (no debería: sale de tokens). Sin formato, pero llega.
-      console.warn("[telegram] Telegram no aceptó el HTML; va sin formato:", error);
-      try {
-        await api.sendMessage(place.telegramChatId, toPlain(html), other);
-      } catch (plainError) {
-        console.error("[telegram] No se pudo mandar la respuesta:", plainError);
-      }
+      await api.sendMessage(place.telegramChatId, toPlain(html), other);
+    } catch (plainError) {
+      console.error("[telegram] No se pudo mandar la respuesta:", plainError);
     }
   }
 }
