@@ -274,7 +274,7 @@ describe("ChatService · el turno por un TurnSink", () => {
   );
 
   it(
-    "una nota de voz guarda su duración y la devuelve como metadata (F11 PR6)",
+    "una nota de voz guarda su duración y su canal, y los devuelve como metadata (F11 PR6, PR7a)",
     { timeout: 20_000 },
     async () => {
       const { toUIMessage } = await import("./chat-summary.js");
@@ -289,13 +289,16 @@ describe("ChatService · el turno por un TurnSink", () => {
       const [user, reply] = await filas();
       expect(user).toMatchObject({ role: "user", voiceSeconds: 42 });
       expect(reply!.voiceSeconds).toBeNull();
-      expect(toUIMessage(user!).metadata).toEqual({ voice: { seconds: 42 } });
-      expect(toUIMessage(reply!).metadata).toBeUndefined();
+      expect(toUIMessage(user!).metadata).toEqual({
+        voice: { seconds: 42 },
+        channel: "telegram",
+      });
+      expect(toUIMessage(reply!).metadata).toEqual({ channel: "telegram" });
     },
   );
 
   it(
-    "reintentar una nota de voz desde la web conserva su duración; editarla, no (revisión del PR6)",
+    "reintentar una nota de voz desde la web conserva su duración y su canal; editarla, no (revisión del PR6)",
     { timeout: 30_000 },
     async () => {
       const nota = userMsg("hazme tres ideas para reels");
@@ -312,7 +315,7 @@ describe("ChatService · el turno por un TurnSink", () => {
         new SinkDePrueba(),
       );
       await hastaQueHaya(2);
-      expect((await filas())[0]!.voiceSeconds).toBe(42);
+      expect((await filas())[0]).toMatchObject({ voiceSeconds: 42, channel: "telegram" });
       // Editada: ya no es la nota.
       await crear(modeloQueContesta("Editado.")).streamChat(
         userId,
@@ -321,7 +324,7 @@ describe("ChatService · el turno por un TurnSink", () => {
         new SinkDePrueba(),
       );
       await hastaQueHaya(2);
-      expect((await filas())[0]!.voiceSeconds).toBeNull();
+      expect((await filas())[0]).toMatchObject({ voiceSeconds: null, channel: "web" });
     },
   );
 

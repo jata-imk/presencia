@@ -74,7 +74,7 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
   - **Al canjearlo, el hash se queda en la fila activa.** Así, reabrir el mismo enlace contesta "ya conectado". Si un Telegram ya conectado abre un código de otra cuenta, recibe "ese enlace ya no sirve": decirle "ya conectado" haría creer al dueño de ese código que se conectó.
 - **Una fila por usuario y canal en `channel_links`** (migración 0059), que pasa por pendiente → activa → revocada y vuelve a pendiente al reconectar.
   - **Un Telegram activo en una sola cuenta,** con índice único parcial sobre las activas: una revocada no bloquea volver a vincular.
-  - Si el Telegram ya está en otra cuenta, el bot pide `/disconnect`, y el código no se gasta.
+  - Si el Telegram ya está en otra cuenta, el bot pide `/disconnect`, y el código no se gasta. Desde el PR7a también se anota en la fila (`link_error`) para que la web lo diga.
   - Dos `/start` simultáneos con el mismo código canjean una sola vez: el `UPDATE` exige que la fila siga pendiente con ese hash.
 - **Leer sin tenant con la policy `worker_scan`,** no con funciones `SECURITY DEFINER` como decía el plan. Es el patrón que el repo ya usa y prueba (0017, 0055).
   - El bot no sabe de quién es un update hasta buscarlo: `external_id` → `user_id` y hash del código → `user_id`.
@@ -141,7 +141,7 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
 
 - **La transcripción es el texto del mensaje del creator,** por el mismo turno:
   - el título, la memoria y la compactación la leen sin cambios;
-  - `messages.voice_seconds` (migración `0061`) guarda cuánto duraba, y la web la recibe como `metadata.voice` para pintar "Nota de voz · 0:42" (PR7);
+  - `messages.voice_seconds` (migración `0061`) guarda cuánto duraba, y la web la recibe como `metadata.voice` y pinta "Nota de voz · 0:42" (PR7a);
   - el caption de un audio va después de la transcripción.
   - **El audio no se guarda.**
 - **Qué entra:** `voice` y `audio` sueltos (`voiceOf`, `telegram/telegram-files.ts`).
@@ -181,6 +181,26 @@ Es el mínimo común entre plataformas: perderíamos justo los temas, los drafts
   - **Aceptado: la duración de un `audio` la pone quien lo manda.** Un mp3 que dice durar 30 s y dura una hora pasa el tope de 10 minutos y cobra un minuto. Eso cuesta centavos de Groq, y el turno se sigue cobrando por tokens. Lo que sí se cierra es que entre al turno un texto que la web rechazaría: una transcripción de más de 50k caracteres (`MAX_MESSAGE_CHARS`) recibe el aviso de nota larga.
   - **Aceptado: cobrada y sin mensaje.** Si después de transcribir falla crear el chat, la cuota se acabó por un turno web en ese instante, o borraron el chat, la nota queda cobrada y el texto solo vive en el eco. Son carreras de milisegundos; el eco deja ver lo que se dijo para reenviarlo.
 - Cadena, respaldo y cobro: addendum F11 PR6 de ADR-004 y de ADR-012.
+
+## La web: Configuración y notas de voz (F11 PR7a)
+
+Diseño en Claude Design, proyecto "Presencia - Chat", `Chat Telegram.html`.
+
+- **Configuración → Canales conectados** tiene dos secciones: "Chatear desde" (Telegram) arriba de "Redes para publicar" (PostFast). Hablar con Presencia y publicar por ti son cosas distintas.
+  - Sin bot en el servidor (`state: "unavailable"`), la sección de Telegram no se pinta.
+  - El estado lo dice `GET /api/telegram/link`, que ahora trae también `botUsername` para el "Abrir Telegram" de una cuenta conectada (`null` mientras el bot no termina de arrancar).
+- **"Ya conectada a otro perfil" llega a la web** (decisión de Jose, 2026-11-04). Antes solo lo decía el bot, y la web seguía en "Esperando" hasta que el enlace vencía.
+  - `channel_links.link_error` (migración `0062`, enum `channel_link_error`) se anota cuando el canje da `taken`, y el estado sale como `taken`. Un CHECK lo deja solo en filas pendientes.
+  - Se anota con el tenant del dueño del código (la policy de siempre) y solo si la fila sigue pendiente con ESE hash: un enlace regenerado mientras tanto no hereda el aviso. Si anotarlo falla, el bot contesta igual.
+  - El código sigue sin gastarse: si el creator desconecta allá y reabre el mismo enlace, conecta. Por eso la web sigue preguntando mientras el enlace no vence.
+  - Se queda aunque el enlace venza (regenerar sin desconectar allá fallaría igual). Generar otro enlace, conectar o desconectar lo limpian.
+- **La web se entera sola:** nadie le avisa cuando el creator toca Iniciar, así que pregunta cada 3 s mientras el enlace está `waiting` o `taken`, no ha vencido y la pestaña está visible (`use-telegram-link.ts`). Al volver a la pestaña pregunta de inmediato. La cuenta regresiva es local y marca vencido sin esperar al servidor.
+- **El enlace (con el código) vive solo en memoria** (`telegram-link-store.ts`), nunca en `localStorage`: quien lo tenga conecta su Telegram a esta cuenta. Tras recargar con un enlace pendiente, la web ya no lo tiene (el servidor solo guarda su hash): la tarjeta sigue esperando, sin QR ni "Abrir Telegram", y ofrece "Generar otro". No lo regenera sola: mataría un enlace que el creator quizá está por confirmar en el cel.
+- **El deep link es un `<a>`**, no un `window.open` después de un `await` (el navegador lo bloquea). El QR (`qrcode.react`) usa tokens fijos en los dos temas (`--qr-*`): un QR invertido no lo leen todas las cámaras. En el cel va escondido tras "¿Telegram está en otro dispositivo? Mostrar QR".
+- **La nota de voz en el chat:** "Nota de voz · 0:42" arriba del texto, dentro de la burbuja, con la etiqueta del canal. **Sin botón para escucharla** (decisión de Jose): el audio no se guarda.
+  - `toUIMessage` manda `metadata.channel` cuando el mensaje no llegó por la web.
+  - Reintentar desde la web un mensaje con el mismo texto conserva su canal, además de `voice_seconds`: lo escribió (o lo dijo) por Telegram.
+- `seed:dev` siembra el chat "Nota de voz desde Telegram" en "Estados del turno", para ver la etiqueta sin bot.
 
 ## Riesgo anotado: otros canales no tienen estas capacidades
 

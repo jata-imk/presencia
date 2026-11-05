@@ -62,7 +62,7 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
     const codigo = codigoDe(link.url);
     expect(looksLikeLinkToken(codigo)).toBe(true);
     expect(hashLinkToken(codigo)).toHaveLength(64);
-    expect(await links.status(userId)).toMatchObject({
+    expect(await links.status(userId, null)).toMatchObject({
       state: "waiting",
       expiresAt: link.expiresAt,
     });
@@ -73,7 +73,7 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
     const codigo = codigoDe((await links.createLink(userId, "bot")).url);
 
     expect(await links.redeem(codigo, telegram, "creator_mid")).toEqual({ kind: "linked" });
-    expect(await links.status(userId)).toMatchObject({
+    expect(await links.status(userId, null)).toMatchObject({
       state: "connected",
       username: "creator_mid",
     });
@@ -89,7 +89,7 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
     const hace20min = new Date(Date.now() - 20 * 60_000);
     const codigo = codigoDe((await links.createLink(userId, "bot", hace20min)).url);
     expect(await links.redeem(codigo, tgId(), null)).toEqual({ kind: "expired" });
-    expect(await links.status(userId)).toMatchObject({ state: "expired" });
+    expect(await links.status(userId, null)).toMatchObject({ state: "expired" });
   });
 
   it("un enlace nuevo invalida el anterior", async () => {
@@ -104,11 +104,46 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
     const otra = await nuevoUsuario();
     await links.redeem(codigoDe((await links.createLink(otra, "bot")).url), telegram, null);
 
-    const codigo = codigoDe((await links.createLink(userId, "bot")).url);
+    const link = await links.createLink(userId, "bot");
+    const codigo = codigoDe(link.url);
     expect(await links.redeem(codigo, telegram, null)).toEqual({ kind: "taken" });
+    // La web deja de decir "Esperando" (PR7a).
+    expect(await links.status(userId, "bot")).toEqual({
+      state: "taken",
+      username: null,
+      linkedAt: null,
+      expiresAt: link.expiresAt,
+      botUsername: "bot",
+    });
     // El código no se gastó: tras desconectar en la otra cuenta, sí conecta.
     expect(await links.unlinkByExternalId(telegram)).toBe(true);
     expect(await links.redeem(codigo, telegram, null)).toEqual({ kind: "linked" });
+    expect(await links.status(userId, null)).toMatchObject({ state: "connected" });
+  });
+
+  it("'ya en otra cuenta' se limpia al generar otro enlace o al cancelar", async () => {
+    const telegram = tgId();
+    const otra = await nuevoUsuario();
+    await links.redeem(codigoDe((await links.createLink(otra, "bot")).url), telegram, null);
+
+    await links.redeem(codigoDe((await links.createLink(userId, "bot")).url), telegram, null);
+    expect(await links.status(userId, null)).toMatchObject({ state: "taken" });
+    await links.createLink(userId, "bot");
+    expect(await links.status(userId, null)).toMatchObject({ state: "waiting" });
+
+    await links.redeem(codigoDe((await links.createLink(userId, "bot")).url), telegram, null);
+    expect(await links.unlink(userId)).toBeNull();
+    expect(await links.status(userId, null)).toMatchObject({ state: "disconnected" });
+  });
+
+  it("'ya en otra cuenta' sigue aunque el enlace venza", async () => {
+    const telegram = tgId();
+    const otra = await nuevoUsuario();
+    await links.redeem(codigoDe((await links.createLink(otra, "bot")).url), telegram, null);
+    const codigo = codigoDe((await links.createLink(userId, "bot")).url);
+    await links.redeem(codigo, telegram, null);
+    const en20min = new Date(Date.now() + 20 * 60_000);
+    expect(await links.status(userId, null, en20min)).toMatchObject({ state: "taken" });
   });
 
   it("con un Telegram ya conectado no se genera otro enlace", async () => {
@@ -122,7 +157,7 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
 
     expect(await links.unlink(userId)).toBe(telegram);
     expect(await links.resolveUser(telegram)).toBeNull();
-    expect(await links.status(userId)).toMatchObject({ state: "disconnected" });
+    expect(await links.status(userId, null)).toMatchObject({ state: "disconnected" });
     // Desconectar de nuevo no avisa a nadie: ya no había vínculo activo.
     expect(await links.unlink(userId)).toBeNull();
 
@@ -156,7 +191,7 @@ describe("TelegramLinksService", { timeout: 30_000 }, () => {
     const codigo = codigoDe((await links.createLink(userId, "bot", hace20min)).url);
     // La app cree que es hace 20 min (el código "sigue vigente"); el UPDATE no.
     expect(await links.redeem(codigo, tgId(), null, hace20min)).toEqual({ kind: "invalid" });
-    expect(await links.status(userId)).toMatchObject({ state: "expired" });
+    expect(await links.status(userId, null)).toMatchObject({ state: "expired" });
   });
 
   it("de un Telegram que nadie conectó no se sabe de quién es", async () => {

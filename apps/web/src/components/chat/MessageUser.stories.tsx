@@ -107,3 +107,32 @@ export const EnEdicionConAdjuntos: Story = {
   name: "Adjuntos · en edición (se quedan igual)",
   args: { canEdit: true, editing: true, files: imagenes(2) },
 };
+
+// F11 PR7a: un mensaje que llegó como nota de voz (Claude Design "Chat Telegram"
+// §2.3). El texto es la transcripción; sin botón para escuchar (el audio no se
+// guarda).
+const TRANSCRIPCION =
+  "Oye, ayer fui a tres cafeterías en Santa Ana y los precios cambian un montón. Quiero hacer " +
+  "un carrusel comparando cuánto cuesta un americano y un latte en cada una, con un tono " +
+  "relajado, nada de reseña seria.";
+
+export const NotaDeVoz: Story = {
+  name: "Nota de voz · Telegram",
+  args: { text: TRANSCRIPCION, voice: { seconds: 42 }, channel: "telegram" },
+};
+
+export const NotaDeVozLarga: Story = {
+  name: "Nota de voz · 10:00",
+  args: { text: TRANSCRIPCION, voice: { seconds: 600 }, channel: "telegram" },
+};
+
+export const NotaDeVozUltima: Story = {
+  name: "Nota de voz, último (editable)",
+  args: { text: TRANSCRIPCION, voice: { seconds: 42 }, channel: "telegram", canEdit: true },
+};
+
+/** Robustez: la metadata trae la duración pero no el canal. */
+export const NotaDeVozSinCanal: Story = {
+  name: "Nota de voz sin canal",
+  args: { text: "Dame tres ideas.", voice: { seconds: 5 } },
+};

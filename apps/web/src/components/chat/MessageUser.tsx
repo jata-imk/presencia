@@ -1,7 +1,8 @@
-import { MAX_MESSAGE_CHARS } from "@presencia/shared";
+import { MAX_MESSAGE_CHARS, type ExternalChannel } from "@presencia/shared";
 import type { FileUIPart } from "ai";
-import { Copy, Paperclip, Pencil } from "lucide-react";
+import { Copy, Mic, Paperclip, Pencil, Send } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { formatMinSec } from "../../lib/format-duration.js";
 import { isSubmitKey, measureMessage, useAutoGrow } from "../../lib/use-message-input.js";
 import { MessageAttachments } from "./MessageAttachments.js";
 
@@ -23,9 +24,15 @@ import { MessageAttachments } from "./MessageAttachments.js";
 //
 // F10.9: un mensaje puede traer adjuntos (y nada de texto): van arriba, dentro
 // de la misma burbuja (Claude Design "Chat Adjuntos" §4).
+//
+// F11 PR7a: un mensaje que llegó como nota de voz lleva arriba "Nota de voz ·
+// 0:42" y el canal (Claude Design "Chat Telegram" §2.3). Sin botón para
+// escucharla: el audio no se guarda, el texto es la transcripción.
 export function MessageUser({
   text,
   files = [],
+  voice,
+  channel,
   canEdit = false,
   editing = false,
   onEdit,
@@ -35,6 +42,10 @@ export function MessageUser({
   text: string;
   /** F10.9: los adjuntos del mensaje (partes `file`). */
   files?: FileUIPart[];
+  /** F11: llegó como nota de voz, de tantos segundos. */
+  voice?: { seconds: number };
+  /** F11: el canal por el que llegó, si no fue la web. */
+  channel?: ExternalChannel;
   /** El último mensaje y sin turno en curso. */
   canEdit?: boolean;
   editing?: boolean;
@@ -75,6 +86,7 @@ export function MessageUser({
             hasFiles ? "flex flex-col gap-1 p-1" : "px-[15px] py-[11px]"
           }`}
         >
+          {voice && <VoiceHeader seconds={voice.seconds} channel={channel} />}
           {hasFiles && <MessageAttachments files={files} />}
           {text && (
             <p
@@ -119,6 +131,27 @@ export function MessageUser({
           </BelowAction>
         )}
       </div>
+    </div>
+  );
+}
+
+const CHANNEL_LABELS: Record<ExternalChannel, string> = {
+  telegram: "Telegram",
+  whatsapp: "WhatsApp",
+};
+
+/** "🎙 Nota de voz · 0:42 … ➤ Telegram", con un divisor arriba del texto. */
+function VoiceHeader({ seconds, channel }: { seconds: number; channel?: ExternalChannel }) {
+  return (
+    <div className="mb-2 flex items-center gap-1.5 border-b border-primary-divider pb-2 font-display text-[12px] font-semibold text-primary-fg">
+      <Mic size={13} strokeWidth={2} aria-hidden />
+      <span>Nota de voz · {formatMinSec(seconds)}</span>
+      {channel && (
+        <span className="ml-auto inline-flex items-center gap-1 pl-3 font-medium text-primary-fg-muted">
+          <Send size={11} strokeWidth={2} aria-hidden />
+          {CHANNEL_LABELS[channel]}
+        </span>
+      )}
     </div>
   );
 }

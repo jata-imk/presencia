@@ -19,6 +19,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import {
+  MESSAGE_CHANNELS,
   MESSAGE_STATUSES,
   MODOS_ESTRATEGIA,
   ATTACHMENT_KINDS,
@@ -44,7 +45,7 @@ export const messageRole = pgEnum("message_role", ["user", "assistant", "system"
 // F10.8.2: cómo terminó una respuesta (MESSAGE_STATUSES, en shared).
 export const messageStatus = pgEnum("message_status", MESSAGE_STATUSES);
 
-export const channel = pgEnum("channel", ["web", "telegram", "whatsapp"]);
+export const channel = pgEnum("channel", MESSAGE_CHANNELS);
 
 // F10.8: de dónde salió el título de un chat. `default` es el "Nuevo chat"
 // con que nace; `auto` lo puso el modelo tras la primera respuesta; `user`
@@ -94,6 +95,8 @@ export const imageGenerationStatus = pgEnum("image_generation_status", [
 ]);
 
 export const channelLinkStatus = pgEnum("channel_link_status", ["pending", "active", "revoked"]);
+// F11 PR7a: por qué un canje no conectó (channel_links.link_error).
+export const channelLinkError = pgEnum("channel_link_error", ["taken"]);
 
 export const socialAccountStatus = pgEnum("social_account_status", [
   "active",
@@ -770,6 +773,13 @@ export const channelLinks = pgTable(
     linkTokenExpiresAt: timestamp("link_token_expires_at", { withTimezone: true }),
     /** F11: el @usuario del canal al vincular, para que Configuración diga con quién. */
     username: text("username"),
+    /**
+     * F11 PR7a: por qué el último canje de este enlace no conectó, para que
+     * Configuración lo diga (`taken`: ese Telegram ya está en otra cuenta).
+     * Solo en una fila pendiente; generar otro enlace, conectar o desconectar
+     * lo limpian.
+     */
+    linkError: channelLinkError("link_error"),
     linkedAt: timestamp("linked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -787,6 +797,10 @@ export const channelLinks = pgTable(
     check(
       "channel_links_active_has_external",
       sql`${t.status} <> 'active' OR ${t.externalId} IS NOT NULL`,
+    ),
+    check(
+      "channel_links_error_only_pending",
+      sql`${t.linkError} IS NULL OR ${t.status} = 'pending'`,
     ),
   ],
 );

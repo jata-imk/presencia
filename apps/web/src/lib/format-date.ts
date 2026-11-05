@@ -10,3 +10,19 @@ export function formatShortDate(date: string | Date): string {
 // reemplazo es formatScheduleDateTime (lib/calendar/tz.ts), que recibe la
 // zona del usuario explícita. Las fechas de renovación de cuota siguen acá:
 // son un día, sin hora, y no dependen de la zona.
+
+/**
+ * "28 de oct de 2026" (F11 PR7a: desde cuándo está conectado Telegram). Con
+ * año, porque un vínculo puede tener más de uno; el mes corto, sin el punto
+ * que a veces pone `es-MX` ("oct.").
+ */
+export function formatDayMonthYear(date: string | Date): string {
+  const parts = new Intl.DateTimeFormat("es-MX", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).formatToParts(new Date(date));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("day")} de ${part("month").replace(/\.$/, "")} de ${part("year")}`;
+}

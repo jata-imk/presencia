@@ -1,4 +1,4 @@
-import { Info, Trash2 } from "lucide-react";
+import { Info, Trash2, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Modal } from "./Modal.js";
 import { Button } from "./Button.js";
@@ -12,11 +12,15 @@ import { ApiError } from "../../lib/api.js";
 // mutación se llama. Un futuro ajuste de esta UI (espaciado, a11y, copy
 // de carga) se aplica una vez, no dos veces sin garantía de que queden
 // sincronizadas.
+//
+// F11 PR7a: también confirma desconectar Telegram, que no borra nada: por eso
+// el ícono se puede cambiar y el aviso es opcional.
 export function ConfirmDeleteModal({
   titleId,
   title,
   description,
   warning,
+  icon: Icon = Trash2,
   confirmLabel = "Eliminar",
   confirmingLabel = "Eliminando…",
   errorFallback,
@@ -26,8 +30,9 @@ export function ConfirmDeleteModal({
 }: {
   titleId: string;
   title: string;
-  description: string;
-  warning: ReactNode;
+  description: ReactNode;
+  warning?: ReactNode;
+  icon?: LucideIcon;
   confirmLabel?: string;
   confirmingLabel?: string;
   errorFallback: string;
@@ -54,17 +59,19 @@ export function ConfirmDeleteModal({
     <Modal onClose={onClose} labelledBy={titleId} maxWidth="max-w-sm">
       <div className="flex justify-center">
         <div className="flex size-[52px] items-center justify-center rounded-full bg-error-bg">
-          <Trash2 size={22} strokeWidth={1.75} className="text-error" />
+          <Icon size={22} strokeWidth={1.75} className="text-error" aria-hidden />
         </div>
       </div>
       <h2 id={titleId} className="mt-3.5 text-center text-lg font-bold text-fg">
         {title}
       </h2>
       <p className="mt-1.5 text-center text-sm text-fg-secondary">{description}</p>
-      <div className="mt-4 flex gap-2 rounded-lg border border-line-focus bg-tint-plum p-3">
-        <Info size={14} strokeWidth={2} className="mt-0.5 shrink-0 text-accent" />
-        <p className="text-xs text-fg-secondary">{warning}</p>
-      </div>
+      {warning && (
+        <div className="mt-4 flex gap-2 rounded-lg border border-line-focus bg-tint-plum p-3">
+          <Info size={14} strokeWidth={2} className="mt-0.5 shrink-0 text-accent" />
+          <p className="text-xs text-fg-secondary">{warning}</p>
+        </div>
+      )}
       {error && <p className="mt-3 text-sm text-error">{error}</p>}
       <div className="mt-4 flex gap-2">
         <Button variant="secondary" onClick={onClose} disabled={submitting} className="flex-1">

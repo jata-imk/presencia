@@ -34,9 +34,10 @@ export function toUIMessage(row: MessageRow): UIMessage {
   // F10.8.2: solo si la respuesta no terminó completa (la card de estado).
   const metadata: ChatMessageMetadata = {};
   if (row.status !== "complete") metadata.status = row.status;
-  // F11: un mensaje que llegó como nota de voz (la etiqueta "Nota de voz · 0:42"
-  // de la web llega en el PR7 de F11; hasta entonces, la metadata solo viaja).
+  // F11: un mensaje que llegó como nota de voz (la web lo marca "Nota de voz ·
+  // 0:42") y por qué canal, si no fue la web (la etiqueta "Telegram", PR7a).
   if (row.voiceSeconds !== null) metadata.voice = { seconds: row.voiceSeconds };
+  if (row.channel !== "web") metadata.channel = row.channel;
   if (Object.keys(metadata).length > 0) message.metadata = metadata;
   return message;
 }

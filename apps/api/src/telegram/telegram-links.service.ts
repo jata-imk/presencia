@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Logger } from "@nestjs/common";
 import {
   TELEGRAM_LINK_TTL_MINUTES,
   type TelegramLinkDto,
@@ -23,6 +23,8 @@ export type RedeemResult = { kind: "linked" | "already_linked" | "invalid" | "ex
 
 @Injectable()
 export class TelegramLinksService {
+  private readonly logger = new Logger(TelegramLinksService.name);
+
   constructor(
     @Inject(DbService) private readonly db: DbService,
     @Inject(TelegramLinksRepository) private readonly repo: TelegramLinksRepository,
@@ -50,9 +52,13 @@ export class TelegramLinksService {
     };
   }
 
-  async status(userId: string, now = new Date()): Promise<TelegramLinkStatusDto> {
+  async status(
+    userId: string,
+    botUsername: string | null,
+    now = new Date(),
+  ): Promise<TelegramLinkStatusDto> {
     const row = await this.db.runWithTenant(userId, (tx) => this.repo.findOwn(tx));
-    return toStatus(row, now);
+    return { ...toStatus(row, now), botUsername };
   }
 
   /** Desconecta desde la web. Devuelve el id de Telegram que estaba activo, si había. */
@@ -93,7 +99,7 @@ export class TelegramLinksService {
       return { kind: "expired" };
     // Una cuenta tiene una sola fila de Telegram: si este Telegram está activo,
     // es en otra cuenta (la de `pending` sigue pendiente).
-    if (active) return { kind: "taken" };
+    if (active) return this.taken(pending, tokenHash);
 
     try {
       const linked = await this.db.runWithTenant(pending.userId, (tx) =>
@@ -103,9 +109,26 @@ export class TelegramLinksService {
       return { kind: linked ? "linked" : "invalid" };
     } catch (error) {
       // Este Telegram se activó en otra cuenta entre la lectura y la escritura.
-      if (isUniqueViolation(error, "channel_links_active_external")) return { kind: "taken" };
+      if (isUniqueViolation(error, "channel_links_active_external"))
+        return this.taken(pending, tokenHash);
       throw error;
     }
+  }
+
+  /**
+   * El canje no conectó porque ese Telegram ya está en otra cuenta: se anota
+   * en la fila pendiente para que la web deje de decir "Esperando" (PR7a). El
+   * código no se gasta. Si anotarlo falla, el bot contesta igual.
+   */
+  private async taken(pending: ChannelLinkRow, tokenHash: string): Promise<RedeemResult> {
+    try {
+      await this.db.runWithTenant(pending.userId, (tx) =>
+        this.repo.markTaken(tx, pending.id, tokenHash),
+      );
+    } catch (error) {
+      this.logger.warn(`No se pudo anotar el enlace tomado: ${String(error)}`);
+    }
+    return { kind: "taken" };
   }
 
   /** `/disconnect` desde Telegram. `true` si había un vínculo activo. */
@@ -125,7 +148,10 @@ export class TelegramLinksService {
   }
 }
 
-function toStatus(row: ChannelLinkRow | undefined, now: Date): TelegramLinkStatusDto {
+function toStatus(
+  row: ChannelLinkRow | undefined,
+  now: Date,
+): Omit<TelegramLinkStatusDto, "botUsername"> {
   const empty = { username: null, linkedAt: null, expiresAt: null };
   if (!row || row.status === "revoked") return { state: "disconnected", ...empty };
   if (row.status === "active") {
@@ -137,6 +163,16 @@ function toStatus(row: ChannelLinkRow | undefined, now: Date): TelegramLinkStatu
     };
   }
   const expiresAt = row.linkTokenExpiresAt;
+  // Se queda aunque el enlace venza: generar otro sin desconectar el Telegram
+  // de la otra cuenta fallaría igual. Un enlace nuevo lo limpia.
+  if (row.linkError === "taken") {
+    return {
+      state: "taken",
+      username: null,
+      linkedAt: null,
+      expiresAt: expiresAt?.toISOString() ?? null,
+    };
+  }
   return {
     state: expiresAt && expiresAt > now ? "waiting" : "expired",
     username: null,

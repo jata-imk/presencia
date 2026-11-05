@@ -435,6 +435,13 @@
       "when": 1793685957074,
       "tag": "0061_transcripcion",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1793851984149,
+      "tag": "0062_telegram_en_otra_cuenta",
+      "breakpoints": true
     }
   ]
 }
