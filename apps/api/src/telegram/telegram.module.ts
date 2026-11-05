@@ -4,6 +4,7 @@ import { ChatModule } from "../chat/chat.module.js";
 import { ProfileModule } from "../profile/profile.module.js";
 import { TranscriptionModule } from "../transcription/transcription.module.js";
 import { TelegramBotService } from "./telegram-bot.service.js";
+import { TelegramChatsController } from "./telegram-chats.controller.js";
 import { TelegramCommandsService } from "./telegram-commands.service.js";
 import { TelegramConversationService } from "./telegram-conversation.service.js";
 import { TelegramLinksController } from "./telegram-links.controller.js";
@@ -19,7 +20,8 @@ import { TelegramWebhookController } from "./telegram-webhook.controller.js";
   // F11 PR5: las fotos y los archivos entran como adjuntos (AttachmentsService).
   // F11 PR6: las notas de voz se transcriben (TranscriptionService).
   imports: [ChatModule, ProfileModule, AttachmentsModule, TranscriptionModule],
-  controllers: [TelegramWebhookController, TelegramLinksController],
+  // F11 PR7b: "Continuar en Telegram" (TelegramChatsController).
+  controllers: [TelegramWebhookController, TelegramLinksController, TelegramChatsController],
   providers: [
     TelegramLinksRepository,
     TelegramLinksService,

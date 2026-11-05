@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { TelegramLinkDto, TelegramLinkStatusDto } from "@presencia/shared";
-import { apiFetch } from "../lib/api.js";
+import type {
+  TelegramContinueDto,
+  TelegramLinkDto,
+  TelegramLinkStatusDto,
+} from "@presencia/shared";
+import { ApiError, apiFetch } from "../lib/api.js";
 
 // El vínculo con Telegram (F11 PR7a, ADR-030): lo pinta Configuración →
 // Canales conectados, y en PR7b lo lee el menú de cada chat ("Continuar en
@@ -17,10 +21,20 @@ interface TelegramLinkState {
   link: TelegramLinkDto | null;
   loadError: string | null;
   refresh: () => Promise<void>;
+  /**
+   * Carga una vez y reusa la petición en curso (PR7b: el sidebar, para el
+   * "Continuar en Telegram" de cada chat, sin una consulta por fila).
+   */
+  ensureLoaded: () => Promise<void>;
   /** Genera un enlace nuevo; el anterior deja de servir. Lanza ApiError. */
   createLink: () => Promise<void>;
   /** Desconecta, o cancela el enlace pendiente. Lanza ApiError. */
   unlink: () => Promise<void>;
+  /**
+   * PR7b: el bot abre el chat como tema y escribe ahí. Devuelve el enlace al
+   * bot. Lanza ApiError (409 si Telegram ya no está conectado).
+   */
+  continueChat: (chatId: string) => Promise<TelegramContinueDto>;
 }
 
 let inFlight: Promise<void> | null = null;
@@ -68,6 +82,8 @@ export const useTelegramLinkStore = create<TelegramLinkState>()(
         return inFlight;
       },
 
+      ensureLoaded: () => (get().status ? Promise.resolve() : get().refresh()),
+
       createLink: async () => {
         try {
           const link = await apiFetch<TelegramLinkDto>("/api/telegram/link", { method: "POST" });
@@ -95,6 +111,21 @@ export const useTelegramLinkStore = create<TelegramLinkState>()(
         forgetInFlight();
         set({ link: null });
         await get().refresh();
+      },
+
+      continueChat: async (chatId) => {
+        try {
+          return await apiFetch<TelegramContinueDto>(`/api/telegram/chats/${chatId}/continue`, {
+            method: "POST",
+          });
+        } catch (error) {
+          // Se desconectó en otra pestaña o desde Telegram: el menú lo refleja.
+          if (error instanceof ApiError && error.status === 409) {
+            forgetInFlight();
+            void get().refresh();
+          }
+          throw error;
+        }
       },
     }),
     { name: "telegram-link-store" },

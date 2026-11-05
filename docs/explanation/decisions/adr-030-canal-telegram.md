@@ -203,6 +203,21 @@ Diseño en Claude Design, proyecto "Presencia - Chat", `Chat Telegram.html`.
   - Reintentar desde la web un mensaje con el mismo texto conserva su canal, además de `voice_seconds`: lo escribió (o lo dijo) por Telegram.
 - `seed:dev` siembra el chat "Nota de voz desde Telegram" en "Estados del turno", para ver la etiqueta sin bot.
 
+## Íconos de canal y "Continuar en Telegram" (F11 PR7b)
+
+Diseño en Claude Design, "Presencia - Chat", `Chat Telegram.html` §2.1–2.2.
+
+- **Recientes marca los chats que pasaron por Telegram** con el ícono `Send` de lucide, monocromo y de 12 px, en el color de la fila. Un chat solo de la web no lleva nada: la web es el canal por defecto. Caben dos íconos y luego "+N" (hoy solo existe Telegram). El título se trunca y el ícono no; el "···" ya reservaba su lugar, así que nada se mueve en hover.
+  - `ChatSummary.channels` se deriva de `messages.channel` con un índice parcial (migración 0063); la medición está en `modelo-de-datos.md`. El evento en vivo `chat` lo trae también: el ícono aparece con la primera respuesta del tema.
+- **"Continuar en Telegram"** en el menú ··· del chat (el del sidebar y el del título): `POST /api/telegram/chats/:id/continue`.
+  - El bot abre un tema con el título del chat (`createForumTopic`), **liga el chat al tema antes de escribir** y luego escribe "Seguimos con «título». Escríbeme aquí y retomo donde nos quedamos." Si el creator contesta en el instante, su mensaje ya cae en ese chat.
+  - `renameTopic: true`: el nombre lo puso el bot, así que el título automático sí puede renombrar el tema.
+  - Si el chat ya tenía tema, el aviso va ahí ("Seguimos aquí con «título»") y el tema sube. Si Telegram dice que el tema ya no existe (`thread not found`, `TOPIC_DELETED`, `TOPIC_CLOSED`), se suelta y se abre otro. Un tema de otro Telegram (desconectó y conectó otra cuenta) tampoco se reusa.
+  - Un candado en memoria por chat: un doble clic espera al primero y no abre dos temas. El bot vive en el proceso `app`, como el resto.
+  - Errores para la web: 409 sin Telegram conectado, o con el bot bloqueado ("abre el bot, toca Iniciar y vuelve a intentarlo"); 404 sin chat; 503 si Telegram falla o el bot no arrancó.
+- **La web no abre Telegram sola:** al terminar muestra un toast con el enlace "Abrir Telegram" (`t.me/<bot>`). Un `window.open` después de esperar la respuesta lo bloquea el navegador; un enlace que el creator toca, no.
+- **Sin Telegram conectado,** el ítem del menú lleva a Configuración ("Primero conecta Telegram en Configuración"). Sin bot en el servidor, no aparece. El sidebar pide el estado del vínculo una vez por sesión, no una vez por fila.
+
 ## Riesgo anotado: otros canales no tienen estas capacidades
 
 Pedido de Jose (2026-11-01). Los temas, los drafts con detener y el rich son de Telegram:

@@ -5,6 +5,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Send,
   Share2,
   Trash2,
 } from "lucide-react";
@@ -16,6 +17,8 @@ import { ModalDeleteChat } from "./ModalDeleteChat.js";
 import { ModalMoveToFolder } from "./ModalMoveToFolder.js";
 import { ApiError } from "../../lib/api.js";
 import { useChatsStore } from "../../stores/chats-store.js";
+import { useTelegramLinkStore } from "../../stores/telegram-link-store.js";
+import { showToast } from "../../stores/toast-store.js";
 
 const TRIGGER_CLASS =
   "flex size-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-secondary-hover";
@@ -64,6 +67,11 @@ export function ChatOptionsMenu({
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [pinning, setPinning] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
+  // F11 PR7b: "Continuar en Telegram". Sin bot en el servidor (o sin saber
+  // todavía), no se ofrece.
+  const telegramState = useTelegramLinkStore((s) => s.status?.state);
+  const continueChat = useTelegramLinkStore((s) => s.continueChat);
+  const [continuing, setContinuing] = useState(false);
 
   const chat = chats?.find((c) => c.id === chatId);
   const title = chat?.title ?? "";
@@ -86,6 +94,27 @@ export function ChatOptionsMenu({
       setPinError(err instanceof ApiError ? err.message : "No se pudo fijar.");
     } finally {
       setPinning(false);
+    }
+  }
+
+  async function handleContinueInTelegram() {
+    setContinuing(true);
+    try {
+      const { url } = await continueChat(chatId);
+      showToast({
+        tone: "success",
+        title: "Listo: este chat ya está en Telegram",
+        description: "Lo encuentras como tema en el bot.",
+        link: { label: "Abrir Telegram", href: url },
+        durationMs: 8000,
+      });
+    } catch (err) {
+      showToast({
+        title: "No se pudo abrir en Telegram",
+        description: err instanceof ApiError ? err.message : "Inténtalo de nuevo en un rato.",
+      });
+    } finally {
+      setContinuing(false);
     }
   }
 
@@ -132,6 +161,28 @@ export function ChatOptionsMenu({
             <FolderInput size={13} strokeWidth={1.75} />
             Mover a carpeta
           </Menu.Item>
+          {/* F11 PR7b (Claude Design "Chat Telegram" §2.2). Sin Telegram
+              conectado lleva a Configuración; un chat archivado no se ofrece
+              (mismo criterio que Fijar). */}
+          {canPin && telegramState && telegramState !== "unavailable" && (
+            <Menu.Item
+              {...(telegramState === "connected"
+                ? { onClick: () => void handleContinueInTelegram() }
+                : { href: "/configuracion/canales" })}
+              disabled={continuing}
+              className={`${ITEM_CLASS} items-start`}
+            >
+              <Send size={13} strokeWidth={1.75} className="mt-0.5 shrink-0" />
+              <span className="flex flex-col">
+                {continuing ? "Abriendo en Telegram…" : "Continuar en Telegram"}
+                <span className="text-[11px] leading-snug text-fg-muted">
+                  {telegramState === "connected"
+                    ? "Abre este chat como tema del bot"
+                    : "Primero conecta Telegram en Configuración"}
+                </span>
+              </span>
+            </Menu.Item>
+          )}
           <Menu.Item disabled title="Próximamente" className={`${ITEM_CLASS} text-fg-muted`}>
             <Share2 size={13} strokeWidth={1.75} />
             Exportar

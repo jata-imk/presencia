@@ -467,7 +467,15 @@ export const messages = pgTable(
     voiceSeconds: smallint("voice_seconds"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("messages_by_chat").on(t.chatId, t.createdAt)],
+  (t) => [
+    index("messages_by_chat").on(t.chatId, t.createdAt),
+    // F11 PR7b: los canales de cada chat de Recientes (ChatSummary.channels).
+    // Solo los mensajes que no son de la web: casi no pesa al escribir, y el
+    // chat que nunca salió de la web se resuelve con una sonda vacía.
+    index("messages_external_by_chat")
+      .on(t.chatId, t.channel)
+      .where(sql`${t.channel} <> 'web'`),
+  ],
 );
 
 // ── Contenido ────────────────────────────────────────────────────────

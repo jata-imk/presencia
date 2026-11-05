@@ -5,6 +5,7 @@ import {
   cosineDistance,
   desc,
   eq,
+  getTableColumns,
   inArray,
   isNotNull,
   isNull,
@@ -13,7 +14,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import type { MessageStatus } from "@presencia/shared";
+import type { ExternalChannel, MessageStatus } from "@presencia/shared";
 import { chatSummaries, chats, memoryChunks, messages } from "../db/schema.js";
 import { replaceableTitleSources } from "./chat-title.js";
 import type { Tx } from "../db/db.service.js";
@@ -28,6 +29,25 @@ export type MessageRow = typeof messages.$inferSelect;
 export type ChatSummaryRow = typeof chatSummaries.$inferSelect;
 /** F11: por dónde entró o salió un mensaje (`messages.channel`). */
 export type MessageChannel = MessageRow["channel"];
+/** F11 PR7b: el chat con los canales por los que pasó, como lo pinta Recientes. */
+export type ChatWithChannels = ChatRow & { channels: ExternalChannel[] };
+
+/**
+ * F11 PR7b: los canales que no son la web por los que pasó el chat, sin
+ * repetir y en orden fijo. Usa el índice parcial `messages_external_by_chat`.
+ * `::text` porque node-postgres no convierte un arreglo de un enum propio: sin
+ * él llegaría el texto `{telegram}`, no un arreglo.
+ *
+ * `"chats"."id"` va escrito, no como `${chats.id}`: en un select de una sola
+ * tabla drizzle lo escribe sin tabla (`"id"`), y dentro de la subconsulta eso
+ * es `m.id`. Salía `[]` para todos (lo cazó chat.service.spec).
+ */
+const externalChannels = sql<ExternalChannel[]>`array(
+  select distinct m.channel::text from messages m
+  where m.chat_id = "chats"."id" and m.channel <> 'web'
+  order by 1
+)`;
+const chatWithChannels = { ...getTableColumns(chats), channels: externalChannels };
 
 @Injectable()
 export class ChatRepository {
@@ -44,9 +64,9 @@ export class ChatRepository {
   // Archivados no salen en "Recientes" (F6 PR8) — tienen su propia lista
   // (listArchivedChats), como en el mockup (ArchivedView es una pantalla
   // aparte, no un filtro dentro de la misma).
-  listChats(tx: Tx): Promise<ChatRow[]> {
+  listChats(tx: Tx): Promise<ChatWithChannels[]> {
     return tx
-      .select()
+      .select(chatWithChannels)
       .from(chats)
       .where(isNull(chats.archivedAt))
       .orderBy(
@@ -59,12 +79,22 @@ export class ChatRepository {
       );
   }
 
-  listArchivedChats(tx: Tx): Promise<ChatRow[]> {
+  listArchivedChats(tx: Tx): Promise<ChatWithChannels[]> {
     return tx
-      .select()
+      .select(chatWithChannels)
       .from(chats)
       .where(isNotNull(chats.archivedAt))
       .orderBy(desc(chats.archivedAt));
+  }
+
+  /**
+   * F11 PR7b: el chat con sus canales, para lo que se le devuelve a la web
+   * (renombrar, fijar, el evento en vivo). El turno usa `getChat`: no los
+   * necesita.
+   */
+  async getChatWithChannels(tx: Tx, chatId: string): Promise<ChatWithChannels | undefined> {
+    const [chat] = await tx.select(chatWithChannels).from(chats).where(eq(chats.id, chatId));
+    return chat;
   }
 
   async getChat(tx: Tx, chatId: string): Promise<ChatRow | undefined> {

@@ -1,0 +1,1 @@
+CREATE INDEX "messages_external_by_chat" ON "messages" USING btree ("chat_id","channel") WHERE "messages"."channel" <> 'web';

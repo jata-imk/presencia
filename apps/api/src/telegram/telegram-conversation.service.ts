@@ -1,6 +1,13 @@
-import { HttpException, Inject, Injectable } from "@nestjs/common";
+import {
+  ConflictException,
+  HttpException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import type { FileUIPart, UIMessage } from "ai";
-import type { Api } from "grammy";
+import { GrammyError, type Api } from "grammy";
 import { ATTACHMENTS_PER_MESSAGE, CHAT_TITLE_MAX, MAX_MESSAGE_CHARS } from "@presencia/shared";
 import { randomUUID } from "node:crypto";
 import { AttachmentsService } from "../attachments/attachments.service.js";
@@ -76,6 +83,24 @@ export interface TelegramIncomingMedia {
   albumId: string | undefined;
 }
 
+/** Lo que usa "Continuar en Telegram" (F11 PR7b): abrir el tema y escribir en él. */
+export type TelegramContinueApi = Pick<Api, "createForumTopic" | "sendMessage">;
+
+/**
+ * Telegram dice que el tema ya no existe (el creator lo borró) o que está
+ * cerrado: se suelta y se abre otro. Los textos los da el Bot API en el 400.
+ */
+function isTopicGone(error: unknown): boolean {
+  return (
+    error instanceof GrammyError &&
+    error.error_code === 400 &&
+    /thread not found|TOPIC_DELETED|TOPIC_CLOSED|TOPIC_ID_INVALID/i.test(error.description)
+  );
+}
+
+/** El nombre de un tema: hasta 128 caracteres (Bot API). */
+const topicName = (title: string) => [...title].slice(0, 128).join("");
+
 /** Una nota de voz o un audio que llegó (F11 PR6). */
 export interface TelegramIncomingVoice {
   voice: TelegramVoice;
@@ -136,6 +161,96 @@ export class TelegramConversationService {
     @Inject(AttachmentsService) private readonly attachments: AttachmentsService,
     @Inject(TranscriptionService) private readonly transcription: TranscriptionService,
   ) {}
+
+  /**
+   * "Continuar en Telegram" en curso, por chat (F11 PR7b): un doble clic
+   * espera al primero en vez de abrir dos temas.
+   */
+  private readonly continuing = new Map<string, Promise<void>>();
+
+  /**
+   * "Continuar en Telegram" (F11 PR7b): el bot abre un tema para un chat de
+   * la web y escribe en él, y lo que el creator conteste ahí sigue ese chat.
+   * Si el chat ya tenía tema, el aviso va ahí (el tema sube en la lista).
+   * Lanza los errores HTTP que la web muestra: 409 sin Telegram conectado o
+   * con el bot bloqueado, 404 sin chat, 503 si Telegram falla.
+   */
+  continueChat(api: TelegramContinueApi, userId: string, chatId: string): Promise<void> {
+    const running = this.continuing.get(chatId);
+    if (running) return running;
+    const run = this.openTopicFor(api, userId, chatId).finally(() => {
+      if (this.continuing.get(chatId) === run) this.continuing.delete(chatId);
+    });
+    this.continuing.set(chatId, run);
+    return run;
+  }
+
+  private async openTopicFor(
+    api: TelegramContinueApi,
+    userId: string,
+    chatId: string,
+  ): Promise<void> {
+    const externalId = await this.links.activeExternalId(userId);
+    if (!externalId) {
+      throw new ConflictException(
+        "Primero conecta Telegram en Configuración → Canales conectados.",
+      );
+    }
+    // En un chat privado, el id del chat con el bot es el del usuario.
+    const telegramChatId = Number(externalId);
+    const found = await this.db.runWithTenant(userId, async (tx) => {
+      const chat = await this.chats.getChat(tx, chatId);
+      if (!chat) return null;
+      const row = await this.threads.findByChat(tx, chatId);
+      // El tema era de otro Telegram (se desconectó y conectó otra cuenta):
+      // en el de ahora no existe.
+      if (row && row.telegramChatId !== telegramChatId) {
+        await this.threads.deleteByChat(tx, chatId);
+        return { title: chat.title, row: undefined };
+      }
+      return { title: chat.title, row };
+    });
+    if (!found) throw new NotFoundException("Ese chat no existe.");
+    const { title, row } = found;
+
+    try {
+      if (row) {
+        try {
+          await api.sendMessage(
+            telegramChatId,
+            copy.continuedHere(title),
+            row.messageThreadId === null ? {} : { message_thread_id: row.messageThreadId },
+          );
+          return;
+        } catch (error) {
+          if (!isTopicGone(error)) throw error;
+          await this.db.runWithTenant(userId, (tx) => this.threads.deleteByChat(tx, chatId));
+        }
+      }
+      const topic = await api.createForumTopic(telegramChatId, topicName(title));
+      const place = { telegramChatId, threadId: topic.message_thread_id };
+      // La fila antes del mensaje: si el creator contesta en el instante, su
+      // mensaje ya cae en este chat y no abre otro. El nombre lo puso el bot,
+      // así que el título automático puede renombrar el tema.
+      await this.db.runWithTenant(userId, (tx) =>
+        this.threads.insert(tx, { userId, chatId, place, renameTopic: true }),
+      );
+      await api.sendMessage(telegramChatId, copy.continued(title), {
+        message_thread_id: topic.message_thread_id,
+      });
+    } catch (error) {
+      if (error instanceof GrammyError && error.error_code === 403) {
+        // El creator bloqueó al bot (o borró su chat con él).
+        throw new ConflictException(
+          "No pude escribirte en Telegram. Abre el bot, toca Iniciar y vuelve a intentarlo.",
+        );
+      }
+      console.error(`[telegram] No se pudo continuar el chat ${chatId} en Telegram:`, error);
+      throw new ServiceUnavailableException(
+        "No pude abrir el chat en Telegram. Inténtalo en un rato.",
+      );
+    }
+  }
 
   /** El creator abrió un tema (aviso de servicio). Se usa al crear su chat. */
   topicCreated(place: TelegramPlace, name: string, implicit: boolean): void {

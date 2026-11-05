@@ -33,6 +33,12 @@ export interface ChatSummary {
   lastMessageAt: string | null;
   createdAt: string;
   /**
+   * F11 PR7b: los canales que no son la web por los que pasó el chat (algún
+   * mensaje suyo entró o salió por ahí), sin repetir. Recientes los marca con
+   * un ícono; un chat solo de la web trae `[]`.
+   */
+  channels: ExternalChannel[];
+  /**
    * F11: el id del último mensaje guardado. Solo lo trae el evento en vivo
    * (`event: chat` del stream, ADR-006): la pestaña con el chat abierto lo
    * compara con los suyos para saber si llegó algo por otro canal. `GET

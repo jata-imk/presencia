@@ -13,6 +13,12 @@ export interface ToastOptions {
   description?: string;
   /** Si viene, se pinta un botón "Deshacer" que lo llama y cierra el toast. */
   onUndo?: () => void;
+  /**
+   * F11 PR7b: un enlace en el lugar de "Deshacer" ("Abrir Telegram"). Es un
+   * `<a>` que el creator toca: abrir la pestaña después de esperar una
+   * respuesta con `window.open` lo bloquearía el navegador.
+   */
+  link?: { label: string; href: string };
   durationMs?: number;
   /**
    * F10.5: un aviso de que algo SALIÓ bien ("Ajustada por IA") lleva

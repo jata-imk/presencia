@@ -139,6 +139,15 @@ export class TelegramLinksService {
     return true;
   }
 
+  /**
+   * El Telegram conectado del creator (su id es también el del chat privado
+   * con el bot), o null si no tiene (F11 PR7b, "Continuar en Telegram").
+   */
+  async activeExternalId(userId: string): Promise<string | null> {
+    const row = await this.db.runWithTenant(userId, (tx) => this.repo.findOwn(tx));
+    return row?.status === "active" ? row.externalId : null;
+  }
+
   /** De quién es un update de Telegram, o null si ese Telegram no está conectado. */
   async resolveUser(externalId: string): Promise<string | null> {
     const row = await this.db.runWorkerScan((tx) =>

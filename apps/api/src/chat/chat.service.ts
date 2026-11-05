@@ -191,7 +191,7 @@ export class ChatService {
   createChat(userId: string, title?: string): Promise<ChatSummary> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const chat = await this.repo.createChat(tx, userId, title);
-      return toChatSummary(chat);
+      return toChatSummary({ ...chat, channels: [] });
     });
   }
 
@@ -213,10 +213,12 @@ export class ChatService {
 
   async renameChat(userId: string, chatId: string, title: string): Promise<ChatSummary> {
     const summary = await this.dbService.runWithTenant(userId, async (tx) => {
-      const chat = await this.repo.getChat(tx, chatId);
+      // F11 PR7b: con sus canales. La web reemplaza la fila entera con lo que
+      // vuelve: sin ellos, el ícono de Telegram se iría al renombrar.
+      const chat = await this.repo.getChatWithChannels(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const updated = await this.repo.renameChat(tx, chatId, title);
-      return toChatSummary(updated);
+      return toChatSummary({ ...updated, channels: chat.channels });
     });
     // F11: ya guardado, a los canales (el tema de Telegram se renombra).
     this.events.titled({ userId, chatId, title: summary.title, source: "user" });
@@ -240,10 +242,10 @@ export class ChatService {
 
   private setArchived(userId: string, chatId: string, archived: boolean): Promise<ChatSummary> {
     return this.dbService.runWithTenant(userId, async (tx) => {
-      const chat = await this.repo.getChat(tx, chatId);
+      const chat = await this.repo.getChatWithChannels(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       const updated = await this.repo.setArchived(tx, chatId, archived);
-      return toChatSummary(updated);
+      return toChatSummary({ ...updated, channels: chat.channels });
     });
   }
 
@@ -259,19 +261,19 @@ export class ChatService {
   // igual, pero como error 500 opaco en vez de un 409 que explique.
   private setPinned(userId: string, chatId: string, pinned: boolean): Promise<ChatSummary> {
     return this.dbService.runWithTenant(userId, async (tx) => {
-      const chat = await this.repo.getChat(tx, chatId);
+      const chat = await this.repo.getChatWithChannels(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       if (pinned && chat.archivedAt) {
         throw new ConflictException("No puedes fijar un chat archivado. Desarchívalo primero.");
       }
       const updated = await this.repo.setPinned(tx, chatId, pinned);
-      return toChatSummary(updated);
+      return toChatSummary({ ...updated, channels: chat.channels });
     });
   }
 
   moveToFolder(userId: string, chatId: string, folderId: string | null): Promise<ChatSummary> {
     return this.dbService.runWithTenant(userId, async (tx) => {
-      const chat = await this.repo.getChat(tx, chatId);
+      const chat = await this.repo.getChatWithChannels(tx, chatId);
       if (!chat) throw new NotFoundException("Ese chat no existe.");
       // Confirma que folderId es una carpeta del tenant actual, dentro de
       // la MISMA transacción (mismo RLS) — un FK por sí solo no basta,
@@ -279,7 +281,7 @@ export class ChatService {
       // (ADR-003). Ver FoldersService.assertOwnsFolder.
       if (folderId) await this.foldersService.assertOwnsFolder(tx, folderId);
       const updated = await this.repo.moveToFolder(tx, chatId, folderId);
-      return toChatSummary(updated);
+      return toChatSummary({ ...updated, channels: chat.channels });
     });
   }
 

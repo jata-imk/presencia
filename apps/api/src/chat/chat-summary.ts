@@ -1,13 +1,13 @@
 import type { UIMessage } from "ai";
 import type { ChatMessageMetadata, ChatSummary, MessageStatus } from "@presencia/shared";
-import type { ChatRow, MessageRow } from "./chat.repository.js";
+import type { ChatWithChannels, MessageRow } from "./chat.repository.js";
 
 /**
  * La fila de `chats` como la ve el navegador. Una sola traducción para
  * `GET /api/chats` y para el evento `chat` del stream (F10.8), así las dos no
  * pueden desalinearse.
  */
-export function toChatSummary(chat: ChatRow): ChatSummary {
+export function toChatSummary(chat: ChatWithChannels): ChatSummary {
   return {
     id: chat.id,
     title: chat.title,
@@ -16,6 +16,7 @@ export function toChatSummary(chat: ChatRow): ChatSummary {
     pinnedAt: chat.pinnedAt?.toISOString() ?? null,
     lastMessageAt: chat.lastMessageAt?.toISOString() ?? null,
     createdAt: chat.createdAt.toISOString(),
+    channels: chat.channels,
   };
 }
 

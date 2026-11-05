@@ -89,6 +89,21 @@ describe("TelegramThreadsRepository", { timeout: 30_000 }, () => {
     expect(await db.runWithTenant(userId, (tx) => repo.findByPlace(tx, place))).toBeUndefined();
   });
 
+  it("deleteByChat suelta el tema del chat; el de otro creator, no (F11 PR7b)", async () => {
+    const yo = await usuarioConChat();
+    const otro = await usuarioConChat();
+    const place = { telegramChatId: tg(), threadId: 4 };
+    const id = await yo.chatId();
+    await db.runWithTenant(yo.userId, (tx) =>
+      repo.insert(tx, { userId: yo.userId, chatId: id, place, renameTopic: true }),
+    );
+    // Otro creator no puede soltarlo (RLS).
+    await db.runWithTenant(otro.userId, (tx) => repo.deleteByChat(tx, id));
+    expect(await db.runWithTenant(yo.userId, (tx) => repo.findByChat(tx, id))).toBeDefined();
+    await db.runWithTenant(yo.userId, (tx) => repo.deleteByChat(tx, id));
+    expect(await db.runWithTenant(yo.userId, (tx) => repo.findByChat(tx, id))).toBeUndefined();
+  });
+
   it("un creator no ve los temas de otro", async () => {
     const yo = await usuarioConChat();
     const otro = await usuarioConChat();

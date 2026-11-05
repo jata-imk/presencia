@@ -26,6 +26,7 @@ import { useQuota } from "../../lib/use-quota.js";
 import { useChatsStore } from "../../stores/chats-store.js";
 import { useFoldersStore } from "../../stores/folders-store.js";
 import { useSidebarStore } from "../../stores/sidebar-store.js";
+import { useTelegramLinkStore } from "../../stores/telegram-link-store.js";
 
 // Contenido del sidebar (F6.5 PR1). Es el MISMO árbol que renderizan las
 // dos superficies: el <nav> in-flow de ≥768px y el drawer modal de mobile
@@ -82,6 +83,12 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
   useEffect(() => {
     refreshQuota();
   }, [refreshQuota]);
+  // F11 PR7b: el "Continuar en Telegram" del menú de cada chat lo necesita.
+  // Una vez por sesión, no una consulta por fila.
+  const ensureTelegramLoaded = useTelegramLinkStore((s) => s.ensureLoaded);
+  useEffect(() => {
+    void ensureTelegramLoaded();
+  }, [ensureTelegramLoaded]);
 
   const name = session?.user.displayName ?? session?.user.name ?? "";
   const initials =

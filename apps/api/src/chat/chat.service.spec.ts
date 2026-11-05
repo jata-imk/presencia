@@ -340,6 +340,33 @@ describe("ChatService · el turno por un TurnSink", () => {
   });
 
   it(
+    "Recientes sabe por qué canales pasó cada chat, y renombrar o fijar no lo pierde (F11 PR7b)",
+    { timeout: 30_000 },
+    async () => {
+      const servicio = crear(modeloQueContesta("Va."));
+      const soloWeb = await servicio.createChat(userId, "Solo web");
+      expect(soloWeb.channels).toEqual([]);
+      await servicio.streamChat(userId, chatId, userMsg("hola"), new SinkDePrueba(), {
+        channel: "telegram",
+      });
+      await hastaQueHaya(2);
+      await servicio.streamChat(userId, chatId, userMsg("sigo en la web"), new SinkDePrueba());
+      await hastaQueHaya(4);
+
+      const recientes = await servicio.listChats(userId);
+      expect(recientes.find((c) => c.id === chatId)?.channels).toEqual(["telegram"]);
+      expect(recientes.find((c) => c.id === soloWeb.id)?.channels).toEqual([]);
+      // La web reemplaza la fila con lo que vuelve: sin canales, el ícono se iría.
+      expect((await servicio.renameChat(userId, chatId, "Ideas")).channels).toEqual(["telegram"]);
+      expect((await servicio.pinChat(userId, chatId)).channels).toEqual(["telegram"]);
+      expect((await servicio.archiveChat(userId, chatId)).channels).toEqual(["telegram"]);
+      expect(
+        (await servicio.listArchivedChats(userId)).find((c) => c.id === chatId)?.channels,
+      ).toEqual(["telegram"]);
+    },
+  );
+
+  it(
     "si el que recibe ya se fue antes de empezar, no se toca nada ni se llama al modelo",
     { timeout: 20_000 },
     async () => {

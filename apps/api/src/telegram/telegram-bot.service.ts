@@ -1,9 +1,11 @@
 import {
   Inject,
   Injectable,
+  ServiceUnavailableException,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from "@nestjs/common";
+import type { TelegramContinueDto } from "@presencia/shared";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { Bot } from "grammy";
 import type { Message, Update } from "grammy/types";
@@ -200,6 +202,21 @@ export class TelegramBotService implements OnApplicationBootstrap, OnModuleDestr
       this.recent.delete(this.recent.values().next().value!);
     }
     await this.bot.handleUpdate(update);
+  }
+
+  /**
+   * "Continuar en Telegram" desde la web (F11 PR7b). Devuelve el enlace al bot
+   * para que la web lo ofrezca: abrirlo después de esperar la respuesta con
+   * `window.open` lo bloquearía el navegador.
+   */
+  async continueChat(userId: string, chatId: string): Promise<TelegramContinueDto> {
+    if (!this.bot || !this.ready) {
+      throw new ServiceUnavailableException(
+        "Telegram no está disponible ahora. Inténtalo en un rato.",
+      );
+    }
+    await this.conversation.continueChat(this.bot.api, userId, chatId);
+    return { url: `https://t.me/${this.bot.botInfo.username}` };
   }
 
   /** Un aviso fuera de una conversación (p. ej. "desconectaste desde la web"). Nunca lanza. */
