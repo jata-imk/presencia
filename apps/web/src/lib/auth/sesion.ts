@@ -1,4 +1,3 @@
-import { resetTelegramLinkStore } from "../../stores/telegram-link-store.js";
 import { authClient } from "../auth-client.js";
 
 // F10.8.4: distinguir "tu sesión cerró" de "nunca entraste" o "cerraste
@@ -26,26 +25,16 @@ export function sesionExpiro(): boolean {
   return huboSesion && !salidaVoluntaria;
 }
 
-/**
- * El login ya mostró (o descartó) el aviso: no se repite. Y lo que la pestaña
- * guardaba de la sesión anterior se olvida: si expiró (sin "Cerrar sesión"),
- * quien entre después vería el vínculo con Telegram del anterior (review de
- * cierre de F11).
- */
+/** El login ya mostró (o descartó) el aviso: no se repite. */
 export function olvidarSesion(): void {
   huboSesion = false;
   salidaVoluntaria = false;
-  resetTelegramLinkStore();
 }
 
 /** "Cerrar sesión" del menú: una salida a propósito no es una sesión expirada. */
 export async function cerrarSesion(): Promise<void> {
   salidaVoluntaria = true;
   await authClient.signOut();
-  // F11 PR7b: el vínculo con Telegram se carga una vez por sesión (el menú de
-  // cada chat). Sin esto, quien entre después en la misma pestaña vería el
-  // del anterior hasta recargar (revisión del PR7b).
-  resetTelegramLinkStore();
 }
 
 /**

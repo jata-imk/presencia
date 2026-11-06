@@ -171,6 +171,7 @@ function montar({
             : { id, title: "Precios del café", archivedAt: archivados.has(id) ? new Date() : null },
         ),
       setArchived,
+      notifyMessagesChanged: vi.fn(() => Promise.resolve()),
       chatIdOfMessage: (_tx: unknown, id: string) => Promise.resolve(mensajes.get(id)),
     } as never,
     chat as never,

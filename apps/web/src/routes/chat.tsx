@@ -400,6 +400,13 @@ function ChatView({
         if (saved.at(-1)?.role !== "assistant") return;
         const known = new Set(chat.messages.map((m) => m.id));
         if (!saved.some((m) => !known.has(m.id))) return;
+        // Con un error aquí, un mensaje que falló antes de guardarse (sin
+        // cuota, la red) solo existe en esta pestaña: releer lo borraría, con
+        // su Reintentar. Se queda; lo de Telegram llega al reintentar o recargar.
+        const savedIds = new Set(saved.map((m) => m.id));
+        if (chat.status === "error" && chat.messages.some((m) => !savedIds.has(m.id))) {
+          return;
+        }
         setMessages(saved);
         // El error de aquí ya no es el del último turno.
         if (chat.status === "error") clearError();

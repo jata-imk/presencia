@@ -14,7 +14,7 @@ import { AttachmentsService } from "../attachments/attachments.service.js";
 import type { ChatTitled } from "../chat/chat-events.js";
 import { ChatRepository } from "../chat/chat.repository.js";
 import { ChatService } from "../chat/chat.service.js";
-import { DbService } from "../db/db.service.js";
+import { DbService, type Tx } from "../db/db.service.js";
 import { env } from "../env.js";
 import { ProfileRepository } from "../profile/profile.repository.js";
 import { TranscriptionService } from "../transcription/transcription.service.js";
@@ -640,9 +640,11 @@ export class TelegramConversationService {
       // en la web) el lugar ya es de otro chat, y el mensaje sigue en el suyo.
       let chatId: string | undefined;
       try {
-        chatId = await this.db.runWithTenant(userId, (tx) =>
-          this.chats.chatIdOfMessage(tx, userMessageId),
-        );
+        chatId = await this.db.runWithTenant(userId, async (tx) => {
+          const found = await this.chats.chatIdOfMessage(tx, userMessageId);
+          if (found) await this.unarchive(tx, userId, found);
+          return found;
+        });
       } catch (error) {
         console.error("[telegram] No se pudo buscar el chat del mensaje a reintentar:", error);
         return this.reply(api, place, copy.turnFailed);
@@ -721,12 +723,7 @@ export class TelegramConversationService {
     return this.db.runWithTenant(userId, async (tx) => {
       const existing = await this.threads.findByPlace(tx, place);
       if (existing) {
-        // Escribir en el tema de un chat que se archivó en la web es volver a
-        // usarlo: se desarchiva, y vuelve a Recientes con su respuesta. Si no,
-        // la conversación seguía en un chat que no se ve en ningún lado
-        // (review de cierre de F11).
-        const chat = await this.chats.getChat(tx, existing.chatId);
-        if (chat?.archivedAt) await this.chats.setArchived(tx, chat.id, false);
+        await this.unarchive(tx, userId, existing.chatId);
         return existing.chatId;
       }
       // Un tema con nombre puesto por el creator le da su título al chat
@@ -749,6 +746,19 @@ export class TelegramConversationService {
       this.topics.delete(placeKey(place));
       return chat.id;
     });
+  }
+
+  /**
+   * Escribir en el tema de un chat que se archivó en la web (o reintentar una
+   * respuesta suya) es volver a usarlo: se desarchiva y la web se entera al
+   * momento, también si el turno no llega a correr. Si no, la conversación
+   * seguía en un chat que no se ve en ningún lado (review de cierre de F11).
+   */
+  private async unarchive(tx: Tx, userId: string, chatId: string): Promise<void> {
+    const chat = await this.chats.getChat(tx, chatId);
+    if (!chat?.archivedAt) return;
+    await this.chats.setArchived(tx, chatId, false);
+    await this.chats.notifyMessagesChanged(tx, userId, chatId);
   }
 
   private async runTurn(

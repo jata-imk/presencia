@@ -272,9 +272,9 @@ El 2026-11-05, con el bot de dev y el cel de Jose (`docs/reference/telegram/2026
 
 - **Detener entre los archivos (o la nota) y la respuesta** cortaba el turno sin decir nada, y la nota ya se había cobrado. Ahora contesta "Lo detuviste antes de que empezara".
 - **"Reintentar" toma su lugar en la fila antes de cualquier `await`,** como un mensaje de texto. Con las búsquedas antes, un mensaje mandado justo después del botón se le adelantaba.
-- **Escribir en el tema de un chat archivado en la web lo desarchiva:** es volver a usarlo, y vuelve a Recientes con su respuesta. Antes la conversación seguía en un chat que no se veía en ningún lado. "Continuar en Telegram" sobre un chat archivado sigue dando 409: desde la web el creator lo desarchiva a la vista.
-- **Una pestaña cuyo último turno terminó en error** también se pone al día con lo que llega por Telegram (antes solo con el chat en reposo).
-- **Entrar después de una sesión expirada** olvida el vínculo con Telegram de la sesión anterior (antes solo "Cerrar sesión").
+- **Escribir en el tema de un chat archivado en la web (o reintentar una respuesta suya) lo desarchiva:** es volver a usarlo, y la web se entera al momento. Antes la conversación seguía en un chat que no se veía en ningún lado. "Continuar en Telegram" sobre un chat archivado sigue dando 409: desde la web el creator lo desarchiva a la vista.
+- **Una pestaña cuyo último turno terminó en error** también se pone al día con lo que llega por Telegram (antes solo con el chat en reposo), salvo que tenga un mensaje que falló antes de guardarse: releer lo borraría, con su Reintentar.
+- **El vínculo con Telegram se pide cada vez que monta el sidebar** (al entrar, con cualquier cuenta y por cualquier camino), no "si no lo tiene": tras una sesión que expiró, el de memoria era de otra cuenta.
 - Un solo `textOf` (el de `history-compaction.ts`, con los espacios normalizados) para saber si un reenvío cambió el texto.
 
 **Aceptado:**

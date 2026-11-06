@@ -84,11 +84,14 @@ export function SidebarNav({ collapsed, onToggleCollapsed, onNavigate }: Sidebar
     refreshQuota();
   }, [refreshQuota]);
   // F11 PR7b: el "Continuar en Telegram" del menú de cada chat lo necesita.
-  // Una vez por sesión, no una consulta por fila.
-  const ensureTelegramLoaded = useTelegramLinkStore((s) => s.ensureLoaded);
+  // Una consulta al montar el sidebar (al entrar, con cualquier cuenta y por
+  // cualquier camino), no una por fila. Al montar y no "si no lo tiene": tras
+  // una sesión que expiró, el estado en memoria era de otra cuenta (review de
+  // cierre de F11).
+  const refreshTelegram = useTelegramLinkStore((s) => s.refresh);
   useEffect(() => {
-    void ensureTelegramLoaded();
-  }, [ensureTelegramLoaded]);
+    void refreshTelegram();
+  }, [refreshTelegram]);
 
   const name = session?.user.displayName ?? session?.user.name ?? "";
   const initials =
