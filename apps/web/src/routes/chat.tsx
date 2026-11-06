@@ -378,8 +378,11 @@ function ChatView({
   const remoteLastId = useChatsStore((s) => s.lastMessageIdByChat[chatId] ?? null);
   // El último id por el que ya se releyó: un aviso se atiende una vez.
   const syncedFor = useRef<string | null>(null);
+  // Con el último turno de aquí en error también (review de cierre de F11):
+  // el creator puede seguir por Telegram y esta pestaña nunca lo veía.
+  const idle = status === "ready" || status === "error";
   useEffect(() => {
-    if (!remoteLastId || status !== "ready") return;
+    if (!remoteLastId || !idle) return;
     if (syncedFor.current === remoteLastId) return;
     if (chat.messages.some((m) => m.id === remoteLastId)) return;
     syncedFor.current = remoteLastId;
@@ -387,7 +390,7 @@ function ChatView({
       .then((saved) => {
         // Mientras se releía, el creator empezó a escribir aquí: esa manda, y
         // el aviso se vuelve a atender cuando esta pestaña quede libre.
-        if (chat.status !== "ready") {
+        if (chat.status !== "ready" && chat.status !== "error") {
           syncedFor.current = null;
           return;
         }
@@ -398,6 +401,8 @@ function ChatView({
         const known = new Set(chat.messages.map((m) => m.id));
         if (!saved.some((m) => !known.has(m.id))) return;
         setMessages(saved);
+        // El error de aquí ya no es el del último turno.
+        if (chat.status === "error") clearError();
         // El reintento que estuviera en curso aquí ya no es el último turno.
         retryingId.current = null;
         setFailedAgain(false);
@@ -406,7 +411,7 @@ function ChatView({
         syncedFor.current = null;
         console.error("[chat] No se pudo releer el chat tras un aviso del servidor:", err);
       });
-  }, [remoteLastId, status, chat, chatId, setMessages]);
+  }, [remoteLastId, idle, chat, chatId, setMessages, clearError]);
 
   // Regenerar (y desde F10.8.2, editar el último mensaje) borra las cards de
   // la respuesta (ADR-006). Desde F10.5 una card puede traer trabajo del

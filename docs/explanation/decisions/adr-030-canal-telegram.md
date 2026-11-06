@@ -266,6 +266,23 @@ El 2026-11-05, con el bot de dev y el cel de Jose (`docs/reference/telegram/2026
 - **La transcripción con Groq caído** la hizo `gpt-4o-mini-transcribe`, con el mismo eco y el mismo cobro.
 - El ledger cuadra: `chat_message` y `audio_transcription` por turno, y el `adjustment` del paso sin cuota compensado.
 
+## Review de cierre de F11 (`/code-review medium` sobre #202–#210)
+
+**Arreglado:**
+
+- **Detener entre los archivos (o la nota) y la respuesta** cortaba el turno sin decir nada, y la nota ya se había cobrado. Ahora contesta "Lo detuviste antes de que empezara".
+- **"Reintentar" toma su lugar en la fila antes de cualquier `await`,** como un mensaje de texto. Con las búsquedas antes, un mensaje mandado justo después del botón se le adelantaba.
+- **Escribir en el tema de un chat archivado en la web lo desarchiva:** es volver a usarlo, y vuelve a Recientes con su respuesta. Antes la conversación seguía en un chat que no se veía en ningún lado. "Continuar en Telegram" sobre un chat archivado sigue dando 409: desde la web el creator lo desarchiva a la vista.
+- **Una pestaña cuyo último turno terminó en error** también se pone al día con lo que llega por Telegram (antes solo con el chat en reposo).
+- **Entrar después de una sesión expirada** olvida el vínculo con Telegram de la sesión anterior (antes solo "Cerrar sesión").
+- Un solo `textOf` (el de `history-compaction.ts`, con los espacios normalizados) para saber si un reenvío cambió el texto.
+
+**Aceptado:**
+
+- **El aviso `chat_changed` de cada respuesta va en una transacción aparte** de la que guarda (`persistReply`). Cabría en la misma (`pg_notify` se entrega al hacer commit) y ahorraría una ida a la base por turno; no se toca el camino del turno al cerrar la fase por una consulta.
+- **`WaitingDraft` repite la lógica de los drafts de `TelegramSink`** (el keepalive de 20 s, `can_stop`). Deuda: un emisor de drafts compartido, cuando se toque alguno de los dos.
+- **`deletedHere` (chats borrados en esta pestaña) solo crece.** Son ids en memoria de una pestaña; se limpia al recargar.
+
 ## Riesgo anotado: otros canales no tienen estas capacidades
 
 Pedido de Jose (2026-11-01). Los temas, los drafts con detener y el rich son de Telegram:

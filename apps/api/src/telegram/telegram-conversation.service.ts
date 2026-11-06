@@ -624,36 +624,46 @@ export class TelegramConversationService {
   }
 
   /** "Reintentar" de una respuesta detenida o fallida (callback `retry:<id>`). */
-  async retry(
+  retry(
     api: TelegramApi,
     from: TelegramFrom,
     place: TelegramPlace,
     userMessageId: string,
   ): Promise<void> {
-    // Nunca lanza (ver `text`).
-    const userId = await this.resolveOrSay(api, from, place);
-    if (!userId) return;
-    // El chat del mensaje, no el del lugar: tras `/new` (o un chat borrado en
-    // la web) el lugar ya es de otro chat, y el mensaje sigue en el suyo.
-    let chatId: string | undefined;
-    try {
-      chatId = await this.db.runWithTenant(userId, (tx) =>
-        this.chats.chatIdOfMessage(tx, userMessageId),
+    // Nunca lanza (ver `text`). Toma su lugar en la fila antes de cualquier
+    // await, como `text`: con las búsquedas antes, un mensaje mandado justo
+    // después del botón se le adelantaba (review de cierre de F11).
+    this.enqueue(api, place, async () => {
+      const userId = await this.resolveOrSay(api, from, place);
+      if (!userId) return;
+      // El chat del mensaje, no el del lugar: tras `/new` (o un chat borrado
+      // en la web) el lugar ya es de otro chat, y el mensaje sigue en el suyo.
+      let chatId: string | undefined;
+      try {
+        chatId = await this.db.runWithTenant(userId, (tx) =>
+          this.chats.chatIdOfMessage(tx, userMessageId),
+        );
+      } catch (error) {
+        console.error("[telegram] No se pudo buscar el chat del mensaje a reintentar:", error);
+        return this.reply(api, place, copy.turnFailed);
+      }
+      if (!chatId) return this.reply(api, place, copy.chatGone);
+      const target = chatId;
+      await this.runTurn(
+        api,
+        place,
+        userId,
+        target,
+        userMessageId,
+        copy.cantRetry,
+        (sink, timezone) =>
+          this.chat.regenerateChat(userId, target, userMessageId, sink, {
+            channel: "telegram",
+            timezone,
+          }),
       );
-    } catch (error) {
-      console.error("[telegram] No se pudo buscar el chat del mensaje a reintentar:", error);
-      return this.reply(api, place, copy.turnFailed);
-    }
-    if (!chatId) return this.reply(api, place, copy.chatGone);
-    const target = chatId;
-    this.enqueue(api, place, () =>
-      this.runTurn(api, place, userId, target, userMessageId, copy.cantRetry, (sink, timezone) =>
-        this.chat.regenerateChat(userId, target, userMessageId, sink, {
-          channel: "telegram",
-          timezone,
-        }),
-      ),
-    );
+    });
+    return Promise.resolve();
   }
 
   /** De quién es este Telegram; si no está conectado o la base falla, lo dice y da null. */
@@ -710,7 +720,15 @@ export class TelegramConversationService {
     const note = this.topics.get(placeKey(place));
     return this.db.runWithTenant(userId, async (tx) => {
       const existing = await this.threads.findByPlace(tx, place);
-      if (existing) return existing.chatId;
+      if (existing) {
+        // Escribir en el tema de un chat que se archivó en la web es volver a
+        // usarlo: se desarchiva, y vuelve a Recientes con su respuesta. Si no,
+        // la conversación seguía en un chat que no se ve en ningún lado
+        // (review de cierre de F11).
+        const chat = await this.chats.getChat(tx, existing.chatId);
+        if (chat?.archivedAt) await this.chats.setArchived(tx, chat.id, false);
+        return existing.chatId;
+      }
       // Un tema con nombre puesto por el creator le da su título al chat
       // (como renombrarlo: el automático ya no lo toca, ni se cobra).
       // Con el tope de un título (Telegram permite 128 en un tema).
@@ -762,6 +780,10 @@ export class TelegramConversationService {
       // Entregar no se espera dentro del turno (corre en segundo plano): la
       // fila del tema espera a que esta respuesta termine de llegar.
       if (sink.started) await sink.finished;
+      // Detuvo después de leer los archivos o la nota y antes de que el turno
+      // escribiera algo: el turno se cortó sin entregar nada. Sin esto, el
+      // creator no se enteraba de nada (review de cierre de F11).
+      else if (sink.gone) await this.reply(api, place, copy.stoppedBeforeStart);
     } catch (error) {
       await this.reply(api, place, this.errorCopy(error, notFound));
     } finally {

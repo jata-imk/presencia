@@ -147,6 +147,13 @@ function montar({
       });
     }),
   };
+  // Review de cierre: los chats que se archivaron en la web.
+  const archivados = new Set<string>(["archivado"]);
+  const setArchived = vi.fn((_tx: unknown, id: string, archived: boolean) => {
+    if (archived) archivados.add(id);
+    else archivados.delete(id);
+    return Promise.resolve({ id });
+  });
   const service = new Service(
     { runWithTenant: (_u: string, fn: (tx: unknown) => unknown) => fn({}) } as never,
     {
@@ -161,8 +168,9 @@ function montar({
         Promise.resolve(
           id === "no-existe"
             ? undefined
-            : { id, title: "Precios del café", archivedAt: id === "archivado" ? new Date() : null },
+            : { id, title: "Precios del café", archivedAt: archivados.has(id) ? new Date() : null },
         ),
+      setArchived,
       chatIdOfMessage: (_tx: unknown, id: string) => Promise.resolve(mensajes.get(id)),
     } as never,
     chat as never,
@@ -184,6 +192,8 @@ function montar({
     idsDeMensajes,
     attachments,
     transcription,
+    archivados,
+    setArchived,
     /** F11 PR7b: cambia el Telegram conectado (null = desconectado). */
     conectarComo: (id: string | null) => {
       externalId = id;
@@ -411,6 +421,7 @@ describe("TelegramConversationService", () => {
   it("Reintentar regenera ese mensaje en su chat; un mensaje que ya no existe, lo dice", async () => {
     const t = montar();
     await t.service.retry(t.api, YO, TEMA, "no-existe");
+    await flush();
     expect(t.avisos()).toEqual([copy.chatGone]);
 
     await t.service.text(t.api, YO, TEMA, "hola");
@@ -423,6 +434,49 @@ describe("TelegramConversationService", () => {
       channel: "telegram",
       timezone: "America/Merida",
     });
+  });
+
+  it("Reintentar toma su lugar en la fila antes que un mensaje mandado justo después (review de cierre)", async () => {
+    const t = montar();
+    await t.service.text(t.api, YO, TEMA, "hola");
+    await flush();
+    t.turnos[0]!.terminar();
+    const [id] = t.idsDeMensajes();
+    void t.service.retry(t.api, YO, TEMA, id!);
+    void t.service.text(t.api, YO, TEMA, "otra cosa");
+    await flush();
+    // Corre el reintento; el mensaje nuevo espera detrás.
+    expect(t.chat.regenerateChat).toHaveBeenCalledTimes(1);
+    expect(t.chat.streamChat).toHaveBeenCalledTimes(1);
+    t.turnos[1]!.terminar();
+    await flush();
+    expect(t.chat.streamChat).toHaveBeenCalledTimes(2);
+  });
+
+  it("detener antes de que el turno escriba algo lo dice, no se queda callado (review de cierre)", async () => {
+    const t = montar();
+    t.chat.streamChat.mockImplementationOnce(
+      (_u: string, _c: string, _m: { id: string }, sink: TelegramSink) => {
+        sink.stop();
+        return Promise.resolve();
+      },
+    );
+    await t.service.text(t.api, YO, TEMA, "hola");
+    await flush();
+    expect(t.avisos()).toContain(copy.stoppedBeforeStart);
+  });
+
+  it("escribir en el tema de un chat archivado en la web lo desarchiva (review de cierre)", async () => {
+    const t = montar();
+    await t.service.text(t.api, YO, TEMA, "hola");
+    await flush();
+    t.turnos[0]!.terminar();
+    t.archivados.add("chat-1");
+    await t.service.text(t.api, YO, TEMA, "sigo aquí");
+    await flush();
+    expect(t.setArchived).toHaveBeenCalledWith(expect.anything(), "chat-1", false);
+    expect(t.archivados.has("chat-1")).toBe(false);
+    expect(t.chat.streamChat.mock.calls.map((c) => c[1])).toEqual(["chat-1", "chat-1"]);
   });
 
   it("Reintentar después de /new va al chat del mensaje, no al que ahora ocupa el lugar", async () => {

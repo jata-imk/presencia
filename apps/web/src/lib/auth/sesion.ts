@@ -26,10 +26,16 @@ export function sesionExpiro(): boolean {
   return huboSesion && !salidaVoluntaria;
 }
 
-/** El login ya mostró (o descartó) el aviso: no se repite. */
+/**
+ * El login ya mostró (o descartó) el aviso: no se repite. Y lo que la pestaña
+ * guardaba de la sesión anterior se olvida: si expiró (sin "Cerrar sesión"),
+ * quien entre después vería el vínculo con Telegram del anterior (review de
+ * cierre de F11).
+ */
 export function olvidarSesion(): void {
   huboSesion = false;
   salidaVoluntaria = false;
+  resetTelegramLinkStore();
 }
 
 /** "Cerrar sesión" del menú: una salida a propósito no es una sesión expirada. */
