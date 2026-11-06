@@ -172,3 +172,19 @@ const TELEGRAM_INSTRUCTION =
 export function channelInstruction(channel: string): string | null {
   return channel === "telegram" ? TELEGRAM_INSTRUCTION : null;
 }
+
+/**
+ * El sistema completo de un turno: el prompt con la voz, el apéndice del
+ * canal (si hay) y la fecha de hoy al final (today.ts dice por qué). Una sola
+ * forma de armarlo para el chat y la suite cultural, así la suite mide lo que
+ * corre en producción (revisión del PR8 de F11).
+ */
+export function assembleSystemPrompt(
+  voice: Parameters<typeof buildSystemPrompt>[0],
+  channel: string,
+  today: string,
+): string {
+  return [buildSystemPrompt(voice), channelInstruction(channel), today]
+    .filter((part): part is string => part !== null)
+    .join("\n\n");
+}

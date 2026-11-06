@@ -150,7 +150,8 @@ Cuatro cosas que se olvidan y muerden:
   marcaría **fallida toda card programada** (ADR-008).
 - **Telegram en prod es webhook, siempre (F11).** Con `TELEGRAM_BOT_TOKEN` puesto, `env.ts` no deja
   arrancar la API con `TELEGRAM_MODE=polling` en producción, ni en webhook sin `TELEGRAM_WEBHOOK_SECRET`
-  (32 a 256 caracteres de `[A-Za-z0-9_-]`), ni sin `GROQ_API_KEY` para las notas de voz.
+  (32 a 256 caracteres de `[A-Za-z0-9_-]`), ni sin las keys de la cadena de transcripción
+  (`AI_MODEL_TRANSCRIBE`; con la de default, `GROQ_API_KEY` y `OPENAI_API_KEY`).
 - **No definir `PORT`.** El contenedor tiene que seguir escuchando en 3000; el puerto del host lo fija
   `APP_PORT`.
 - **No definir `WORKER_INLINE` ni `NODE_ENV`.** El compose los fija (`false` y `production`) en los dos

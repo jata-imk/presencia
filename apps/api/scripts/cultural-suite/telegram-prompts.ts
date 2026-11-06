@@ -15,10 +15,12 @@
 import type { CulturalPrompt } from "./prompts.js";
 
 /**
- * Voseo: cero, en cualquier canal (regla dura #1). Palabra completa: "vos"
+ * Voseo: cero, en cualquier canal (regla dura #1). Las formas más comunes,
+ * también los imperativos (revisión del PR8), y como palabra completa: "vos"
  * suelto, no dentro de "objetivos" (la primera corrida lo contó así).
  */
-export const VOSEO = /(?<!\p{L})(querés|tenés|podés|sabés|decime|contame|vos)(?!\p{L})/giu;
+export const VOSEO =
+  /(?<!\p{L})(vos|querés|tenés|podés|sabés|decime|contame|mirá|fijate|mandame|escribime|pasame|poné|hacé|decí|tené|vení|andá)(?!\p{L})/giu;
 
 const telegram = (prompt: Omit<CulturalPrompt, "channel">): CulturalPrompt => ({
   ...prompt,
@@ -74,12 +76,13 @@ export const telegramPrompts: CulturalPrompt[] = [
   telegram({
     // Un nombre maya mal oído por la transcripción ("Xcanatún" → "ishcanatun").
     // El apéndice pide preguntar cómo se escribe un nombre que importa para el
-    // borrador antes de crearlo: lo correcto es preguntar, no la card con el
-    // nombre mal (la primera corrida esperaba la card; los tres modelos
-    // preguntaron "¿se escribe Xcanatún?", que es lo que se pidió).
+    // borrador. Bien: escribirlo correcto (en la respuesta o en la card) o
+    // preguntar; mal: no tocarlo, o dejar "ishcanatun" en la card. Crear la
+    // card no se mide aquí (`misheard` decide).
     id: "telegram-nombre-raro",
     text: "hazme un post de instagram para la hacienda ishcanatun, este, donde hicimos la sesión de fotos el sábado, quedó bien bonita",
     expectsTool: false,
+    misheard: { heard: "ishcanatun", right: /xcanat[uú]n/i },
   }),
   telegram({
     // En Telegram no existen el menú ＋ ni el panel: debe mandarlo a Presencia.

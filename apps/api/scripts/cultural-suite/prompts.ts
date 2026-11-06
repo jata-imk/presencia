@@ -24,6 +24,12 @@ export interface CulturalPrompt {
    */
   channel?: "telegram";
   /**
+   * F11 PR8: un nombre que la transcripción oyó mal. Bien es escribirlo
+   * correcto (`right`) o preguntar cómo se escribe, y nunca dejar el mal oído
+   * (`heard`) en una card.
+   */
+  misheard?: { heard: string; right: RegExp };
+  /**
    * F10.10: si debe leer el enlace con leer_enlace (true) o no tocarlo
    * (false). Sin el campo, no se mide.
    */

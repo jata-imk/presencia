@@ -50,7 +50,7 @@ import { ChatRepository, type ChatSummaryRow, type MessageRow } from "./chat.rep
 import { cardIdsIn, type CompressedCardOutput, type LiveCard } from "./context-diet.js";
 import { sanitizeInterruptedParts } from "./interrupted-turn.js";
 import { lastTurnOf, storableMessageId } from "./last-user-message.js";
-import { buildSystemPrompt, channelInstruction } from "./system-prompt.js";
+import { assembleSystemPrompt } from "./system-prompt.js";
 import { TurnCards } from "./turn-cards.js";
 import { buildReadLinkTool } from "../web/read-link.tool.js";
 import { buildViewAttachmentTool } from "../attachments/view-attachment.tool.js";
@@ -758,10 +758,7 @@ export class ChatService {
     const voice = await voicePromise;
     // F10.10: la fecha de hoy va al final (today.ts dice por qué). F11: el
     // apéndice del canal va antes de ella (system-prompt.ts).
-    const today = todayInstruction(new Date(), timezone);
-    const system = [buildSystemPrompt(voice), channelInstruction(channel), today]
-      .filter((part): part is string => part !== null)
-      .join("\n\n");
+    const system = assembleSystemPrompt(voice, channel, todayInstruction(new Date(), timezone));
     // F10.9: los bytes de los adjuntos que sobrevivieron al techo, al final.
     // F10.10: con las tools, para que las páginas leídas en turnos anteriores
     // pasen por el `toModelOutput` de leer_enlace, que les da forma a lo que la

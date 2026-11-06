@@ -48,12 +48,8 @@ import {
   parseModelEntry,
 } from "../../src/ai/provider-registry.js";
 import { Lexer } from "marked";
-import { buildSystemPrompt, channelInstruction } from "../../src/chat/system-prompt.js";
-import {
-  TELEGRAM_MESSAGE_LIMIT,
-  balanced,
-  toTelegramMessages,
-} from "../../src/telegram/telegram-html.js";
+import { assembleSystemPrompt } from "../../src/chat/system-prompt.js";
+import { toTelegramMessages } from "../../src/telegram/telegram-html.js";
 import { todayInstruction } from "../../src/chat/today.js";
 import { messagesWithAttachments } from "./attachments.js";
 import { messagesWithHistory } from "./history.js";
@@ -415,33 +411,50 @@ function appendResultLines(
 
 /** F11 PR8: lo que mide un caso de Telegram (telegram-prompts.ts). */
 interface TelegramVerdict {
-  /** Cuántos mensajes de Telegram salen de la respuesta (toTelegramMessages). */
+  /**
+   * Cuántos mensajes de Telegram salen del TEXTO de la respuesta
+   * (toTelegramMessages). Cada card va aparte, siempre, en su propio mensaje.
+   */
   messages: number;
   /** Tablas del markdown con más de 3 columnas (el apéndice pide no pasar de 3). */
   wideTables: number;
   headings: number;
-  /** Todos los mensajes caben en 4,096 y cierran sus etiquetas. */
-  validHtml: boolean;
-  /** Llamó una tool de borrador si y solo si el caso la pedía. */
+  /**
+   * Llamó una tool de borrador (con input válido) si y solo si el caso la
+   * pedía. Con `misheard`, en cambio: escribió el nombre bien o preguntó cómo
+   * se escribe, y no dejó el mal oído en una card.
+   */
   toolOk: boolean;
   voseo: string[];
 }
 
 function telegramVerdict(result: RunResult, prompt: CulturalPrompt): TelegramVerdict {
   const tokens = Lexer.lex(result.text);
-  const messages = toTelegramMessages(result.text);
-  const cards = result.toolAttempts.filter((a) => !WEB_TOOLS.has(a.toolName)).length;
+  // Solo las válidas: una con el input roto no le crea nada al creator.
+  const cards = result.toolAttempts.filter((a) => !WEB_TOOLS.has(a.toolName) && a.valid);
   const lower = result.text.toLowerCase();
+  const toolOk = prompt.misheard
+    ? misheardOk(result.text, cards.map((a) => JSON.stringify(a.input)).join("\n"), prompt.misheard)
+    : cards.length > 0 === prompt.expectsTool;
   return {
-    messages: messages.length,
+    messages: toTelegramMessages(result.text).length,
     wideTables: tokens.filter(
       (t) => t.type === "table" && (t as { header: unknown[] }).header.length > 3,
     ).length,
     headings: tokens.filter((t) => t.type === "heading").length,
-    validHtml: messages.every((m) => m.length <= TELEGRAM_MESSAGE_LIMIT && balanced(m)),
-    toolOk: cards > 0 === prompt.expectsTool,
+    toolOk,
     voseo: [...new Set([...lower.matchAll(VOSEO)].map((m) => m[0]))],
   };
+}
+
+/** El nombre mal oído: escrito bien o preguntado, y nunca el mal oído en una card. */
+function misheardOk(
+  text: string,
+  cardsJson: string,
+  { heard, right }: { heard: string; right: RegExp },
+): boolean {
+  if (cardsJson.toLowerCase().includes(heard)) return false;
+  return right.test(text) || right.test(cardsJson) || /c[oó]mo se escribe/i.test(text);
 }
 
 function appendTelegramLines(
@@ -450,8 +463,8 @@ function appendTelegramLines(
   prompt: CulturalPrompt,
 ): void {
   lines.push(
-    `- Telegram: ${String(verdict.messages)} mensaje${verdict.messages === 1 ? "" : "s"} ${verdict.messages === 1 ? "✅" : "⚠️"} · tablas de más de 3 columnas: ${String(verdict.wideTables)} ${verdict.wideTables === 0 ? "✅" : "❌"} · encabezados: ${String(verdict.headings)} ${verdict.headings === 0 ? "✅" : "⚠️"} · HTML válido: ${verdict.validHtml ? "sí ✅" : "NO ❌"}`,
-    `- ¿Card cuando debía?: ${prompt.expectsTool ? "debía crearla" : "no debía"} ${verdict.toolOk ? "✅" : "❌"} · voseo: ${verdict.voseo.length > 0 ? `SÍ (${verdict.voseo.join(", ")}) ❌` : "no ✅"}`,
+    `- Telegram: el texto en ${String(verdict.messages)} mensaje${verdict.messages === 1 ? "" : "s"} ${verdict.messages === 1 ? "✅" : "⚠️"} · tablas de más de 3 columnas: ${String(verdict.wideTables)} ${verdict.wideTables === 0 ? "✅" : "❌"} · encabezados: ${String(verdict.headings)} ${verdict.headings === 0 ? "✅" : "⚠️"}`,
+    `- ${prompt.misheard ? "¿Escribió bien el nombre o preguntó?" : `¿Card cuando debía? (${prompt.expectsTool ? "debía crearla" : "no debía"})`}: ${verdict.toolOk ? "✅" : "❌"} · voseo: ${verdict.voseo.length > 0 ? `SÍ (${verdict.voseo.join(", ")}) ❌` : "no ✅"}`,
     "",
   );
 }
@@ -473,15 +486,15 @@ function telegramTable(
     const mine = runs.filter((r) => r.model === model);
     const ok = mine.filter((r) => !r.error);
     const sum = (f: (v: TelegramVerdict) => number) => ok.reduce((n, r) => n + f(r.verdict), 0);
-    return `| \`${model}\` | ${pct(ok.filter((r) => r.verdict.messages === 1).length, ok.length)} | ${pct(ok.filter((r) => r.verdict.toolOk).length, ok.length)} | ${String(sum((v) => v.wideTables))} | ${String(sum((v) => v.headings))} | ${String(ok.filter((r) => !r.verdict.validHtml).length)} | ${String(ok.filter((r) => r.verdict.voseo.length > 0).length)} | ${String(mine.length - ok.length)} |`;
+    return `| \`${model}\` | ${pct(ok.filter((r) => r.verdict.messages === 1).length, ok.length)} | ${pct(ok.filter((r) => r.verdict.toolOk).length, ok.length)} | ${String(sum((v) => v.wideTables))} | ${String(sum((v) => v.headings))} | ${String(ok.filter((r) => r.verdict.voseo.length > 0).length)} | ${String(mine.length - ok.length)} |`;
   });
   return [
     "## Telegram: la vara (F11)",
     "",
-    "0 voseo, card cuando se pide, 0 tablas de más de 3 columnas, ≥90% en un solo mensaje, HTML siempre válido y 0 errores con el respaldo forzado. Encabezados: aviso, no falla.",
+    "0 voseo, card cuando se pide (o, con un nombre mal oído, escribirlo bien o preguntar), 0 tablas de más de 3 columnas, ≥90% del texto en un solo mensaje (cada card va aparte, siempre) y 0 errores con el respaldo forzado. Encabezados: aviso, no falla.",
     "",
-    "| Modelo | Un solo mensaje | Card cuando debía | Tablas anchas | Encabezados | HTML inválido | Con voseo | Errores |",
-    "| ------ | --------------- | ----------------- | ------------- | ----------- | ------------- | --------- | ------- |",
+    "| Modelo | Texto en un mensaje | Card (o nombre) bien | Tablas anchas | Encabezados | Con voseo | Errores |",
+    "| ------ | ------------------- | -------------------- | ------------- | ----------- | --------- | ------- |",
     ...rows,
     "",
   ];
@@ -848,14 +861,13 @@ async function main(): Promise<void> {
       for (const voiceFixture of passes) {
         console.log(`  · ${modelId}${voiceFixture ? ` [${voiceFixture.id}]` : ""}...`);
         // F10.10: con la fecha al final, como el chat (chat.service.ts).
-        // F11 PR8: con el apéndice del canal antes de la fecha, como el chat.
-        const system = [
-          buildSystemPrompt(voiceFixture?.voice ?? null),
-          channelInstruction(forceWeb ? "web" : (prompt.channel ?? "web")),
+        // F11 PR8: armado igual que el chat (assembleSystemPrompt), con el
+        // apéndice del canal antes de la fecha.
+        const system = assembleSystemPrompt(
+          voiceFixture?.voice ?? null,
+          forceWeb ? "web" : (prompt.channel ?? "web"),
           todayInstruction(SUITE_TODAY, "America/Merida"),
-        ]
-          .filter((part): part is string => part !== null)
-          .join("\n\n");
+        );
         if (voiceFixture) lines.push(`#### Voz: ${voiceFixture.label}`, "");
         for (let run = 1; run <= runs; run++) {
           const result = await runPrompt(modelId, input, system, caseTools);
