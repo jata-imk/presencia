@@ -235,21 +235,23 @@ Diseño en Claude Design, "Presencia - Chat", `Chat Telegram.html` §2.1–2.2.
 
 ## Suite cultural con el apéndice (F11 PR8)
 
-Los casos `telegram-*` (`apps/api/scripts/cultural-suite/telegram-prompts.ts`) corren con el mismo sistema que producción: el prompt base, el apéndice del canal (`channelInstruction`) y la fecha. El reporte mide solo, con el convertidor real (`toTelegramMessages`): cuántos mensajes de Telegram salen, tablas de más de 3 columnas, encabezados, HTML válido, card cuando se pide y voseo (palabra completa). `AI_SUITE_CHANNEL=web` corre los mismos casos sin el apéndice, para comparar.
+Los casos `telegram-*` (`apps/api/scripts/cultural-suite/telegram-prompts.ts`) corren con el mismo sistema que producción, armado por la misma función (`assembleSystemPrompt`): el prompt base, el apéndice del canal y la fecha. El reporte mide solo, con el convertidor real (`toTelegramMessages`): en cuántos mensajes de Telegram sale el texto (cada card va aparte, siempre), tablas de más de 3 columnas, encabezados, card cuando se pide (solo con input válido), el nombre mal oído (escrito bien o preguntado) y voseo (palabra completa, con los imperativos). `AI_SUITE_CHANNEL=web` corre los mismos casos sin el apéndice, para comparar.
 
 **Resultado (2026-11-05, la cadena del chat ×3, 3 corridas por caso):**
 
-| Respondió                             | Un solo mensaje | Card cuando debía | Tablas anchas | Encabezados | HTML inválido | Voseo |
-| ------------------------------------- | --------------- | ----------------- | ------------- | ----------- | ------------- | ----- |
-| Luna (sin simular)                    | 24/24           | 24/24             | 0             | 0           | 0             | 0     |
-| Gemini (`openai` caído, dos muestras) | 45/45           | 44/45             | 0             | 35          | 0             | 0     |
-| Sonnet (`openai,google` caídos)       | 24/24           | 21/24             | 0             | 0           | 0             | 0     |
+| Respondió                             | Texto en un mensaje | Card (o nombre) bien | Tablas anchas | Encabezados | Voseo |
+| ------------------------------------- | ------------------- | -------------------- | ------------- | ----------- | ----- |
+| Luna (sin simular)                    | 24/24               | 23/24                | 0             | 0           | 0     |
+| Gemini (`openai` caído, dos muestras) | 45/45               | 45/45                | 0             | 35          | 0     |
+| Sonnet (`openai,google` caídos)       | 24/24               | 21/24                | 0             | 0           | 0     |
+
+Los reportes se generaron con la primera versión de la medición; la revisión del PR8 la corrigió (cards con input inválido, los imperativos del voseo, el nombre mal oído) y los números de arriba son los de los mismos reportes recalificados con la nueva: una llamada con input inválido que Gemini reintentó bien en la misma corrida, 0 voseo también con los imperativos, y `nombre-raro` como se describe abajo.
 
 Reportes: `docs/reference/suite-cultural/2026-11-05-reporte-telegram*.md` (más `-telegram-tabla*`, el caso de la tabla con los datos en el mensaje, y `-telegram-ab-con` / `-ab-sin`).
 
-- **Pasa la vara** (0 voseo, 0 tablas anchas, ≥90% en un solo mensaje, HTML siempre válido), sin tocar el apéndice.
+- **Pasa la vara** (0 voseo, 0 tablas anchas, ≥90% del texto en un solo mensaje), sin tocar el apéndice.
 - **Las tablas:** con los datos en el mensaje, ningún modelo armó una tabla; los tres contestan con una lista por cafetería y una recomendación. Sin los datos, buscaban y no inventaban precios.
-- **El nombre mal oído** ("hacienda ishcanatun"): los tres preguntan "¿se escribe Xcanatún?" antes del borrador, como pide el apéndice. Una vez Gemini creó la card con el nombre ya bien escrito; no es un error.
+- **El nombre mal oído** ("hacienda ishcanatun"): casi siempre preguntan "¿se escribe Xcanatún?" antes del borrador, como pide el apéndice, o lo escriben bien (una vez Gemini creó la card ya con "Xcanatún"). La excepción: una corrida de Luna preguntó por la sesión pero no por el nombre (sin card, así que tampoco lo dejó mal escrito).
 - **Sonnet no crea la card de LinkedIn** cuando solo tiene la idea: pide los detalles ("para no inventarte la historia"), 3 de 3. El A/B con y sin el apéndice da lo mismo (0/3 en los dos), así que no lo causa Telegram: es su criterio, y es el segundo respaldo. Se deja así.
 - **Gemini usa encabezados** (35 en 45 corridas) aunque el apéndice pide evitarlos. En Telegram salen como negritas (`telegram-html.ts`), así que no rompe nada; es un aviso, no un fallo.
 - **Botones de la web:** ninguno mencionó el menú ＋ ni el panel; mandan a "abrir el borrador en Presencia".

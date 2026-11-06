@@ -538,7 +538,8 @@ Primer token visible: mediana y peor caso. Costo: promedio por turno, con los pr
 
 Los tres reportes de la cadena (este, `-respaldo-gemini` y `-respaldo-gemini-2`, `-respaldo-sonnet`), más el caso de la tabla con los datos en el mensaje (`-telegram-tabla*`, porque aquí el caso pedía buscar y la búsqueda de la suite no trae nada) y el A/B de Sonnet (`-telegram-ab-con` / `-ab-sin`). La tabla consolidada y la lectura completa están en ADR-030, "Suite cultural con el apéndice".
 
-- **Pasa la vara sin tocar el apéndice:** 100% en un solo mensaje, 0 tablas anchas, HTML siempre válido, 0 voseo (palabra completa: la primera corrida contaba "objeti*vos*").
+- **Pasa la vara sin tocar el apéndice:** 100% del texto en un solo mensaje, 0 tablas anchas, 0 voseo (palabra completa: la primera corrida contaba "objeti*vos*").
+- **La medición de este reporte es la primera versión.** La revisión del PR8 la corrigió (cards con input inválido, voseo imperativo, el nombre mal oído); los números recalificados están en ADR-030.
 - **Luna (el principal):** 24/24 en card cuando debía. Respuestas cortas, en listas, sin encabezados; manda a "abrir el borrador en Presencia" para la imagen.
 - **Gemini:** igual de bien, pero con encabezados (que Telegram muestra como negritas).
 - **Sonnet:** pide detalles antes del post de LinkedIn, con o sin el apéndice. Es su criterio, no efecto del canal.
