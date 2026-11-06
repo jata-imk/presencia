@@ -5,7 +5,7 @@
 > - la sonda con un bot real: `docs/reference/telegram/2026-11-01-sonda.md` (iOS y Desktop) y `-sonda-2.md` (Telegram X en un Android viejo);
 > - el bake-off de transcripción: `docs/reference/transcripcion/2026-11-01-bakeoff.md`;
 > - la suite cultural con el apéndice del canal: `docs/reference/suite-cultural/2026-11-05-reporte-telegram*.md` (sección "Suite cultural con el apéndice", abajo);
-> - la prueba en vivo con la cadena de modelos: `docs/reference/telegram/` (sección "Prueba en vivo", abajo).
+> - la prueba en vivo con la cadena de modelos: `docs/reference/telegram/2026-11-05-prueba-en-vivo.md` (sección "Prueba en vivo", abajo).
 
 **Decisión:** el bot de Telegram es otro adapter sobre el mismo chat (ADR-010). Un mensaje que llega por Telegram entra por **el mismo turno** que la web: la misma cadena de modelos con respaldo, las mismas tools (cards, `leer_enlace`, `buscar_en_web`, `ver_adjunto`), la misma traza y el mismo cobro en el ledger. Lo que cambia es solo la entrada (un update de Telegram en vez de un POST del composer) y la salida (mensajes de Telegram en vez del stream SSE).
 
@@ -254,6 +254,15 @@ Reportes: `docs/reference/suite-cultural/2026-11-05-reporte-telegram*.md` (más 
 - **Gemini usa encabezados** (35 en 45 corridas) aunque el apéndice pide evitarlos. En Telegram salen como negritas (`telegram-html.ts`), así que no rompe nada; es un aviso, no un fallo.
 - **Botones de la web:** ninguno mencionó el menú ＋ ni el panel; mandan a "abrir el borrador en Presencia".
 - Registro: tuteo natural y sin voseo en las 93 corridas. El veredicto de registro (1–5) queda para Jose en el reporte principal.
+
+## Prueba en vivo (F11 PR8)
+
+El 2026-11-05, con el bot de dev y el cel de Jose (`docs/reference/telegram/2026-11-05-prueba-en-vivo.md`):
+
+- **Con Luna, el checklist completo pasó:** vincular y desvincular (por la web y con `/disconnect`), el flujo del gym, fotos, álbum y PDF, link y búsqueda con Fuentes, `ver_adjunto` tras 4 turnos (pendiente desde el PR5), dos temas en paralelo, "Continuar en Telegram", detener, sin cuota (sin cobro) y Reintentar.
+- **Con los respaldos, el flujo del gym:** Gemini con OpenAI caído, y Sonnet con OpenAI y Google caídos, este en un tema que ya habían escrito Luna y Gemini (cambiar de proveedor a media conversación no rompe el turno). `ai_usage_events.fallback_from` lo registró en cada turno.
+- **La transcripción con Groq caído** la hizo `gpt-4o-mini-transcribe`, con el mismo eco y el mismo cobro.
+- El ledger cuadra: `chat_message` y `audio_transcription` por turno, y el `adjustment` del paso sin cuota compensado.
 
 ## Riesgo anotado: otros canales no tienen estas capacidades
 
