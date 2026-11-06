@@ -11,7 +11,7 @@ V1: web app (React) + bot de Telegram, 5 módulos (Chats, Calendario, Ritmo, Ana
 | Dónde                         | Qué hay                                                                                                                                    |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `docs/explanation/product/`   | Lore docs: overview (leer primero), chat, calendario, ritmo, configuración/voz de marca                                                    |
-| `docs/explanation/decisions/` | ADRs 001–029 — fuente de verdad de arquitectura (índice en su `README.md`)                                                                 |
+| `docs/explanation/decisions/` | ADRs 001–030 — fuente de verdad de arquitectura (índice en su `README.md`)                                                                 |
 | `docs/reference/`             | Contratos: modelo de datos + RLS, infraestructura, design tokens, panorama de modelos, suite cultural, bake-offs, sonda de releer adjuntos |
 | `docs/how-to/`                | Recetas operativas: entorno, desplegar (incluye backups), ver el gasto en modelos, trabajar con IA, ver estados en Storybook               |
 | `docs/tutorials/`             | Todavía no existe: se crea cuando haya un recorrido que valga la pena escribir                                                             |
@@ -24,7 +24,8 @@ La gestión de proyecto (roadmap F0–F13) vive en Notion (página "Presencia").
 - **Datos:** Postgres, multi-tenant por `user_id` + RLS (ADR-003), con pgvector para la memoria entre chats. Jobs con pg-boss (ADR-008).
 - **IA:** Vercel AI SDK multi-proveedor (ADR-004): la cadena configurada hoy es OpenAI, Google y Anthropic, con un respaldo por tarea en el `.env`; el registro también conecta DeepSeek, xAI, MiniMax y OpenRouter (`ai/provider-registry.ts`). Imágenes detrás de su propio adapter (ADR-025). Embeddings de un solo modelo, sin respaldo (addendum F10.8 de ADR-004). Cards por tool call con schema Zod por arquetipo (ADR-005). Streaming por SSE (ADR-006). **Harness propio sobre el AI SDK** (ADR-026, regla dura #8).
 - **Auth:** Better Auth, UI propia (ADR-007).
-- **Publicación:** PostFast y Upload-Post detrás de la interfaz `PublishingProvider` (ADR-009 y su addendum de F7.5). Telegram (F11, ADR-030): grammY detrás de un adapter de canal (ADR-010), por el mismo turno que la web; un tema de Telegram es un chat.
+- **Publicación:** PostFast y Upload-Post detrás de la interfaz `PublishingProvider` (ADR-009 y su addendum de F7.5).
+- **Canales:** la web y Telegram (F11, ADR-030): grammY, con el turno del chat hablando con un `TurnSink` (ADR-010), así que un mensaje de Telegram entra por el mismo turno que la web; un tema de Telegram es un chat. El bot vive solo en `app` (webhook en prod, polling con un bot aparte en dev: `docs/how-to/levantar-entorno.md`). WhatsApp queda después del MVP, con su ADR.
 - **Infra:** Docker Compose (app/worker/postgres) detrás del nginx que administra CloudPanel, sin Caddy; VPS OVH + Cloudflare R2 (ADR-011, ADR-020). Postgres corre con imagen propia (Alpine + pgvector, tag inmutable; addendum de ADR-020). Dev/prod parity: un solo `docker-compose.yml` para los dos stacks del VPS — lo que cambia es el `.env` y el profile.
 
 ## Reglas duras (no negociables)

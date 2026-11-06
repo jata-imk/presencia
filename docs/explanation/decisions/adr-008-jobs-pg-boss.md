@@ -1,6 +1,6 @@
 # ADR-008 · Jobs programados: pg-boss sobre Postgres
 
-**Decisión:** pg-boss como job queue (tendencias de Ritmo, agregación de horarios, resets de créditos, procesamiento Telegram). Worker = misma imagen Docker que la app, distinto entrypoint.
+**Decisión:** pg-boss como job queue (tendencias de Ritmo, agregación de horarios, resets de créditos). El turno de Telegram, que esta línea también listaba, no pasa por aquí: ver el addendum de F11. Worker = misma imagen Docker que la app, distinto entrypoint.
 
 **Razón:** Postgres como base Y cola = menos piezas móviles. Reintentos + visibilidad que un crontab no da.
 
@@ -201,3 +201,12 @@ La ingesta de métricas (ADR-021) sigue el patrón de este ADR sin novedad: enum
 **El barrido lee cards pero no puede leer cuentas.** `worker_metrics_scan` (migración `0026`) da acceso cross-tenant a las cards publicadas, pero `social_accounts` no tiene policy de barrido: un join ahí devolvería cero filas **en silencio**, que es el peor modo de fallo posible. El `provider_ref` de la cuenta se resuelve dentro de `runWithTenant`, en la misma transacción que lee el último snapshot de cada post. Es la misma asimetría de siempre: el barrido enumera, el tenant decide.
 
 Una diferencia con `cards.reconcile` que conviene tener escrita: **la llamada al proveedor acá es por usuario, no por lote global**. No es descuido ni copia incompleta del otro pase — Upload-Post pregunta por perfil (`user=<perfil>`), así que un lote global no existe del lado del proveedor. El barrido sigue siendo global; lo que se agrupa por usuario es la pregunta.
+
+## Addendum (2026-11-05, F11) — el turno de Telegram corre en `app`, no en pg-boss
+
+El diseño original listaba "procesamiento Telegram" como un job. Al construirlo (ADR-030) se descartó:
+
+- **El turno de un chat se serializa con un candado en memoria** (`turnsInFlight`, ADR-006) del proceso `app`. Un mensaje de Telegram atendido por el worker no lo vería: correría a la vez que un turno de la web sobre el mismo chat, y los dos escribirían la misma conversación.
+- **El webhook contesta 200 en cuanto acepta el update y lo atiende en el mismo proceso,** con una fila por tema en memoria (`telegram-conversation.service.ts`). Lo que no se aceptó, Telegram lo reenvía solo, así que la cola durable no aporta nada que pague el salto.
+- **`TelegramModule` no se carga en `worker.ts`.** El worker sigue siendo solo de jobs programados.
+- Consecuencia: `app` es **una sola réplica** (el bot, los candados y la fila por tema viven en su memoria). Ver el addendum F11 de ADR-020.

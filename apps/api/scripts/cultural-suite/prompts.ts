@@ -18,6 +18,12 @@ export interface CulturalPrompt {
   text: string;
   expectsTool: boolean;
   /**
+   * F11 PR8: el canal del mensaje. Con "telegram", el sistema lleva el apéndice
+   * del canal (`channelInstruction`), como en producción, y el reporte mide el
+   * formato para Telegram (telegram-prompts.ts).
+   */
+  channel?: "telegram";
+  /**
    * F10.10: si debe leer el enlace con leer_enlace (true) o no tocarlo
    * (false). Sin el campo, no se mide.
    */

@@ -35,6 +35,6 @@ Formato: **Decisión** → **Razón** → **Descartado**.
 | [027](./adr-027-storybook.md)                    | Storybook: catálogo local de estados de UI                    |
 | [028](./adr-028-leer-y-buscar-en-la-web.md)      | Leer y buscar en la web con tools propias                     |
 | [029](./adr-029-volver-a-ver-un-adjunto.md)      | Volver a ver un adjunto (`ver_adjunto`)                       |
-| [030](./adr-030-canal-telegram.md)               | Canal Telegram: un tema = un chat (borrador, F11)             |
+| [030](./adr-030-canal-telegram.md)               | Canal Telegram: un tema = un chat, por el mismo turno         |
 
 Ya no hay decisiones pendientes en este índice: el modelo por acción se cerró en F10.7 con la suite cultural (addendum de ADR-004 y `docs/reference/modelos-2026-10.md`).

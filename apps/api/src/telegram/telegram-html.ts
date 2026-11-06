@@ -214,6 +214,20 @@ export function telegramBlocks(markdown: string): string[] {
 }
 
 /** Sin etiquetas: el texto visible (las entidades se quedan, siguen siendo HTML válido). */
+/**
+ * Cada etiqueta que se abre se cierra, en orden: lo que Telegram exige para
+ * aceptar el HTML. Lo usan el spec y la suite cultural (F11 PR8).
+ */
+export function balanced(html: string): boolean {
+  const stack: string[] = [];
+  for (const m of html.matchAll(/<(\/?)([a-z]+)[^>]*>/g)) {
+    if (m[1]) {
+      if (stack.pop() !== m[2]) return false;
+    } else stack.push(m[2]!);
+  }
+  return stack.length === 0;
+}
+
 export function stripTags(html: string): string {
   return html.replace(/<[^>]+>/g, "");
 }

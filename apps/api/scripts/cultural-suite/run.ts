@@ -47,12 +47,19 @@ import {
   parseModelChain,
   parseModelEntry,
 } from "../../src/ai/provider-registry.js";
-import { buildSystemPrompt } from "../../src/chat/system-prompt.js";
+import { Lexer } from "marked";
+import { buildSystemPrompt, channelInstruction } from "../../src/chat/system-prompt.js";
+import {
+  TELEGRAM_MESSAGE_LIMIT,
+  balanced,
+  toTelegramMessages,
+} from "../../src/telegram/telegram-html.js";
 import { todayInstruction } from "../../src/chat/today.js";
 import { messagesWithAttachments } from "./attachments.js";
 import { messagesWithHistory } from "./history.js";
 import { culturalPrompts, type CulturalPrompt } from "./prompts.js";
 import { rereadPrompts } from "./reread-prompts.js";
+import { telegramPrompts, VOSEO } from "./telegram-prompts.js";
 import { CULTURAL_SUITE_VOICES, type VoiceFixture } from "./voices.js";
 import { suiteReadLinkTools } from "./web-pages.js";
 import { suiteWebSearchTools } from "./web-search.js";
@@ -406,6 +413,80 @@ function appendResultLines(
   }
 }
 
+/** F11 PR8: lo que mide un caso de Telegram (telegram-prompts.ts). */
+interface TelegramVerdict {
+  /** Cuántos mensajes de Telegram salen de la respuesta (toTelegramMessages). */
+  messages: number;
+  /** Tablas del markdown con más de 3 columnas (el apéndice pide no pasar de 3). */
+  wideTables: number;
+  headings: number;
+  /** Todos los mensajes caben en 4,096 y cierran sus etiquetas. */
+  validHtml: boolean;
+  /** Llamó una tool de borrador si y solo si el caso la pedía. */
+  toolOk: boolean;
+  voseo: string[];
+}
+
+function telegramVerdict(result: RunResult, prompt: CulturalPrompt): TelegramVerdict {
+  const tokens = Lexer.lex(result.text);
+  const messages = toTelegramMessages(result.text);
+  const cards = result.toolAttempts.filter((a) => !WEB_TOOLS.has(a.toolName)).length;
+  const lower = result.text.toLowerCase();
+  return {
+    messages: messages.length,
+    wideTables: tokens.filter(
+      (t) => t.type === "table" && (t as { header: unknown[] }).header.length > 3,
+    ).length,
+    headings: tokens.filter((t) => t.type === "heading").length,
+    validHtml: messages.every((m) => m.length <= TELEGRAM_MESSAGE_LIMIT && balanced(m)),
+    toolOk: cards > 0 === prompt.expectsTool,
+    voseo: [...new Set([...lower.matchAll(VOSEO)].map((m) => m[0]))],
+  };
+}
+
+function appendTelegramLines(
+  lines: string[],
+  verdict: TelegramVerdict,
+  prompt: CulturalPrompt,
+): void {
+  lines.push(
+    `- Telegram: ${String(verdict.messages)} mensaje${verdict.messages === 1 ? "" : "s"} ${verdict.messages === 1 ? "✅" : "⚠️"} · tablas de más de 3 columnas: ${String(verdict.wideTables)} ${verdict.wideTables === 0 ? "✅" : "❌"} · encabezados: ${String(verdict.headings)} ${verdict.headings === 0 ? "✅" : "⚠️"} · HTML válido: ${verdict.validHtml ? "sí ✅" : "NO ❌"}`,
+    `- ¿Card cuando debía?: ${prompt.expectsTool ? "debía crearla" : "no debía"} ${verdict.toolOk ? "✅" : "❌"} · voseo: ${verdict.voseo.length > 0 ? `SÍ (${verdict.voseo.join(", ")}) ❌` : "no ✅"}`,
+    "",
+  );
+}
+
+/**
+ * F11 PR8: la vara de Telegram, por modelo que respondió: 0 voseo, card
+ * cuando se pide, 0 tablas de más de 3 columnas, ≥90% en un solo mensaje y el
+ * HTML siempre válido.
+ */
+function telegramTable(
+  runs: { model: string; error: boolean; verdict: TelegramVerdict }[],
+): string[] {
+  if (runs.length === 0) return [];
+  const pct = (part: number, total: number) =>
+    total === 0
+      ? "—"
+      : `${String(part)}/${String(total)} (${String(Math.round((part / total) * 100))}%)`;
+  const rows = [...new Set(runs.map((r) => r.model))].map((model) => {
+    const mine = runs.filter((r) => r.model === model);
+    const ok = mine.filter((r) => !r.error);
+    const sum = (f: (v: TelegramVerdict) => number) => ok.reduce((n, r) => n + f(r.verdict), 0);
+    return `| \`${model}\` | ${pct(ok.filter((r) => r.verdict.messages === 1).length, ok.length)} | ${pct(ok.filter((r) => r.verdict.toolOk).length, ok.length)} | ${String(sum((v) => v.wideTables))} | ${String(sum((v) => v.headings))} | ${String(ok.filter((r) => !r.verdict.validHtml).length)} | ${String(ok.filter((r) => r.verdict.voseo.length > 0).length)} | ${String(mine.length - ok.length)} |`;
+  });
+  return [
+    "## Telegram: la vara (F11)",
+    "",
+    "0 voseo, card cuando se pide, 0 tablas de más de 3 columnas, ≥90% en un solo mensaje, HTML siempre válido y 0 errores con el respaldo forzado. Encabezados: aviso, no falla.",
+    "",
+    "| Modelo | Un solo mensaje | Card cuando debía | Tablas anchas | Encabezados | HTML inválido | Con voseo | Errores |",
+    "| ------ | --------------- | ----------------- | ------------- | ----------- | ------------- | --------- | ------- |",
+    ...rows,
+    "",
+  ];
+}
+
 const TOOL_LABELS: Record<string, string> = {
   [READ_LINK_TOOL_NAME]: "Lectura",
   [WEB_SEARCH_TOOL_NAME]: "Búsqueda",
@@ -614,8 +695,11 @@ async function main(): Promise<void> {
     promptFilter?.some((f) => (f.endsWith("*") ? id.startsWith(f.slice(0, -1)) : id === f)) ?? true;
   // Los de releer (F10.11) solo si el filtro los pide: cada uno es una
   // conversación con imágenes o PDF, y la suite normal mide el registro.
+  // F11 PR8: AI_SUITE_CHANNEL=web corre los casos de Telegram SIN el apéndice
+  // del canal, para comparar si un comportamiento viene de él.
+  const forceWeb = process.env.AI_SUITE_CHANNEL === "web";
   const prompts = promptFilter
-    ? [...culturalPrompts, ...rereadPrompts].filter((p) => matches(p.id))
+    ? [...culturalPrompts, ...rereadPrompts, ...telegramPrompts].filter((p) => matches(p.id))
     : culturalPrompts;
   if (prompts.length === 0) throw new Error("AI_SUITE_PROMPTS no coincide con ningún caso.");
 
@@ -651,6 +735,13 @@ async function main(): Promise<void> {
   const lines: string[] = [
     `# Suite de regresión cultural — ${date}`,
     "",
+    ...(prompts.some((p) => p.channel)
+      ? [
+          forceWeb
+            ? "Los casos `telegram-*` corren **sin** el apéndice del canal (`AI_SUITE_CHANNEL=web`), para comparar."
+            : "Los casos `telegram-*` llevan además el apéndice del canal (`channelInstruction`), antes de la fecha, como en producción.",
+        ]
+      : []),
     `System prompt: el de producción (\`apps/api/src/chat/system-prompt.ts\`), con "hoy" fijo en ${SUITE_TODAY.toISOString().slice(0, 10)} (\`today.ts\`)` +
       (voices.length > 0
         ? `, ensamblado por voz de marca (\`buildSystemPrompt\`).`
@@ -704,10 +795,13 @@ async function main(): Promise<void> {
     verdict: RereadVerdict;
   }[] = [];
 
+  // F11 PR8: cada corrida de un caso de Telegram, para su tabla.
+  const telegramRuns: { model: string; error: boolean; verdict: TelegramVerdict }[] = [];
+
   for (const prompt of prompts) {
     console.log(`\n▶ ${prompt.id}`);
     lines.push(
-      `## ${prompt.id}${prompt.expectsTool ? " (espera tool call)" : ""}${
+      `## ${prompt.id}${prompt.channel ? " (Telegram)" : ""}${prompt.expectsTool ? " (espera tool call)" : ""}${
         prompt.expectsReadLink === true
           ? " (espera leer el enlace)"
           : prompt.expectsReadLink === false
@@ -754,10 +848,14 @@ async function main(): Promise<void> {
       for (const voiceFixture of passes) {
         console.log(`  · ${modelId}${voiceFixture ? ` [${voiceFixture.id}]` : ""}...`);
         // F10.10: con la fecha al final, como el chat (chat.service.ts).
+        // F11 PR8: con el apéndice del canal antes de la fecha, como el chat.
         const system = [
           buildSystemPrompt(voiceFixture?.voice ?? null),
+          channelInstruction(forceWeb ? "web" : (prompt.channel ?? "web")),
           todayInstruction(SUITE_TODAY, "America/Merida"),
-        ].join("\n\n");
+        ]
+          .filter((part): part is string => part !== null)
+          .join("\n\n");
         if (voiceFixture) lines.push(`#### Voz: ${voiceFixture.label}`, "");
         for (let run = 1; run <= runs; run++) {
           const result = await runPrompt(modelId, input, system, caseTools);
@@ -787,6 +885,15 @@ async function main(): Promise<void> {
             prompt.expectsReread !== undefined || prompt.expected || prompt.forbiddenInCards;
           const verdict = measured ? rereadVerdict(result, prompt) : null;
           appendResultLines(lines, result, prompt, verdict);
+          if (prompt.channel) {
+            const tg = telegramVerdict(result, prompt);
+            if (!result.error) appendTelegramLines(lines, tg, prompt);
+            telegramRuns.push({
+              model: chainMode ? result.ranModel : modelId,
+              error: Boolean(result.error),
+              verdict: tg,
+            });
+          }
           if (verdict && prompt.expectsReread !== undefined) {
             rereadRuns.push({
               model: chainMode ? result.ranModel : modelId,
@@ -820,6 +927,7 @@ async function main(): Promise<void> {
     }),
     "",
     ...rereadTable(rereadRuns),
+    ...telegramTable(telegramRuns),
     "## Veredicto (juicio humano)",
     "",
     "| Modelo | Registro cultural (1-5) | Tool calling | Notas |",

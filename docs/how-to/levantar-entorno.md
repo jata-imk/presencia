@@ -119,12 +119,29 @@ La cola es pg-boss sobre el mismo Postgres, en el schema `pgboss` (lo crea la mi
 
 ## IA multi-proveedor (desde F3, ADR-004)
 
-- El modelo activo se elige con `AI_MODEL` (formato `proveedor:modelo`). Proveedores soportados: `google`, `openai`, `anthropic`, `deepseek`, `minimax`, `kimi` (ej. `google:gemini-3.6-flash`, `openai:gpt-6-luna`, `deepseek:deepseek-v4-flash`). Cambiar de proveedor = editar la variable y reiniciar el proceso (`pnpm dev` en local, reciclar contenedor en prod).
+- El modelo activo se elige con `AI_MODEL` (formato `proveedor:modelo`). Proveedores soportados: `google`, `openai`, `anthropic`, `deepseek`, `minimax`, `kimi`, y `groq` solo para transcribir (ej. `google:gemini-3.6-flash`, `openai:gpt-6-luna`, `deepseek:deepseek-v4-flash`). Cambiar de proveedor = editar la variable y reiniciar el proceso (`pnpm dev` en local, reciclar contenedor en prod).
 - **Esfuerzo de razonamiento (F10.7):** cualquier variable de modelo de texto acepta `@esfuerzo` al final, `openai:gpt-6-luna@high`, con `none`, `minimal`, `low`, `medium`, `high` o `xhigh`. Sin `@` corre el default del proveedor. Un nivel que no existe truena al boot; uno que el modelo no tiene (Gemini 3.8 no tiene `minimal`) lo ajusta el SDK al más cercano y lo avisa en el log. Las variables de imagen no lo aceptan.
 - **Cadena de respaldo (F10.7):** las variables de texto aceptan varios modelos separados por coma, `openai:gpt-6-luna@high,google:gemini-3.8-flash@medium`. El primero es el principal; si su proveedor se cae (5xx, timeout, red, 429, sin saldo), responde el siguiente sin que el creator lo note, y `ai_usage_events.fallback_from` lo deja anotado. Un 400 nunca cae al siguiente. Para verlo en dev: `AI_FALLBACK_SIMULATE=openai` en el `.env` finge caído a OpenAI. Ojo: `pnpm dev` (turbo) no pasa variables del proceso a la API; para un override de una sola corrida usa `pnpm --filter @presencia/api dev`.
-- Solo la API key del proveedor de `AI_MODEL` es obligatoria; las demás (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `MINIMAX_API_KEY`, `KIMI_API_KEY`, y desde F10.7 `XAI_API_KEY` y `OPENROUTER_API_KEY` para imágenes) son opcionales — sin key, ese proveedor no se registra y la suite lo salta con aviso.
+- Solo la API key del proveedor de `AI_MODEL` es obligatoria; las demás (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `MINIMAX_API_KEY`, `KIMI_API_KEY`, y desde F10.7 `XAI_API_KEY` y `OPENROUTER_API_KEY` para imágenes; `GROQ_API_KEY` es obligatoria solo con el bot de Telegram encendido) son opcionales — sin key, ese proveedor no se registra y la suite lo salta con aviso.
 - Suite de regresión cultural: `pnpm --filter @presencia/api suite:cultural` corre los prompts de `apps/api/scripts/cultural-suite/` contra los modelos de `AI_SUITE_MODELS` (o el trío default) y deja el reporte en `docs/reference/suite-cultural/`.
-- **Routing por tarea (F4.5):** `AI_MODEL_CHAT`, `AI_MODEL_UTILITY`, `AI_MODEL_ADAPT` son opcionales — cada una sobreescribe `AI_MODEL` para su tier (chat / titulares y compactar historial / adaptar posts y destilar voz). Sin setear, esa tarea usa `AI_MODEL` igual que antes de F4.5. Mismo fail-fast: si la seteas, su proveedor necesita la API key correspondiente al boot. `AiService.resolveForTask(task)` es el único punto donde esto se lee — el call site declara su tarea, nunca se infiere.
+- **Routing por tarea (F4.5):** `AI_MODEL_CHAT`, `AI_MODEL_UTILITY`, `AI_MODEL_ADAPT` son opcionales — cada una sobreescribe `AI_MODEL` para su tier (chat / titulares y compactar historial / adaptar posts y destilar voz). Sin setear, esa tarea usa `AI_MODEL` igual que antes de F4.5. Mismo fail-fast: si la seteas, su proveedor necesita la API key correspondiente al boot. `AiService.resolveForTask(task)` es el único punto donde esto se lee — el call site declara su tarea, nunca se infiere. Desde F11, `AI_MODEL_TRANSCRIBE` es la cadena de las notas de voz (default: Groq con respaldo de OpenAI).
+
+## Telegram (desde F11, ADR-030)
+
+Sin `TELEGRAM_BOT_TOKEN` el canal está apagado: la API arranca igual y Configuración no muestra Telegram. Para trabajar con el bot:
+
+1. **Un bot de dev, aparte del de prod.** Un bot no puede tener webhook (prod) y polling (dev) a la vez, y si los dos procesos usan el mismo token se pisan. En [@BotFather](https://t.me/BotFather): `/newbot`, activar los **temas** (Threaded Mode) y "Allow Groups" apagado. El de Jose es `@presencia_dev_bot`.
+2. **En el `.env`:** `TELEGRAM_BOT_TOKEN` y `TELEGRAM_MODE=polling` (el default), más `GROQ_API_KEY` para las notas de voz (obligatoria con el token).
+3. `pnpm dev`. El log dice `[telegram] @<bot> escuchando por polling`. Para vincular tu cuenta: Configuración → Canales conectados → Conectar Telegram.
+
+Lo que conviene saber:
+
+- **Sin URL pública, sin botones a localhost:** Telegram rechaza un botón URL que apunte a `localhost`, así que en dev "Abrir en Presencia" sale como enlace en el texto.
+- **`tsx watch` y el 409:** el módulo corta un arranque a medias al recargar, pero un watcher fantasma (ver la memoria del proyecto sobre `tsx watch`) sigue leyendo con el mismo token, y Telegram contesta 409 al segundo. Matar los `node` con `tsx`/`main.ts` y volver a levantar.
+- **Probar los respaldos:** `AI_FALLBACK_SIMULATE=openai` (chat) o `=groq` (notas de voz) finge caído a ese proveedor; responde el siguiente y `ai_usage_events.fallback_from` lo anota.
+- **La búsqueda en dev es de mentira** si `WEB_SEARCH_PROVIDER` no está (`fake`): no es un bug del bot.
+- **La sonda** con un bot real (lo que validó los temas, los drafts y el HTML en el PR1): `pnpm --filter @presencia/api sonda:telegram`.
+- **Sin cel a la mano:** `seed:dev` siembra el chat "Nota de voz desde Telegram" (en "Estados del turno"), con la etiqueta de la nota y el ícono de canal en Recientes.
 
 ## VS Code
 

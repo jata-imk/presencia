@@ -118,6 +118,12 @@ UPLOAD_POST_API_KEY=...
 
 WEB_SEARCH_PROVIDER=brave
 BRAVE_SEARCH_API_KEY=...
+
+# Telegram (F11): ver "4c. Bot de Telegram"
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_MODE=webhook
+TELEGRAM_WEBHOOK_SECRET=<openssl rand -hex 32>
+GROQ_API_KEY=...
 ```
 
 Cada modelo de una cadena (F10.7, ADR-004) necesita la key de su proveedor: un respaldo sin key no truena
@@ -134,7 +140,7 @@ Sobran en prod: `DEEPSEEK_API_KEY` (DeepSeek quedó fuera de las cadenas en F10.
 `AI_MODEL_IMAGE` con un aviso en el log. Hay que quitarla y poner ese modelo en la lista. Ojo: todo lo que esté en `AI_MODEL_IMAGE` es respaldo **y** opción de "Probar con otro
 generador" (Generador 2, 3…): no hay forma de tener un respaldo que el creator no pueda elegir.
 
-Tres cosas que se olvidan y muerden:
+Cuatro cosas que se olvidan y muerden:
 
 - **`WEB_SEARCH_PROVIDER` tampoco (F10.10).** Con `fake`, "busca en la web" contesta un resultado de
   mentira: el modelo lo dice, pero el creator no recibe nada real. Sin la variable, el default es `fake`,
@@ -142,6 +148,9 @@ Tres cosas que se olvidan y muerden:
 - **`PUBLISHING_PROVIDER` no puede ser `fake` en prod.** El provider falso guarda los posts programados
   en memoria del proceso, y el `worker` corre en OTRO proceso: su mapa estaría vacío y la reconciliación
   marcaría **fallida toda card programada** (ADR-008).
+- **Telegram en prod es webhook, siempre (F11).** Con `TELEGRAM_BOT_TOKEN` puesto, `env.ts` no deja
+  arrancar la API con `TELEGRAM_MODE=polling` en producción, ni en webhook sin `TELEGRAM_WEBHOOK_SECRET`
+  (32 a 256 caracteres de `[A-Za-z0-9_-]`), ni sin `GROQ_API_KEY` para las notas de voz.
 - **No definir `PORT`.** El contenedor tiene que seguir escuchando en 3000; el puerto del host lo fija
   `APP_PORT`.
 - **No definir `WORKER_INLINE` ni `NODE_ENV`.** El compose los fija (`false` y `production`) en los dos
@@ -202,6 +211,23 @@ ASSETS_S3_BUCKET=presencia-assets
 
 Para comprobarlo: subir una imagen a una card en borrador y abrirla. El `<img>` pide
 `/api/assets/<id>/content`, que responde un 302 hacia `<account-id>.r2.cloudflarestorage.com`.
+
+### 4c. Bot de Telegram (F11, ADR-030)
+
+Sin `TELEGRAM_BOT_TOKEN` el canal está apagado: la API arranca igual y Configuración no muestra la
+sección "Chatear desde". Para encenderlo:
+
+1. **Un bot de prod, aparte del de dev.** En [@BotFather](https://t.me/BotFather): `/newbot`, y en su
+   configuración activar los **temas** (Threaded Mode) y **permitir que los usuarios creen temas**. Un
+   tema es un chat de Presencia: sin temas, todo cae en una sola conversación. "Allow Groups" apagado: el
+   bot solo atiende chats privados.
+2. **Las variables** del paso 3: el token, `TELEGRAM_MODE=webhook`, el secret (generado en el VPS con
+   `openssl rand -hex 32`, que nunca sale de ahí) y `GROQ_API_KEY`. `AI_MODEL_TRANSCRIBE` es opcional (el
+   default es Groq con respaldo de OpenAI).
+3. **Desplegar** (`up -d`). La app registra el webhook sola, y también el menú de comandos: no hay que
+   ponerlos a mano en BotFather.
+
+Ojo: cualquier reinicio de `app` con el token puesto enciende el bot.
 
 ### 5. El vhost de CloudPanel
 
@@ -283,6 +309,21 @@ sudo docker compose -p presencia-prod --profile app ps
 Si la versión trae migraciones, se aplican **antes** del `up`, con el túnel al 5435 y el comando del
 paso 2.
 
+**Espera a que _Release_ termine antes del `pull`.** La imagen se publica unos minutos después del merge
+(CI y luego _Release_, en GitHub Actions). Un `pull` antes baja la versión anterior sin avisar: pasó con
+el primer deploy de F11. Para saber qué commit corre el contenedor:
+
+```bash
+sudo docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
+  $(sudo docker compose -p presencia-prod ps -q app)
+```
+
+**Un índice nuevo sobre una tabla grande** (como `0063_canales_del_chat`, F11) bloquea las escrituras a
+esa tabla mientras se construye: el migrador de drizzle corre cada migración en una transacción, donde
+`CREATE INDEX CONCURRENTLY` no se puede. Hoy son milisegundos. Con millones de filas, la migración se
+escribe con `CREATE INDEX IF NOT EXISTS` y el índice se crea antes a mano con `CONCURRENTLY` y el mismo
+nombre; la migración queda en un no-op.
+
 Sin `APP_IMAGE` en el `.env` se despliega `latest`, que es la punta de `main` con CI en verde. Para
 **volver a una versión anterior** no hace falta reconstruir: se fija el tag exacto y se repite `pull` +
 `up -d`.
@@ -356,6 +397,26 @@ devolver 200, no 404: es el fallback del SPA.
 
 El streaming se comprueba con el chat abierto en el navegador: el texto aparece palabra por palabra. Si
 sale completo de golpe, falta el `proxy_buffering off`.
+
+**Telegram** (si hay token):
+
+```bash
+# El log del arranque: "[telegram] @<bot> recibe por webhook en https://…/api/telegram/webhook"
+sudo docker compose -p presencia-prod logs app | grep -i telegram
+
+# El webhook registrado: url correcta, pending_update_count 0 y sin last_error_*
+TOKEN=$(sudo grep '^TELEGRAM_BOT_TOKEN=' .env | cut -d= -f2-)
+curl -s "https://api.telegram.org/bot$TOKEN/getWebhookInfo"; echo
+unset TOKEN
+
+# Sin el secret, 401 (200 o 201 = el webhook acepta a cualquiera: parar y revisar)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  https://presencia.josetejero.com/api/telegram/webhook -H 'content-type: application/json' -d '{}'
+```
+
+Y de humo, desde el cel: `/start` al bot sin vincular contesta cómo conectarse; conectar desde
+Configuración → Canales conectados (la página cambia sola a "Conectado"); un mensaje en un tema nuevo
+crea su chat en la web.
 
 **El backup no está verificado hasta que se restaura — y no alcanza con que vuelvan los datos.**
 Restaurar como superusuario prueba que los datos están; no prueba que **la app pueda usarlos**. El
@@ -442,3 +503,7 @@ select name, state, created_on, output from pgboss.job order by created_on desc 
 | El chat llega de golpe al final        | Falta `proxy_buffering off` en el vhost                                                          |
 | `manifest unknown` en el `pull`        | Ese tag no existe: revisar el run de _Release_ en Actions                                        |
 | `denied` / `unauthorized` en el `pull` | El paquete quedó privado: _Packages → presencia → Package settings → Change visibility → Public_ |
+| El bot no contesta                     | `getWebhookInfo` (`last_error_message`) y `logs app \| grep -i telegram`                         |
+| `getWebhookInfo` con error 401         | El secret del `.env` cambió sin reiniciar `app`: el webhook se registró con el anterior          |
+| Configuración no muestra Telegram      | Sin `TELEGRAM_BOT_TOKEN`, o el bot no arrancó todavía (reintenta solo: ver `logs app`)           |
+| Lo nuevo del merge no aparece          | El `pull` fue antes de que _Release_ publicara: revisar el commit del contenedor y repetir       |

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   TELEGRAM_MESSAGE_LIMIT,
+  balanced,
   telegramBlocks,
   toTelegramDraft,
   toTelegramMessages,
@@ -11,17 +12,6 @@ import {
 // sus etiquetas cerradas, también a medias o cortado en varios mensajes.
 
 const html = (md: string) => telegramBlocks(md).join("\n\n");
-
-/** Cada etiqueta que se abre se cierra, en orden. */
-function balanced(text: string): boolean {
-  const stack: string[] = [];
-  for (const m of text.matchAll(/<(\/?)([a-z]+)[^>]*>/g)) {
-    if (m[1]) {
-      if (stack.pop() !== m[2]) return false;
-    } else stack.push(m[2]!);
-  }
-  return stack.length === 0;
-}
 
 describe("telegramBlocks", () => {
   it("negritas, cursivas, tachado, código y enlaces", () => {
