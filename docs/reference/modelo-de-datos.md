@@ -403,7 +403,7 @@ Existe por tres razones, y ninguna es "guardar historial":
 
 **Se cobra solo adelantar tendencias que el usuario ya tiene.** Sin tanda, con la tanda vencida o con una vacía —lo que deja una búsqueda que no encontró nada citable— el refresco es gratis: cobrar por la primera entrega, o por reintentar lo que no dio resultados, es cobrar por lo que no se recibió. La regla vive sola en `apps/api/src/trends/cobro.ts` y tiene su propio spec.
 
-RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `message_attachments`, `web_reads`, `publication_cards`, `assets`, `channel_links`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`, `post_metrics`, `cadence_targets`, `ritmo_narrations`, `user_trends`, `trend_sources`, `trend_refreshes`, `image_generations`, `card_versions`. **Ya no hay excepciones**: `niche_trends` era la única tabla del dominio sin `user_id` —una caché compartida por `(vertical, país, macro-región)`, justificada en ADR-023— y se eliminó en F9.6 al pasar las tendencias a ser por usuario (ADR-024). `user_trends` lleva además una policy de worker acotada a `SELECT` y al centinela del barrido, con el mismo patrón que `worker_metrics_scan`: el barrido necesita preguntar cross-tenant a quién le toca refresco, y sin esa policy devolvería cero filas y las tendencias no se refrescarían nunca, sin un solo error. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
+RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `message_attachments`, `web_reads`, `publication_cards`, `assets`, `channel_links`, `telegram_threads`, `social_accounts`, `social_connect_intents`, `credit_ledger`, `ai_usage_events`, `post_metrics`, `cadence_targets`, `ritmo_narrations`, `user_trends`, `trend_sources`, `trend_refreshes`, `image_generations`, `card_versions`. **Ya no hay excepciones**: `niche_trends` era la única tabla del dominio sin `user_id` —una caché compartida por `(vertical, país, macro-región)`, justificada en ADR-023— y se eliminó en F9.6 al pasar las tendencias a ser por usuario (ADR-024). `user_trends` lleva además una policy de worker acotada a `SELECT` y al centinela del barrido, con el mismo patrón que `worker_metrics_scan`: el barrido necesita preguntar cross-tenant a quién le toca refresco, y sin esa policy devolvería cero filas y las tendencias no se refrescarían nunca, sin un solo error. Las tablas de Better Auth se administran con su propio contrato (la librería filtra por sesión); evaluar RLS ahí como capa extra en F13 (hardening).
 
 ### La tercera del worker: `worker_scan` sobre `message_attachments` (F10.9)
 
@@ -419,6 +419,8 @@ erDiagram
     users ||--o{ credit_ledger : consume
     users ||--o{ ai_usage_events : consume
     users ||--o{ channel_links : vincula
+    users ||--o{ telegram_threads : "habla por"
+    chats ||--o| telegram_threads : "es un tema de"
     users ||--o{ social_accounts : conecta
     brand_voices |o--o{ folders : "voz por carpeta"
     folders |o--o{ chats : agrupa

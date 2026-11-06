@@ -145,7 +145,8 @@ const envSchema = z
     TELEGRAM_MODE: z.enum(["polling", "webhook"]).default("polling"),
     // El `secret_token` de setWebhook: Telegram lo manda en el header
     // X-Telegram-Bot-Api-Secret-Token y el webhook rechaza lo que no lo traiga.
-    // Solo [A-Za-z0-9_-], 1-256 (spec del Bot API); generarlo con
+    // Solo [A-Za-z0-9_-]; el Bot API acepta 1-256, aquí se piden al menos 32
+    // para que no se pueda adivinar. Generarlo con
     // `openssl rand -hex 32`.
     TELEGRAM_WEBHOOK_SECRET: z
       .string()

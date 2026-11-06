@@ -44,8 +44,8 @@ de cero.
 Si convertimos toda esa fragmentación en una sola conversación
 con un asistente que SÍ te conoce —tu voz, tu audiencia, tu
 nicho, y crucialmente tu contexto cultural y regional—, y que
-es accesible desde donde ya vives (chat web, WhatsApp,
-Telegram), el flujo de creación de contenido se vuelve natural
+es accesible desde donde ya vives (el chat web y Telegram; más
+canales después del MVP), el flujo de creación de contenido se vuelve natural
 en lugar de extenuante.
 
 No es "una herramienta más de IA". Es el reemplazo del flujo
@@ -245,6 +245,8 @@ Configuración se accede desde:
 
 **CUENTA:** Mi perfil, Apariencia
 **CONTENIDO:** Voz de marca, Plantillas, Canales conectados
+(con dos partes: "Chatear desde", para conectar Telegram, y
+"Redes para publicar", las cuentas donde Presencia publica)
 **PLAN:** Créditos y plan, Facturación
 
 La sub-sección más importante es **Voz de marca**. Es donde el
@@ -440,8 +442,9 @@ no, desaparecería del sidebar y se perdería el "estás aquí".
 **Sección Recientes.** Los últimos chats del usuario que **no
 están fijados ni dentro de una carpeta** — cada chat aparece en
 un solo lugar, que fue el pedido concreto de Jose (2026-08-19).
-Cada uno muestra: iconos de canales tocados (max 2 + número
-si hay más), título del chat, timestamp relativo. Hover
+Cada uno muestra: el título del chat y, si pasó por un canal
+que no es la web (Telegram), su ícono (max 2 + número si hay
+más; un chat solo de la web no lleva ícono). Hover
 muestra menú contextual con opciones (fijar, renombrar, mover,
 archivar, eliminar). Si el usuario tiene todo organizado en
 carpetas, la sección lo dice en vez de quedar como un hueco
@@ -608,20 +611,28 @@ razones:
 
 ### Qué significa "multi-canal" en V1
 
-El usuario puede iniciar y continuar una idea desde 3 lugares,
-con las conversaciones **sincronizadas entre canales:**
+El usuario puede iniciar y continuar una idea desde 2 lugares,
+con las conversaciones **sincronizadas entre canales** (es la
+misma conversación, no una copia):
 
 - Chat web (in-app, el hogar principal del producto)
-- WhatsApp
-- Telegram
-  **Telegram es el canal de mensajería prioritario para arrancar**,
-  no WhatsApp. Razón técnica y estratégica: los bots de Telegram
-  son gratis, abiertos y flexibles; la WhatsApp Business API es
-  de pago por conversación, con plantillas que Meta tiene que
-  aprobar, y vive bajo el techo del rival. Arrancar por Telegram
-  nos **desacopla de Meta** justo cuando Meta se vuelve
-  competidor. WhatsApp se suma cuando haya tracción para bancar
-  el costo.
+- Telegram (F11, ADR-030): cada tema del bot es un chat
+  **Telegram es el canal de mensajería de V1**, no WhatsApp.
+  Razón técnica y estratégica: los bots de Telegram son
+  gratis, abiertos y flexibles (temas, respuestas que se
+  escriben en vivo, botón de detener); la WhatsApp Business
+  API es de pago por conversación, con plantillas que Meta
+  tiene que aprobar, y vive bajo el techo del rival. Arrancar
+  por Telegram nos **desacopla de Meta** justo cuando Meta se
+  vuelve competidor.
+
+**WhatsApp queda después del MVP** (decisión de Jose,
+2026-11-05), con su propio ADR. Desde el 2026-01-15 la
+política de Meta prohíbe asistentes de propósito general en
+la Business API, así que antes de construir hay que ver si
+Presencia cabe en ella; y sin temas ni respuestas en vivo, su
+flujo sería otro. La **app móvil** tiene prioridad sobre
+WhatsApp después del MVP.
 
 **Canales opcionales a futuro (V2+):** correo, SMS, Discord,
 Facebook Messenger.
@@ -644,19 +655,21 @@ Ejemplo de flujo real:
    Telegram a "Presencia": _"Se me ocurrió una idea: tres
    lecciones que aprendí en mi primer año como freelancer.
    ¿Me la desarrollas?"_
-2. **9:31 AM:** Presencia transcribe el audio, genera 3
-   ideas concretas con bullet points, las manda por Telegram.
+2. **9:31 AM:** Presencia transcribe el audio (y le muestra
+   "🎤 Escuché: …" para que vea si oyó bien), genera 3 ideas
+   concretas con bullet points y las manda por Telegram.
 3. **11:00 AM, comiendo:** El creator responde: _"Me gusta
    la segunda. Hazme un post de LinkedIn."_
 4. **11:01 AM:** Presencia genera el post de LinkedIn. Lo
-   manda con el preview.
+   manda como un mensaje con la red, el gancho y el texto
+   recortado, y un botón "Abrir en Presencia".
 5. **3:00 PM, llega a casa, abre la app web:** Ve la
    conversación completa, con todas las cards de publicación
    visibles. Refina el post en el panel lateral expandido
    (donde tiene más herramientas que en el chat de mensajería).
    Lo programa para mañana.
-6. **El indicador del chat en el sidebar muestra:** 🟢💬
-   (estuvo en Telegram y en web).
+6. **El chat en el sidebar lleva el ícono de Telegram**
+   (estuvo en Telegram; la web no se marca).
    Es un flujo cómodo y fluido. Pero el motivo por el que el
    usuario elige Presencia y no el Manus de WhatsApp no es este
    flujo —es que Presencia le habla en su idioma, conoce su
@@ -678,9 +691,10 @@ scope manejable y el producto enfocado.
   agregue clicks. Si después validamos que se necesita, lo
   agregamos.
 - **Notificaciones in-app.** No hay icono campana, no hay
-  panel de notifs. Razón: las notifs importantes pueden venir
-  por Telegram/WhatsApp naturalmente. Sumar un sistema más
-  es ruido innecesario en V1.
+  panel de notifs. Razón: las notifs importantes podrán venir
+  por Telegram naturalmente (el bot ya existe, pero hoy no
+  avisa nada solo: eso llega con las alertas, F12.8). Sumar
+  un sistema más es ruido innecesario en V1.
 - **Equipo / Multi-usuario.** Una cuenta es una persona.
   Para CMs freelance con múltiples clientes, usamos carpetas,
   no sub-cuentas. Multi-usuario llega en V2.

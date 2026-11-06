@@ -1,6 +1,11 @@
 # ADR-030 · Canal Telegram: un tema = un chat, por el mismo turno
 
-> **Borrador (F11).** La sonda con un bot real ya corrió (`docs/reference/telegram/2026-11-01-sonda.md` con iOS y Desktop, `-sonda-2.md` con Telegram X en un Android viejo) y sus hallazgos están aquí. El bake-off de transcripción también (`docs/reference/transcripcion/2026-11-01-bakeoff.md`). El ADR se termina en el PR de docs de F11.
+> **Aceptado (2026-11-05, F11).** Construido en los PRs #202–#209 y en producción desde el 2026-11-04. Evidencia:
+>
+> - la sonda con un bot real: `docs/reference/telegram/2026-11-01-sonda.md` (iOS y Desktop) y `-sonda-2.md` (Telegram X en un Android viejo);
+> - el bake-off de transcripción: `docs/reference/transcripcion/2026-11-01-bakeoff.md`;
+> - la suite cultural con el apéndice del canal: `docs/reference/suite-cultural/2026-11-05-reporte-telegram*.md` (sección "Suite cultural con el apéndice", abajo);
+> - la prueba en vivo con la cadena de modelos: `docs/reference/telegram/2026-11-05-prueba-en-vivo.md` (sección "Prueba en vivo", abajo).
 
 **Decisión:** el bot de Telegram es otro adapter sobre el mismo chat (ADR-010). Un mensaje que llega por Telegram entra por **el mismo turno** que la web: la misma cadena de modelos con respaldo, las mismas tools (cards, `leer_enlace`, `buscar_en_web`, `ver_adjunto`), la misma traza y el mismo cobro en el ledger. Lo que cambia es solo la entrada (un update de Telegram en vez de un POST del composer) y la salida (mensajes de Telegram en vez del stream SSE).
 
@@ -227,6 +232,39 @@ Diseño en Claude Design, "Presencia - Chat", `Chat Telegram.html` §2.1–2.2.
   - **Tema huérfano:** si la base falla justo después de `createForumTopic`, el tema queda vacío y un reintento abre otro. El bot nunca borra temas (sonda de F11), y es una carrera de milisegundos.
   - **0063 sin `CONCURRENTLY`:** el migrador de drizzle corre cada migración en una transacción, donde `CREATE INDEX CONCURRENTLY` no se puede. Bloquea las escrituras a `messages` mientras se construye, y hoy la tabla es chica (milisegundos). Con millones de filas, crear el índice a mano antes de migrar.
   - **La pre-lectura con canales** al renombrar, fijar, archivar o mover cuesta una subconsulta con índice (sub-milisegundo); a cambio, una sola forma de armar el resumen.
+
+## Suite cultural con el apéndice (F11 PR8)
+
+Los casos `telegram-*` (`apps/api/scripts/cultural-suite/telegram-prompts.ts`) corren con el mismo sistema que producción, armado por la misma función (`assembleSystemPrompt`): el prompt base, el apéndice del canal y la fecha. El reporte mide solo, con el convertidor real (`toTelegramMessages`): en cuántos mensajes de Telegram sale el texto (cada card va aparte, siempre), tablas de más de 3 columnas, encabezados, card cuando se pide (solo con input válido), el nombre mal oído (escrito bien o preguntado) y voseo (palabra completa, con los imperativos). `AI_SUITE_CHANNEL=web` corre los mismos casos sin el apéndice, para comparar.
+
+**Resultado (2026-11-05, la cadena del chat ×3, 3 corridas por caso):**
+
+| Respondió                             | Texto en un mensaje | Card (o nombre) bien | Tablas anchas | Encabezados | Voseo |
+| ------------------------------------- | ------------------- | -------------------- | ------------- | ----------- | ----- |
+| Luna (sin simular)                    | 24/24               | 23/24                | 0             | 0           | 0     |
+| Gemini (`openai` caído, dos muestras) | 45/45               | 45/45                | 0             | 35          | 0     |
+| Sonnet (`openai,google` caídos)       | 24/24               | 21/24                | 0             | 0           | 0     |
+
+Los reportes se generaron con la primera versión de la medición; la revisión del PR8 la corrigió (cards con input inválido, los imperativos del voseo, el nombre mal oído) y los números de arriba son los de los mismos reportes recalificados con la nueva: una llamada con input inválido que Gemini reintentó bien en la misma corrida, 0 voseo también con los imperativos, y `nombre-raro` como se describe abajo.
+
+Reportes: `docs/reference/suite-cultural/2026-11-05-reporte-telegram*.md` (más `-telegram-tabla*`, el caso de la tabla con los datos en el mensaje, y `-telegram-ab-con` / `-ab-sin`).
+
+- **Pasa la vara** (0 voseo, 0 tablas anchas, ≥90% del texto en un solo mensaje), sin tocar el apéndice.
+- **Las tablas:** con los datos en el mensaje, ningún modelo armó una tabla; los tres contestan con una lista por cafetería y una recomendación. Sin los datos, buscaban y no inventaban precios.
+- **El nombre mal oído** ("hacienda ishcanatun"): casi siempre preguntan "¿se escribe Xcanatún?" antes del borrador, como pide el apéndice, o lo escriben bien (una vez Gemini creó la card ya con "Xcanatún"). La excepción: una corrida de Luna preguntó por la sesión pero no por el nombre (sin card, así que tampoco lo dejó mal escrito).
+- **Sonnet no crea la card de LinkedIn** cuando solo tiene la idea: pide los detalles ("para no inventarte la historia"), 3 de 3. El A/B con y sin el apéndice da lo mismo (0/3 en los dos), así que no lo causa Telegram: es su criterio, y es el segundo respaldo. Se deja así.
+- **Gemini usa encabezados** (35 en 45 corridas) aunque el apéndice pide evitarlos. En Telegram salen como negritas (`telegram-html.ts`), así que no rompe nada; es un aviso, no un fallo.
+- **Botones de la web:** ninguno mencionó el menú ＋ ni el panel; mandan a "abrir el borrador en Presencia".
+- Registro: tuteo natural y sin voseo en las 93 corridas. El veredicto de registro (1–5) queda para Jose en el reporte principal.
+
+## Prueba en vivo (F11 PR8)
+
+El 2026-11-05, con el bot de dev y el cel de Jose (`docs/reference/telegram/2026-11-05-prueba-en-vivo.md`):
+
+- **Con Luna, el checklist completo pasó:** vincular y desvincular (por la web y con `/disconnect`), el flujo del gym, fotos, álbum y PDF, link y búsqueda con Fuentes, `ver_adjunto` tras 4 turnos (pendiente desde el PR5), dos temas en paralelo, "Continuar en Telegram", detener, sin cuota (sin cobro) y Reintentar.
+- **Con los respaldos, el flujo del gym:** Gemini con OpenAI caído, y Sonnet con OpenAI y Google caídos, este en un tema que ya habían escrito Luna y Gemini (cambiar de proveedor a media conversación no rompe el turno). `ai_usage_events.fallback_from` lo registró en cada turno.
+- **La transcripción con Groq caído** la hizo `gpt-4o-mini-transcribe`, con el mismo eco y el mismo cobro.
+- El ledger cuadra: `chat_message` y `audio_transcription` por turno, y el `adjustment` del paso sin cuota compensado.
 
 ## Riesgo anotado: otros canales no tienen estas capacidades
 

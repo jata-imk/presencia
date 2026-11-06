@@ -1327,17 +1327,44 @@ cual, no se lee. Leer no tiene cobro propio; cada búsqueda sí
 
 ### El indicador de canales en chats recientes
 
-**Qué es:** Los iconos pequeños al lado del título de cada
-chat en la sección Recientes del sidebar.
+**Qué es:** Un ícono pequeño al lado del título de los chats
+de Recientes que pasaron por otro canal además de la web
+(hoy, Telegram). Monocromo, de 12 px, en el color de la fila;
+el azul de Telegram se queda en Configuración. Aparece en
+vivo con la primera respuesta que llega por ese canal (F11).
 
-**Por qué existen:** Comunican la promesa central del
-producto (multi-canal unificado) en cada chat de la lista.
-Es identidad visual del producto, no solo info funcional.
+**Por qué solo los que pasaron por otro canal:** La web es el
+canal por defecto. Marcarla en cada fila sería ruido: lo que
+vale la pena ver de un vistazo es "esto empezó (o siguió) en
+Telegram". El título se trunca antes que el ícono.
 
 **Por qué máximo 2 visibles + número:** Mostrar todos los
-canales saturaría visualmente. Mostrar solo uno no comunica
-la naturaleza multi-canal. Dos + número es el balance entre
-informativo y limpio.
+canales saturaría visualmente. Dos + número es el balance
+entre informativo y limpio. Con un solo canal además de la web
+(V1), nunca llega al "+N".
+
+### Telegram: un tema es un chat (F11, ADR-030)
+
+**Qué es:** El creator habla con Presencia desde Telegram:
+texto, notas de voz, audios, fotos y archivos, por el mismo
+turno que la web (los mismos modelos, tools, memoria y
+cobro). Cada tema del bot es un chat de Presencia, y aparece
+en Recientes con su ícono.
+
+**Llevar un chat de la web a Telegram:** en el menú ··· del
+chat, "Continuar en Telegram". El bot abre un tema con el
+título del chat (o usa el que ya tenía) y escribe ahí; la web
+ofrece "Abrir Telegram". Sin Telegram conectado, la opción
+lleva a Configuración.
+
+**Notas de voz:** el mensaje es la transcripción, con
+"Nota de voz · 0:42" y el canal arriba del texto, dentro de
+la burbuja. No se puede reproducir: el audio no se guarda.
+
+**Conectar:** Configuración → Canales conectados → "Chatear
+desde". Un enlace de un solo uso (o su QR, desde la compu)
+que vence en 15 minutos; la página cambia sola cuando el
+creator toca Iniciar en Telegram.
 
 ### Las carpetas tipo Projects
 
@@ -1632,6 +1659,11 @@ sigue accesible desde la vista "Archivados".
   qué olvidar) llega en V2.
 - **Modo voz interactivo (conversación bidireccional por
   audio).** En V1 solo transcripción de audio a texto.
+- **Reproducir una nota de voz.** El audio que llega por
+  Telegram se transcribe y no se guarda (F11): la web muestra
+  "Nota de voz · 0:42" y el texto, sin botón para escucharla.
+- **Dictar en el composer de la web.** Las notas de voz
+  entran por Telegram; dictar en la web es backlog.
 - **Buscar dentro de los adjuntos.** Volver a ver un adjunto
   (F10.11) es pedirlo entero o por páginas, no una búsqueda
   por significado dentro de él. Tampoco se parte un PDF

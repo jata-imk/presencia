@@ -31,14 +31,25 @@ proyecto, y el 5434 el Postgres de dev. Prod toma 3001 y 5435.
 ## Contenedores (por servicio, NO por cliente)
 
 ```
-app        → NestJS: API, SSE del chat, webhook Telegram, y el SPA de apps/web
-worker     → misma imagen, otro comando: consume pg-boss (ADR-008)
+app        → NestJS: API, SSE del chat, el bot de Telegram (webhook) y el SPA de apps/web
+worker     → misma imagen, otro comando: consume pg-boss (ADR-008). No atiende Telegram
 postgres   → datos de TODOS, aislados por user_id + RLS (ADR-003)
 ```
 
 No hay contenedor de reverse proxy: ese papel lo hace el nginx de CloudPanel (**ADR-020**). El vhost
 necesita `proxy_buffering off` y un `proxy_read_timeout` largo, o el streaming del chat (ADR-006) se
 corta o llega de golpe al final.
+
+## Telegram (F11, ADR-030)
+
+- **Dos bots, uno por entorno:** el de dev (`@presencia_dev_bot`) escucha por polling desde la laptop; el de prod, por webhook. Un bot no puede tener los dos a la vez, y `env.ts` prohíbe el polling en producción.
+- **El webhook** es `POST /api/telegram/webhook`, por el mismo vhost. La app lo registra sola al arrancar (`setWebhook` desde `BETTER_AUTH_URL`) y exige el header con el secret (401 sin él).
+- **Solo en `app`, una réplica:** el turno se serializa con un candado en memoria de ese proceso (ADR-006), y el bot y la fila por tema también viven ahí (addenda F11 de ADR-008 y ADR-020).
+- **Variables** (`.env.example`): `TELEGRAM_BOT_TOKEN` (sin él, el canal está apagado y la API arranca igual), `TELEGRAM_MODE` (`webhook` en prod), `TELEGRAM_WEBHOOK_SECRET`, y para las notas de voz `AI_MODEL_TRANSCRIBE` (default: Groq `whisper-large-v3-turbo`, respaldo OpenAI `gpt-4o-mini-transcribe`). Con token, `env.ts` exige las keys de esa cadena: con la de default, `GROQ_API_KEY` y la `OPENAI_API_KEY` de siempre.
+- **Groq en plan gratis:** 20 llamadas por minuto, 2,000 al día y 28,800 s de audio al día para toda la cuenta. Pasarse da 429 y contesta el respaldo, sin factura. Si `fallback_from = 'groq:…'` sale seguido en `ai_usage_events`, toca el plan Developer.
+- El audio nunca se guarda; las fotos y archivos entran como adjuntos (R2, igual que la web).
+
+Configurarlo y verificarlo: `docs/how-to/desplegar.md`, "Bot de Telegram".
 
 ## Cómo llega el código
 

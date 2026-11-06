@@ -73,3 +73,11 @@ La memoria entre chats (F10.8) necesita `pgvector`, y `postgres:17-alpine` no lo
 - **Por qué no la oficial `pgvector/pgvector`:** solo existe sobre Debian. Pasar los datos de Alpine (musl) a Debian (glibc) cambia las collations, y con ellas el orden de los índices de texto, así que habría que reindexar prod con respaldo y ventana de mantenimiento. Sobre la misma Alpine, el directorio de datos sirve tal cual: el cambio es recrear el contenedor.
 - **CI** deja de usar un service container para Postgres: construye esta imagen, la arranca y comprueba que `CREATE EXTENSION vector` carga, antes de correr las migraciones y los tests contra ella. La máquina de Jose no tiene Docker, así que CI es el único lugar donde la imagen se ejercita antes del VPS.
 - **Orden de despliegue:** primero la imagen, en dev y luego en prod (`docs/how-to/desplegar.md`, "Postgres con pgvector"). La migración que crea la extensión llega en el PR siguiente: mientras nadie la use, la imagen nueva no cambia nada.
+
+## Addendum (2026-11-05, F11) — el webhook de Telegram
+
+- **Mismo vhost, mismo origen:** `POST /api/telegram/webhook` entra por el sitio de CloudPanel que ya apunta a `app`. No hay que tocar nginx.
+- **La app registra el webhook sola al arrancar** (`setWebhook` con `${BETTER_AUTH_URL}/api/telegram/webhook`, el secret y los `allowed_updates`). Es idempotente: cada despliegue lo vuelve a poner. Si Telegram no contesta, la API arranca igual y reintenta a los 5 s, 15 s, 1 min y luego cada 5 min.
+- **El secret** (`TELEGRAM_WEBHOOK_SECRET`) viaja en el header `X-Telegram-Bot-Api-Secret-Token` y se compara en tiempo constante. Sin él, 401. Si el bot no terminó de arrancar, 503 (Telegram reintenta). `env.ts` exige el secret en modo webhook y prohíbe el polling en producción.
+- **Una sola réplica de `app`:** el bot, el candado del turno y la fila por tema viven en memoria (addendum F11 de ADR-008). Escalar `app` a dos réplicas pide antes mover eso a la base.
+- Bot de prod aparte del de dev, en BotFather con temas activados. Pasos y verificación en `docs/how-to/desplegar.md`, "Bot de Telegram".
