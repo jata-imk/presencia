@@ -1,3 +1,4 @@
+import { resetTelegramLinkStore } from "../../stores/telegram-link-store.js";
 import { authClient } from "../auth-client.js";
 
 // F10.8.4: distinguir "tu sesión cerró" de "nunca entraste" o "cerraste
@@ -35,6 +36,10 @@ export function olvidarSesion(): void {
 export async function cerrarSesion(): Promise<void> {
   salidaVoluntaria = true;
   await authClient.signOut();
+  // F11 PR7b: el vínculo con Telegram se carga una vez por sesión (el menú de
+  // cada chat). Sin esto, quien entre después en la misma pestaña vería el
+  // del anterior hasta recargar (revisión del PR7b).
+  resetTelegramLinkStore();
 }
 
 /**

@@ -118,6 +118,7 @@ function montar({
     sendMessageDraft: vi.fn<(...a: unknown[]) => Promise<true>>(() => Promise.resolve(true)),
     editForumTopic: vi.fn<(...a: unknown[]) => Promise<true>>(() => Promise.resolve(true)),
     // F11 PR7b: "Continuar en Telegram" abre un tema (el id sube con cada uno).
+    reopenForumTopic: vi.fn<(...a: unknown[]) => Promise<true>>(() => Promise.resolve(true)),
     createForumTopic: vi.fn((_chat: number, name: string) =>
       Promise.resolve({
         message_thread_id: 100 + api.createForumTopic.mock.calls.length,
@@ -243,6 +244,21 @@ describe("Continuar en Telegram (F11 PR7b)", () => {
     await t.service.continueChat(t.api, "u1", "web-1");
     expect(t.api.createForumTopic).toHaveBeenCalledTimes(2);
     expect(t.filas).toMatchObject([{ chatId: "web-1", messageThreadId: 102 }]);
+  });
+
+  it("si el creator cerró el tema, lo reabre y escribe ahí (no abre otro)", async () => {
+    const t = montar();
+    await t.service.continueChat(t.api, "u1", "web-1");
+    t.api.sendMessage.mockRejectedValueOnce(errorDeTelegram(400, "Bad Request: TOPIC_CLOSED"));
+    await t.service.continueChat(t.api, "u1", "web-1");
+    expect(t.api.reopenForumTopic).toHaveBeenCalledWith(500, 101);
+    expect(t.api.createForumTopic).toHaveBeenCalledTimes(1);
+    expect(t.api.sendMessage).toHaveBeenLastCalledWith(
+      500,
+      copy.continuedHere("Precios del café"),
+      { message_thread_id: 101 },
+    );
+    expect(t.filas).toMatchObject([{ chatId: "web-1", messageThreadId: 101 }]);
   });
 
   it("un tema de otro Telegram (se conectó otra cuenta) no se reusa", async () => {

@@ -84,19 +84,25 @@ export interface TelegramIncomingMedia {
 }
 
 /** Lo que usa "Continuar en Telegram" (F11 PR7b): abrir el tema y escribir en él. */
-export type TelegramContinueApi = Pick<Api, "createForumTopic" | "sendMessage">;
+export type TelegramContinueApi = Pick<
+  Api,
+  "createForumTopic" | "reopenForumTopic" | "sendMessage"
+>;
+
+/** Un 400 del Bot API con alguno de esos textos. */
+const badRequest = (error: unknown, pattern: RegExp) =>
+  error instanceof GrammyError && error.error_code === 400 && pattern.test(error.description);
+
+/** El tema ya no existe (el creator lo borró): se suelta y se abre otro. */
+const isTopicGone = (error: unknown) =>
+  badRequest(error, /thread not found|TOPIC_DELETED|TOPIC_ID_INVALID/i);
 
 /**
- * Telegram dice que el tema ya no existe (el creator lo borró) o que está
- * cerrado: se suelta y se abre otro. Los textos los da el Bot API en el 400.
+ * El tema está cerrado: se reabre, no se cambia por otro. Con uno nuevo, el
+ * creator podría reabrir el viejo y escribir ahí, y eso abriría un chat aparte
+ * (revisión del PR7b).
  */
-function isTopicGone(error: unknown): boolean {
-  return (
-    error instanceof GrammyError &&
-    error.error_code === 400 &&
-    /thread not found|TOPIC_DELETED|TOPIC_CLOSED|TOPIC_ID_INVALID/i.test(error.description)
-  );
-}
+const isTopicClosed = (error: unknown) => badRequest(error, /TOPIC_CLOSED/i);
 
 /** El nombre de un tema: hasta 128 caracteres (Bot API). */
 const topicName = (title: string) => [...title].slice(0, 128).join("");
@@ -223,15 +229,29 @@ export class TelegramConversationService {
 
     try {
       if (row) {
-        try {
-          await api.sendMessage(
+        const threadId = row.messageThreadId;
+        const sendHere = () =>
+          api.sendMessage(
             telegramChatId,
             copy.continuedHere(title),
-            row.messageThreadId === null ? {} : { message_thread_id: row.messageThreadId },
+            threadId === null ? {} : { message_thread_id: threadId },
           );
+        try {
+          await sendHere();
           return;
         } catch (error) {
-          if (!isTopicGone(error)) throw error;
+          if (isTopicClosed(error) && threadId !== null) {
+            try {
+              await api.reopenForumTopic(telegramChatId, threadId);
+              await sendHere();
+              return;
+            } catch (reopenError) {
+              // Lo cerró y luego lo borró: como si no existiera.
+              if (!isTopicGone(reopenError)) throw reopenError;
+            }
+          } else if (!isTopicGone(error)) {
+            throw error;
+          }
           await this.db.runWithTenant(userId, (tx) => this.threads.deleteByChat(tx, chatId));
         }
       }
@@ -681,7 +701,7 @@ export class TelegramConversationService {
     if (!row || row.messageThreadId === null) return;
     if (event.source === "auto" && !row.renameTopic) return;
     await api.editForumTopic(row.telegramChatId, row.messageThreadId, {
-      name: [...event.title].slice(0, 128).join(""),
+      name: topicName(event.title),
     });
   }
 
