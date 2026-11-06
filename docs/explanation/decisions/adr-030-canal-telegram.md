@@ -203,6 +203,31 @@ Diseño en Claude Design, proyecto "Presencia - Chat", `Chat Telegram.html`.
   - Reintentar desde la web un mensaje con el mismo texto conserva su canal, además de `voice_seconds`: lo escribió (o lo dijo) por Telegram.
 - `seed:dev` siembra el chat "Nota de voz desde Telegram" en "Estados del turno", para ver la etiqueta sin bot.
 
+## Íconos de canal y "Continuar en Telegram" (F11 PR7b)
+
+Diseño en Claude Design, "Presencia - Chat", `Chat Telegram.html` §2.1–2.2.
+
+- **Recientes marca los chats que pasaron por Telegram** con el ícono `Send` de lucide, monocromo y de 12 px, en el color de la fila. Un chat solo de la web no lleva nada: la web es el canal por defecto. Caben dos íconos y luego "+N" (hoy solo existe Telegram). El título se trunca y el ícono no; el "···" ya reservaba su lugar, así que nada se mueve en hover.
+  - `ChatSummary.channels` se deriva de `messages.channel` con un índice parcial (migración 0063); la medición está en `modelo-de-datos.md`. El evento en vivo `chat` lo trae también: el ícono aparece con la primera respuesta del tema.
+- **"Continuar en Telegram"** en el menú ··· del chat (el del sidebar y el del título): `POST /api/telegram/chats/:id/continue`.
+  - El bot abre un tema con el título del chat (`createForumTopic`), **liga el chat al tema antes de escribir** y luego escribe "Seguimos con «título». Escríbeme aquí y retomo donde nos quedamos." Si el creator contesta en el instante, su mensaje ya cae en ese chat.
+  - `renameTopic: true`: el nombre lo puso el bot, así que el título automático sí puede renombrar el tema.
+  - Si el chat ya tenía tema, el aviso va ahí ("Seguimos aquí con «título»") y el tema sube.
+    - Si Telegram dice que el tema ya no existe (`thread not found`, `TOPIC_DELETED`), se suelta y se abre otro.
+    - Si está **cerrado** (`TOPIC_CLOSED`), se reabre (`reopenForumTopic`) y se escribe ahí. Con uno nuevo, el creator podría reabrir el viejo y escribir en él, y eso abriría un chat aparte (revisión del PR7b).
+    - Un tema de otro Telegram (desconectó y conectó otra cuenta) tampoco se reusa.
+  - Un chat archivado no se continúa (409): lo que se hablara ahí no se vería en Recientes.
+  - Un candado en memoria por creator y chat: un doble clic espera al primero y no abre dos temas. El bot vive en el proceso `app`, como el resto. (Con la llave solo por chat, otro usuario recibía la promesa del primero sin pasar por su RLS; revisión del PR7b.)
+  - Si la fila no se pudo ligar (otro camino ligó el chat entre la lectura y el insert), no se escribe en el tema nuevo: lo que el creator contestara ahí abriría otro chat.
+  - Errores para la web: 409 sin Telegram conectado, o con el bot bloqueado ("abre el bot, toca Iniciar y vuelve a intentarlo"); 404 sin chat; 503 si Telegram falla o el bot no arrancó.
+- **La web no abre Telegram sola:** al terminar muestra un toast con el enlace "Abrir Telegram" (`t.me/<bot>`). Un `window.open` después de esperar la respuesta lo bloquea el navegador; un enlace que el creator toca, no.
+- **Sin Telegram conectado,** el ítem del menú lleva a Configuración ("Primero conecta Telegram en Configuración"). Sin bot en el servidor, no aparece. El sidebar pide el estado del vínculo una vez por sesión, no una vez por fila; cerrar sesión lo olvida.
+- **Aceptado en la revisión del PR7b:**
+  - **Clientes sin temas** (Telegram X): "Continuar" abre un tema que ese cliente no muestra, y lo que el creator conteste llega sin tema, al chat que tenga la conversación sin tema. Es la misma degradación de PR4 para esos clientes (iOS, Android y Desktop tienen temas); `/new` la corta.
+  - **Tema huérfano:** si la base falla justo después de `createForumTopic`, el tema queda vacío y un reintento abre otro. El bot nunca borra temas (sonda de F11), y es una carrera de milisegundos.
+  - **0063 sin `CONCURRENTLY`:** el migrador de drizzle corre cada migración en una transacción, donde `CREATE INDEX CONCURRENTLY` no se puede. Bloquea las escrituras a `messages` mientras se construye, y hoy la tabla es chica (milisegundos). Con millones de filas, crear el índice a mano antes de migrar.
+  - **La pre-lectura con canales** al renombrar, fijar, archivar o mover cuesta una subconsulta con índice (sub-milisegundo); a cambio, una sola forma de armar el resumen.
+
 ## Riesgo anotado: otros canales no tienen estas capacidades
 
 Pedido de Jose (2026-11-01). Los temas, los drafts con detener y el rich son de Telegram:

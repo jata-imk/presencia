@@ -1,4 +1,5 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
+import { GrammyError } from "grammy";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TelegramConversationService as Conversation } from "./telegram-conversation.service.js";
 import type { TelegramSink } from "./telegram-sink.js";
@@ -38,6 +39,8 @@ function montar({
   conectado = true,
   resolveUser,
 }: { conectado?: boolean; resolveUser?: () => Promise<string | null> } = {}) {
+  // F11 PR7b: el Telegram conectado del creator (su id es el del chat con el bot).
+  let externalId: string | null = conectado ? String(YO.id) : null;
   // F11 PR6: la transcripción (la prueba transcription.service.spec).
   const transcription = {
     assertQuota: vi.fn<(userId: string, seconds: number) => Promise<void>>(() => Promise.resolve()),
@@ -76,6 +79,11 @@ function montar({
       filas.push(row);
       return Promise.resolve(row);
     },
+    deleteByChat: (_tx: unknown, chatId: string) => {
+      const i = filas.findIndex((r) => r.chatId === chatId);
+      if (i !== -1) filas.splice(i, 1);
+      return Promise.resolve();
+    },
     releaseUnthreaded: (_tx: unknown, tg: number) => {
       const i = filas.findIndex((r) => r.telegramChatId === tg && r.messageThreadId === null);
       if (i !== -1) filas.splice(i, 1);
@@ -109,6 +117,15 @@ function montar({
     sendMessage: vi.fn<(...a: unknown[]) => Promise<never>>(() => Promise.resolve({} as never)),
     sendMessageDraft: vi.fn<(...a: unknown[]) => Promise<true>>(() => Promise.resolve(true)),
     editForumTopic: vi.fn<(...a: unknown[]) => Promise<true>>(() => Promise.resolve(true)),
+    // F11 PR7b: "Continuar en Telegram" abre un tema (el id sube con cada uno).
+    reopenForumTopic: vi.fn<(...a: unknown[]) => Promise<true>>(() => Promise.resolve(true)),
+    createForumTopic: vi.fn((_chat: number, name: string) =>
+      Promise.resolve({
+        message_thread_id: 100 + api.createForumTopic.mock.calls.length,
+        name,
+        icon_color: 7322096,
+      }),
+    ),
     getFile: vi.fn((fileId: string) =>
       Promise.resolve({
         file_id: fileId,
@@ -132,10 +149,20 @@ function montar({
   };
   const service = new Service(
     { runWithTenant: (_u: string, fn: (tx: unknown) => unknown) => fn({}) } as never,
-    { resolveUser: resolveUser ?? (() => Promise.resolve(conectado ? "u1" : null)) } as never,
+    {
+      resolveUser: resolveUser ?? (() => Promise.resolve(conectado ? "u1" : null)),
+      activeExternalId: () => Promise.resolve(externalId),
+    } as never,
     threads,
     {
       createChat,
+      // F11 PR7b: los chats de la web que se llevan a Telegram.
+      getChat: (_tx: unknown, id: string) =>
+        Promise.resolve(
+          id === "no-existe"
+            ? undefined
+            : { id, title: "Precios del café", archivedAt: id === "archivado" ? new Date() : null },
+        ),
       chatIdOfMessage: (_tx: unknown, id: string) => Promise.resolve(mensajes.get(id)),
     } as never,
     chat as never,
@@ -157,8 +184,134 @@ function montar({
     idsDeMensajes,
     attachments,
     transcription,
+    /** F11 PR7b: cambia el Telegram conectado (null = desconectado). */
+    conectarComo: (id: string | null) => {
+      externalId = id;
+    },
   };
 }
+
+/** Un error del Bot API como lo lanza grammY. */
+const errorDeTelegram = (code: number, description: string) =>
+  new GrammyError(description, { ok: false, error_code: code, description }, "sendMessage", {});
+
+describe("Continuar en Telegram (F11 PR7b)", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it("abre un tema con el título, liga el chat ANTES de escribir, y escribe ahí", async () => {
+    const t = montar();
+    const orden: string[] = [];
+    t.api.sendMessage.mockImplementation(() => {
+      orden.push(`mensaje con ${String(t.filas.length)} fila(s)`);
+      return Promise.resolve({} as never);
+    });
+    await t.service.continueChat(t.api, "u1", "web-1");
+    expect(t.api.createForumTopic).toHaveBeenCalledWith(500, "Precios del café");
+    expect(t.filas).toMatchObject([
+      { chatId: "web-1", telegramChatId: 500, messageThreadId: 101, renameTopic: true },
+    ]);
+    expect(orden).toEqual(["mensaje con 1 fila(s)"]);
+    expect(t.api.sendMessage).toHaveBeenCalledWith(500, copy.continued("Precios del café"), {
+      message_thread_id: 101,
+    });
+    // Lo que conteste ahí sigue ese chat, no abre otro.
+    await t.service.text(t.api, YO, { telegramChatId: 500, threadId: 101 }, "va");
+    await flush();
+    expect(t.createChat).not.toHaveBeenCalled();
+    expect(t.chat.streamChat.mock.calls[0]![1]).toBe("web-1");
+  });
+
+  it("si el chat ya tiene tema, el aviso va ahí y no abre otro", async () => {
+    const t = montar();
+    await t.service.continueChat(t.api, "u1", "web-1");
+    await t.service.continueChat(t.api, "u1", "web-1");
+    expect(t.api.createForumTopic).toHaveBeenCalledTimes(1);
+    expect(t.api.sendMessage).toHaveBeenLastCalledWith(
+      500,
+      copy.continuedHere("Precios del café"),
+      { message_thread_id: 101 },
+    );
+  });
+
+  it("si el creator borró el tema, lo suelta y abre otro", async () => {
+    const t = montar();
+    await t.service.continueChat(t.api, "u1", "web-1");
+    t.api.sendMessage.mockRejectedValueOnce(
+      errorDeTelegram(400, "Bad Request: message thread not found"),
+    );
+    await t.service.continueChat(t.api, "u1", "web-1");
+    expect(t.api.createForumTopic).toHaveBeenCalledTimes(2);
+    expect(t.filas).toMatchObject([{ chatId: "web-1", messageThreadId: 102 }]);
+  });
+
+  it("si el creator cerró el tema, lo reabre y escribe ahí (no abre otro)", async () => {
+    const t = montar();
+    await t.service.continueChat(t.api, "u1", "web-1");
+    t.api.sendMessage.mockRejectedValueOnce(errorDeTelegram(400, "Bad Request: TOPIC_CLOSED"));
+    await t.service.continueChat(t.api, "u1", "web-1");
+    expect(t.api.reopenForumTopic).toHaveBeenCalledWith(500, 101);
+    expect(t.api.createForumTopic).toHaveBeenCalledTimes(1);
+    expect(t.api.sendMessage).toHaveBeenLastCalledWith(
+      500,
+      copy.continuedHere("Precios del café"),
+      { message_thread_id: 101 },
+    );
+    expect(t.filas).toMatchObject([{ chatId: "web-1", messageThreadId: 101 }]);
+  });
+
+  it("un tema de otro Telegram (se conectó otra cuenta) no se reusa", async () => {
+    const t = montar();
+    await t.service.continueChat(t.api, "u1", "web-1");
+    t.conectarComo("777");
+    await t.service.continueChat(t.api, "u1", "web-1");
+    expect(t.api.createForumTopic).toHaveBeenLastCalledWith(777, "Precios del café");
+    expect(t.filas).toMatchObject([{ chatId: "web-1", telegramChatId: 777 }]);
+  });
+
+  it("un doble clic abre un solo tema", async () => {
+    const t = montar();
+    await Promise.all([
+      t.service.continueChat(t.api, "u1", "web-1"),
+      t.service.continueChat(t.api, "u1", "web-1"),
+    ]);
+    expect(t.api.createForumTopic).toHaveBeenCalledTimes(1);
+    expect(t.api.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("sin Telegram conectado: 409; sin chat: 404; nada sale a Telegram", async () => {
+    const t = montar({ conectado: false });
+    await expect(t.service.continueChat(t.api, "u1", "web-1")).rejects.toMatchObject({
+      status: HttpStatus.CONFLICT,
+    });
+    t.conectarComo(String(YO.id));
+    await expect(t.service.continueChat(t.api, "u1", "no-existe")).rejects.toMatchObject({
+      status: HttpStatus.NOT_FOUND,
+    });
+    // Archivado: 409 (en Recientes no se vería lo que hablara ahí).
+    await expect(t.service.continueChat(t.api, "u1", "archivado")).rejects.toMatchObject({
+      status: HttpStatus.CONFLICT,
+    });
+    expect(t.api.createForumTopic).not.toHaveBeenCalled();
+    expect(t.api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("con el bot bloqueado: 409 con qué hacer; otro error de Telegram: 503", async () => {
+    const t = montar();
+    t.api.createForumTopic.mockRejectedValueOnce(
+      errorDeTelegram(403, "Forbidden: bot was blocked by the user"),
+    );
+    await expect(t.service.continueChat(t.api, "u1", "web-1")).rejects.toMatchObject({
+      status: HttpStatus.CONFLICT,
+      message: expect.stringContaining("toca Iniciar") as unknown,
+    });
+    t.api.createForumTopic.mockRejectedValueOnce(errorDeTelegram(500, "Internal Server Error"));
+    await expect(t.service.continueChat(t.api, "u1", "web-2")).rejects.toMatchObject({
+      status: HttpStatus.SERVICE_UNAVAILABLE,
+    });
+  });
+});
 
 describe("TelegramConversationService", () => {
   beforeEach(() => {

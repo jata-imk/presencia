@@ -104,5 +104,11 @@ export const copy = {
   openButton: "Abrir en Presencia",
   openInWeb: (url: string) => `Ábrelo en Presencia: ${url}`,
   sourcesTitle: "Fuentes",
+  // --- "Continuar en Telegram" desde la web (F11 PR7b) ---
+  /** El primer mensaje del tema que el bot abre para un chat de la web. */
+  continued: (title: string) =>
+    `Seguimos con «${title}». Escríbeme aquí y retomo donde nos quedamos.`,
+  /** El chat ya tenía tema: el aviso va ahí, y el tema sube. */
+  continuedHere: (title: string) => `Seguimos aquí con «${title}».`,
   cardTitle: (red: string) => `Borrador para ${red}`,
 };

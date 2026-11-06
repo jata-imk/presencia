@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import type { ChatSummary } from "@presencia/shared";
 import { ChatOptionsMenu } from "../chat/ChatOptionsMenu.js";
+import { ChannelIcons } from "./ChannelIcons.js";
 import { useChatsStore } from "../../stores/chats-store.js";
 
 // Fila de "Recientes" en el Sidebar — antes un <Link> plano, ahora un
@@ -109,12 +110,16 @@ export function ChatListItem({
           truncate va en el <span> interno, no en el Link: un <a> con
           overflow-hidden propio recorta su propio anillo de foco en forma
           de "L" (bug real visto antes de este cambio). */}
+      {/* F11 PR7b: los íconos de canal van pegados al título y nunca se
+          recortan; lo que se trunca es el título. El "···" de al lado ya
+          reserva su lugar (opacity-0), así que nada se mueve en hover. */}
       <Link
         to={`/chats/${chat.id}`}
         onClick={onNavigate}
-        className="min-w-0 flex-1 px-2.5 py-1.5 text-[13px] focus-visible:shadow-none"
+        className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-[13px] focus-visible:shadow-none"
       >
-        <span className="block truncate">{chat.title}</span>
+        <span className="min-w-0 flex-1 truncate">{chat.title}</span>
+        <ChannelIcons channels={chat.channels} active={active} />
       </Link>
       <div className="opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <ChatOptionsMenu chatId={chat.id} folderId={chat.folderId} onRenameRequest={startEdit} />

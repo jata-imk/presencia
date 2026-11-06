@@ -20,6 +20,7 @@ const chat = (id: string, extra: Partial<ChatSummary> = {}): ChatSummary => ({
   pinnedAt: null,
   lastMessageAt: "2026-11-02T10:00:00.000Z",
   createdAt: "2026-11-01T10:00:00.000Z",
+  channels: [],
   ...extra,
 });
 

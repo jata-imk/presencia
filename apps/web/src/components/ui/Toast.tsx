@@ -54,6 +54,17 @@ export function ToastViewport() {
                 )}
               </div>
             </div>
+            {t.link && (
+              <a
+                href={t.link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => dismiss(t.id)}
+                className="flex shrink-0 items-center border-l border-fg-inverse-faint px-3.5 text-[13px] font-bold whitespace-nowrap text-blush-pop"
+              >
+                {t.link.label}
+              </a>
+            )}
             {t.onUndo && (
               <button
                 type="button"

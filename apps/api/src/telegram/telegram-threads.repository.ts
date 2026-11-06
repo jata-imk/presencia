@@ -57,6 +57,15 @@ export class TelegramThreadsRepository {
   }
 
   /**
+   * Suelta el tema del chat (F11 PR7b, "Continuar en Telegram"): el creator lo
+   * borró en Telegram, o el chat era de otro Telegram que ya no está
+   * conectado. El chat se queda; su siguiente tema será otro.
+   */
+  async deleteByChat(tx: Tx, chatId: string): Promise<void> {
+    await tx.delete(telegramThreads).where(eq(telegramThreads.chatId, chatId));
+  }
+
+  /**
    * `/new` en un cliente sin temas: suelta el chat de la conversación sin
    * tema, y el siguiente mensaje empieza otro. El chat se queda (es historia).
    */

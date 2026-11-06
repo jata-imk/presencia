@@ -114,9 +114,10 @@ export class CardListener implements OnModuleInit, OnModuleDestroy {
     if (!this.registry.has(userId)) return;
     // Con el RLS del usuario, y traducido igual que GET /api/chats. F11: más el
     // id del último mensaje, para que la pestaña que tiene el chat abierto sepa
-    // si le falta algo (un turno que llegó por Telegram).
+    // si le falta algo (un turno que llegó por Telegram), y (PR7b) sus canales:
+    // el ícono de Telegram aparece en Recientes con la primera respuesta.
     const found = await this.db.runWithTenant(userId, async (tx) => {
-      const chat = await this.chats.getChat(tx, chatId);
+      const chat = await this.chats.getChatWithChannels(tx, chatId);
       return chat ? { chat, lastMessageId: await this.chats.lastMessageId(tx, chatId) } : null;
     });
     if (found) {

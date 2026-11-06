@@ -34,6 +34,14 @@ export interface TelegramLinkStatusDto {
   botUsername: string | null;
 }
 
+/**
+ * "Continuar en Telegram" (F11 PR7b): el bot ya escribió en el tema del chat.
+ * `url` abre el bot (`https://t.me/<bot>`); el tema queda arriba.
+ */
+export interface TelegramContinueDto {
+  url: string;
+}
+
 /** Lo que devuelve generar un enlace: el deep link y cuándo vence. */
 export interface TelegramLinkDto {
   /** `https://t.me/<bot>?start=<código>`: abre el bot con "Iniciar". */

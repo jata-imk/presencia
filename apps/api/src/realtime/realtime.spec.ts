@@ -222,7 +222,8 @@ describe("NOTIFY → LISTEN → stream", { timeout: 30_000 }, () => {
     expect(saved?.titleSource).toBe("auto");
     await until(() => tabA.events().some((e) => e.event === "chat"));
     expect(tabA.events().find((e) => e.event === "chat")).toMatchObject({
-      data: { id: chatA, title: "Promo de marquesitas" },
+      // F11 PR7b: con sus canales (Recientes reemplaza la fila con esto).
+      data: { id: chatA, title: "Promo de marquesitas", channels: [] },
     });
     expect(tabB.events().filter((e) => e.event === "chat")).toEqual([]);
     // Ya titulado: el automático no vuelve a escribir.
