@@ -21,11 +21,6 @@ interface TelegramLinkState {
   link: TelegramLinkDto | null;
   loadError: string | null;
   refresh: () => Promise<void>;
-  /**
-   * Carga una vez y reusa la petición en curso (PR7b: el sidebar, para el
-   * "Continuar en Telegram" de cada chat, sin una consulta por fila).
-   */
-  ensureLoaded: () => Promise<void>;
   /** Genera un enlace nuevo; el anterior deja de servir. Lanza ApiError. */
   createLink: () => Promise<void>;
   /** Desconecta, o cancela el enlace pendiente. Lanza ApiError. */
@@ -81,8 +76,6 @@ export const useTelegramLinkStore = create<TelegramLinkState>()(
           });
         return inFlight;
       },
-
-      ensureLoaded: () => (get().status ? Promise.resolve() : get().refresh()),
 
       createLink: async () => {
         try {

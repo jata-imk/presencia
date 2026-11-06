@@ -33,7 +33,7 @@ import { FoldersService } from "../folders/folders.service.js";
 import { ChatEvents } from "./chat-events.js";
 import { ChatTitleService } from "./chat-title.service.js";
 import { toChatSummary, toUIMessage } from "./chat-summary.js";
-import { blocksOf, contextTokensOf } from "./history-compaction.js";
+import { blocksOf, contextTokensOf, textOf } from "./history-compaction.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
 import { MemoryService } from "./memory.service.js";
 import { applySummary, pendingAfterSummary, type HistorySummary } from "./history-window.js";
@@ -384,7 +384,7 @@ export class ChatService {
             // El canal también: lo escribió por Telegram aunque se reintente
             // desde la web.
             const old = all[last.index]!;
-            if (textOf(old.parts) === textOf(userMessage.parts)) {
+            if (textOf(toUIMessage(old)) === textOf(userMessage)) {
               resentVoiceSeconds = old.voiceSeconds;
               resentChannel = old.channel;
             }
@@ -1149,14 +1149,4 @@ function toHistorySummary(row: ChatSummaryRow | undefined): HistorySummary | nul
     throughMessageId: row.throughMessageId,
     cards: row.cards as CompressedCardOutput[],
   };
-}
-
-/** El texto de un mensaje, sin los archivos: para saber si un reenvío lo cambió. */
-function textOf(parts: unknown): string {
-  if (!Array.isArray(parts)) return "";
-  return parts
-    .flatMap((p: { type?: unknown; text?: unknown }) =>
-      p.type === "text" && typeof p.text === "string" ? [p.text] : [],
-    )
-    .join(" ");
 }

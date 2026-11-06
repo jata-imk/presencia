@@ -70,12 +70,6 @@ export const chatStreamBodySchema = z.object({
 export type ChatStreamBody = z.infer<typeof chatStreamBodySchema>;
 
 /**
- * Cómo terminó una respuesta del asistente (F10.8.2). `stopped`: el stream se
- * cortó (Detener, cerrar la pestaña, la red); el servidor no distingue entre
- * esos. `failed`: el proveedor o el turno fallaron. Lo que alcanzó a
- * escribirse se guarda en los dos casos.
- */
-/**
  * Por dónde entró o salió un mensaje (columna `messages.channel`, F11). La web
  * es el canal por defecto; los demás son adapters sobre la misma
  * conversación (regla dura #5).
@@ -85,6 +79,12 @@ export type MessageChannel = (typeof MESSAGE_CHANNELS)[number];
 /** Un canal que no es la web: el que la UI marca con ícono o etiqueta. */
 export type ExternalChannel = Exclude<MessageChannel, "web">;
 
+/**
+ * Cómo terminó una respuesta del asistente (F10.8.2). `stopped`: el stream se
+ * cortó (Detener, cerrar la pestaña, la red); el servidor no distingue entre
+ * esos. `failed`: el proveedor o el turno fallaron. Lo que alcanzó a
+ * escribirse se guarda en los dos casos.
+ */
 export const MESSAGE_STATUSES = ["complete", "stopped", "failed"] as const;
 export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 
