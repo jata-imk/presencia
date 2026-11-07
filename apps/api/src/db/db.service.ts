@@ -48,7 +48,10 @@ export class DbService implements OnModuleDestroy {
    * silencio. El modo barrido hay que pedirlo a propósito.
    *
    * Regla de uso: leer para decidir a QUIÉN hay que atender. Todo lo que
-   * escriba vuelve a pasar por runWithTenant con su tenant.
+   * escriba vuelve a pasar por runWithTenant con su tenant. La única
+   * excepción es `ops_alerts` (F12.8, migración 0064): el estado de las
+   * alertas de operación no es de nadie, así que no hay tenant al cual
+   * regresar, y su policy del barrido es de lectura y escritura.
    */
   runWorkerScan<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
     return this.db.transaction(async (tx) => {

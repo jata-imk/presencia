@@ -99,6 +99,22 @@ export interface RecurringJob {
   handler: () => Promise<void>;
 }
 
+export interface ResumenDeCola {
+  queue: string;
+  lastState: "completed" | "failed";
+  recentFailures: number;
+  lastError: string | null;
+  lastFailedAt: Date | null;
+}
+
+interface FilaResumen {
+  name: string;
+  last_state: "completed" | "failed";
+  recent_failures: number;
+  last_error: string | null;
+  last_failed_at: string | Date | null;
+}
+
 /**
  * Runtime de pg-boss (ADR-008). Una sola instancia por proceso: la comparten
  * el worker propiamente dicho (`worker.ts`) y, en dev, el proceso de la API
@@ -249,6 +265,65 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
     );
     this.colasListas.add(job.queue);
     console.info(`[jobs] ${job.queue} escuchando`);
+  }
+
+  /**
+   * Cómo terminó cada cola últimamente, para las alertas de operación (F12.8,
+   * ADR-031). Lee `pgboss.job` con el pool de pg-boss porque es el único rol
+   * que ve el schema (`presencia_jobs`, addendum F8.5 de ADR-008).
+   *
+   * Por cola: el estado del último job TERMINADO (completed o failed), cuántos
+   * fallaron dentro de `ventanaMinutos`, y el último error. Solo mira la última
+   * semana: pg-boss borra los terminados a los 7 días, así que más atrás no
+   * hay nada que leer.
+   *
+   * Lanza si la base no responde: quien llama decide qué significa no poder
+   * mirar (ver OpsAlertsService).
+   */
+  async resumenDeColas(ventanaMinutos: number): Promise<ResumenDeCola[]> {
+    if (!this.started) throw new Error("pg-boss no arrancó: no hay cola que leer");
+    // `DISTINCT ON` y no `array_agg` ordenado: el pase corre cada cinco
+    // minutos y `cards.reconcile` sola deja ~10 mil filas por semana. La
+    // cuenta de fallos se acota a la ventana en su propia consulta.
+    //
+    // El error: pg-boss guarda `{message, stack}` cuando el handler lanza,
+    // pero `{value: {message}}` cuando el job expira (failJobsByTimeout).
+    const { rows } = await this.boss.getDb().executeSql(
+      `with ultimos as (
+         select distinct on (name) name, state
+           from ${PGBOSS_SCHEMA}.job
+          where state in ('completed', 'failed') and completed_on > now() - interval '7 days'
+          order by name, completed_on desc
+       ),
+       ultimo_fallo as (
+         select distinct on (name) name, completed_on, output
+           from ${PGBOSS_SCHEMA}.job
+          where state = 'failed' and completed_on > now() - interval '7 days'
+          order by name, completed_on desc
+       ),
+       recientes as (
+         select name, count(*)::int as n
+           from ${PGBOSS_SCHEMA}.job
+          where state = 'failed' and completed_on > now() - make_interval(mins => $1)
+          group by name
+       )
+       select u.name,
+              u.state as last_state,
+              coalesce(r.n, 0) as recent_failures,
+              coalesce(f.output->>'message', f.output->'value'->>'message', f.output::text) as last_error,
+              f.completed_on as last_failed_at
+         from ultimos u
+         left join ultimo_fallo f using (name)
+         left join recientes r using (name)`,
+      [ventanaMinutos],
+    );
+    return (rows as FilaResumen[]).map((r) => ({
+      queue: r.name,
+      lastState: r.last_state,
+      recentFailures: r.recent_failures,
+      lastError: r.last_error,
+      lastFailedAt: r.last_failed_at ? new Date(r.last_failed_at) : null,
+    }));
   }
 
   /**
