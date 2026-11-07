@@ -92,29 +92,40 @@ export class OpsJobs implements OnApplicationBootstrap {
 
   /** La prueba activa: una llamada a cada eslabón, y sus alertas `probe:`. */
   async probar(opciones: { imagenes: boolean }): Promise<ResultadoSonda[]> {
-    // Una sola corrida de sondas para los dos prefijos.
-    let corrida: Promise<ResultadoSonda[]> | undefined;
-    const sondas = () =>
-      (corrida ??= correrSondas(sondasDelEntorno(process.env, opciones)).then((resultados) => {
-        console.info(`[ops] prueba de proveedores:\n${resumenParaLog(resultados)}`);
-        return resultados;
-      }));
+    // Armar las sondas puede tronar (una cadena mal escrita): eso se avisa
+    // como la alerta del chequeo y NO se relanza, o el mismo problema
+    // llegaría dos veces (también como `job:ops.probe`).
+    let resultados: ResultadoSonda[] = [];
+    let fallo: Error | undefined;
+    try {
+      // Los defaults que decide env.ts (no el process.env crudo), para probar
+      // lo mismo que la app usa.
+      const fuente = {
+        ...process.env,
+        IMAGE_PROVIDER: env.IMAGE_PROVIDER,
+        WEB_SEARCH_PROVIDER: env.WEB_SEARCH_PROVIDER,
+      };
+      resultados = await correrSondas(sondasDelEntorno(fuente, opciones));
+      console.info(`[ops] prueba de proveedores:\n${resumenParaLog(resultados)}`);
+    } catch (error) {
+      fallo = error instanceof Error ? error : new Error(String(error));
+    }
+    const observar = (prefijo: string) => () => {
+      if (fallo) return Promise.reject(fallo);
+      return Promise.resolve(observacionesDeSondas(resultados, prefijo));
+    };
     const chequeos: Chequeo[] = [
-      {
-        nombre: "prueba",
-        prefix: PREFIJO_PRUEBA,
-        correr: async () => observacionesDeSondas(await sondas(), PREFIJO_PRUEBA),
-      },
+      { nombre: "prueba", prefix: PREFIJO_PRUEBA, correr: observar(PREFIJO_PRUEBA) },
     ];
     if (opciones.imagenes) {
       chequeos.push({
         nombre: "prueba-imagen",
         prefix: PREFIJO_PRUEBA_IMAGEN,
-        correr: async () => observacionesDeSondas(await sondas(), PREFIJO_PRUEBA_IMAGEN),
+        correr: observar(PREFIJO_PRUEBA_IMAGEN),
       });
     }
     await this.alerts.correr(chequeos);
-    return sondas();
+    return resultados;
   }
 
   async vigilar(): Promise<void> {

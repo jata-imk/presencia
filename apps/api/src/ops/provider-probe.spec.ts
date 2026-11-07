@@ -84,6 +84,9 @@ describe("clasificar", () => {
       "el modelo no existe (¿lo retiraron?)",
     );
     expect(clasificar(errorDeApi(429, "Quota exceeded per minute")).motivo).toBe("límite de tasa");
+    expect(clasificar(errorDeApi(429, '{"error":{"code":"insufficient_quota"}}')).motivo).toBe(
+      "sin saldo",
+    );
     expect(clasificar(new Error("socket hang up")).motivo).toBe("no contestó");
   });
 });

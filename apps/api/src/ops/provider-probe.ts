@@ -7,7 +7,7 @@ import {
   NoTranscriptGeneratedError,
   transcribe,
 } from "ai";
-import { QUOTA_BODY, statusOf } from "../ai/fallback.js";
+import { statusOf } from "../ai/fallback.js";
 import { costOf } from "../ai/model-prices.js";
 import {
   createEmbeddingModelResolver,
@@ -19,13 +19,16 @@ import {
   DEFAULT_TRANSCRIPTION_CHAIN,
   DEFAULT_TRENDS_MODEL_ID,
   MODEL_TIER_ENV_VARS,
+  formatModelEntry,
   parseModelChain,
   parseModelId,
   type EnvSource,
 } from "../ai/provider-registry.js";
 import { embeddingOptions } from "../chat/memory.js";
+import { braveRequest } from "../web/search-provider.js";
 import { imageCallOptions, imageGeneratorIds } from "../images/image-models.js";
 import type { Observacion } from "./alert-state.js";
+import { esErrorDeSaldo } from "./chequeos.js";
 
 // La prueba activa diaria (F12.8 PR4, ADR-031): una llamada mínima a cada
 // eslabón de cada cadena, directo y SIN pasar por el respaldo. Es la única
@@ -87,20 +90,22 @@ export function sondasDelEntorno(source: EnvSource, opciones: { imagenes: boolea
     source.AI_MODEL_TRENDS ?? DEFAULT_TRENDS_MODEL_ID,
   ];
   for (const cadena of cadenasDeTexto) {
-    for (const { id, provider, model } of parseModelChain(cadena)) {
+    for (const entrada of parseModelChain(cadena)) {
+      const { id, provider, model } = entrada;
       agregar({
         key: `probe:${id}`,
         id,
         tipo: "texto",
-        // El esfuerzo más bajo que todos aceptan (el SDK usa el más cercano
-        // si un modelo no lo tiene) y un techo de salida chico: se prueba que
-        // conteste, no cómo piensa.
+        // Con el esfuerzo con que lo usa la cadena (la primera que lo nombra):
+        // forzar otro probaría una combinación que producción no usa, y un
+        // proveedor que la rechaza daría una falsa alarma diaria. El techo es
+        // holgado para que el razonamiento no lo agote; la respuesta es "ok".
         correr: async (signal) => {
           const r = await generateText({
-            model: resolverTexto(`${id}@low`),
+            model: resolverTexto(formatModelEntry(entrada)),
             prompt: "Contesta solo con la palabra: ok",
-            maxOutputTokens: 512,
-            maxRetries: 0,
+            maxOutputTokens: 2048,
+            maxRetries: 1,
             abortSignal: signal,
           });
           return {
@@ -130,7 +135,7 @@ export function sondasDelEntorno(source: EnvSource, opciones: { imagenes: boolea
         model: resolverEmbedding(embeddingId),
         value: "hola",
         providerOptions: embeddingOptions(provider, "query"),
-        maxRetries: 0,
+        maxRetries: 1,
         abortSignal: signal,
       });
       return {};
@@ -152,7 +157,7 @@ export function sondasDelEntorno(source: EnvSource, opciones: { imagenes: boolea
             await transcribe({
               model: resolverTranscripcion(id),
               audio: silencioWav(1),
-              maxRetries: 0,
+              maxRetries: 1,
               abortSignal: signal,
             });
           } catch (error) {
@@ -202,7 +207,7 @@ export function sondasDelEntorno(source: EnvSource, opciones: { imagenes: boolea
               n: 1,
               ...opciones,
               ...(providerOptions ? { providerOptions } : {}),
-              maxRetries: 0,
+              maxRetries: 1,
               abortSignal: signal,
             });
           } catch (error) {
@@ -254,9 +259,7 @@ export function clasificar(error: unknown): { motivo: string; detalle: string } 
   const cuerpo = APICallError.isInstance(error) ? (error.responseBody ?? error.message) : "";
   const mensaje = error instanceof Error ? error.message : String(error);
   const detalle = `${status === null ? "" : `${String(status)}: `}${(cuerpo || mensaje).slice(0, 300)}`;
-  if (status === 402 || (status !== 429 && QUOTA_BODY.test(cuerpo || mensaje))) {
-    return { motivo: "sin saldo", detalle };
-  }
+  if (esErrorDeSaldo(status, cuerpo || mensaje)) return { motivo: "sin saldo", detalle };
   if (status === 401 || status === 403) return { motivo: "la key no sirve", detalle };
   if (status === 404) return { motivo: "el modelo no existe (¿lo retiraron?)", detalle };
   if (status === 429) return { motivo: "límite de tasa", detalle };
@@ -308,11 +311,7 @@ export function resumenParaLog(resultados: readonly ResultadoSonda[]): string {
 }
 
 async function sondaBrave(llave: string, signal: AbortSignal): Promise<Medicion> {
-  const params = new URLSearchParams({ q: "clima en Mérida", country: "MX", count: "1" });
-  const res = await fetch(`https://api.search.brave.com/res/v1/web/search?${params}`, {
-    headers: { Accept: "application/json", "X-Subscription-Token": llave },
-    signal,
-  });
+  const res = await braveRequest(llave, "clima en Mérida", 1, signal);
   if (!res.ok) {
     // Como APICallError, para que `clasificar` lea el status y el cuerpo.
     throw new APICallError({

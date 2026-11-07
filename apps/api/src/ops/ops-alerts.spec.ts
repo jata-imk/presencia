@@ -29,10 +29,16 @@ describe("decidir", () => {
   });
 
   it("recuerda una vez al día mientras siga prendida", () => {
-    expect(decidir(previa({ lastSentAt: hace(RECORDATORIO_MS - MIN) }), true, AHORA)).toBe(
+    expect(decidir(previa({ lastSentAt: hace(RECORDATORIO_MS - 60 * MIN) }), true, AHORA)).toBe(
       "callar",
     );
     expect(decidir(previa({ lastSentAt: hace(RECORDATORIO_MS) }), true, AHORA)).toBe(
+      "recordatorio",
+    );
+  });
+
+  it("el recordatorio de la prueba diaria no se salta por segundos de jitter", () => {
+    expect(decidir(previa({ lastSentAt: hace(RECORDATORIO_MS - 2_000) }), true, AHORA)).toBe(
       "recordatorio",
     );
   });
@@ -213,6 +219,10 @@ describe("esSinSaldo", () => {
     expect(esSinSaldo({ status: 400, error: "Your credit balance is too low" })).toBe(true);
     expect(esSinSaldo({ status: 503, error: "overloaded" })).toBe(false);
     expect(esSinSaldo({ status: 429, error: "Quota exceeded for metric per minute" })).toBe(false);
+    // El crédito agotado de OpenAI llega como 429 `insufficient_quota`.
+    expect(esSinSaldo({ status: 429, error: '{"error":{"code":"insufficient_quota"}}' })).toBe(
+      true,
+    );
   });
 });
 
