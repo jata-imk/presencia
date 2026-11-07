@@ -14,6 +14,7 @@
     "sonda:releer": "tsx --env-file=../../.env scripts/reread-probe.ts",
     "sonda:telegram": "tsx --env-file=../../.env scripts/telegram-probe.ts",
     "ops:vigilar": "tsx --env-file=../../.env scripts/ops-vigilar.ts",
+    "sonda:proveedores": "tsx --env-file=../../.env scripts/provider-probe.ts",
     "suite:voz-prohibida": "tsx --env-file=../../.env scripts/cultural-suite/prohibited-word.ts",
     "bakeoff:imagenes": "tsx --env-file=../../.env scripts/image-bakeoff/run.ts",
     "bakeoff:transcripcion": "tsx --env-file=../../.env scripts/transcription-bakeoff/run.ts",

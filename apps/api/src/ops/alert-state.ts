@@ -10,6 +10,14 @@
 export const RECORDATORIO_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * Holgura del recordatorio. La prueba diaria corre cada 24 h exactas y su
+ * `last_sent_at` se fija al empezar el pase: con el jitter del cron, la
+ * siguiente cae unos segundos antes de cumplir 24 h y el recordatorio se
+ * saltaba un día sí y otro no.
+ */
+export const MARGEN_RECORDATORIO_MS = 15 * 60 * 1000;
+
+/**
  * Tope de un detalle, en caracteres. Así un mensaje con unas cuantas alertas
  * cabe en los 4096 de Telegram (y un error de pg-boss con stack no se come el
  * mensaje entero).
@@ -73,7 +81,7 @@ export function decidir(
     // Prendida pero el aviso nunca salió (ningún canal respondió): se vuelve
     // a intentar como nueva, que es lo que el founder no ha visto.
     if (!previo.lastSentAt) return "nueva";
-    return ahora.getTime() - previo.lastSentAt.getTime() >= RECORDATORIO_MS
+    return ahora.getTime() - previo.lastSentAt.getTime() >= RECORDATORIO_MS - MARGEN_RECORDATORIO_MS
       ? "recordatorio"
       : "callar";
   }

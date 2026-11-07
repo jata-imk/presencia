@@ -13,6 +13,15 @@ import {
   type ResultadoDeIa,
 } from "./chequeos.js";
 import { pingHealthcheck } from "./healthchecks.js";
+import {
+  correrSondas,
+  observacionesDeSondas,
+  PREFIJO_PRUEBA,
+  PREFIJO_PRUEBA_IMAGEN,
+  resumenParaLog,
+  sondasDelEntorno,
+  type ResultadoSonda,
+} from "./provider-probe.js";
 import { OpsAlertsService, type Chequeo } from "./ops-alerts.service.js";
 import { OpsScanRepository } from "./ops-scan.repository.js";
 
@@ -24,6 +33,15 @@ const WATCH_QUEUE = "ops.watch";
 const WATCH_CRON = "*/5 * * * *";
 // Por debajo de la cadencia: un pase que tarda más de 4 minutos está colgado.
 const WATCH_EXPIRE_SECONDS = 4 * 60;
+
+// La prueba activa (PR4): diaria a las 14:00 UTC, 08:00 en Mérida, para que
+// el aviso esté ahí al empezar el día. Las sondas corren en paralelo con techo
+// de 2 min la más lenta (imagen): 10 min es cota de sobra.
+const PROBE_QUEUE = "ops.probe";
+const PROBE_CRON = "0 14 * * *";
+const PROBE_EXPIRE_SECONDS = 10 * 60;
+/** Las imágenes, solo los lunes (son lo caro; ver ADR-031). */
+const DIA_DE_IMAGENES = 1;
 
 /**
  * Las alertas de operación (F12.8, ADR-031): lo que corre solo avisa solo.
@@ -50,10 +68,64 @@ export class OpsJobs implements OnApplicationBootstrap {
         expireInSeconds: WATCH_EXPIRE_SECONDS,
         handler: () => this.vigilar(),
       });
+      // Solo en producción: en dev le pegaría todos los días a las keys de
+      // dev sin que nadie mire el resultado. Para probarla a mano está
+      // `pnpm --filter @presencia/api sonda:proveedores`.
+      if (env.NODE_ENV === "production") {
+        await this.boss.registerRecurring({
+          queue: PROBE_QUEUE,
+          cron: PROBE_CRON,
+          expireInSeconds: PROBE_EXPIRE_SECONDS,
+          handler: async () => {
+            await this.probar({ imagenes: new Date().getUTCDay() === DIA_DE_IMAGENES });
+          },
+        });
+      }
     } catch (error) {
       if (enProcesoWorker()) throw error;
-      console.error(`[jobs] ${WATCH_QUEUE} no quedó agendado; la API sigue sin él:`, error);
+      console.error(
+        `[jobs] ${WATCH_QUEUE}/${PROBE_QUEUE} no quedaron agendados; la API sigue sin ellos:`,
+        error,
+      );
     }
+  }
+
+  /** La prueba activa: una llamada a cada eslabón, y sus alertas `probe:`. */
+  async probar(opciones: { imagenes: boolean }): Promise<ResultadoSonda[]> {
+    // Armar las sondas puede tronar (una cadena mal escrita): eso se avisa
+    // como la alerta del chequeo y NO se relanza, o el mismo problema
+    // llegaría dos veces (también como `job:ops.probe`).
+    let resultados: ResultadoSonda[] = [];
+    let fallo: Error | undefined;
+    try {
+      // Los defaults que decide env.ts (no el process.env crudo), para probar
+      // lo mismo que la app usa.
+      const fuente = {
+        ...process.env,
+        IMAGE_PROVIDER: env.IMAGE_PROVIDER,
+        WEB_SEARCH_PROVIDER: env.WEB_SEARCH_PROVIDER,
+      };
+      resultados = await correrSondas(sondasDelEntorno(fuente, opciones));
+      console.info(`[ops] prueba de proveedores:\n${resumenParaLog(resultados)}`);
+    } catch (error) {
+      fallo = error instanceof Error ? error : new Error(String(error));
+    }
+    const observar = (prefijo: string) => () => {
+      if (fallo) return Promise.reject(fallo);
+      return Promise.resolve(observacionesDeSondas(resultados, prefijo));
+    };
+    const chequeos: Chequeo[] = [
+      { nombre: "prueba", prefix: PREFIJO_PRUEBA, correr: observar(PREFIJO_PRUEBA) },
+    ];
+    if (opciones.imagenes) {
+      chequeos.push({
+        nombre: "prueba-imagen",
+        prefix: PREFIJO_PRUEBA_IMAGEN,
+        correr: observar(PREFIJO_PRUEBA_IMAGEN),
+      });
+    }
+    await this.alerts.correr(chequeos);
+    return resultados;
   }
 
   async vigilar(): Promise<void> {

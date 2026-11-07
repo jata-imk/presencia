@@ -95,15 +95,24 @@ function proveedorDe(id: string): string {
 }
 
 /**
- * Un intento caído por saldo: 402, o el cuerpo que la cadena reconoce como
- * "sin cuota". Nunca un 429: el límite por minuto de Gemini también dice
- * "Quota exceeded", y una ráfaga de tráfico no es una cuenta sin saldo (en la
- * cadena, un 429 se decide por `isRetryable` antes de mirar el cuerpo).
+ * Lo que dice un 429 cuando es falta de saldo y no un límite de tasa: OpenAI
+ * contesta 429 `insufficient_quota` cuando se acaba el crédito, y Gemini 429
+ * con "prepayment credits are depleted". El genérico "Quota exceeded" NO
+ * entra: es lo que dice el límite por minuto de Gemini, y una ráfaga de
+ * tráfico no es una cuenta sin saldo.
  */
+const SALDO_EN_429 = /insufficient_quota|billing|credit balance|prepayment|credits are depleted/i;
+
+/** ¿Este error es falta de saldo? Lo usan la señal pasiva y la prueba diaria. */
+export function esErrorDeSaldo(status: number | null, cuerpo: string): boolean {
+  if (status === 402) return true;
+  if (status === 429) return SALDO_EN_429.test(cuerpo);
+  return QUOTA_BODY.test(cuerpo);
+}
+
+/** Un intento caído por saldo (ver `esErrorDeSaldo`). */
 export function esSinSaldo(intento: Pick<Intento, "status" | "error">): boolean {
-  if (intento.status === 402) return true;
-  if (intento.status === 429) return false;
-  return QUOTA_BODY.test(intento.error ?? "");
+  return esErrorDeSaldo(intento.status, intento.error ?? "");
 }
 
 /** Saldo y respaldo leen los mismos eventos: se resuelven juntos en un solo paso. */

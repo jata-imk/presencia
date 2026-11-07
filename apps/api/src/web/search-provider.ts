@@ -83,6 +83,31 @@ interface BraveResponse {
 }
 
 /**
+ * La petición a Brave, sola: la usan el buscador del chat y la prueba diaria
+ * de proveedores (F12.8), que además lee los headers de cuota. Un solo lugar
+ * para la URL, la key y los parámetros, para que la prueba pruebe lo mismo
+ * que el chat pide.
+ */
+export function braveRequest(
+  apiKey: string,
+  query: string,
+  count: number,
+  signal: AbortSignal,
+): Promise<Response> {
+  const params = new URLSearchParams({
+    q: query,
+    country: "MX",
+    search_lang: "es",
+    count: String(count),
+    extra_snippets: "true",
+  });
+  return fetch(`https://api.search.brave.com/res/v1/web/search?${params}`, {
+    headers: { Accept: "application/json", "X-Subscription-Token": apiKey },
+    signal,
+  });
+}
+
+/**
  * Brave Search API. Los mismos parámetros que ganaron el bake-off
  * (scripts/search-bakeoff/candidatos.ts): México y español, con los
  * fragmentos extra, que son los que traen el dato (el precio, el horario).
@@ -94,21 +119,16 @@ export class BraveSearchProvider implements SearchProvider {
   constructor(private readonly apiKey: string) {}
 
   async search(query: string, signal?: AbortSignal): Promise<WebSearchResult[]> {
-    const params = new URLSearchParams({
-      q: query,
-      country: "MX",
-      search_lang: "es",
-      count: String(WEB_SEARCH_RESULTS),
-      extra_snippets: "true",
-    });
-    const res = await fetch(`https://api.search.brave.com/res/v1/web/search?${params}`, {
-      headers: { Accept: "application/json", "X-Subscription-Token": this.apiKey },
-      signal: AbortSignal.any(
+    const res = await braveRequest(
+      this.apiKey,
+      query,
+      WEB_SEARCH_RESULTS,
+      AbortSignal.any(
         [AbortSignal.timeout(SEARCH_TIMEOUT_MS), signal].filter(
           (s): s is AbortSignal => s !== undefined,
         ),
       ),
-    });
+    );
     if (!res.ok) {
       throw new Error(`Brave contestó ${String(res.status)}: ${(await res.text()).slice(0, 200)}`);
     }
