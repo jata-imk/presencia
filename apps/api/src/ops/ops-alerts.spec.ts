@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { decidir, duracion, planear, RECORDATORIO_MS } from "./alert-state.js";
-import { chequeoDeJobs } from "./chequeos.js";
+import {
+  chequeoDeCards,
+  chequeoDeJobs,
+  chequeoDeRespaldo,
+  chequeoDeSaldo,
+  esSinSaldo,
+} from "./chequeos.js";
 import { componerMensaje, recortar } from "./mensaje.js";
 
 // F12.8 (ADR-031): la parte pura de las alertas de operación. Lo que importa
@@ -174,5 +180,83 @@ describe("mensaje", () => {
     expect(duracion(hace(3 * MIN), AHORA)).toBe("3 min");
     expect(duracion(hace(120 * MIN), AHORA)).toBe("2 h");
     expect(duracion(hace(72 * 60 * MIN), AHORA)).toBe("3 d");
+  });
+});
+
+// PR3: cards degradadas y proveedores de IA.
+describe("chequeoDeCards", () => {
+  it("una o dos cards fallidas son de un creator, no operación", () => {
+    expect(chequeoDeCards([{ reason: "x", n: 2 }])).toEqual([]);
+  });
+
+  it("tres en la ventana es un pico, con el desglose por motivo", () => {
+    const [o] = chequeoDeCards([
+      { reason: "No confirmó", n: 1 },
+      { reason: "Huérfana", n: 3 },
+    ]);
+    expect(o?.key).toBe("cards:degradadas");
+    expect(o?.title).toBe("4 cards pasaron a fallidas en 60 min");
+    expect(o?.detail).toBe("3 × Huérfana\n1 × No confirmó");
+  });
+});
+
+const evento = (
+  over: Partial<{
+    provider: string;
+    model: string;
+    fallbackFrom: string | null;
+    attempts: unknown;
+  }> = {},
+) => ({
+  provider: "openai",
+  model: "gpt-6-luna",
+  fallbackFrom: null,
+  attempts: null,
+  ...over,
+});
+
+describe("chequeoDeSaldo", () => {
+  it("reconoce el 402 y el cuerpo de sin cuota, no un 503", () => {
+    expect(esSinSaldo({ status: 402, error: "" })).toBe(true);
+    expect(esSinSaldo({ status: 400, error: "Your credit balance is too low" })).toBe(true);
+    expect(esSinSaldo({ status: 503, error: "overloaded" })).toBe(false);
+  });
+
+  it("agrupa por proveedor los intentos caídos por saldo", () => {
+    const obs = chequeoDeSaldo([
+      evento({
+        provider: "google",
+        fallbackFrom: "anthropic:claude-sonnet-5-5",
+        attempts: [
+          { id: "anthropic:claude-sonnet-5-5", status: 400, error: "credit balance is too low" },
+          { id: "openai:gpt-6-luna", status: 503, error: "caído" },
+        ],
+      }),
+      evento({
+        attempts: [{ id: "anthropic:claude-sonnet-5-5", status: 402, error: "Payment Required" }],
+      }),
+      evento({ attempts: "no es una lista" }),
+    ]);
+    expect(obs.map((o) => o.key)).toEqual(["saldo:anthropic"]);
+    expect(obs[0]?.detail).toMatch(/^2 intentos caídos por saldo/);
+  });
+});
+
+describe("chequeoDeRespaldo", () => {
+  const caido = evento({
+    provider: "google",
+    model: "gemini-3.8-flash",
+    fallbackFrom: "openai:gpt-6-luna",
+  });
+
+  it("la mitad o más contestada por el respaldo prende la alerta del principal", () => {
+    const obs = chequeoDeRespaldo([caido, caido, caido, evento(), evento()]);
+    expect(obs.map((o) => o.key)).toEqual(["respaldo:openai:gpt-6-luna"]);
+    expect(obs[0]?.detail).toMatch(/^3 de 5 respuestas .* google:gemini-3\.8-flash \(3\)$/);
+  });
+
+  it("con pocos eventos, o pocos del respaldo, calla", () => {
+    expect(chequeoDeRespaldo([caido, caido, caido, caido])).toEqual([]);
+    expect(chequeoDeRespaldo([caido, caido, evento(), evento(), evento()])).toEqual([]);
   });
 });

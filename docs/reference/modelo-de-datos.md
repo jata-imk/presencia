@@ -411,6 +411,10 @@ El estado de las alertas que manda `ops.watch` (ADR-031): una fila por alerta, c
 
 No es dato de nadie, pero tiene RLS igual (migración `0064`), con **una sola policy, la del centinela del barrido, y de lectura y escritura**: es la única `worker_scan` que escribe, porque no hay un tenant al cual regresar para escribir. Sin `tenant_isolation`, con un usuario fijado la tabla es invisible y un `INSERT` lo rechaza el RLS.
 
+### `worker_ops_scan`: lo que cuentan las alertas (F12.8)
+
+Dos policies de la migración `0065`, mismo patrón que las otras del barrido (solo `SELECT`, solo con el centinela nil): sobre `publication_cards`, las que están en `failed` con `updated_at` de las últimas 2 h (un pico de fallidas es la primera señal de que el proveedor de publicación cambió algo); sobre `ai_usage_events`, los eventos de las últimas 2 h (de ahí salen los intentos caídos por saldo y cuánto tráfico contesta un respaldo). `ops.watch` solo cuenta. Con ellas llegan dos índices: `cards_failed_recent` (parcial, `status = 'failed'`) y `usage_by_created_at`, porque `usage_by_user` empieza por `user_id` y no sirve para "todo lo de la última hora".
+
 ### La tercera del worker: `worker_scan` sobre `message_attachments` (F10.9)
 
 El barrido de adjuntos sin enviar pregunta cross-tenant por las filas **sin mensaje**: la policy (migración `0055`) es solo `SELECT`, solo con el centinela nil y solo `message_id IS NULL`. Un adjunto ya enviado es invisible fuera de su tenant, también para el barrido. El borrado entra por `runWithTenant`, y vuelve a exigir `message_id IS NULL`: uno que se envió entre el barrido y el borrado se queda.

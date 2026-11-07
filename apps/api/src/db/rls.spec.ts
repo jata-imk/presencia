@@ -1162,6 +1162,83 @@ describe("RLS tenant_isolation", () => {
     });
   });
 
+  // F12.8 PR3 (ADR-031, migración 0065): `ops.watch` cuenta cross-tenant las
+  // cards que pasaron a fallidas y los eventos de IA recientes. Solo lectura,
+  // solo con el centinela y solo las últimas 2 h.
+  describe("worker_ops_scan", () => {
+    const hace3h = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const ids: Partial<Record<string, string>> = {};
+
+    beforeAll(async () => {
+      await dbService.runWithTenant(userA, async (tx) => {
+        const base = {
+          userId: userA,
+          chatId: chatA,
+          archetype: "text_first" as const,
+          network: "linkedin" as const,
+          content: { archetype: "text_first", body: "ops", hashtags: [], assetIds: [] },
+        };
+        const cards = await tx
+          .insert(publicationCards)
+          .values([
+            { ...base, status: "failed", errorDetail: { reason: "prueba" } },
+            { ...base, status: "failed", updatedAt: hace3h },
+            { ...base, status: "draft" },
+          ])
+          .returning({ id: publicationCards.id });
+        [ids.reciente, ids.vieja, ids.borrador] = cards.map((c) => c.id);
+        const evento = {
+          userId: userA,
+          chatId: chatA,
+          taskKind: "chat" as const,
+          provider: "google",
+          model: "gemini-ops-scan",
+          inputTokens: 1,
+          outputTokens: 1,
+          stepsCount: 1,
+          durationMs: 1,
+          providerRaw: {},
+        };
+        const eventos = await tx
+          .insert(aiUsageEvents)
+          .values([evento, { ...evento, createdAt: hace3h }])
+          .returning({ id: aiUsageEvents.id });
+        [ids.eventoReciente, ids.eventoViejo] = eventos.map((e) => e.id);
+      });
+    }, 15_000);
+
+    it("el barrido ve solo las cards fallidas recientes", { timeout: 15_000 }, async () => {
+      const vistas = await dbService.runWorkerScan((tx) =>
+        tx
+          .select({ id: publicationCards.id })
+          .from(publicationCards)
+          .where(inArray(publicationCards.id, [ids.reciente!, ids.vieja!, ids.borrador!])),
+      );
+      expect(vistas.map((c) => c.id)).toEqual([ids.reciente]);
+    });
+
+    it("el barrido ve solo los eventos de IA recientes", { timeout: 15_000 }, async () => {
+      const vistos = await dbService.runWorkerScan((tx) =>
+        tx
+          .select({ id: aiUsageEvents.id })
+          .from(aiUsageEvents)
+          .where(inArray(aiUsageEvents.id, [ids.eventoReciente!, ids.eventoViejo!])),
+      );
+      expect(vistos.map((e) => e.id)).toEqual([ids.eventoReciente]);
+    });
+
+    it("y no escribe: la policy es solo de lectura", { timeout: 15_000 }, async () => {
+      const tocadas = await dbService.runWorkerScan((tx) =>
+        tx
+          .update(publicationCards)
+          .set({ status: "draft" })
+          .where(eq(publicationCards.id, ids.reciente!))
+          .returning({ id: publicationCards.id }),
+      );
+      expect(tocadas).toHaveLength(0);
+    });
+  });
+
   // F12.8 (ADR-031): el estado de las alertas de operación no es de nadie. Solo
   // el modo barrido (donde corre `ops.watch`) lo lee y lo escribe; con un
   // usuario fijado la tabla no existe para la API.
