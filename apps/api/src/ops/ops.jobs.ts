@@ -10,7 +10,6 @@ import {
   llavesDeJobs,
   VENTANA_FALLOS_MIN,
   VENTANA_RECIENTE_MIN,
-  type ResultadoDeIa,
 } from "./chequeos.js";
 import { pingHealthcheck } from "./healthchecks.js";
 import {
@@ -110,20 +109,29 @@ export class OpsJobs implements OnApplicationBootstrap {
     } catch (error) {
       fallo = error instanceof Error ? error : new Error(String(error));
     }
-    const observar = (prefijo: string) => () => {
-      if (fallo) return Promise.reject(fallo);
-      return Promise.resolve(observacionesDeSondas(resultados, prefijo));
-    };
+    // Un solo chequeo para los dos prefijos: si armar las sondas truena, una
+    // alerta, no una por prefijo. Las imágenes van en `otros` solo el día que
+    // se probaron (si no, su prefijo no se evalúa y sus alertas se quedan).
     const chequeos: Chequeo[] = [
-      { nombre: "prueba", prefix: PREFIJO_PRUEBA, correr: observar(PREFIJO_PRUEBA) },
+      {
+        nombre: "prueba",
+        prefix: PREFIJO_PRUEBA,
+        correr: () => {
+          if (fallo) return Promise.reject(fallo);
+          return Promise.resolve({
+            firing: observacionesDeSondas(resultados, PREFIJO_PRUEBA),
+            otros: opciones.imagenes
+              ? [
+                  {
+                    prefix: PREFIJO_PRUEBA_IMAGEN,
+                    firing: observacionesDeSondas(resultados, PREFIJO_PRUEBA_IMAGEN),
+                  },
+                ]
+              : [],
+          });
+        },
+      },
     ];
-    if (opciones.imagenes) {
-      chequeos.push({
-        nombre: "prueba-imagen",
-        prefix: PREFIJO_PRUEBA_IMAGEN,
-        correr: observar(PREFIJO_PRUEBA_IMAGEN),
-      });
-    }
     await this.alerts.correr(chequeos);
     return resultados;
   }
@@ -134,12 +142,6 @@ export class OpsJobs implements OnApplicationBootstrap {
   }
 
   private chequeos(): Chequeo[] {
-    // Saldo y respaldo leen los mismos eventos: una sola lectura por pase.
-    let lectura: Promise<ResultadoDeIa> | undefined;
-    const ia = () =>
-      (lectura ??= this.db
-        .runWorkerScan((tx) => this.scan.usoReciente(tx, haceMinutos(VENTANA_RECIENTE_MIN)))
-        .then(chequeoDeIa));
     return [
       {
         nombre: "jobs",
@@ -160,14 +162,18 @@ export class OpsJobs implements OnApplicationBootstrap {
           ),
       },
       {
-        nombre: "saldo",
+        // Saldo y respaldo salen de la misma lectura: un solo chequeo, y si
+        // la lectura truena, una sola alerta de "no se pudo revisar".
+        nombre: "ia",
         prefix: "saldo:",
-        correr: async () => (await ia()).saldo,
-      },
-      {
-        nombre: "respaldo",
-        prefix: "respaldo:",
-        correr: async () => (await ia()).respaldo,
+        correr: async () => {
+          const { saldo, respaldo } = chequeoDeIa(
+            await this.db.runWorkerScan((tx) =>
+              this.scan.usoReciente(tx, haceMinutos(VENTANA_RECIENTE_MIN)),
+            ),
+          );
+          return { ...saldo, otros: [{ prefix: "respaldo:", ...respaldo }] };
+        },
       },
     ];
   }

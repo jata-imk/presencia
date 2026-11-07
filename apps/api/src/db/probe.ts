@@ -15,8 +15,27 @@ import { env } from "../env.js";
 const CONEXION_TIMEOUT_MS = 2_000;
 const QUERY_TIMEOUT_MS = 2_000;
 
-/** Lanza si la base no contesta en ~4 s como máximo. */
-export async function probarBase(): Promise<void> {
+/**
+ * `/api/health` es público: sin esto, cualquiera que lo pida en bucle abre
+ * una conexión a Postgres por request y puede agotar `max_connections` — la
+ * caída que el endpoint existe para detectar. Una sola sonda cada 5 s, y los
+ * requests de en medio comparten su resultado.
+ */
+const CACHE_MS = 5_000;
+let ultima: { at: number; resultado: Promise<void> } | undefined;
+
+/** Lanza si la base no contesta en ~4 s como máximo (o si no contestó hace <5 s). */
+export function probarBase(): Promise<void> {
+  const ahora = Date.now();
+  if (ultima && ahora - ultima.at < CACHE_MS) return ultima.resultado;
+  const resultado = conectarYProbar();
+  // Sin esto, un rechazo cacheado que nadie más espera sería un unhandled.
+  resultado.catch(() => undefined);
+  ultima = { at: ahora, resultado };
+  return resultado;
+}
+
+async function conectarYProbar(): Promise<void> {
   const client = new pg.Client({
     connectionString: env.APP_DATABASE_URL,
     connectionTimeoutMillis: CONEXION_TIMEOUT_MS,

@@ -13,8 +13,16 @@ export interface Chequeo {
   nombre: string;
   /** Prefijo de las llaves que el chequeo administra, p. ej. `job:`. */
   prefix: string;
-  /** Lo prendido y, si el chequeo no alcanza a ver todo su prefijo, lo que sí miró. */
-  correr: () => Promise<Observacion[] | { firing: Observacion[]; evaluadas: readonly string[] }>;
+  /**
+   * Lo prendido; si el chequeo no alcanza a ver todo su prefijo, lo que sí
+   * miró; y, si de la misma lectura salen alertas de otro prefijo, esas
+   * (`otros`). Así una lectura que truena es UNA alerta de "no se pudo
+   * revisar", no una por cada prefijo que dependía de ella.
+   */
+  correr: () => Promise<
+    | Observacion[]
+    | { firing: Observacion[]; evaluadas?: readonly string[]; otros?: ResultadoChequeo[] }
+  >;
 }
 
 /**
@@ -43,11 +51,12 @@ export class OpsAlertsService {
       const prefijoDelChequeo = `chequeo:${chequeo.nombre}`;
       try {
         const visto = await chequeo.correr();
-        resultados.push(
-          Array.isArray(visto)
-            ? { prefix: chequeo.prefix, firing: visto }
-            : { prefix: chequeo.prefix, ...visto },
-        );
+        if (Array.isArray(visto)) {
+          resultados.push({ prefix: chequeo.prefix, firing: visto });
+        } else {
+          const { otros, ...propio } = visto;
+          resultados.push({ prefix: chequeo.prefix, ...propio }, ...(otros ?? []));
+        }
         resultados.push({ prefix: prefijoDelChequeo, firing: [] });
       } catch (error) {
         console.error(`[ops] el chequeo ${chequeo.nombre} no corrió:`, error);
@@ -67,36 +76,30 @@ export class OpsAlertsService {
   }
 
   /**
-   * Decide, avisa y guarda, todo dentro de UNA transacción con un candado
-   * (separado de `correr` para poder probarlo con resultados fijos).
+   * Decide, guarda, avisa (separado de `correr` para poder probarlo con
+   * resultados fijos).
    *
-   * El candado serializa dos pases que se crucen —`ops:vigilar` a mano
-   * mientras el worker corre el suyo—: el segundo espera y lee lo que el
-   * primero escribió, en vez de decidir los dos "nueva" y mandar el aviso
-   * dos veces. Y que leer, mandar y guardar sean una sola transacción hace
-   * que un estado que no se pudo guardar se vuelva a decidir entero en el
-   * pase siguiente. La transacción queda abierta durante el envío; el envío
-   * tiene su propio techo (OpsAlertSender) y esto corre cada cinco minutos.
+   * Leer, decidir y guardar van en UNA transacción con un candado: dos pases
+   * que se crucen (`ops:vigilar` a mano mientras el worker corre el suyo) se
+   * serializan, y el segundo ve lo que el primero guardó en vez de avisar lo
+   * mismo otra vez. El envío va DESPUÉS, fuera de la transacción: con
+   * Telegram y el correo colgados son hasta ~40 s, y no se puede tener una
+   * conexión del pool y el candado tomados todo ese tiempo. Por eso se guarda
+   * optimista ("ya se avisó") y, si ningún canal respondió, se deshace solo
+   * eso: el pase siguiente lo reintenta.
    */
   async reportar(resultados: readonly ResultadoChequeo[], ahora: Date): Promise<void> {
-    await this.db.runWorkerScan(async (tx) => {
+    const { avisos, deshacer } = await this.db.runWorkerScan(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext('ops_alerts'))`);
       const filas = await this.repo.todas(tx);
       const previas = new Map(filas.map((f) => [f.key, f]));
-
       const plan = planear(resultados, previas, ahora);
-      const avisos = plan.flatMap((p) => (p.aviso ? [p.aviso] : []));
-
-      let enviado = false;
-      if (avisos.length > 0) {
-        for (const aviso of avisos) {
-          console.warn(`[ops] ${aviso.decision}: ${aviso.key} — ${aviso.title}\n${aviso.detail}`);
-        }
-        enviado = await this.sender.enviar(componerMensaje(avisos, entorno(), ahora));
-      }
+      const deshacer: { key: string; lastSentAt: Date | null }[] = [];
 
       for (const paso of plan) {
         const previa = previas.get(paso.key);
+        const avisa = paso.aviso !== undefined && paso.aviso.decision !== "resuelta";
+        if (avisa) deshacer.push({ key: paso.key, lastSentAt: previa?.lastSentAt ?? null });
         switch (paso.accion) {
           case "prender":
             await this.repo.prender(tx, {
@@ -105,25 +108,39 @@ export class OpsAlertsService {
               detail: paso.detail,
               // Un reintento de un aviso que no salió conserva su inicio.
               since: previa?.firing ? previa.since : ahora,
-              lastSentAt: enviado ? ahora : null,
+              lastSentAt: ahora,
             });
             break;
           case "seguir":
             await this.repo.actualizar(tx, paso.key, {
               title: paso.title,
               detail: paso.detail,
-              ...(paso.aviso && enviado ? { lastSentAt: ahora } : {}),
+              ...(avisa ? { lastSentAt: ahora } : {}),
             });
             break;
           case "apagar":
-            // Se apaga aunque el "resuelto" no haya salido: dejarla prendida
-            // para reintentar el aviso confundiría el estado real. Queda en
-            // el log.
+            // Se apaga aunque el "resuelto" no llegue a salir: dejarla
+            // prendida para reintentar el aviso confundiría el estado real.
+            // Queda en el log.
             await this.repo.apagar(tx, paso.key);
             break;
         }
       }
+      return { avisos: plan.flatMap((p) => (p.aviso ? [p.aviso] : [])), deshacer };
     });
+
+    if (avisos.length === 0) return;
+    for (const aviso of avisos) {
+      console.warn(`[ops] ${aviso.decision}: ${aviso.key} — ${aviso.title}\n${aviso.detail}`);
+    }
+    const enviado = await this.sender.enviar(componerMensaje(avisos, entorno(), ahora));
+    if (!enviado && deshacer.length > 0) {
+      await this.db.runWorkerScan(async (tx) => {
+        for (const { key, lastSentAt } of deshacer) {
+          await this.repo.marcarEnvio(tx, key, lastSentAt);
+        }
+      });
+    }
   }
 }
 

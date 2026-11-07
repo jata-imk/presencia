@@ -89,6 +89,15 @@ describe("planear", () => {
     expect(pasos).toEqual([]);
   });
 
+  it("una alerta fuera de alcance por más de 8 días se apaga en silencio", () => {
+    const pasos = planear(
+      [{ prefix: "job:", firing: [], evaluadas: [] }],
+      new Map([["job:x", { ...previa(), updatedAt: hace(9 * 24 * 60 * MIN) }]]),
+      AHORA,
+    );
+    expect(pasos.map((p) => [p.key, p.accion, p.aviso])).toEqual([["job:x", "apagar", undefined]]);
+  });
+
   it("un prefijo sin ':' es una llave exacta", () => {
     const pasos = planear(
       [{ prefix: "chequeo:jobs", firing: [] }],
@@ -121,7 +130,12 @@ describe("planear", () => {
 });
 
 describe("chequeoDeJobs", () => {
-  const base = { queue: "backups.daily", lastError: "S3 403", lastFailedAt: hace(5 * MIN) };
+  const base = {
+    queue: "backups.daily",
+    policy: "exclusive",
+    lastError: "S3 403",
+    lastFailedAt: hace(5 * MIN),
+  };
 
   it("prende si la última corrida falló, aunque haya sido hace horas", () => {
     const [o] = chequeoDeJobs(
@@ -138,6 +152,23 @@ describe("chequeoDeJobs", () => {
       AHORA,
     );
     expect(o?.detail).toMatch(/^2 fallos en 30 min/);
+  });
+
+  it("en una cola puntual, un fallo viejo de un creator no se queda prendido", () => {
+    expect(
+      chequeoDeJobs(
+        [
+          {
+            ...base,
+            queue: "web_read.describe",
+            policy: "short",
+            lastState: "failed",
+            recentFailures: 0,
+          },
+        ],
+        AHORA,
+      ),
+    ).toEqual([]);
   });
 
   it("calla cuando la última salió bien y no hay fallos recientes", () => {
@@ -219,6 +250,8 @@ describe("esSinSaldo", () => {
     expect(esSinSaldo({ status: 400, error: "Your credit balance is too low" })).toBe(true);
     expect(esSinSaldo({ status: 503, error: "overloaded" })).toBe(false);
     expect(esSinSaldo({ status: 429, error: "Quota exceeded for metric per minute" })).toBe(false);
+    // El "Quota exceeded" genérico tampoco, aunque llegue sin status.
+    expect(esSinSaldo({ status: null, error: "Quota exceeded for quota metric" })).toBe(false);
     // El crédito agotado de OpenAI llega como 429 `insufficient_quota`.
     expect(esSinSaldo({ status: 429, error: '{"error":{"code":"insufficient_quota"}}' })).toBe(
       true,
@@ -280,6 +313,8 @@ describe("chequeoDeIa · respaldo", () => {
     };
     const r = chequeoDeIa([sinSaldoOpenai, sinSaldoOpenai, sinSaldoOpenai, evento(), evento()]);
     expect(r.saldo.firing.map((o) => o.key)).toEqual(["saldo:openai"]);
-    expect(r.respaldo.firing).toEqual([]);
+    // Ni prende ni se evalúa: un `respaldo:` que ya estaba prendido no se
+    // "resuelve" mientras el proveedor sigue caído.
+    expect(r.respaldo).toEqual({ firing: [], evaluadas: [] });
   });
 });
