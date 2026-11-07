@@ -619,7 +619,7 @@ export class CardsRepository {
   async markFailed(tx: Tx, id: string, errorDetail: unknown): Promise<CardRow> {
     const [row] = await tx
       .update(publicationCards)
-      .set({ status: "failed", errorDetail, updatedAt: WRITTEN_AT })
+      .set({ status: "failed", errorDetail, failedAt: WRITTEN_AT, updatedAt: WRITTEN_AT })
       .where(eq(publicationCards.id, id))
       .returning();
     if (!row) throw new Error("No se pudo marcar la publicación como fallida");
@@ -654,7 +654,7 @@ export class CardsRepository {
     if (ids.length === 0) return;
     const failed = await tx
       .update(publicationCards)
-      .set({ status: "failed", errorDetail, updatedAt: WRITTEN_AT })
+      .set({ status: "failed", errorDetail, failedAt: WRITTEN_AT, updatedAt: WRITTEN_AT })
       .where(
         and(
           inArray(publicationCards.id, ids),
@@ -690,7 +690,7 @@ export class CardsRepository {
     if (cards.length === 0) return;
     const failed = await tx
       .update(publicationCards)
-      .set({ status: "failed", errorDetail, updatedAt: WRITTEN_AT })
+      .set({ status: "failed", errorDetail, failedAt: WRITTEN_AT, updatedAt: WRITTEN_AT })
       .where(
         and(
           eq(publicationCards.status, "scheduled"),

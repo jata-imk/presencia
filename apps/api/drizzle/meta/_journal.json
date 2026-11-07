@@ -456,6 +456,13 @@
       "when": 1794027034604,
       "tag": "0064_alertas_de_operacion",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1794082414514,
+      "tag": "0065_alertas_cards_y_saldo",
+      "breakpoints": true
     }
   ]
 }

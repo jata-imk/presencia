@@ -5,6 +5,7 @@ import { OpsAlertSender } from "../src/ops/alert-sender.js";
 import { OpsAlertsRepository } from "../src/ops/ops-alerts.repository.js";
 import { OpsAlertsService } from "../src/ops/ops-alerts.service.js";
 import { OpsJobs } from "../src/ops/ops.jobs.js";
+import { OpsScanRepository } from "../src/ops/ops-scan.repository.js";
 
 // Un pase de `ops.watch` a mano (F12.8, ADR-031), con el canal del .env.
 //
@@ -32,7 +33,7 @@ async function main(): Promise<void> {
   try {
     if (fallar || sanar) await simular(boss, fallar);
     const alerts = new OpsAlertsService(db, new OpsAlertsRepository(), new OpsAlertSender());
-    await new OpsJobs(boss, alerts).vigilar();
+    await new OpsJobs(boss, alerts, db, new OpsScanRepository()).vigilar();
     console.info("[ops:vigilar] pase terminado");
   } finally {
     await boss.onModuleDestroy();

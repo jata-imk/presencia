@@ -135,6 +135,7 @@ Consumida por `chat/system-prompt.ts::buildSystemPrompt` (F4 PR 2/4) en cada tur
 | `post_url`                      | text nullable    | enlace al post ya publicado (F7.5, migración `0015_cards_post_url`); null si el proveedor no lo da — PostFast nunca lo devuelve                                     |
 | `platform_post_id`              | text nullable    | id del post en la RED, no en el proveedor (F8.7, migración `0023_cards_platform_post_id`); llave con la que se le piden métricas — `provider_ref` no sirve para eso |
 | `error_detail`                  | jsonb nullable   | por qué falló la publicación                                                                                                                                        |
+| `failed_at`                     | timestamptz null | cuándo pasó a `failed` (F12.8). `updated_at` no sirve: borrar el chat o la cuenta lo vuelve a tocar. Null en las que fallaron antes de existir la columna           |
 
 - El toggle multi-red del drawer de programación opera sobre `group_id`: programar el grupo o dejar redes individuales en borrador.
 - El grupo NO es tabla propia (decisión 2026-07-18): es puro parentesco, sin atributos ni ciclo de vida propios — cada card conserva fecha, estado y contenido individuales. Su estado agregado ("2 programadas, 1 en borrador") se **deriva** de las cards, nunca se guarda. Criterio: una relación merece tabla solo con atributos propios; si V2 trae "campañas" con nombre/notas, la migración a `card_groups` es aditiva (`INSERT ... SELECT DISTINCT group_id`).
@@ -410,6 +411,10 @@ RLS activo en: `brand_voices`, `folders`, `chats`, `messages`, `message_attachme
 El estado de las alertas que manda `ops.watch` (ADR-031): una fila por alerta, con la llave como PK (`job:backups.daily`, `chequeo:jobs`…), si está prendida (`firing`), desde cuándo (`since`), el último aviso que sí salió (`last_sent_at`, null = el aviso no llegó por ningún canal y se reintenta) y lo que se le dijo al founder (`title`, `detail`). Existe para no hacer spam: se avisa al cambiar de estado y con un recordatorio diario, nunca en cada pase.
 
 No es dato de nadie, pero tiene RLS igual (migración `0064`), con **una sola policy, la del centinela del barrido, y de lectura y escritura**: es la única `worker_scan` que escribe, porque no hay un tenant al cual regresar para escribir. Sin `tenant_isolation`, con un usuario fijado la tabla es invisible y un `INSERT` lo rechaza el RLS.
+
+### `worker_ops_scan`: lo que cuentan las alertas (F12.8)
+
+Dos policies de la migración `0065`, mismo patrón que las otras del barrido (solo `SELECT`, solo con el centinela nil): sobre `publication_cards`, las que están en `failed` con `failed_at` de las últimas 2 h (un pico de fallidas es la primera señal de que el proveedor de publicación cambió algo); sobre `ai_usage_events`, los eventos de las últimas 2 h (de ahí salen los intentos caídos por saldo y cuánto tráfico contesta un respaldo). `ops.watch` solo cuenta. Con ellas llegan dos índices: `cards_failed_recent` (parcial, `status = 'failed'`) y `usage_by_created_at`, porque `usage_by_user` empieza por `user_id` y no sirve para "todo lo de la última hora".
 
 ### La tercera del worker: `worker_scan` sobre `message_attachments` (F10.9)
 

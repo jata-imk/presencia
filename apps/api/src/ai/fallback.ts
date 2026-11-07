@@ -108,7 +108,12 @@ export function simulatedOutage(provider: string): APICallError {
   });
 }
 
-const QUOTA_BODY = /insufficient_quota|billing|credit balance|quota exceeded/i;
+/**
+ * Cuerpo de error de "sin saldo / sin cuota" que algunos proveedores mandan
+ * como 400 o 403. Exportado para las alertas de operación (F12.8), que buscan
+ * lo mismo en los intentos guardados.
+ */
+export const QUOTA_BODY = /insufficient_quota|billing|credit balance|quota exceeded/i;
 /** Tipos de error de stream que son caída, cuando el proveedor no dice si se reintenta. */
 const STREAM_OUTAGE = /server_error|internal|overloaded|unavailable|rate_limit|timeout/i;
 const NETWORK_CODES = new Set([
