@@ -449,6 +449,13 @@
       "when": 1793855879103,
       "tag": "0063_canales_del_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1794027034604,
+      "tag": "0064_alertas_de_operacion",
+      "breakpoints": true
     }
   ]
 }

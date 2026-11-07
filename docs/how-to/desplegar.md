@@ -230,6 +230,25 @@ sección "Chatear desde". Para encenderlo:
 
 Ojo: cualquier reinicio de `app` con el token puesto enciende el bot.
 
+### 4d. Alertas de operación (obligatorio desde F12.8, ADR-031)
+
+Con `NODE_ENV=production` la API **no arranca** sin un canal para las alertas de operación: el worker
+avisa por ahí cuando un job falla. **Agrégalo al `.env` antes del `pull`** de la imagen que trae F12.8.
+
+```
+# Telegram (recomendado): sale con TELEGRAM_BOT_TOKEN, directo desde el worker
+OPS_TELEGRAM_CHAT_ID=<tu chat_id>
+# Respaldo si Telegram falla (token revocado, red)
+OPS_ALERT_EMAIL=<tu correo>
+```
+
+Tu `chat_id` es el `external_id` de tu vínculo activo de Telegram (`select external_id from
+channel_links where status = 'active'` como owner), o el que te da @userinfobot. Antes de escribirte,
+el bot necesita que tú le hayas escrito una vez (cualquier mensaje).
+
+Para probar la cadena completa sin romper un job real, desde la laptop contra dev:
+`pnpm --filter @presencia/api ops:vigilar -- --fallar` (con `OPS_TELEGRAM_CHAT_ID` en el `.env` local).
+
 ### 5. El vhost de CloudPanel
 
 Sitio tipo **Reverse Proxy** hacia `http://127.0.0.1:3001`, y certificado de Let's Encrypt (el DNS tiene
@@ -501,6 +520,8 @@ select name, state, created_on, output from pgboss.job order by created_on desc 
 | 502 en el navegador                    | El contenedor `app` no está arriba o no escucha en 3001: `ps` y `logs app`                       |
 | `app` reinicia en bucle                | Falta una variable del `.env`: `logs app` la nombra (fail-fast de `env.ts`)                      |
 | `worker` reinicia en bucle             | La cola no arrancó. Casi siempre `JOBS_DATABASE_URL` mal, o su rol sin password                  |
+| Llegó una alerta de operación          | Su título nombra la cola: la query de `pgboss.job` de arriba trae el `output` completo           |
+| `app` no arranca tras F12.8            | Falta `OPS_TELEGRAM_CHAT_ID` u `OPS_ALERT_EMAIL` (paso 4d)                                       |
 | El chat llega de golpe al final        | Falta `proxy_buffering off` en el vhost                                                          |
 | `manifest unknown` en el `pull`        | Ese tag no existe: revisar el run de _Release_ en Actions                                        |
 | `denied` / `unauthorized` en el `pull` | El paquete quedó privado: _Packages → presencia → Package settings → Change visibility → Public_ |

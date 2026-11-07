@@ -13,6 +13,8 @@ import { ImagesJobs } from "../images/images.jobs.js";
 import { ImagesModule } from "../images/images.module.js";
 import { MetricsJobs } from "../metrics/metrics.jobs.js";
 import { MetricsModule } from "../metrics/metrics.module.js";
+import { OpsJobs } from "../ops/ops.jobs.js";
+import { OpsModule } from "../ops/ops.module.js";
 import { TrendsJobs } from "../trends/trends.jobs.js";
 import { TrendsModule } from "../trends/trends.module.js";
 import { WebJobs } from "../web/web.jobs.js";
@@ -35,6 +37,7 @@ import { JobsModule } from "./jobs.module.js";
     ChatModule,
     AttachmentsModule,
     WebModule,
+    OpsModule,
   ],
   providers: [
     CardsJobs,
@@ -46,6 +49,7 @@ import { JobsModule } from "./jobs.module.js";
     ChatJobs,
     AttachmentsJobs,
     WebJobs,
+    OpsJobs,
   ],
 })
 export class ScheduledJobsModule {}

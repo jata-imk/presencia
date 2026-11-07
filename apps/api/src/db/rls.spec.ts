@@ -13,6 +13,7 @@ import {
   messageAttachments,
   messages,
   cadenceTargets,
+  opsAlerts,
   postMetrics,
   publicationCards,
   ritmoNarrations,
@@ -1158,6 +1159,64 @@ describe("RLS tenant_isolation", () => {
           (e: unknown) => e,
         );
       expect(String((error as Error).cause)).toMatch(/permission denied/);
+    });
+  });
+
+  // F12.8 (ADR-031): el estado de las alertas de operación no es de nadie. Solo
+  // el modo barrido (donde corre `ops.watch`) lo lee y lo escribe; con un
+  // usuario fijado la tabla no existe para la API.
+  describe("ops_alerts", () => {
+    const key = `test:${randomUUID()}`;
+
+    afterAll(async () => {
+      await dbService.runWorkerScan((tx) => tx.delete(opsAlerts).where(eq(opsAlerts.key, key)));
+    }, 15_000);
+
+    it("el barrido la escribe y la lee", { timeout: 15_000 }, async () => {
+      await dbService.runWorkerScan((tx) =>
+        tx.insert(opsAlerts).values({
+          key,
+          firing: true,
+          since: new Date(),
+          lastSentAt: null,
+          title: "prueba",
+          detail: "detalle",
+        }),
+      );
+      const visto = await dbService.runWorkerScan((tx) =>
+        tx.select().from(opsAlerts).where(eq(opsAlerts.key, key)),
+      );
+      expect(visto).toHaveLength(1);
+    });
+
+    it("con un usuario fijado no la ve ni la toca", { timeout: 15_000 }, async () => {
+      const visto = await dbService.runWithTenant(userA, (tx) =>
+        tx.select().from(opsAlerts).where(eq(opsAlerts.key, key)),
+      );
+      expect(visto).toHaveLength(0);
+      const tocadas = await dbService.runWithTenant(userA, (tx) =>
+        tx
+          .update(opsAlerts)
+          .set({ firing: false })
+          .where(eq(opsAlerts.key, key))
+          .returning({ key: opsAlerts.key }),
+      );
+      expect(tocadas).toHaveLength(0);
+      const error: unknown = await dbService
+        .runWithTenant(userA, (tx) =>
+          tx.insert(opsAlerts).values({
+            key: `${key}-ajena`,
+            firing: true,
+            since: new Date(),
+            title: "x",
+            detail: "x",
+          }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(String((error as Error).cause)).toMatch(/row-level security/);
     });
   });
 });

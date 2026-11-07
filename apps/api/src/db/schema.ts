@@ -1273,3 +1273,26 @@ export const postMetrics = pgTable(
     index("post_metrics_by_card").on(t.cardId),
   ],
 );
+
+// --- Alertas de operación (F12.8, ADR-031) ---
+//
+// El estado de cada alerta que vigila `ops.watch`: si está prendida, desde
+// cuándo y cuándo se avisó por última vez. Existe para no hacer spam — se
+// avisa al CAMBIAR de estado (nueva, resuelta) y con un recordatorio diario
+// mientras siga prendida, nunca en cada pase. No es dato de un tenant: la
+// llave es algo como `job:backups.daily` o `saldo:anthropic`. Aun así tiene
+// RLS (0064), con una sola policy para el modo barrido del worker, así que
+// con un usuario fijado es invisible.
+export const opsAlerts = pgTable("ops_alerts", {
+  key: text("key").primaryKey(),
+  firing: boolean("firing").notNull(),
+  // Cuándo se prendió esta vez (se reinicia en cada prendida nueva).
+  since: timestamp("since", { withTimezone: true }).notNull(),
+  // Último aviso que SÍ salió. Null = prendida pero el aviso no llegó por
+  // ningún canal; el pase siguiente lo reintenta.
+  lastSentAt: timestamp("last_sent_at", { withTimezone: true }),
+  // Lo que se le dice al founder: el qué (title) y el detalle del último pase.
+  title: text("title").notNull(),
+  detail: text("detail").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

@@ -26,6 +26,8 @@ const TOUCHED = [
   "TELEGRAM_MODE",
   "TELEGRAM_WEBHOOK_SECRET",
   "AI_MODEL_TRANSCRIBE",
+  "OPS_TELEGRAM_CHAT_ID",
+  "OPS_ALERT_EMAIL",
 ];
 const ORIGINAL = Object.fromEntries(TOUCHED.map((key) => [key, process.env[key]]));
 
@@ -120,5 +122,34 @@ describe("env: canal Telegram", () => {
       GROQ_API_KEY: "",
     });
     expect(env.AI_MODEL_TRANSCRIBE).toBe("openai:gpt-4o-mini-transcribe");
+  });
+});
+
+// F12.8 (ADR-031): a quién avisa el worker cuando algo que corre solo falla.
+describe("env: canal de las alertas de operación", () => {
+  it("el chat_id sin bot es un error de arranque", async () => {
+    await expect(loadEnv({ OPS_TELEGRAM_CHAT_ID: "12345" })).rejects.toThrow(
+      /OPS_TELEGRAM_CHAT_ID requiere TELEGRAM_BOT_TOKEN/,
+    );
+  });
+
+  it("acepta el chat_id negativo de un grupo", async () => {
+    const { env } = await loadEnv({ TELEGRAM_BOT_TOKEN: TOKEN, OPS_TELEGRAM_CHAT_ID: "-100123" });
+    expect(env.OPS_TELEGRAM_CHAT_ID).toBe(-100123);
+  });
+
+  it("en dev no hace falta canal", async () => {
+    const { env } = await loadEnv({});
+    expect(env.OPS_TELEGRAM_CHAT_ID).toBeUndefined();
+    expect(env.OPS_ALERT_EMAIL).toBeUndefined();
+  });
+
+  it("en producción sin ningún canal no arranca", async () => {
+    await expect(loadEnv({ NODE_ENV: "production" })).rejects.toThrow(
+      /las alertas de operación necesitan un canal/,
+    );
+    await expect(
+      loadEnv({ NODE_ENV: "production", OPS_ALERT_EMAIL: "ops@example.com" }),
+    ).rejects.not.toThrow(/las alertas de operación necesitan un canal/);
   });
 });

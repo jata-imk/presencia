@@ -210,3 +210,10 @@ El diseño original listaba "procesamiento Telegram" como un job. Al construirlo
 - **El webhook contesta 200 en cuanto acepta el update y lo atiende en el mismo proceso,** con una fila por tema en memoria (`telegram-conversation.service.ts`). Lo que no se aceptó, Telegram lo reenvía solo, así que la cola durable no aporta nada que pague el salto.
 - **`TelegramModule` no se carga en `worker.ts`.** El worker sigue siendo solo de jobs programados.
 - Consecuencia: `app` es **una sola réplica** (el bot, los candados y la fila por tema viven en su memoria). Ver el addendum F11 de ADR-020.
+
+## Addendum (2026-11-06, F12.8) — `ops.watch`, la cola que vigila a las demás
+
+Hasta F12.8 un job fallido dejaba una fila `failed` en `pgboss.job` y nada más: el patrón de este ADR ("enumerar, `try/catch` por unidad, contar, relanzar") garantizaba que el fallo quedara escrito, pero nadie lo leía. `ops.watch` (cada 5 min, `exclusive`, expira a los 4) es quien lo lee y avisa (ADR-031). Dos cosas que tocan a este ADR:
+
+- **La única lectura de `pgboss` por SQL fuera de pg-boss** (`BossService.resumenDeColas`) va por el pool de pg-boss, como `presencia_jobs`: `presencia_app` sigue sin ver el schema (addendum F8.5).
+- **Ningún job nuevo tiene que hacer nada para quedar vigilado:** basta con que falle como ya fallan todos, lanzando. Por eso el patrón de relanzar se vuelve más importante, no menos: un job que se traga su error es invisible también para las alertas.

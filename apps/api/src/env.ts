@@ -152,6 +152,19 @@ const envSchema = z
       .string()
       .regex(/^[A-Za-z0-9_-]{32,256}$/, "32 a 256 caracteres de [A-Za-z0-9_-]")
       .optional(),
+    // --- Alertas de operación (F12.8, ADR-031) ---
+    // A quién avisa el job `ops.watch` cuando algo que corre solo falla. Son
+    // para el founder, no para los creators: un chat_id fijo, no un vínculo de
+    // cuenta. Telegram primero (el worker manda directo con el mismo token del
+    // bot, sin pasar por `app`); el correo es el respaldo si Telegram falla.
+    // En producción hace falta al menos uno (superRefine de abajo). Un chat_id
+    // de grupo es negativo, así que entero con signo.
+    OPS_TELEGRAM_CHAT_ID: z.coerce.number().int().optional(),
+    OPS_ALERT_EMAIL: z.email().optional(),
+    // El latido del worker en Healthchecks.io: `ops.watch` le hace ping al
+    // terminar cada pase. Si deja de llegar (worker, pg-boss o el propio job
+    // caídos), avisa Healthchecks, que corre afuera. Sin setear, no hay ping.
+    HEALTHCHECK_WORKER_URL: z.url().optional(),
     // --- Backup diario (F8.5, ADR-011) ---
     // Opcionales como grupo: sin configurar, el job no se registra y la API
     // arranca igual (en dev nadie tiene bucket). Pero configurado a medias es
@@ -394,6 +407,29 @@ const envSchema = z
           message: 'TELEGRAM_MODE="polling" no se permite en producción: usa "webhook"',
         });
       }
+    }
+    // F12.8: el aviso por Telegram sale con el token del bot; un chat_id sin
+    // bot sería una alerta que nunca llega.
+    if (value.OPS_TELEGRAM_CHAT_ID !== undefined && !value.TELEGRAM_BOT_TOKEN) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["OPS_TELEGRAM_CHAT_ID"],
+        message: "OPS_TELEGRAM_CHAT_ID requiere TELEGRAM_BOT_TOKEN: el aviso sale con ese bot",
+      });
+    }
+    // Y en producción alguien tiene que enterarse: un worker que falla sin
+    // canal configurado es justo el fallo silencioso que esta fase quita.
+    if (
+      value.NODE_ENV === "production" &&
+      value.OPS_TELEGRAM_CHAT_ID === undefined &&
+      !value.OPS_ALERT_EMAIL
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["OPS_ALERT_EMAIL"],
+        message:
+          "En producción las alertas de operación necesitan un canal: OPS_TELEGRAM_CHAT_ID, OPS_ALERT_EMAIL o los dos",
+      });
     }
     if (value.WEB_SEARCH_PROVIDER === "brave" && !value.BRAVE_SEARCH_API_KEY) {
       ctx.addIssue({

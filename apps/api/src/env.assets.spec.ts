@@ -27,6 +27,7 @@ const TOUCHED = [
   "BACKUP_DATABASE_URL",
   "WEB_SEARCH_PROVIDER",
   "BRAVE_SEARCH_API_KEY",
+  "OPS_ALERT_EMAIL",
 ];
 const ORIGINAL = Object.fromEntries(TOUCHED.map((key) => [key, process.env[key]]));
 
@@ -75,6 +76,8 @@ describe("env: storage de assets", () => {
       // F10.10: producción no arranca con el buscador de mentira.
       WEB_SEARCH_PROVIDER: "brave",
       BRAVE_SEARCH_API_KEY: "llave",
+      // F12.8: producción no arranca sin canal para las alertas de operación.
+      OPS_ALERT_EMAIL: "ops@example.com",
     });
     expect(env.ASSETS_S3_BUCKET).toBe("presencia-assets");
   });
