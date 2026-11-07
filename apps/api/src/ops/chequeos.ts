@@ -1,4 +1,3 @@
-import { QUOTA_BODY } from "../ai/fallback.js";
 import type { ResumenDeCola } from "../jobs/boss.service.js";
 import { duracion, type Observacion } from "./alert-state.js";
 import type { CardsFallidas, EventoDeUso } from "./ops-scan.repository.js";
@@ -16,16 +15,19 @@ import type { CardsFallidas, EventoDeUso } from "./ops-scan.repository.js";
 export const VENTANA_FALLOS_MIN = 30;
 
 /**
- * Jobs fallidos (alcance 1 de la spec). Prendida si el último job terminado de
- * la cola falló, o si alguno falló dentro de la ventana.
+ * Jobs fallidos (alcance 1 de la spec). Prendida si alguno falló dentro de la
+ * ventana, o —solo en los recurrentes— si el último terminado falló.
  *
- * Lo primero es lo que cubre a los diarios: el backup que falla a las 08:00
- * sigue prendido hasta que el de mañana salga bien, no media hora. Lo segundo
- * es lo que cubre a los frecuentes (ver VENTANA_FALLOS_MIN).
+ * Lo segundo cubre a los diarios: el backup que falla a las 08:00 sigue
+ * prendido hasta que el de mañana salga bien, no media hora. Pero en una cola
+ * de trabajos puntuales (policy `short`) "el último falló" puede ser la
+ * entrada de UN creator en una cola que nadie más usó en días: eso no es
+ * operación, y con recordatorio diario enseñaría a ignorar las alertas. Ahí
+ * manda solo la ventana.
  */
 export function chequeoDeJobs(colas: readonly ResumenDeCola[], ahora: Date): Observacion[] {
   return colas
-    .filter((c) => c.lastState === "failed" || c.recentFailures > 0)
+    .filter((c) => c.recentFailures > 0 || (c.lastState === "failed" && c.policy !== "short"))
     .map((c) => {
       const cuando = c.lastFailedAt ? ` · el último hace ${duracion(c.lastFailedAt, ahora)}` : "";
       const cuantos =
@@ -95,19 +97,20 @@ function proveedorDe(id: string): string {
 }
 
 /**
- * Lo que dice un 429 cuando es falta de saldo y no un límite de tasa: OpenAI
- * contesta 429 `insufficient_quota` cuando se acaba el crédito, y Gemini 429
- * con "prepayment credits are depleted". El genérico "Quota exceeded" NO
- * entra: es lo que dice el límite por minuto de Gemini, y una ráfaga de
- * tráfico no es una cuenta sin saldo.
+ * Lo que dice un proveedor cuando se acabó el crédito: OpenAI
+ * `insufficient_quota` (como 429), Anthropic "credit balance is too low",
+ * Gemini "prepayment credits are depleted". El genérico "Quota exceeded" NO
+ * entra, venga con el status que venga (429, o null en un error de stream):
+ * es lo que dice el límite por minuto de Gemini, y una ráfaga de tráfico no
+ * es una cuenta sin saldo. Por eso no se reusa `QUOTA_BODY` de la cadena: a
+ * ella le basta con saber que hay que saltar al respaldo; aquí hay que saber
+ * si recargar.
  */
-const SALDO_EN_429 = /insufficient_quota|billing|credit balance|prepayment|credits are depleted/i;
+const SALDO_AGOTADO = /insufficient_quota|billing|credit balance|prepayment|credits are depleted/i;
 
 /** ¿Este error es falta de saldo? Lo usan la señal pasiva y la prueba diaria. */
 export function esErrorDeSaldo(status: number | null, cuerpo: string): boolean {
-  if (status === 402) return true;
-  if (status === 429) return SALDO_EN_429.test(cuerpo);
-  return QUOTA_BODY.test(cuerpo);
+  return status === 402 || SALDO_AGOTADO.test(cuerpo);
 }
 
 /** Un intento caído por saldo (ver `esErrorDeSaldo`). */
@@ -185,10 +188,13 @@ export function chequeoDeIa(eventos: readonly EventoDeUso[]): ResultadoDeIa {
   const principalesEvaluados: string[] = [];
   for (const [principal, { total, respaldo: quienes }] of porPrincipal) {
     if (total < MIN_EVENTOS_RESPALDO) continue;
+    // Si la causa ya está en `saldo:`, el respaldo ni se evalúa: evaluarlo y
+    // callar lo daría por resuelto, y un `respaldo:` que ya estaba prendido
+    // mandaría "Resuelto" con el proveedor todavía caído.
+    if (sinSaldo.has(proveedorDe(principal))) continue;
     principalesEvaluados.push(`respaldo:${principal}`);
     const n = [...quienes.values()].reduce((a, b) => a + b, 0);
     if (n / total < PROPORCION_RESPALDO) continue;
-    if (sinSaldo.has(proveedorDe(principal))) continue;
     const lista = [...quienes.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([id, k]) => `${id} (${String(k)})`)

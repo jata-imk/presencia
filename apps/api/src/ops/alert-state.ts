@@ -67,7 +67,18 @@ export interface EstadoPrevio {
   since: Date;
   lastSentAt: Date | null;
   title: string;
+  /** La última vez que un chequeo la vio (o la tocó). */
+  updatedAt?: Date;
 }
+
+/**
+ * Cuánto se conserva una alerta que el chequeo ya no alcanza a ver (fuera de
+ * `evaluadas`): la cola de un job que falló y no volvió a correr, cuyas
+ * filas pg-boss borra a los 7 días. Pasado esto se apaga EN SILENCIO —no hubo
+ * arreglo que anunciar—, y si la cola vuelve a fallar después, es una alerta
+ * nueva con su fecha, no un "Sigue… desde hace 28 d".
+ */
+export const OLVIDO_MS = 8 * 24 * 60 * 60 * 1000;
 
 export type Decision = "nueva" | "recordatorio" | "resuelta" | "callar";
 
@@ -131,6 +142,14 @@ export function planear(
     const prendidasAntes = [...previas.entries()]
       .filter(([key, fila]) => fila.firing && cubre(prefix, key) && (!alcance || alcance.has(key)))
       .map(([key]) => key);
+    for (const [key, fila] of previas) {
+      const fueraDeAlcance = alcance !== null && !alcance.has(key) && !vistas.has(key);
+      const olvidada =
+        fila.updatedAt !== undefined && ahora.getTime() - fila.updatedAt.getTime() >= OLVIDO_MS;
+      if (fila.firing && cubre(prefix, key) && fueraDeAlcance && olvidada) {
+        pasos.push({ key, accion: "apagar", title: fila.title, detail: fila.detail });
+      }
+    }
 
     for (const key of new Set([...vistas.keys(), ...prendidasAntes])) {
       const vista = vistas.get(key);

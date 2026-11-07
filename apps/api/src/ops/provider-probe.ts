@@ -5,6 +5,7 @@ import {
   generateText,
   NoImageGeneratedError,
   NoTranscriptGeneratedError,
+  RetryError,
   transcribe,
 } from "ai";
 import { statusOf } from "../ai/fallback.js";
@@ -254,7 +255,10 @@ export async function correrSondas(sondas: readonly Sonda[]): Promise<ResultadoS
 }
 
 /** Por qué falló una sonda, en palabras del founder. */
-export function clasificar(error: unknown): { motivo: string; detalle: string } {
+export function clasificar(errorOriginal: unknown): { motivo: string; detalle: string } {
+  // Con `maxRetries: 1`, un 429 o 5xx que se repite llega envuelto en un
+  // RetryError sin status ni cuerpo: hay que leer el último intento.
+  const error = RetryError.isInstance(errorOriginal) ? errorOriginal.lastError : errorOriginal;
   const status = statusOf(error);
   const cuerpo = APICallError.isInstance(error) ? (error.responseBody ?? error.message) : "";
   const mensaje = error instanceof Error ? error.message : String(error);

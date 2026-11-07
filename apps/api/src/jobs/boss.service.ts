@@ -101,6 +101,8 @@ export interface RecurringJob {
 
 export interface ResumenDeCola {
   queue: string;
+  /** `exclusive` = recurrente, `short` = trabajos puntuales (ver arriba). */
+  policy: string | null;
   lastState: "completed" | "failed";
   recentFailures: number;
   lastError: string | null;
@@ -109,6 +111,7 @@ export interface ResumenDeCola {
 
 interface FilaResumen {
   name: string;
+  policy: string | null;
   last_state: "completed" | "failed";
   recent_failures: number;
   last_error: string | null;
@@ -308,17 +311,20 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
           group by name
        )
        select u.name,
+              q.policy,
               u.state as last_state,
               coalesce(r.n, 0) as recent_failures,
               coalesce(f.output->>'message', f.output->'value'->>'message', f.output::text) as last_error,
               f.completed_on as last_failed_at
          from ultimos u
          left join ultimo_fallo f using (name)
-         left join recientes r using (name)`,
+         left join recientes r using (name)
+         left join ${PGBOSS_SCHEMA}.queue q on q.name = u.name`,
       [ventanaMinutos],
     );
     return (rows as FilaResumen[]).map((r) => ({
       queue: r.name,
+      policy: r.policy,
       lastState: r.last_state,
       recentFailures: r.recent_failures,
       lastError: r.last_error,

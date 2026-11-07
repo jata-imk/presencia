@@ -1,4 +1,4 @@
-import { APICallError } from "ai";
+import { APICallError, RetryError } from "ai";
 import { describe, expect, it } from "vitest";
 import {
   clasificar,
@@ -88,6 +88,21 @@ describe("clasificar", () => {
       "sin saldo",
     );
     expect(clasificar(new Error("socket hang up")).motivo).toBe("no contestó");
+  });
+
+  it("lee el último intento cuando el SDK ya reintentó (RetryError)", () => {
+    const envuelto = (ultimo: APICallError) =>
+      new RetryError({
+        message: "Failed after 2 attempts",
+        reason: "maxRetriesExceeded",
+        errors: [ultimo, ultimo],
+      });
+    expect(clasificar(envuelto(errorDeApi(429, "Quota exceeded per minute"))).motivo).toBe(
+      "límite de tasa",
+    );
+    expect(clasificar(envuelto(errorDeApi(429, "prepayment credits are depleted"))).motivo).toBe(
+      "sin saldo",
+    );
   });
 });
 
