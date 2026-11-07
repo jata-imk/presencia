@@ -8,15 +8,10 @@
 
 const PING_TIMEOUT_MS = 10_000;
 
-/**
- * `fail` usa el endpoint `/fail` del mismo check: el aviso sale de inmediato
- * en vez de esperar a que venza el periodo.
- */
-export async function pingHealthcheck(url: string | undefined, fail = false): Promise<void> {
+export async function pingHealthcheck(url: string | undefined): Promise<void> {
   if (!url) return;
-  const destino = fail ? `${url.replace(/\/+$/, "")}/fail` : url;
   try {
-    const res = await fetch(destino, {
+    const res = await fetch(url, {
       method: "POST",
       signal: AbortSignal.timeout(PING_TIMEOUT_MS),
     });

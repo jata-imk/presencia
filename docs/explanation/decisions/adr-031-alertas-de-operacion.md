@@ -29,7 +29,9 @@ El destino es `OPS_TELEGRAM_CHAT_ID` del `.env`: un chat_id fijo, no un vínculo
 - **un aviso que no salió por ningún canal se reintenta** en el pase siguiente (`last_sent_at` null);
 - **un "resuelto" de algo que nunca se avisó no se manda.**
 
-**Cada chequeo es dueño de un prefijo de llaves** (`job:`, `cards:`, `saldo:`, `probe:`…). Toda alerta prendida con ese prefijo que el chequeo ya no ve se da por resuelta. Si el chequeo mismo truena, no se resuelve nada de su prefijo (no poder mirar no es ver que está bien) y se prende `chequeo:<nombre>`: un vigilante ciego también se avisa. Así `ops.watch` y la prueba diaria comparten tabla sin pisarse.
+**Cada chequeo es dueño de un prefijo de llaves** (`job:`, `cards:`, `saldo:`, `probe:`…). Toda alerta prendida con ese prefijo que el chequeo ya no ve se da por resuelta. Si el chequeo mismo truena, no se resuelve nada de su prefijo (no poder mirar no es ver que está bien) y se prende `chequeo:<nombre>`: un vigilante ciego también se avisa. Así `ops.watch` y la prueba diaria comparten tabla sin pisarse. Un prefijo que termina en `:` cubre las llaves que empiezan así; sin `:` es una llave exacta (`chequeo:jobs` no se come a `chequeo:jobs-lentos`). Y un chequeo que no alcanza a ver todo su prefijo dice qué llaves sí miró (`evaluadas`): la cola de un job que falló hace más de 7 días, y que pg-boss ya borró, sigue prendida en vez de darse por resuelta sin que nada se haya arreglado.
+
+**Leer, mandar y guardar van en una sola transacción, con un candado** (`pg_advisory_xact_lock`). Dos pases que se crucen —`ops:vigilar` a mano mientras el worker corre el suyo— se serializan en vez de mandar el mismo aviso dos veces, y un estado que no se pudo guardar se vuelve a decidir entero en el pase siguiente. Para que el envío no deje la transacción colgada, cada canal tiene un techo de 20 s (grammY trae 500 s por default), muy por debajo de los 4 minutos en que expira `ops.watch`.
 
 La lógica de decidir es pura (`ops/alert-state.ts`) y tiene su spec.
 

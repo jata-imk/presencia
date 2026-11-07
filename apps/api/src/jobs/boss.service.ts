@@ -282,19 +282,39 @@ export class BossService implements OnModuleInit, OnModuleDestroy {
    */
   async resumenDeColas(ventanaMinutos: number): Promise<ResumenDeCola[]> {
     if (!this.started) throw new Error("pg-boss no arrancó: no hay cola que leer");
+    // `DISTINCT ON` y no `array_agg` ordenado: el pase corre cada cinco
+    // minutos y `cards.reconcile` sola deja ~10 mil filas por semana. La
+    // cuenta de fallos se acota a la ventana en su propia consulta.
+    //
+    // El error: pg-boss guarda `{message, stack}` cuando el handler lanza,
+    // pero `{value: {message}}` cuando el job expira (failJobsByTimeout).
     const { rows } = await this.boss.getDb().executeSql(
-      `select name,
-              (array_agg(state order by completed_on desc))[1] as last_state,
-              count(*) filter (
-                where state = 'failed' and completed_on > now() - make_interval(mins => $1)
-              )::int as recent_failures,
-              (array_agg(coalesce(output->>'message', output::text) order by completed_on desc)
-                 filter (where state = 'failed'))[1] as last_error,
-              max(completed_on) filter (where state = 'failed') as last_failed_at
-         from ${PGBOSS_SCHEMA}.job
-        where state in ('completed', 'failed')
-          and completed_on > now() - interval '7 days'
-        group by name`,
+      `with ultimos as (
+         select distinct on (name) name, state
+           from ${PGBOSS_SCHEMA}.job
+          where state in ('completed', 'failed') and completed_on > now() - interval '7 days'
+          order by name, completed_on desc
+       ),
+       ultimo_fallo as (
+         select distinct on (name) name, completed_on, output
+           from ${PGBOSS_SCHEMA}.job
+          where state = 'failed' and completed_on > now() - interval '7 days'
+          order by name, completed_on desc
+       ),
+       recientes as (
+         select name, count(*)::int as n
+           from ${PGBOSS_SCHEMA}.job
+          where state = 'failed' and completed_on > now() - make_interval(mins => $1)
+          group by name
+       )
+       select u.name,
+              u.state as last_state,
+              coalesce(r.n, 0) as recent_failures,
+              coalesce(f.output->>'message', f.output->'value'->>'message', f.output::text) as last_error,
+              f.completed_on as last_failed_at
+         from ultimos u
+         left join ultimo_fallo f using (name)
+         left join recientes r using (name)`,
       [ventanaMinutos],
     );
     return (rows as FilaResumen[]).map((r) => ({

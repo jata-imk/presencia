@@ -31,10 +31,26 @@ export interface Observacion {
  * prendida con ese prefijo que no aparezca en `firing` se da por resuelta.
  * Si el chequeo mismo truena, no hay resultado y nada de su prefijo se
  * resuelve (no ver algo no es lo mismo que ver que está bien).
+ *
+ * Un prefijo que termina en `:` cubre todas las llaves que empiezan así
+ * (`job:` → `job:backups.daily`); uno sin `:` al final es una llave exacta.
+ * Así `chequeo:jobs` no se come a `chequeo:jobs-lentos`.
  */
 export interface ResultadoChequeo {
   prefix: string;
   firing: Observacion[];
+  /**
+   * Las llaves que el chequeo de verdad pudo mirar en este pase. Sin esto,
+   * todo el prefijo. Con esto, una alerta prendida que el chequeo ya no
+   * alcanza a ver (la cola de un job que falló hace más de 7 días y pg-boss
+   * ya borró) se queda como está, en vez de darse por resuelta sin que nada
+   * se haya arreglado.
+   */
+  evaluadas?: readonly string[];
+}
+
+export function cubre(prefix: string, key: string): boolean {
+  return prefix.endsWith(":") ? key.startsWith(prefix) : key === prefix;
 }
 
 /** La fila de `ops_alerts` que importa para decidir. */
@@ -101,10 +117,11 @@ export function planear(
   ahora: Date,
 ): Paso[] {
   const pasos: Paso[] = [];
-  for (const { prefix, firing } of resultados) {
+  for (const { prefix, firing, evaluadas } of resultados) {
     const vistas = new Map(firing.map((o) => [o.key, o]));
+    const alcance = evaluadas ? new Set(evaluadas) : null;
     const prendidasAntes = [...previas.entries()]
-      .filter(([key, fila]) => fila.firing && key.startsWith(prefix))
+      .filter(([key, fila]) => fila.firing && cubre(prefix, key) && (!alcance || alcance.has(key)))
       .map(([key]) => key);
 
     for (const key of new Set([...vistas.keys(), ...prendidasAntes])) {

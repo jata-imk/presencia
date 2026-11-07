@@ -159,7 +159,12 @@ const envSchema = z
     // bot, sin pasar por `app`); el correo es el respaldo si Telegram falla.
     // En producción hace falta al menos uno (superRefine de abajo). Un chat_id
     // de grupo es negativo, así que entero con signo.
-    OPS_TELEGRAM_CHAT_ID: z.coerce.number().int().optional(),
+    // Vacío cuenta como sin setear: z.coerce lo volvería 0, un "canal" que
+    // pasa la validación de producción y donde ningún aviso llega nunca.
+    OPS_TELEGRAM_CHAT_ID: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.coerce.number().int().optional(),
+    ),
     OPS_ALERT_EMAIL: z.email().optional(),
     // El latido del worker en Healthchecks.io: `ops.watch` le hace ping al
     // terminar cada pase. Si deja de llegar (worker, pg-boss o el propio job

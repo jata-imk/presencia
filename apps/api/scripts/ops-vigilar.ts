@@ -16,7 +16,9 @@ import { OpsJobs } from "../src/ops/ops.jobs.js";
 // así se prueba la cadena completa (pgboss.job → chequeo → estado → Telegram
 // o correo) sin romper un job de verdad. Correr `--fallar` dos veces seguidas
 // debe avisar una sola vez; `--sanar` después avisa "Resuelto" (los fallos
-// pesan 30 minutos: VENTANA_FALLOS_MIN).
+// pesan 30 minutos: VENTANA_FALLOS_MIN). Si la API de dev está corriendo, su
+// propio ops.watch también ve el simulacro; el candado de OpsAlertsService
+// evita que los dos avisen.
 
 const SIMULACRO = "ops.simulacro";
 
@@ -65,6 +67,9 @@ async function simular(boss: BossService, fallar: boolean): Promise<void> {
   await listo;
   await new Promise((resolve) => setTimeout(resolve, 2_000));
   console.info(`[ops:vigilar] simulacro ${fallar ? "fallido" : "sano"} listo`);
+  // Un simulacro fallido se queda prendido (y el ops.watch de la API o del
+  // worker lo va a seguir viendo) hasta que la cola tenga una corrida sana.
+  if (fallar) console.info("[ops:vigilar] al terminar la prueba, corre `-- --sanar`");
 }
 
 void main().catch((error: unknown) => {

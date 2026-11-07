@@ -138,6 +138,14 @@ describe("env: canal de las alertas de operación", () => {
     expect(env.OPS_TELEGRAM_CHAT_ID).toBe(-100123);
   });
 
+  it("un chat_id vacío cuenta como sin canal, no como el chat 0", async () => {
+    await expect(
+      loadEnv({ NODE_ENV: "production", TELEGRAM_BOT_TOKEN: TOKEN, OPS_TELEGRAM_CHAT_ID: " " }),
+    ).rejects.toThrow(/las alertas de operación necesitan un canal/);
+    const { env } = await loadEnv({ TELEGRAM_BOT_TOKEN: TOKEN, OPS_TELEGRAM_CHAT_ID: "" });
+    expect(env.OPS_TELEGRAM_CHAT_ID).toBeUndefined();
+  });
+
   it("en dev no hace falta canal", async () => {
     const { env } = await loadEnv({});
     expect(env.OPS_TELEGRAM_CHAT_ID).toBeUndefined();

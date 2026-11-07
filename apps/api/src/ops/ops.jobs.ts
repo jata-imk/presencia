@@ -2,7 +2,7 @@ import { Inject, Injectable, type OnApplicationBootstrap } from "@nestjs/common"
 import { env } from "../env.js";
 import { BossService } from "../jobs/boss.service.js";
 import { enProcesoWorker } from "../jobs/process-role.js";
-import { chequeoDeJobs, VENTANA_FALLOS_MIN } from "./chequeos.js";
+import { chequeoDeJobs, llavesDeJobs, VENTANA_FALLOS_MIN } from "./chequeos.js";
 import { pingHealthcheck } from "./healthchecks.js";
 import { OpsAlertsService, type Chequeo } from "./ops-alerts.service.js";
 
@@ -54,8 +54,10 @@ export class OpsJobs implements OnApplicationBootstrap {
       {
         nombre: "jobs",
         prefix: "job:",
-        correr: async () =>
-          chequeoDeJobs(await this.boss.resumenDeColas(VENTANA_FALLOS_MIN), new Date()),
+        correr: async () => {
+          const colas = await this.boss.resumenDeColas(VENTANA_FALLOS_MIN);
+          return { firing: chequeoDeJobs(colas, new Date()), evaluadas: llavesDeJobs(colas) };
+        },
       },
     ];
   }

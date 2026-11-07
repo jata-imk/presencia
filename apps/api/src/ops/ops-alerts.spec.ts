@@ -72,6 +72,26 @@ describe("planear", () => {
     expect(pasos).toEqual([]);
   });
 
+  it("una alerta que el chequeo ya no alcanza a ver se queda como está", () => {
+    // La cola falló hace más de 7 días y pg-boss ya borró sus filas: no
+    // verla no es verla sana.
+    const pasos = planear(
+      [{ prefix: "job:", firing: [], evaluadas: ["job:cards.reconcile"] }],
+      new Map([["job:backups.daily", previa()]]),
+      AHORA,
+    );
+    expect(pasos).toEqual([]);
+  });
+
+  it("un prefijo sin ':' es una llave exacta", () => {
+    const pasos = planear(
+      [{ prefix: "chequeo:jobs", firing: [] }],
+      new Map([["chequeo:jobs-lentos", previa()]]),
+      AHORA,
+    );
+    expect(pasos).toEqual([]);
+  });
+
   it("un fallo repetido no vuelve a avisar, pero refresca el detalle", () => {
     const pasos = planear(
       [{ prefix: "job:", firing: [{ ...obs, detail: "boom otra vez" }] }],

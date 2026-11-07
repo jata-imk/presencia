@@ -16,6 +16,13 @@ import type { MensajeDeOps } from "./mensaje.js";
  *
  * Si Telegram falla (token revocado, red), cae a correo. Nunca lanza.
  */
+// Techo de cada canal. Los dos juntos quedan muy por debajo de los 4 minutos
+// de `ops.watch`: un Telegram o un ZeptoMail colgados no pueden hacer que el
+// pase expire, porque entonces no se guarda el estado ni sale el latido.
+// grammY trae 500 s por default.
+const TELEGRAM_TIMEOUT_S = 20;
+const CORREO_TIMEOUT_MS = 20_000;
+
 @Injectable()
 export class OpsAlertSender {
   private api: Api | null = null;
@@ -36,7 +43,7 @@ export class OpsAlertSender {
 
     if (chatId !== undefined && env.TELEGRAM_BOT_TOKEN) {
       try {
-        this.api ??= new Api(env.TELEGRAM_BOT_TOKEN);
+        this.api ??= new Api(env.TELEGRAM_BOT_TOKEN, { timeoutSeconds: TELEGRAM_TIMEOUT_S });
         await this.api.sendMessage(chatId, mensaje.telegramHtml, {
           parse_mode: "HTML",
           link_preview_options: { is_disabled: true },
@@ -49,7 +56,12 @@ export class OpsAlertSender {
 
     if (correo) {
       try {
-        await sendMail({ to: correo, subject: mensaje.subject, html: mensaje.emailHtml });
+        await sendMail({
+          to: correo,
+          subject: mensaje.subject,
+          html: mensaje.emailHtml,
+          timeoutMs: CORREO_TIMEOUT_MS,
+        });
         return true;
       } catch (error) {
         console.error("[ops] el aviso por correo también falló:", error);

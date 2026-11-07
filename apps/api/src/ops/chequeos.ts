@@ -37,3 +37,8 @@ export function chequeoDeJobs(colas: readonly ResumenDeCola[], ahora: Date): Obs
       };
     });
 }
+
+/** Las llaves que el chequeo de jobs puede ver: una por cola con historia en la semana. */
+export function llavesDeJobs(colas: readonly ResumenDeCola[]): string[] {
+  return colas.map((c) => `job:${c.queue}`);
+}
