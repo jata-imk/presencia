@@ -170,6 +170,9 @@ const envSchema = z
     // terminar cada pase. Si deja de llegar (worker, pg-boss o el propio job
     // caídos), avisa Healthchecks, que corre afuera. Sin setear, no hay ping.
     HEALTHCHECK_WORKER_URL: z.url().optional(),
+    // El del backup diario: ping al subir el dump, `/fail` si truena. Allá el
+    // check va con periodo de 1 día y 2 h de gracia (~26 h sin respaldo).
+    HEALTHCHECK_BACKUP_URL: z.url().optional(),
     // --- Backup diario (F8.5, ADR-011) ---
     // Opcionales como grupo: sin configurar, el job no se registra y la API
     // arranca igual (en dev nadie tiene bucket). Pero configurado a medias es

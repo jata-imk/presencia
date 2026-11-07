@@ -1,6 +1,8 @@
 import { Inject, Injectable, type OnApplicationBootstrap } from "@nestjs/common";
+import { env } from "../env.js";
 import { BossService } from "../jobs/boss.service.js";
 import { enProcesoWorker } from "../jobs/process-role.js";
+import { pingHealthcheck } from "../ops/healthchecks.js";
 import { BackupsService, readBackupConfig } from "./backups.service.js";
 
 // Diario a las 08:00 UTC (02:00 en Mérida): la hora más muerta del día para un
@@ -41,8 +43,19 @@ export class BackupsJobs implements OnApplicationBootstrap {
         cron: BACKUP_CRON,
         expireInSeconds: BACKUP_EXPIRE_SECONDS,
         handler: async () => {
-          const { key } = await this.backups.runDailyBackup(config);
-          console.info(`[jobs] ${JOB_QUEUE}: subido ${key}`);
+          // El ping a Healthchecks (F12.8, ADR-031) es lo que detecta el
+          // backup que NO corrió: si el worker no arrancó, este handler ni
+          // existe, y la ausencia del ping es la alerta. El que truena le
+          // pega a /fail para avisar de una vez, y relanza igual: la fila
+          // `failed` en pgboss.job la ve también `ops.watch`.
+          try {
+            const { key } = await this.backups.runDailyBackup(config);
+            console.info(`[jobs] ${JOB_QUEUE}: subido ${key}`);
+          } catch (error) {
+            await pingHealthcheck(env.HEALTHCHECK_BACKUP_URL, true);
+            throw error;
+          }
+          await pingHealthcheck(env.HEALTHCHECK_BACKUP_URL);
         },
       });
     } catch (error) {
