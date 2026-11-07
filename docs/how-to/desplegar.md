@@ -249,6 +249,25 @@ el bot necesita que tú le hayas escrito una vez (cualquier mensaje).
 Para probar la cadena completa sin romper un job real, desde la laptop contra dev:
 `pnpm --filter @presencia/api ops:vigilar -- --fallar` (con `OPS_TELEGRAM_CHAT_ID` en el `.env` local).
 
+**El vigilante de afuera.** Lo que un job no puede avisar de sí mismo —que el worker, el VPS o el
+backup no corrieron— lo vigilan dos servicios gratuitos. Regla: la ausencia se vigila afuera, el fallo
+adentro (ADR-031).
+
+1. **[Healthchecks.io](https://healthchecks.io)**, dos checks (en cada uno, _Integrations_: Telegram y/o
+   correo):
+   - `presencia-worker`: periodo **5 min**, gracia **10 min**. Su URL de ping va a
+     `HEALTHCHECK_WORKER_URL`; `ops.watch` le pega al final de cada pase.
+   - `presencia-backup`: periodo **1 día**, gracia **2 h** (≈26 h sin respaldo). Su URL va a
+     `HEALTHCHECK_BACKUP_URL`; el backup le pega al subir el dump, y a `/fail` si truena.
+2. **[UptimeRobot](https://uptimerobot.com)**, un monitor HTTP(S) cada 5 min sobre
+   `https://<dominio>/api/health`. Desde F12.8 revisa la base: sin base, 503.
+3. **Auto-recarga** en las consolas de **OpenAI**, **Anthropic** y **Google AI Studio**: ninguno expone
+   el saldo por API, así que el "avísame antes de llegar a cero" es que no lleguen a cero. La prueba
+   diaria (F12.8 PR4) cubre lo demás.
+
+Para probar el vigilante: `docker compose -p presencia-prod stop worker` → Healthchecks avisa en ≤15
+min, una vez; `start worker` → avisa que volvió.
+
 ### 5. El vhost de CloudPanel
 
 Sitio tipo **Reverse Proxy** hacia `http://127.0.0.1:3001`, y certificado de Let's Encrypt (el DNS tiene
@@ -412,7 +431,7 @@ curl -sI https://presencia.josetejero.com/calendario | head -1
 curl -sI -H 'Accept-Encoding: gzip' https://presencia.josetejero.com/ | grep -i content-encoding
 ```
 
-El `ps` debe mostrar `app` como `healthy` y el `worker` sin reinicios. La ruta profunda tiene que
+El `ps` debe mostrar `app` como `healthy` (desde F12.8 eso incluye que alcance Postgres) y el `worker` sin reinicios. La ruta profunda tiene que
 devolver 200, no 404: es el fallback del SPA.
 
 El streaming se comprueba con el chat abierto en el navegador: el texto aparece palabra por palabra. Si
@@ -521,6 +540,9 @@ select name, state, created_on, output from pgboss.job order by created_on desc 
 | `app` reinicia en bucle                | Falta una variable del `.env`: `logs app` la nombra (fail-fast de `env.ts`)                      |
 | `worker` reinicia en bucle             | La cola no arrancó. Casi siempre `JOBS_DATABASE_URL` mal, o su rol sin password                  |
 | Llegó una alerta de operación          | Su título nombra la cola: la query de `pgboss.job` de arriba trae el `output` completo           |
+| Healthchecks: `presencia-worker` caído | `ps` y `logs worker`: el worker no corre, o `ops.watch` truena (su error llega como alerta)      |
+| Healthchecks: `presencia-backup` caído | `logs worker \| grep backups.daily`; sin línea a las 08:00 UTC, el job ni se agendó (config S3)  |
+| UptimeRobot: `/api/health` en 503      | La app no alcanza la base: `ps` (¿`postgres` arriba?) y `logs app \| grep health`                |
 | `app` no arranca tras F12.8            | Falta `OPS_TELEGRAM_CHAT_ID` u `OPS_ALERT_EMAIL` (paso 4d)                                       |
 | El chat llega de golpe al final        | Falta `proxy_buffering off` en el vhost                                                          |
 | `manifest unknown` en el `pull`        | Ese tag no existe: revisar el run de _Release_ en Actions                                        |

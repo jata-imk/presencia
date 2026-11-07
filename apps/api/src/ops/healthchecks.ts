@@ -8,15 +8,31 @@
 
 const PING_TIMEOUT_MS = 10_000;
 
-export async function pingHealthcheck(url: string | undefined): Promise<void> {
+/**
+ * `fail` usa el endpoint `/fail` del mismo check: el aviso sale de inmediato
+ * en vez de esperar a que venza el periodo (lo usa el backup que truena).
+ */
+export async function pingHealthcheck(url: string | undefined, fail = false): Promise<void> {
   if (!url) return;
+  const destino = fail ? conFail(url) : url;
   try {
-    const res = await fetch(url, {
+    const res = await fetch(destino, {
       method: "POST",
       signal: AbortSignal.timeout(PING_TIMEOUT_MS),
     });
     if (!res.ok) console.warn(`[ops] Healthchecks respondió ${String(res.status)}`);
   } catch (error) {
     console.warn("[ops] no se pudo hacer ping a Healthchecks:", error);
+  }
+}
+
+/** `/fail` va en la ruta, no al final del texto: la URL puede traer `?create=1`. */
+function conFail(url: string): string {
+  try {
+    const u = new URL(url);
+    u.pathname = `${u.pathname.replace(/\/+$/, "")}/fail`;
+    return u.toString();
+  } catch {
+    return url;
   }
 }
