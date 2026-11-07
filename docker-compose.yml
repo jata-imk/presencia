@@ -84,6 +84,9 @@ services:
       - "127.0.0.1:${APP_PORT:-3001}:3000"
     healthcheck:
       # busybox wget: la imagen no trae curl.
+      # Desde F12.8 /api/health prueba la base (≤4 s, con su propio cliente):
+      # "healthy" quiere decir "la app atiende Y alcanza Postgres". Un
+      # reinicio corto de Postgres lo aguantan los 5 reintentos (~75 s).
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 15s
       timeout: 5s

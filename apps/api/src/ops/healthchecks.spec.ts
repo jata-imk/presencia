@@ -4,7 +4,10 @@ import { pingHealthcheck } from "./healthchecks.js";
 // F12.8 (ADR-031): el ping al vigilante de afuera. Nunca lanza: un
 // Healthchecks caído no puede tumbar el backup ni el pase de ops.watch.
 describe("pingHealthcheck", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   it("sin URL no hace nada", async () => {
     const fetch = vi.fn();
@@ -17,9 +20,11 @@ describe("pingHealthcheck", () => {
     const fetch = vi.fn().mockResolvedValue(new Response("OK"));
     vi.stubGlobal("fetch", fetch);
     await pingHealthcheck("https://hc-ping.com/abc/", true);
+    await pingHealthcheck("https://hc-ping.com/key/presencia-backup?create=1", true);
     await pingHealthcheck("https://hc-ping.com/abc");
     expect(fetch.mock.calls.map((c) => c[0] as string)).toEqual([
       "https://hc-ping.com/abc/fail",
+      "https://hc-ping.com/key/presencia-backup/fail?create=1",
       "https://hc-ping.com/abc",
     ]);
   });

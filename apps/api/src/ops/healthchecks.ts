@@ -14,7 +14,7 @@ const PING_TIMEOUT_MS = 10_000;
  */
 export async function pingHealthcheck(url: string | undefined, fail = false): Promise<void> {
   if (!url) return;
-  const destino = fail ? `${url.replace(/\/+$/, "")}/fail` : url;
+  const destino = fail ? conFail(url) : url;
   try {
     const res = await fetch(destino, {
       method: "POST",
@@ -23,5 +23,16 @@ export async function pingHealthcheck(url: string | undefined, fail = false): Pr
     if (!res.ok) console.warn(`[ops] Healthchecks respondió ${String(res.status)}`);
   } catch (error) {
     console.warn("[ops] no se pudo hacer ping a Healthchecks:", error);
+  }
+}
+
+/** `/fail` va en la ruta, no al final del texto: la URL puede traer `?create=1`. */
+function conFail(url: string): string {
+  try {
+    const u = new URL(url);
+    u.pathname = `${u.pathname.replace(/\/+$/, "")}/fail`;
+    return u.toString();
+  } catch {
+    return url;
   }
 }

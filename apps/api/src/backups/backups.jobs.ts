@@ -48,14 +48,23 @@ export class BackupsJobs implements OnApplicationBootstrap {
           // existe, y la ausencia del ping es la alerta. El que truena le
           // pega a /fail para avisar de una vez, y relanza igual: la fila
           // `failed` en pgboss.job la ve también `ops.watch`.
+          const inicio = Date.now();
           try {
             const { key } = await this.backups.runDailyBackup(config);
             console.info(`[jobs] ${JOB_QUEUE}: subido ${key}`);
+            // pg-boss no mata al handler al expirar: lo marca `failed` y lo
+            // deja seguir. Un dump que termina después de eso no manda el
+            // "todo bien", o Healthchecks diría verde mientras ops.watch
+            // avisa del mismo pase como fallido.
+            if (Date.now() - inicio > BACKUP_EXPIRE_SECONDS * 1000) {
+              console.warn(`[jobs] ${JOB_QUEUE}: terminó después de expirar; sin ping de éxito`);
+            } else {
+              await pingHealthcheck(env.HEALTHCHECK_BACKUP_URL);
+            }
           } catch (error) {
             await pingHealthcheck(env.HEALTHCHECK_BACKUP_URL, true);
             throw error;
           }
-          await pingHealthcheck(env.HEALTHCHECK_BACKUP_URL);
         },
       });
     } catch (error) {

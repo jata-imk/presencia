@@ -431,7 +431,7 @@ curl -sI https://presencia.josetejero.com/calendario | head -1
 curl -sI -H 'Accept-Encoding: gzip' https://presencia.josetejero.com/ | grep -i content-encoding
 ```
 
-El `ps` debe mostrar `app` como `healthy` y el `worker` sin reinicios. La ruta profunda tiene que
+El `ps` debe mostrar `app` como `healthy` (desde F12.8 eso incluye que alcance Postgres) y el `worker` sin reinicios. La ruta profunda tiene que
 devolver 200, no 404: es el fallback del SPA.
 
 El streaming se comprueba con el chat abierto en el navegador: el texto aparece palabra por palabra. Si
