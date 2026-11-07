@@ -304,7 +304,7 @@ Con una sola fila por día —como estaba hasta `0027`— medir un post ocho vec
 
 Sin RLS ahí — no es superficie de la API. Regla: los payloads de jobs llevan `user_id` explícito y el worker lo fija en su transacción (ver abajo).
 
-Colas agendadas hoy: `ops.watch` (cada 5 min, F12.8: las alertas de operación, ADR-031), `cards.reconcile` (cada minuto), `credits.cycle` (diaria, 09:00 UTC), `backups.daily` (diaria, 08:00 UTC), `metrics.ingest` (cada 6 h, F8.7) y `attachments.cleanup` (cada hora, al minuto 17, F10.9: adjuntos de más de un día sin mensaje). Bajo demanda, además de las de imágenes y el chat: `attachment.describe` (F10.9, la descripción de cada adjunto enviado; dos reintentos). La cadencia de esta última la fijan las redes, no nosotros: reportan con horas de retraso y los proveedores refrescan cada 6 h por su cuenta, así que preguntar más seguido gasta cuota para traer el mismo número.
+Colas agendadas hoy: `ops.watch` (cada 5 min, F12.8: las alertas de operación, ADR-031), `ops.probe` (diaria, 14:00 UTC, solo en producción: la prueba activa de proveedores), `cards.reconcile` (cada minuto), `credits.cycle` (diaria, 09:00 UTC), `backups.daily` (diaria, 08:00 UTC), `metrics.ingest` (cada 6 h, F8.7) y `attachments.cleanup` (cada hora, al minuto 17, F10.9: adjuntos de más de un día sin mensaje). Bajo demanda, además de las de imágenes y el chat: `attachment.describe` (F10.9, la descripción de cada adjunto enviado; dos reintentos). La cadencia de esta última la fijan las redes, no nosotros: reportan con horas de retraso y los proveedores refrescan cada 6 h por su cuenta, así que preguntar más seguido gasta cuota para traer el mismo número.
 
 ## Dónde muerde el RLS
 

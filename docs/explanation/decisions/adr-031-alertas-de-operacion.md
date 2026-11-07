@@ -78,6 +78,17 @@ Diaria a las 14:00 UTC (08:00 en Mérida). Cada `proveedor:modelo` de las cadena
 
 **El gasto de la prueba no entra al ledger ni a `ai_usage_events`.** El ledger es por usuario (ADR-012) y la prueba no es de nadie; `ai_usage_events.user_id` es `NOT NULL`, y abrirlo para centavos al mes tocaría una tabla append-only con RLS. El costo estimado queda en el log del job y aquí. Consecuencia aceptada: `pnpm gasto` lo subestima por centavos.
 
+**Cómo quedó (PR4, verificado contra los proveedores reales el 2026-11-07):**
+
+- **`ops.probe` solo se agenda en producción.** En dev le pegaría todos los días a las keys de dev sin que nadie mire. A mano: `pnpm --filter @presencia/api sonda:proveedores` (`-- --imagenes`, `-- --sin-avisar`).
+- **Todas las sondas en paralelo**, cada una directa con su resolver (`createModelResolver` y compañía), con techo propio (60 s texto, 120 s imagen, 30 s el resto) y `maxRetries: 0`. El texto va con `@low` y 512 tokens de salida como máximo: se prueba que conteste, no cómo piensa.
+- **Dos prefijos, y cada uno es entero de la prueba.** `probe:` (diario) y `probe-imagen:` (lunes). Un modelo que se quita del `.env` deja de probarse y su alerta se apaga; las imágenes tienen prefijo propio para que un martes, sin correrlas, sus alertas se queden como estaban.
+- **Clasificación del error:** 402 o cuerpo de "sin cuota" (no un 429) → _sin saldo_; 401/403 → _la key no sirve_; 404 → _el modelo no existe_; 429 → _límite de tasa_; lo demás → _no contestó_.
+- **Un 200 sin resultado cuenta como bien:** el transcriptor con el audio de silencio (WAV generado en código) contesta sin texto, y Nano Banana a veces contesta con texto y sin imagen; el SDK los convierte en `NoTranscriptGeneratedError` / `NoImageGeneratedError`, pero la cuenta y el modelo están vivos, que es lo que se prueba. Un modelo retirado da 404.
+- **Brave:** el plan de pago por uso manda `x-ratelimit-limit: 50, 0` — tope mensual 0 = sin tope. Solo se avisa (bajo 100) cuando el plan sí tiene tope.
+- **Costo medido:** texto ~US$0.0005 por corrida, Brave US$0.005, embeddings y transcripción despreciables; imágenes ~US$0.08 por lunes. **~US$0.5 al mes**, como se estimó.
+- **DoD:** con `AI_MODEL_CHAT` apuntando a `anthropic:claude-inexistente` solo para esa corrida, el aviso llegó por Telegram ("el modelo no existe", con el 404 del proveedor); la corrida siguiente, sin ese modelo, avisó "Resuelto".
+
 ## Consecuencias
 
 - **Producción no arranca sin canal de alertas** (`OPS_TELEGRAM_CHAT_ID` u `OPS_ALERT_EMAIL`). Hay que agregarlo al `.env` de prod **antes** del pull de la imagen que trae F12.8.

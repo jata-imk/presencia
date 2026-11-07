@@ -263,7 +263,8 @@ adentro (ADR-031).
    `https://<dominio>/api/health`. Desde F12.8 revisa la base: sin base, 503.
 3. **Auto-recarga** en las consolas de **OpenAI**, **Anthropic** y **Google AI Studio**: ninguno expone
    el saldo por API, así que el "avísame antes de llegar a cero" es que no lleguen a cero. La prueba
-   diaria (F12.8 PR4) cubre lo demás.
+   diaria (`ops.probe`, 08:00 en Mérida) llama a cada eslabón de cada cadena sin respaldo y avisa si
+   alguno no contesta.
 
 Para probar el vigilante: `docker compose -p presencia-prod stop worker` → Healthchecks avisa en ≤15
 min, una vez; `start worker` → avisa que volvió.
@@ -534,20 +535,21 @@ select name, state, created_on, output from pgboss.job order by created_on desc 
 
 ## Cuando algo falla
 
-| Síntoma                                | Dónde mirar                                                                                      |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 502 en el navegador                    | El contenedor `app` no está arriba o no escucha en 3001: `ps` y `logs app`                       |
-| `app` reinicia en bucle                | Falta una variable del `.env`: `logs app` la nombra (fail-fast de `env.ts`)                      |
-| `worker` reinicia en bucle             | La cola no arrancó. Casi siempre `JOBS_DATABASE_URL` mal, o su rol sin password                  |
-| Llegó una alerta de operación          | Su título nombra la cola: la query de `pgboss.job` de arriba trae el `output` completo           |
-| Healthchecks: `presencia-worker` caído | `ps` y `logs worker`: el worker no corre, o `ops.watch` truena (su error llega como alerta)      |
-| Healthchecks: `presencia-backup` caído | `logs worker \| grep backups.daily`; sin línea a las 08:00 UTC, el job ni se agendó (config S3)  |
-| UptimeRobot: `/api/health` en 503      | La app no alcanza la base: `ps` (¿`postgres` arriba?) y `logs app \| grep health`                |
-| `app` no arranca tras F12.8            | Falta `OPS_TELEGRAM_CHAT_ID` u `OPS_ALERT_EMAIL` (paso 4d)                                       |
-| El chat llega de golpe al final        | Falta `proxy_buffering off` en el vhost                                                          |
-| `manifest unknown` en el `pull`        | Ese tag no existe: revisar el run de _Release_ en Actions                                        |
-| `denied` / `unauthorized` en el `pull` | El paquete quedó privado: _Packages → presencia → Package settings → Change visibility → Public_ |
-| El bot no contesta                     | `getWebhookInfo` (`last_error_message`) y `logs app \| grep -i telegram`                         |
-| `getWebhookInfo` con error 401         | El secret del `.env` cambió sin reiniciar `app`: el webhook se registró con el anterior          |
-| Configuración no muestra Telegram      | Sin `TELEGRAM_BOT_TOKEN`, o el bot no arrancó todavía (reintenta solo: ver `logs app`)           |
-| Lo nuevo del merge no aparece          | El `pull` fue antes de que _Release_ publicara: revisar el commit del contenedor y repetir       |
+| Síntoma                                | Dónde mirar                                                                                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 502 en el navegador                    | El contenedor `app` no está arriba o no escucha en 3001: `ps` y `logs app`                                                           |
+| `app` reinicia en bucle                | Falta una variable del `.env`: `logs app` la nombra (fail-fast de `env.ts`)                                                          |
+| `worker` reinicia en bucle             | La cola no arrancó. Casi siempre `JOBS_DATABASE_URL` mal, o su rol sin password                                                      |
+| Llegó una alerta de operación          | Su título nombra la cola: la query de `pgboss.job` de arriba trae el `output` completo                                               |
+| Healthchecks: `presencia-worker` caído | `ps` y `logs worker`: el worker no corre, o `ops.watch` truena (su error llega como alerta)                                          |
+| Healthchecks: `presencia-backup` caído | `logs worker \| grep backups.daily`; sin línea a las 08:00 UTC, el job ni se agendó (config S3)                                      |
+| Alerta "Prueba diaria: …"              | Dice el motivo (saldo, key, modelo retirado): recargar, rotar la key o cambiar la cadena en el `.env`. `sonda:proveedores` la repite |
+| UptimeRobot: `/api/health` en 503      | La app no alcanza la base: `ps` (¿`postgres` arriba?) y `logs app \| grep health`                                                    |
+| `app` no arranca tras F12.8            | Falta `OPS_TELEGRAM_CHAT_ID` u `OPS_ALERT_EMAIL` (paso 4d)                                                                           |
+| El chat llega de golpe al final        | Falta `proxy_buffering off` en el vhost                                                                                              |
+| `manifest unknown` en el `pull`        | Ese tag no existe: revisar el run de _Release_ en Actions                                                                            |
+| `denied` / `unauthorized` en el `pull` | El paquete quedó privado: _Packages → presencia → Package settings → Change visibility → Public_                                     |
+| El bot no contesta                     | `getWebhookInfo` (`last_error_message`) y `logs app \| grep -i telegram`                                                             |
+| `getWebhookInfo` con error 401         | El secret del `.env` cambió sin reiniciar `app`: el webhook se registró con el anterior                                              |
+| Configuración no muestra Telegram      | Sin `TELEGRAM_BOT_TOKEN`, o el bot no arrancó todavía (reintenta solo: ver `logs app`)                                               |
+| Lo nuevo del merge no aparece          | El `pull` fue antes de que _Release_ publicara: revisar el commit del contenedor y repetir                                           |
