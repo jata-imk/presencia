@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decidir, duracion, planear, RECORDATORIO_MS } from "./alert-state.js";
-import {
-  chequeoDeCards,
-  chequeoDeJobs,
-  chequeoDeRespaldo,
-  chequeoDeSaldo,
-  esSinSaldo,
-} from "./chequeos.js";
+import { chequeoDeCards, chequeoDeJobs, chequeoDeIa, esSinSaldo } from "./chequeos.js";
 import { componerMensaje, recortar } from "./mensaje.js";
 
 // F12.8 (ADR-031): la parte pura de las alertas de operación. Lo que importa
@@ -185,29 +179,27 @@ describe("mensaje", () => {
 
 // PR3: cards degradadas y proveedores de IA.
 describe("chequeoDeCards", () => {
-  it("una o dos cards fallidas son de un creator, no operación", () => {
-    expect(chequeoDeCards([{ reason: "x", n: 2 }])).toEqual([]);
+  it("pocas cards, o todas de un mismo creator, no son operación", () => {
+    expect(chequeoDeCards({ motivos: [{ reason: "x", n: 2 }], creadores: 2 })).toEqual([]);
+    expect(chequeoDeCards({ motivos: [{ reason: "x", n: 5 }], creadores: 1 })).toEqual([]);
   });
 
-  it("tres en la ventana es un pico, con el desglose por motivo", () => {
-    const [o] = chequeoDeCards([
-      { reason: "No confirmó", n: 1 },
-      { reason: "Huérfana", n: 3 },
-    ]);
+  it("tres o más de creators distintos es un pico, con el desglose por motivo", () => {
+    const [o] = chequeoDeCards({
+      motivos: [
+        { reason: "No confirmó", n: 1 },
+        { reason: "Huérfana", n: 3 },
+      ],
+      creadores: 2,
+    });
     expect(o?.key).toBe("cards:degradadas");
-    expect(o?.title).toBe("4 cards pasaron a fallidas en 60 min");
+    expect(o?.title).toBe("4 cards de 2 creators pasaron a fallidas en 60 min");
     expect(o?.detail).toBe("3 × Huérfana\n1 × No confirmó");
   });
 });
 
-const evento = (
-  over: Partial<{
-    provider: string;
-    model: string;
-    fallbackFrom: string | null;
-    attempts: unknown;
-  }> = {},
-) => ({
+type Evento = { provider: string; model: string; fallbackFrom: string | null; attempts: unknown };
+const evento = (over: Partial<Evento> = {}): Evento => ({
   provider: "openai",
   model: "gpt-6-luna",
   fallbackFrom: null,
@@ -215,34 +207,41 @@ const evento = (
   ...over,
 });
 
-describe("chequeoDeSaldo", () => {
-  it("reconoce el 402 y el cuerpo de sin cuota, no un 503", () => {
+describe("esSinSaldo", () => {
+  it("el 402 y el cuerpo de sin cuota sí; un 503 o un 429 por minuto no", () => {
     expect(esSinSaldo({ status: 402, error: "" })).toBe(true);
     expect(esSinSaldo({ status: 400, error: "Your credit balance is too low" })).toBe(true);
     expect(esSinSaldo({ status: 503, error: "overloaded" })).toBe(false);
-  });
-
-  it("agrupa por proveedor los intentos caídos por saldo", () => {
-    const obs = chequeoDeSaldo([
-      evento({
-        provider: "google",
-        fallbackFrom: "anthropic:claude-sonnet-5-5",
-        attempts: [
-          { id: "anthropic:claude-sonnet-5-5", status: 400, error: "credit balance is too low" },
-          { id: "openai:gpt-6-luna", status: 503, error: "caído" },
-        ],
-      }),
-      evento({
-        attempts: [{ id: "anthropic:claude-sonnet-5-5", status: 402, error: "Payment Required" }],
-      }),
-      evento({ attempts: "no es una lista" }),
-    ]);
-    expect(obs.map((o) => o.key)).toEqual(["saldo:anthropic"]);
-    expect(obs[0]?.detail).toMatch(/^2 intentos caídos por saldo/);
+    expect(esSinSaldo({ status: 429, error: "Quota exceeded for metric per minute" })).toBe(false);
   });
 });
 
-describe("chequeoDeRespaldo", () => {
+describe("chequeoDeIa · saldo", () => {
+  const sinSaldo = evento({
+    provider: "google",
+    model: "gemini-3.8-flash",
+    fallbackFrom: "anthropic:claude-sonnet-5-5",
+    attempts: [
+      // El reintento del mismo modelo deja dos intentos: cuenta como uno.
+      { id: "anthropic:claude-sonnet-5-5", status: 400, error: "credit balance is too low" },
+      { id: "anthropic:claude-sonnet-5-5", status: 400, error: "credit balance is too low" },
+      { id: "openai:gpt-6-luna", status: 503, error: "caído" },
+    ],
+  });
+
+  it("agrupa por proveedor y cuenta eventos, no intentos", () => {
+    const { saldo } = chequeoDeIa([sinSaldo, evento({ attempts: "no es una lista" })]);
+    expect(saldo.firing.map((o) => o.key)).toEqual(["saldo:anthropic"]);
+    expect(saldo.firing[0]?.detail).toMatch(/^1 respuesta tuvo que ir al respaldo/);
+  });
+
+  it("sin tráfico de un proveedor, su alerta no se evalúa (no se resuelve sola)", () => {
+    const { saldo } = chequeoDeIa([evento()]);
+    expect(saldo.evaluadas).toEqual(["saldo:openai"]);
+  });
+});
+
+describe("chequeoDeIa · respaldo", () => {
   const caido = evento({
     provider: "google",
     model: "gemini-3.8-flash",
@@ -250,13 +249,27 @@ describe("chequeoDeRespaldo", () => {
   });
 
   it("la mitad o más contestada por el respaldo prende la alerta del principal", () => {
-    const obs = chequeoDeRespaldo([caido, caido, caido, evento(), evento()]);
-    expect(obs.map((o) => o.key)).toEqual(["respaldo:openai:gpt-6-luna"]);
-    expect(obs[0]?.detail).toMatch(/^3 de 5 respuestas .* google:gemini-3\.8-flash \(3\)$/);
+    const { respaldo } = chequeoDeIa([caido, caido, caido, evento(), evento()]);
+    expect(respaldo.firing.map((o) => o.key)).toEqual(["respaldo:openai:gpt-6-luna"]);
+    expect(respaldo.firing[0]?.detail).toMatch(
+      /^3 de 5 respuestas .* google:gemini-3\.8-flash \(3\)$/,
+    );
   });
 
-  it("con pocos eventos, o pocos del respaldo, calla", () => {
-    expect(chequeoDeRespaldo([caido, caido, caido, caido])).toEqual([]);
-    expect(chequeoDeRespaldo([caido, caido, evento(), evento(), evento()])).toEqual([]);
+  it("con pocos eventos ni se evalúa; con pocos del respaldo, se evalúa y calla", () => {
+    const pocos = chequeoDeIa([caido, caido, caido, caido]).respaldo;
+    expect(pocos).toEqual({ firing: [], evaluadas: [] });
+    const sanos = chequeoDeIa([caido, caido, evento(), evento(), evento()]).respaldo;
+    expect(sanos).toEqual({ firing: [], evaluadas: ["respaldo:openai:gpt-6-luna"] });
+  });
+
+  it("si la causa es saldo, no se repite como respaldo", () => {
+    const sinSaldoOpenai = {
+      ...caido,
+      attempts: [{ id: "openai:gpt-6-luna", status: 402, error: "Payment Required" }],
+    };
+    const r = chequeoDeIa([sinSaldoOpenai, sinSaldoOpenai, sinSaldoOpenai, evento(), evento()]);
+    expect(r.saldo.firing.map((o) => o.key)).toEqual(["saldo:openai"]);
+    expect(r.respaldo.firing).toEqual([]);
   });
 });

@@ -534,6 +534,12 @@ export const publicationCards = pgTable(
     // Es además el candado contra el doble click (ver
     // CardsRepository.startImageJob).
     imageJob: jsonb("image_job"),
+    // Cuándo pasó a `failed` (F12.8). `updated_at` no sirve para eso: lo
+    // vuelven a tocar acciones que no son un fallo (borrar el chat o la
+    // cuenta, agrupar), y las alertas de operación contarían cards viejas
+    // como fallos nuevos. Null en las que nunca fallaron y en las que
+    // fallaron antes de existir la columna.
+    failedAt: timestamp("failed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

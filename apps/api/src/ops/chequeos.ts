@@ -1,7 +1,7 @@
 import { QUOTA_BODY } from "../ai/fallback.js";
 import type { ResumenDeCola } from "../jobs/boss.service.js";
 import { duracion, type Observacion } from "./alert-state.js";
-import type { EventoDeUso, MotivoDeFallo } from "./ops-scan.repository.js";
+import type { CardsFallidas, EventoDeUso } from "./ops-scan.repository.js";
 
 // Los chequeos de `ops.watch` como funciones puras: reciben lo que se leyó y
 // devuelven qué está prendido. La lectura vive en OpsWatch.
@@ -51,16 +51,18 @@ export function llavesDeJobs(colas: readonly ResumenDeCola[]): string[] {
 export const VENTANA_RECIENTE_MIN = 60;
 
 /**
- * Cuántas cards fallidas en la ventana hacen un "pico". Una sola es de un
- * creator (su cuenta desconectada, un video que la red rechazó) y no es
- * operación. Tres en una hora, con el volumen de hoy, ya no es ruido: es la
- * primera señal de que el proveedor de publicación cambió algo (spec, alcance 3).
+ * Cuándo un montón de cards fallidas es un "pico" de operación y no el
+ * problema de alguien. Una persona con la cuenta desconectada puede tener
+ * tres cards vencidas que fallan en el mismo pase: eso es suyo, no del
+ * proveedor. Lo que señala que el proveedor de publicación cambió algo
+ * (spec, alcance 3) es que fallen a la vez cards de creators distintos.
  */
 export const UMBRAL_CARDS_FALLIDAS = 3;
+export const UMBRAL_CREADORES = 2;
 
-export function chequeoDeCards(motivos: readonly MotivoDeFallo[]): Observacion[] {
+export function chequeoDeCards({ motivos, creadores }: CardsFallidas): Observacion[] {
   const total = motivos.reduce((suma, m) => suma + m.n, 0);
-  if (total < UMBRAL_CARDS_FALLIDAS) return [];
+  if (total < UMBRAL_CARDS_FALLIDAS || creadores < UMBRAL_CREADORES) return [];
   const desglose = [...motivos]
     .sort((a, b) => b.n - a.n)
     .map((m) => `${String(m.n)} × ${m.reason ?? "(sin motivo)"}`)
@@ -68,7 +70,7 @@ export function chequeoDeCards(motivos: readonly MotivoDeFallo[]): Observacion[]
   return [
     {
       key: "cards:degradadas",
-      title: `${String(total)} cards pasaron a fallidas en ${String(VENTANA_RECIENTE_MIN)} min`,
+      title: `${String(total)} cards de ${String(creadores)} creators pasaron a fallidas en ${String(VENTANA_RECIENTE_MIN)} min`,
       detail: desglose,
     },
   ];
@@ -88,31 +90,26 @@ function intentos(raw: unknown): Intento[] {
   );
 }
 
-/** Un intento caído por saldo: 402, o el cuerpo que la cadena ya reconoce como "sin cuota". */
-export function esSinSaldo(intento: Pick<Intento, "status" | "error">): boolean {
-  return intento.status === 402 || QUOTA_BODY.test(intento.error ?? "");
+function proveedorDe(id: string): string {
+  return id.split(":")[0] ?? id;
 }
 
 /**
- * Saldo (alcance 5, señal pasiva): un eslabón de una cadena que cayó por
- * saldo en la ventana. Uno basta: un 402 no es intermitente, y el respaldo
- * esconde la caída al usuario, así que nadie más se va a enterar.
+ * Un intento caído por saldo: 402, o el cuerpo que la cadena reconoce como
+ * "sin cuota". Nunca un 429: el límite por minuto de Gemini también dice
+ * "Quota exceeded", y una ráfaga de tráfico no es una cuenta sin saldo (en la
+ * cadena, un 429 se decide por `isRetryable` antes de mirar el cuerpo).
  */
-export function chequeoDeSaldo(eventos: readonly EventoDeUso[]): Observacion[] {
-  const porProveedor = new Map<string, { n: number; ultimo: Intento }>();
-  for (const evento of eventos) {
-    for (const intento of intentos(evento.attempts)) {
-      if (!esSinSaldo(intento)) continue;
-      const proveedor = intento.id.split(":")[0] ?? intento.id;
-      const previo = porProveedor.get(proveedor);
-      porProveedor.set(proveedor, { n: (previo?.n ?? 0) + 1, ultimo: intento });
-    }
-  }
-  return [...porProveedor.entries()].map(([proveedor, { n, ultimo }]) => ({
-    key: `saldo:${proveedor}`,
-    title: `${proveedor} se quedó sin saldo`,
-    detail: `${String(n)} ${n === 1 ? "intento caído" : "intentos caídos"} por saldo en ${String(VENTANA_RECIENTE_MIN)} min (el respaldo contestó)\n${ultimo.id}: ${ultimo.error}`,
-  }));
+export function esSinSaldo(intento: Pick<Intento, "status" | "error">): boolean {
+  if (intento.status === 402) return true;
+  if (intento.status === 429) return false;
+  return QUOTA_BODY.test(intento.error ?? "");
+}
+
+/** Saldo y respaldo leen los mismos eventos: se resuelven juntos en un solo paso. */
+export interface ResultadoDeIa {
+  saldo: { firing: Observacion[]; evaluadas: string[] };
+  respaldo: { firing: Observacion[]; evaluadas: string[] };
 }
 
 /**
@@ -124,35 +121,78 @@ export const MIN_EVENTOS_RESPALDO = 5;
 export const PROPORCION_RESPALDO = 0.5;
 
 /**
- * Un respaldo cargando con el tráfico (alcance 5): la mitad o más de lo que
- * pidió un principal la contestó otro. Cubre lo que el saldo no: un
- * principal caído por 5xx o timeouts, o un 401 de una key revocada.
+ * Los proveedores de IA (alcance 5, señal pasiva), a partir de los eventos
+ * de uso de la ventana.
+ *
+ * - `saldo:<proveedor>`: un eslabón cayó por saldo. Uno basta: un 402 no es
+ *   intermitente, y el respaldo esconde la caída al usuario. Se cuentan
+ *   EVENTOS, no intentos (la cadena reintenta una vez el mismo modelo).
+ * - `respaldo:<principal>`: la mitad o más de lo que pidió un principal la
+ *   contestó otro. Cubre lo que el saldo no: 5xx, timeouts, una key revocada.
+ *   Si el proveedor del principal ya está en `saldo:`, no se repite: es la
+ *   misma causa, y dos alertas por un fallo son ruido.
+ *
+ * "Ya se arregló" pide evidencia, no silencio: un proveedor sin tráfico en la
+ * hora no se evalúa (su alerta se queda como está), ni un principal con menos
+ * de MIN_EVENTOS_RESPALDO eventos. Sin esto, de noche toda alerta se
+ * "resolvía" sola y volvía a la mañana como nueva.
+ *
+ * Hueco conocido: si la cadena ENTERA falla, no queda fila en
+ * `ai_usage_events` y aquí no se ve. Eso lo cubre la prueba activa diaria.
  */
-export function chequeoDeRespaldo(eventos: readonly EventoDeUso[]): Observacion[] {
+export function chequeoDeIa(eventos: readonly EventoDeUso[]): ResultadoDeIa {
+  const sinSaldo = new Map<string, { n: number; ultimo: Intento }>();
+  const conEvidencia = new Set<string>();
   const porPrincipal = new Map<string, { total: number; respaldo: Map<string, number> }>();
+
   for (const evento of eventos) {
-    const principal = evento.fallbackFrom ?? `${evento.provider}:${evento.model}`;
+    const quien = `${evento.provider}:${evento.model}`;
+    conEvidencia.add(evento.provider);
+    const caidosPorSaldo = new Map<string, Intento>();
+    for (const intento of intentos(evento.attempts)) {
+      const proveedor = proveedorDe(intento.id);
+      conEvidencia.add(proveedor);
+      if (esSinSaldo(intento)) caidosPorSaldo.set(proveedor, intento);
+    }
+    for (const [proveedor, intento] of caidosPorSaldo) {
+      const previo = sinSaldo.get(proveedor);
+      sinSaldo.set(proveedor, { n: (previo?.n ?? 0) + 1, ultimo: intento });
+    }
+
+    const principal = evento.fallbackFrom ?? quien;
     const fila = porPrincipal.get(principal) ?? { total: 0, respaldo: new Map<string, number>() };
     fila.total += 1;
-    if (evento.fallbackFrom) {
-      const quien = `${evento.provider}:${evento.model}`;
-      fila.respaldo.set(quien, (fila.respaldo.get(quien) ?? 0) + 1);
-    }
+    if (evento.fallbackFrom) fila.respaldo.set(quien, (fila.respaldo.get(quien) ?? 0) + 1);
     porPrincipal.set(principal, fila);
   }
-  const observaciones: Observacion[] = [];
-  for (const [principal, { total, respaldo }] of porPrincipal) {
-    const n = [...respaldo.values()].reduce((a, b) => a + b, 0);
-    if (total < MIN_EVENTOS_RESPALDO || n / total < PROPORCION_RESPALDO) continue;
-    const quienes = [...respaldo.entries()]
+
+  const saldo = [...sinSaldo.entries()].map(([proveedor, { n, ultimo }]) => ({
+    key: `saldo:${proveedor}`,
+    title: `${proveedor} se quedó sin saldo`,
+    detail: `${String(n)} ${n === 1 ? "respuesta tuvo" : "respuestas tuvieron"} que ir al respaldo por falta de saldo en ${String(VENTANA_RECIENTE_MIN)} min\n${ultimo.id}: ${ultimo.error}`,
+  }));
+
+  const respaldo: Observacion[] = [];
+  const principalesEvaluados: string[] = [];
+  for (const [principal, { total, respaldo: quienes }] of porPrincipal) {
+    if (total < MIN_EVENTOS_RESPALDO) continue;
+    principalesEvaluados.push(`respaldo:${principal}`);
+    const n = [...quienes.values()].reduce((a, b) => a + b, 0);
+    if (n / total < PROPORCION_RESPALDO) continue;
+    if (sinSaldo.has(proveedorDe(principal))) continue;
+    const lista = [...quienes.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([id, k]) => `${id} (${String(k)})`)
       .join(", ");
-    observaciones.push({
+    respaldo.push({
       key: `respaldo:${principal}`,
       title: `${principal} no está contestando: lo cubre el respaldo`,
-      detail: `${String(n)} de ${String(total)} respuestas en ${String(VENTANA_RECIENTE_MIN)} min las dio el respaldo: ${quienes}`,
+      detail: `${String(n)} de ${String(total)} respuestas en ${String(VENTANA_RECIENTE_MIN)} min las dio el respaldo: ${lista}`,
     });
   }
-  return observaciones;
+
+  return {
+    saldo: { firing: saldo, evaluadas: [...conEvidencia].map((p) => `saldo:${p}`) },
+    respaldo: { firing: respaldo, evaluadas: principalesEvaluados },
+  };
 }

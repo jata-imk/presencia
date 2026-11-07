@@ -1181,8 +1181,9 @@ describe("RLS tenant_isolation", () => {
         const cards = await tx
           .insert(publicationCards)
           .values([
-            { ...base, status: "failed", errorDetail: { reason: "prueba" } },
-            { ...base, status: "failed", updatedAt: hace3h },
+            { ...base, status: "failed", errorDetail: { reason: "prueba" }, failedAt: new Date() },
+            // Falló hace 3 h y algo la tocó después (borrar el chat): no cuenta.
+            { ...base, status: "failed", failedAt: hace3h, updatedAt: new Date() },
             { ...base, status: "draft" },
           ])
           .returning({ id: publicationCards.id });

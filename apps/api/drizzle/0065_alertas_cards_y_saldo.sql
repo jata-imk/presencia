@@ -1,3 +1,5 @@
+ALTER TABLE "publication_cards" ADD COLUMN "failed_at" timestamp with time zone;
+--> statement-breakpoint
 -- Alertas de operación, PR3 (F12.8, ADR-031): lo que `ops.watch` necesita
 -- leer cross-tenant para avisar de dos cosas — un pico de cards que pasan a
 -- fallidas (la primera señal de que el proveedor de publicación cambió algo)
@@ -12,19 +14,19 @@
 -- La ventana de 2 h es el doble de la que usan los chequeos (60 min): holgura
 -- contra relojes, sin abrir más historia de la necesaria.
 
--- Cards que pasaron a `failed` hace poco. `updated_at` es la hora del fallo:
--- la reconciliación la toca al marcarla, y una card fallida no se vuelve a
--- editar (habría que reprogramarla, que la saca de `failed`).
+-- Cards que pasaron a `failed` hace poco, por `failed_at` (columna de arriba)
+-- y no por `updated_at`: borrar el chat o la cuenta, o agrupar cards, vuelve
+-- a tocar `updated_at` de cards que fallaron hace semanas.
 CREATE POLICY worker_ops_scan ON "publication_cards"
   FOR SELECT
   TO presencia_app
   USING (
     current_setting('app.user_id', true) = '00000000-0000-0000-0000-000000000000'
     AND "status" = 'failed'
-    AND "updated_at" > now() - interval '2 hours'
+    AND "failed_at" > now() - interval '2 hours'
   );
 --> statement-breakpoint
-CREATE INDEX "cards_failed_recent" ON "publication_cards" ("updated_at")
+CREATE INDEX "cards_failed_recent" ON "publication_cards" ("failed_at")
   WHERE "status" = 'failed';
 --> statement-breakpoint
 -- Los eventos de uso de IA recientes: de ahí salen los intentos caídos por

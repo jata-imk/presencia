@@ -6,11 +6,11 @@ import { DbService } from "../db/db.service.js";
 import {
   chequeoDeCards,
   chequeoDeJobs,
-  chequeoDeRespaldo,
-  chequeoDeSaldo,
+  chequeoDeIa,
   llavesDeJobs,
   VENTANA_FALLOS_MIN,
   VENTANA_RECIENTE_MIN,
+  type ResultadoDeIa,
 } from "./chequeos.js";
 import { pingHealthcheck } from "./healthchecks.js";
 import { OpsAlertsService, type Chequeo } from "./ops-alerts.service.js";
@@ -62,6 +62,12 @@ export class OpsJobs implements OnApplicationBootstrap {
   }
 
   private chequeos(): Chequeo[] {
+    // Saldo y respaldo leen los mismos eventos: una sola lectura por pase.
+    let lectura: Promise<ResultadoDeIa> | undefined;
+    const ia = () =>
+      (lectura ??= this.db
+        .runWorkerScan((tx) => this.scan.usoReciente(tx, haceMinutos(VENTANA_RECIENTE_MIN)))
+        .then(chequeoDeIa));
     return [
       {
         nombre: "jobs",
@@ -84,20 +90,14 @@ export class OpsJobs implements OnApplicationBootstrap {
       {
         nombre: "saldo",
         prefix: "saldo:",
-        correr: async () => chequeoDeSaldo(await this.usoReciente()),
+        correr: async () => (await ia()).saldo,
       },
       {
         nombre: "respaldo",
         prefix: "respaldo:",
-        correr: async () => chequeoDeRespaldo(await this.usoReciente()),
+        correr: async () => (await ia()).respaldo,
       },
     ];
-  }
-
-  private usoReciente() {
-    return this.db.runWorkerScan((tx) =>
-      this.scan.usoReciente(tx, haceMinutos(VENTANA_RECIENTE_MIN)),
-    );
   }
 }
 

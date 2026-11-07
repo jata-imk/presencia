@@ -66,7 +66,10 @@ DeepSeek (`/user/balance`), xAI (management API) y OpenRouter (`/api/v1/credits`
 
 Por eso el "antes de llegar a cero" de OpenAI, Anthropic y Google **no es una alerta: es la auto-recarga de cada consola** (en el doc de deploy, PR2). Lo que sí hace el código:
 
-- **Señal pasiva (PR3):** los intentos fallidos ya quedan en `ai_usage_events.provider_raw.attempts`. Un eslabón caído por saldo (402, o el cuerpo que reconoce `QUOTA_BODY` en `ai/fallback.ts`) prende `saldo:<proveedor>`; un respaldo que empieza a cargar con el tráfico (`fallback_from` en la mitad de los eventos de la última hora) prende `respaldo:<principal>`.
+- **Señal pasiva (PR3):** los intentos fallidos ya quedan en `ai_usage_events.provider_raw.attempts`. Un eslabón caído por saldo (402, o el cuerpo que reconoce `QUOTA_BODY` en `ai/fallback.ts`, **nunca un 429**: el límite por minuto de Gemini también dice "Quota exceeded") prende `saldo:<proveedor>`; un respaldo que contesta la mitad o más de 5+ respuestas de la última hora prende `respaldo:<principal>`, salvo que su proveedor ya esté en `saldo:` (misma causa, una sola alerta). Se cuentan eventos, no intentos (la cadena reintenta una vez el mismo modelo).
+  - **"Resuelto" pide evidencia, no silencio.** Un proveedor sin tráfico en la hora no se evalúa, ni un principal con menos de 5 eventos: su alerta se queda como está. Si no, de noche todo se "resolvía" solo y volvía a la mañana como nuevo. El costo: `saldo:anthropic` (el último eslabón, con poco tráfico) puede seguir prendida después de recargar hasta que Sonnet conteste algo; la prueba diaria dice si ya tiene saldo.
+  - **Hueco conocido:** si la cadena entera falla no queda fila en `ai_usage_events`, así que aquí no se ve. Lo cubre la prueba activa.
+- **Cards degradadas (PR3):** 3 o más cards de **2 o más creators** pasaron a `failed` en la última hora (`cards:degradadas`), con el desglose por motivo. Un solo creator con la cuenta desconectada no es operación. La hora del fallo es `publication_cards.failed_at` (columna nueva de la migración 0065), no `updated_at`, que lo vuelven a tocar acciones que no son un fallo.
 - **Señal activa (PR4):** una prueba diaria con una llamada mínima a cada eslabón de cada cadena, sin pasar por el respaldo. Es la única forma de saber que Sonnet tiene saldo sin esperar a una caída.
 
 ## La prueba activa (PR4)
