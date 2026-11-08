@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import type { SocialNetwork } from "@presencia/shared";
+import type { SocialNetwork, TrendItem } from "@presencia/shared";
 import { CadenciaHeatmap, LeyendaHeatmap } from "../components/ritmo/CadenciaHeatmap.js";
 import { Narracion } from "../components/ritmo/Narracion.js";
 import { HorariosHeatmap } from "../components/ritmo/HorariosHeatmap.js";
@@ -26,7 +26,12 @@ import {
 import { NETWORK_META } from "../components/cards/NetworkLogos.js";
 import { QuotaExhaustedModal } from "../components/QuotaExhaustedModal.js";
 import { TarjetaPropuesta } from "../components/ritmo/TarjetaPropuesta.js";
-import { elegirPropuestas, promptDePropuesta, type ConPropuesta } from "../lib/ritmo/propuestas.js";
+import {
+  elegirPropuestas,
+  promptDePropuesta,
+  promptDeTendencia,
+  type ConPropuesta,
+} from "../lib/ritmo/propuestas.js";
 import { authClient } from "../lib/auth-client.js";
 import { useHorarios, useNarracion, useRitmoResumen, useTendencias } from "../lib/use-ritmo.js";
 
@@ -59,8 +64,18 @@ export function RitmoPage() {
   // "Crear en Chat" deja el texto escrito en el composer de un chat nuevo y
   // NO manda nada: Ritmo propone, el Chat crea (presencia-ritmo.md §3). Viaja
   // como `propuesta` y no como `initialPrompt`, que sí dispara la generación.
+  // Una sola salida al Chat para los dos botones: es el contrato de estado
+  // que lee chats.tsx, y dos copias se desincronizan.
+  function llevarAlChat(texto: string) {
+    void navigate("/chats", { state: { propuesta: texto } });
+  }
   function crearEnChat(item: ConPropuesta) {
-    void navigate("/chats", { state: { propuesta: promptDePropuesta(item) } });
+    llevarAlChat(promptDePropuesta(item));
+  }
+  // Lo mismo desde una tendencia suelta (F12.5): sin propuesta armada, el
+  // texto pregunta qué hacer con el tema en vez de pedir que lo cree.
+  function explorarEnChat(item: TrendItem) {
+    llevarAlChat(promptDeTendencia(item));
   }
 
   // `null` hasta que el resumen diga qué redes hay. La elección del usuario
@@ -291,7 +306,12 @@ export function RitmoPage() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {tendencias.items.map((item) => (
-                <TarjetaTendencia key={item.topic} item={item} />
+                // El mismo tema puede venir en dos redes: la llave lleva las dos.
+                <TarjetaTendencia
+                  key={`${item.network}:${item.topic}`}
+                  item={item}
+                  onExplorar={explorarEnChat}
+                />
               ))}
             </div>
           )}

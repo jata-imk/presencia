@@ -47,6 +47,27 @@ function formatoEnFrase(format: TrendFormat): string {
 }
 
 /**
+ * El texto que "Explorar en Chat" deja en el composer desde una tendencia
+ * (F12.5, absorbe el backlog "Tarjetas de tendencia → Explorar en Chat").
+ *
+ * A diferencia de la propuesta, la tendencia es un TEMA, no una publicación:
+ * por eso pregunta qué hacer con ella en vez de pedir que la cree. La red y el
+ * formato van como dónde aparece, no como orden: el creator decide. "Aparece"
+ * y no "se está moviendo": la tarjeta puede decir "Estable" o "Nuevo", y el
+ * texto no debe prometer un impulso que la tarjeta no afirmó. Lleva la URL de
+ * la fuente para que el chat la pueda abrir con leer_enlace si hace falta.
+ */
+export function promptDeTendencia(item: TrendItem): string {
+  return [
+    `Quiero aprovechar esta tendencia de mi nicho: ${item.topic}.`,
+    "",
+    item.blurb,
+    "",
+    `Fuente: ${item.sourceTitle} (${item.sourceUrl}). Aparece en ${NETWORK_LABELS[item.network]} como ${formatoEnFrase(item.format)}. ¿Qué publicación me recomiendas hacer con ella?`,
+  ].join("\n");
+}
+
+/**
  * El texto que "Crear en Chat" deja escrito en el composer.
  *
  * Es un punto de partida que el usuario ve y puede editar antes de mandar:

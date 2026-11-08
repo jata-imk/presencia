@@ -464,6 +464,17 @@ una tendencia depende de que NO parezca inventada. "Visto en
 TikTok MX · hace 2 días" le dice al usuario que esto es real y
 fresco, no una alucinación de la IA.
 
+**Por qué cada tarjeta lleva al Chat (F12.5):** una tendencia que
+solo se lee se queda en información; el ciclo Ritmo → Chat se
+cierra cuando el creator puede hacer algo con ella. "Explorar en
+Chat" abre un chat nuevo con el tema, su resumen y su fuente
+escritos en la caja, sin mandarlos (igual que las propuestas:
+generar es decisión del usuario). La diferencia con la propuesta
+es el verbo: la propuesta ya trae una publicación armada y pide
+crearla; la tendencia es un tema, así que pregunta qué
+publicación conviene hacer con él. Por eso el botón es secundario
+y el fuerte de la página sigue siendo "Crear en Chat".
+
 ### La sección de propuestas
 
 **Qué es:** publicaciones concretas que Ritmo arma a partir de

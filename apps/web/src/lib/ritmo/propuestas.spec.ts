@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { TrendItem } from "@presencia/shared";
-import { elegirPropuestas, promptDePropuesta, type ConPropuesta } from "./propuestas.js";
+import {
+  elegirPropuestas,
+  promptDePropuesta,
+  promptDeTendencia,
+  type ConPropuesta,
+} from "./propuestas.js";
 
 function item(topic: string, format: TrendItem["format"], conPropuesta = true): TrendItem {
   return {
@@ -44,6 +49,31 @@ describe("elegirPropuestas", () => {
 
   it("sin propuestas devuelve vacío", () => {
     expect(elegirPropuestas([])).toEqual([]);
+  });
+});
+
+describe("promptDeTendencia", () => {
+  it("lleva el tema, el resumen, la fuente con su URL y pregunta en vez de pedir que la cree", () => {
+    const prompt = promptDeTendencia({
+      ...item("Rutinas sin apps de pago", "reel", false),
+      blurb: "Organizan la semana con libreta.",
+    });
+    expect(prompt).toContain("tendencia de mi nicho: Rutinas sin apps de pago.");
+    expect(prompt).toContain("Organizan la semana con libreta.");
+    expect(prompt).toContain("Fuente: xataka.com.mx (https://xataka.com.mx/nota)");
+    expect(prompt).toContain("Aparece en TikTok como un reel");
+    expect(prompt).toContain("¿Qué publicación me recomiendas");
+    expect(prompt).not.toContain("Quiero crear");
+  });
+
+  // La tarjeta puede decir "Estable" o "Nuevo": el texto no promete impulso.
+  it("no afirma que la tendencia está subiendo", () => {
+    const estable = {
+      ...item("x", "post", false),
+      signal: "stable" as const,
+      blurb: "Sigue igual.",
+    };
+    expect(promptDeTendencia(estable)).not.toMatch(/moviendo|subiendo/i);
   });
 });
 
