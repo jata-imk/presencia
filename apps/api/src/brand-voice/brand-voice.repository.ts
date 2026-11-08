@@ -50,8 +50,6 @@ export type UpdateBrandVoicePatch = Partial<{
   // F12.5: «Así escribes» y «Datos fijos de tu marca».
   styleNotes: string[];
   businessFacts: string | null;
-  // F12.5: lo escribe EjemploDeVozService, no el PATCH de la voz.
-  lastVoiceExample: BrandVoiceExampleDto;
   // Configuración › Tendencias (F9.6). Viven en la voz porque son parte de
   // "quién soy y qué me importa", pero las escribe TrendsService, no el PATCH
   // de voz de marca: ver `guardarAjustes`.
@@ -104,6 +102,18 @@ export class BrandVoiceRepository {
       .returning();
     if (!row) throw new Error("No se pudo guardar la voz de marca");
     return row;
+  }
+
+  /**
+   * F12.5: el último "Ver ejemplo de tu voz". NO toca `updated_at`: generar un
+   * ejemplo no es editar la voz, y así la pantalla puede comparar
+   * `generatedAt` contra `updatedAt` para avisar que la voz cambió después.
+   */
+  async saveLastExample(tx: Tx, example: BrandVoiceExampleDto): Promise<void> {
+    await tx
+      .update(brandVoices)
+      .set({ lastVoiceExample: example })
+      .where(eq(brandVoices.isDefault, true));
   }
 
   async updateDefault(tx: Tx, patch: UpdateBrandVoicePatch): Promise<BrandVoiceRow> {

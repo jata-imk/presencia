@@ -74,9 +74,14 @@ export class BrandVoiceService {
       const existing = await this.repo.findDefault(tx);
       if (!existing) throw new NotFoundException("Aún no configuras tu voz de marca.");
 
-      const patch = this.reconcileFormality(body);
+      // Copia: reconcileFormality puede devolver el body tal cual, y no se
+      // muta lo que mandó el controller.
+      const patch: UpdateBrandVoicePatch = { ...this.reconcileFormality(body) };
       // Vaciar el campo es borrarlos: "" y null se guardan igual.
       if (patch.businessFacts === "") patch.businessFacts = null;
+      // Un rasgo repetido ("Frases cortas" y "frases cortas") ocuparía dos de
+      // los 8 lugares y viajaría dos veces en cada prompt.
+      if (patch.styleNotes) patch.styleNotes = uniqueExpressions(patch.styleNotes);
       const allowedExpressions = patch.allowedExpressions ?? existing.allowedExpressions;
       const bannedExpressions = patch.bannedExpressions ?? existing.bannedExpressions;
       const resolved = this.resolveConflicts(allowedExpressions, bannedExpressions);
@@ -163,6 +168,17 @@ export class BrandVoiceService {
       businessFacts: row.businessFacts,
     };
   }
+}
+
+/** Sin repetidos por `normalizeExpression` (mayúsculas, acentos, espacios); gana el primero. */
+function uniqueExpressions(values: string[]): string[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = normalizeExpression(value);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // jsonb sin tipo en la base: si la forma no es la esperada, se trata como

@@ -70,6 +70,7 @@ function makeRepo(overrides: Partial<BrandVoiceRepository> = {}): BrandVoiceRepo
     findDefault: vi.fn(),
     upsertDefault: vi.fn(),
     updateDefault: vi.fn(),
+    saveLastExample: vi.fn(),
     ...overrides,
   };
 }
@@ -333,6 +334,19 @@ describe("BrandVoiceService — datos fijos (F12.5)", () => {
       updateBrandVoiceBodySchema.parse({ businessFacts: "  " }),
     );
     expect(updateDefault.mock.calls[0]?.[1]).toMatchObject({ businessFacts: null });
+  });
+
+  it("los rasgos repetidos se guardan una sola vez", async () => {
+    const updateDefault = vi.fn().mockResolvedValue(makeRow());
+    const repo = makeRepo({ findDefault: vi.fn().mockResolvedValue(makeRow()), updateDefault });
+    const service = new BrandVoiceService(makeDbService(), repo);
+
+    await service.updateDefault("user-1", {
+      styleNotes: ["Frases cortas", "frases cortas", "Cierra con pregunta"],
+    });
+    expect(updateDefault.mock.calls[0]?.[1]).toMatchObject({
+      styleNotes: ["Frases cortas", "Cierra con pregunta"],
+    });
   });
 
   it("el DTO trae el último ejemplo, y uno mal formado se lee como null", async () => {

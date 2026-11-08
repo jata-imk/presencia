@@ -358,7 +358,11 @@ export interface BrandVoiceDto {
   styleNotes: string[];
   /** F12.5: «Datos fijos de tu marca», o `null` si no los ha escrito. */
   businessFacts: string | null;
-  /** F12.5: el último "Ver ejemplo de tu voz", sin historial. */
+  /**
+   * F12.5: el último "Ver ejemplo de tu voz", sin historial. Guardarlo no
+   * mueve `updatedAt`: si `updatedAt` es posterior a su `generatedAt`, la voz
+   * cambió después de escribirlo.
+   */
   lastVoiceExample: BrandVoiceExampleDto | null;
   /** F10.6: el estilo visual elegido, o `null` si nunca eligió (= Fotográfico natural). */
   imageStyle: ImageStyle | null;
@@ -437,11 +441,14 @@ export type DestilarVozBody = z.infer<typeof destilarVozBodySchema>;
  * el servidor; la pantalla la muestra, el creator la ajusta y la guarda con el
  * PATCH de siempre. La voz es del creator, no del sistema.
  *
- * Todos los campos son obligatorios (listas vacías si no hay nada): los
- * modelos con salida estructurada estricta no aceptan opcionales.
+ * Es el contrato de la RESPUESTA, con sus topes ya aplicados. Al modelo se le
+ * pide un schema laxo (apps/api/src/brand-voice/destilar.ts) y la API limpia:
+ * la salida estricta no hace cumplir largos, y fallar después de pagar sería
+ * cobrar un error. `styleNotes` puede venir vacío si el modelo no dejó ninguno
+ * usable; la pantalla le pide uno al creator.
  */
 export const vozDestiladaSchema = z.object({
-  styleNotes: z.array(styleNote).min(1).max(6),
+  styleNotes: z.array(styleNote).max(6),
   formality: z.number().int().min(0).max(100),
   allowedExpressions: z.array(shortTag).max(10),
   bannedExpressions: z.array(shortTag).max(10),

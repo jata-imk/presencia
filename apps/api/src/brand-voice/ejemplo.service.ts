@@ -93,7 +93,7 @@ export class EjemploDeVozService {
         taskKind: TASK_KIND,
         reason: "voice_preview",
       });
-      await this.repo.updateDefault(tx, { lastVoiceExample: ejemplo });
+      await this.repo.saveLastExample(tx, ejemplo);
     });
 
     return ejemplo;

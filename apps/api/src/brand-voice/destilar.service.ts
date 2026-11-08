@@ -1,12 +1,17 @@
-import { Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { generateObject, NoObjectGeneratedError, type LanguageModelUsage } from "ai";
-import { vozDestiladaSchema, type DestilarVozBody, type VozDestiladaDto } from "@presencia/shared";
+import type { DestilarVozBody, VozDestiladaDto } from "@presencia/shared";
 import { AiUsageService } from "../ai/ai-usage.service.js";
 import { AiService } from "../ai/ai.service.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
-import { DISTILL_SYSTEM, distillPrompt, limpiarVozDestilada } from "./destilar.js";
+import {
+  DISTILL_SYSTEM,
+  distillPrompt,
+  limpiarVozDestilada,
+  vozDelModeloSchema,
+} from "./destilar.js";
 
 // Destilar la voz desde publicaciones del creator (F12.5). Primer call site de
 // `voice_distill` (tier ADAPT; addendum F12.5 de ADR-004).
@@ -23,6 +28,8 @@ const TASK_KIND = "voice_distill" as const;
 
 @Injectable()
 export class DestilarVozService {
+  private readonly logger = new Logger(DestilarVozService.name);
+
   constructor(
     @Inject(DbService) private readonly dbService: DbService,
     @Inject(AiService) private readonly ai: AiService,
@@ -51,7 +58,7 @@ export class DestilarVozService {
       result = await generateObject({
         model: modelo.model,
         system: DISTILL_SYSTEM,
-        schema: vozDestiladaSchema,
+        schema: vozDelModeloSchema,
         prompt: distillPrompt(body),
       });
     } catch (error) {
@@ -60,11 +67,15 @@ export class DestilarVozService {
       if (NoObjectGeneratedError.isInstance(error) && error.usage) {
         await registrar(error.usage, error.finishReason);
         await this.charge(userId, error.usage);
-        throw new ServiceUnavailableException(
-          "No pudimos leer tus publicaciones. Inténtalo de nuevo.",
-        );
+      } else {
+        // El proveedor (y su respaldo) falló: no hay usage que registrar ni
+        // cobrar. Al creator, en pleno onboarding, el mismo aviso en español
+        // y no un 500 crudo (revisión del PR3).
+        this.logger.warn(`destilar falló sin salida del modelo: ${String(error)}`);
       }
-      throw error;
+      throw new ServiceUnavailableException(
+        "No pudimos leer tus publicaciones. Inténtalo de nuevo.",
+      );
     }
 
     await registrar(result.usage, result.finishReason);
