@@ -65,6 +65,46 @@ const voiceModismoProhibido: BrandVoiceForPrompt = {
   referenceExamples: [],
 };
 
+// F12.5: el mismo negocio (una cafetería) en tres regiones y tres registros,
+// para que lo que cambie entre las respuestas sea la región y el registro, no
+// el nicho. Ninguna trae modismos permitidos: la de Mérida es la prueba de que
+// la región NO se vuelve caricatura ("uay", "bomba" sin que el creator los
+// use). Se leen lado a lado con AI_SUITE_VOICES=casual-merida,neutro-cdmx,regio-profesional.
+const cafeteria = {
+  marketCountry: "MX",
+  niche: ["cafetería de especialidad"],
+  audience: "gente que trabaja cerca y busca un buen café y algo de comer",
+  allowedExpressions: [],
+  bannedExpressions: [],
+  keyTopics: ["café de temporada", "desayunos"],
+  preferredCtas: ["Te esperamos"],
+  referenceExamples: [],
+} satisfies Partial<BrandVoiceForPrompt>;
+
+const voiceCasualMerida: BrandVoiceForPrompt = {
+  ...cafeteria,
+  marketRegion: "Mérida, Yucatán",
+  register: "informal",
+  formality: 35,
+  useAnglicisms: false,
+};
+
+const voiceNeutroCdmx: BrandVoiceForPrompt = {
+  ...cafeteria,
+  marketRegion: "Ciudad de México",
+  register: "neutro_profesional",
+  formality: 55,
+  useAnglicisms: true,
+};
+
+const voiceRegioProfesional: BrandVoiceForPrompt = {
+  ...cafeteria,
+  marketRegion: "Monterrey, Nuevo León",
+  register: "profesional",
+  formality: 75,
+  useAnglicisms: true,
+};
+
 // Usadas por AI_SUITE_VOICES (suite:cultural) — DoD 1.
 export const CULTURAL_SUITE_VOICES: VoiceFixture[] = [
   { id: "barrio-merida", label: "Taquería de barrio en Mérida", voice: voiceBarrioMerida },
@@ -72,6 +112,13 @@ export const CULTURAL_SUITE_VOICES: VoiceFixture[] = [
     id: "fintech-corporativa",
     label: "Consultora fintech en LinkedIn",
     voice: voiceFintechCorporativa,
+  },
+  { id: "casual-merida", label: "Cafetería casual en Mérida", voice: voiceCasualMerida },
+  { id: "neutro-cdmx", label: "Cafetería neutra en CDMX", voice: voiceNeutroCdmx },
+  {
+    id: "regio-profesional",
+    label: "Cafetería profesional en Monterrey",
+    voice: voiceRegioProfesional,
   },
 ];
 

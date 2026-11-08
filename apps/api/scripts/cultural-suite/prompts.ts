@@ -126,6 +126,14 @@ export const culturalPrompts: CulturalPrompt[] = [
     expectsTool: true,
   },
   {
+    // F12.5: sin región ni tono en el pedido, para que lo regional y el
+    // registro salgan SOLO de la voz (correr con las voces de cafetería de
+    // voices.ts). Trae los datos del negocio para que no tenga que preguntar.
+    id: "tool-cafe-temporada",
+    text: "Hazme un post para Instagram anunciando nuestro café de temporada en 'La Ceiba Café': lleva canela y piloncillo, cuesta 65 pesos y solo hay este mes.",
+    expectsTool: true,
+  },
+  {
     id: "tool-guion-cafe",
     text: "Quiero un guion para TikTok mostrando cómo preparo el café de olla en mi cafetería 'La Canela', algo cortito y estilo ASMR que enganche, 20-30 segundos.",
     expectsTool: true,

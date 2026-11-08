@@ -171,6 +171,18 @@ el pin mostrando su posición exacta pero el usuario razonando en
 zonas, no en números — mismo principio de "objetos contables" que el
 resto del producto aplica, adaptado a un slider.
 
+**Qué le llega al modelo (F12.5).** Hasta F12 le llegaba solo la etiqueta
+("Registro: casual.") y cada modelo la entendía a su modo. Ahora cada zona
+trae una guía de qué significa (largo de frase, cercanía, coloquialismos,
+tecnicismos), la misma tabla que pinta el slider, así que la zona que ve el
+usuario y la que recibe el modelo no pueden discrepar. La región funciona
+igual: el modelo sabe en qué parte de México está su público y usa
+referencias locales cuando aportan, pero los regionalismos salen solo de los
+ejemplos del creator o de sus modismos permitidos. Un yucateco que no escribe
+"uay" no debe recibir posts con "uay": eso es caricatura, no voz. Al creator
+el chat le habla siempre neutro-profesional; el registro es para lo que
+escribe por él. El detalle técnico vive en el addendum F12.5 de ADR-006.
+
 ---
 
 ## 5. El preview: botón manual, no automático
