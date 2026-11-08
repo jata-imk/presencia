@@ -11,13 +11,16 @@ import {
 } from "@nestjs/common";
 import {
   createBrandVoiceBodySchema,
+  destilarVozBodySchema,
   updateBrandVoiceBodySchema,
   type BrandVoiceDto,
   type BrandVoiceExampleDto,
+  type VozDestiladaDto,
 } from "@presencia/shared";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { SessionUser } from "../auth/auth.js";
 import { BrandVoiceService } from "./brand-voice.service.js";
+import { DestilarVozService } from "./destilar.service.js";
 import { EjemploDeVozService } from "./ejemplo.service.js";
 
 @Controller("brand-voice")
@@ -25,6 +28,7 @@ export class BrandVoiceController {
   constructor(
     @Inject(BrandVoiceService) private readonly service: BrandVoiceService,
     @Inject(EjemploDeVozService) private readonly ejemplos: EjemploDeVozService,
+    @Inject(DestilarVozService) private readonly destilados: DestilarVozService,
   ) {}
 
   @Get()
@@ -54,11 +58,23 @@ export class BrandVoiceController {
   }
 
   // "Ver ejemplo de tu voz" (F9.7). POST porque llama al modelo y cobra: un
-  // GET que cobra lo puede disparar un prefetch. 200 y no 201: no crea nada,
-  // el ejemplo no se guarda.
+  // GET que cobra lo puede disparar un prefetch. 200 y no 201: no crea un
+  // recurso nuevo (desde F12.5 reemplaza el último ejemplo de la voz).
   @Post("ejemplo")
   @HttpCode(200)
   ejemplo(@CurrentUser() user: SessionUser): Promise<BrandVoiceExampleDto> {
     return this.ejemplos.generar(user.id);
+  }
+
+  // F12.5: destilar la voz desde 1-3 publicaciones. Devuelve una propuesta y
+  // no guarda nada: la guarda el creator con el PATCH, después de verla.
+  @Post("destilar")
+  @HttpCode(200)
+  destilar(@CurrentUser() user: SessionUser, @Body() body: unknown): Promise<VozDestiladaDto> {
+    const parsed = destilarVozBodySchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new BadRequestException("Pega de 1 a 3 publicaciones tuyas de al menos 20 caracteres.");
+    }
+    return this.destilados.destilar(user.id, parsed.data);
   }
 }

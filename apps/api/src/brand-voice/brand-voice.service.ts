@@ -1,6 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   asVerticalId,
+  brandVoiceExampleSchema,
   formalityToRegister,
   imageStyleSchema,
   type ImageStyle,
@@ -9,6 +10,7 @@ import {
   normalizeExpression,
   REGISTER_FORMALITY_ANCHORS,
   type BrandVoiceDto,
+  type BrandVoiceExampleDto,
   type BrandVoiceForPrompt,
   type BrandVoiceReferenceExample,
   type CreateBrandVoiceBody,
@@ -72,7 +74,14 @@ export class BrandVoiceService {
       const existing = await this.repo.findDefault(tx);
       if (!existing) throw new NotFoundException("Aún no configuras tu voz de marca.");
 
-      const patch = this.reconcileFormality(body);
+      // Copia: reconcileFormality puede devolver el body tal cual, y no se
+      // muta lo que mandó el controller.
+      const patch: UpdateBrandVoicePatch = { ...this.reconcileFormality(body) };
+      // Vaciar el campo es borrarlos: "" y null se guardan igual.
+      if (patch.businessFacts === "") patch.businessFacts = null;
+      // Un rasgo repetido ("Frases cortas" y "frases cortas") ocuparía dos de
+      // los 8 lugares y viajaría dos veces en cada prompt.
+      if (patch.styleNotes) patch.styleNotes = uniqueExpressions(patch.styleNotes);
       const allowedExpressions = patch.allowedExpressions ?? existing.allowedExpressions;
       const bannedExpressions = patch.bannedExpressions ?? existing.bannedExpressions;
       const resolved = this.resolveConflicts(allowedExpressions, bannedExpressions);
@@ -136,6 +145,7 @@ export class BrandVoiceService {
       // Validado contra el catálogo, como la vertical: uno retirado viaja
       // como "no eligió" y la pantalla muestra el de siempre.
       imageStyle: asImageStyle(row.imageStyle),
+      lastVoiceExample: asVoiceExample(row.lastVoiceExample),
       ...this.toPromptShape(row),
     };
   }
@@ -154,8 +164,28 @@ export class BrandVoiceService {
       keyTopics: row.keyTopics,
       preferredCtas: row.preferredCtas,
       referenceExamples: row.referenceExamples as BrandVoiceReferenceExample[],
+      styleNotes: row.styleNotes,
+      businessFacts: row.businessFacts,
     };
   }
+}
+
+/** Sin repetidos por `normalizeExpression` (mayúsculas, acentos, espacios); gana el primero. */
+function uniqueExpressions(values: string[]): string[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = normalizeExpression(value);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// jsonb sin tipo en la base: si la forma no es la esperada, se trata como
+// "no hay ejemplo" en vez de mandarle basura a la pantalla.
+function asVoiceExample(value: unknown): BrandVoiceExampleDto | null {
+  const parsed = brandVoiceExampleSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 function asImageStyle(value: string | null): ImageStyle | null {

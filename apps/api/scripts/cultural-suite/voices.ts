@@ -28,6 +28,8 @@ const voiceBarrioMerida: BrandVoiceForPrompt = {
   keyTopics: ["promos del día", "antojo", "ambiente de barrio"],
   preferredCtas: ["Cae por acá", "Mándanos DM"],
   referenceExamples: [],
+  styleNotes: [],
+  businessFacts: null,
 };
 
 const voiceFintechCorporativa: BrandVoiceForPrompt = {
@@ -43,6 +45,8 @@ const voiceFintechCorporativa: BrandVoiceForPrompt = {
   keyTopics: ["compliance", "escalabilidad", "reducción de costos operativos"],
   preferredCtas: ["Agenda una llamada", "Escríbenos por LinkedIn"],
   referenceExamples: [],
+  styleNotes: [],
+  businessFacts: null,
 };
 
 // DoD 2 (20 generaciones, 0 apariciones): "increíble" es de las palabras
@@ -63,6 +67,8 @@ const voiceModismoProhibido: BrandVoiceForPrompt = {
   keyTopics: ["café de especialidad", "ambiente acogedor"],
   preferredCtas: ["Visítanos"],
   referenceExamples: [],
+  styleNotes: [],
+  businessFacts: null,
 };
 
 // F12.5: el mismo negocio (una cafetería) en tres regiones y tres registros,
@@ -79,6 +85,8 @@ const cafeteria = {
   keyTopics: ["café de temporada", "desayunos"],
   preferredCtas: ["Te esperamos"],
   referenceExamples: [],
+  styleNotes: [],
+  businessFacts: null,
 } satisfies Partial<BrandVoiceForPrompt>;
 
 const voiceCasualMerida: BrandVoiceForPrompt = {

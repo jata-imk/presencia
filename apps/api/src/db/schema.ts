@@ -152,6 +152,10 @@ export const creditReason = pgEnum("credit_reason", [
   // iniciado (`flat.audio_transcription` × minutos, un solo asiento): el
   // proveedor cobra por segundo de audio, no por token.
   "audio_transcription",
+  // F12.5: destilar la voz desde las publicaciones del creator (onboarding y
+  // "Revisar mis ediciones"). Por tokens, tier ADAPT: cuesta lo que ocupa leer
+  // las muestras y escribir los rasgos.
+  "voice_distill",
   "refund",
   "adjustment",
 ]);
@@ -309,6 +313,22 @@ export const brandVoices = pgTable(
     // shared). `text` y no enum de Postgres, como `vertical`: el catálogo se
     // mueve, y un estilo retirado se lee como "no eligió". Null = Fotográfico.
     imageStyle: text("image_style"),
+    // F12.5: «Así escribes». Rasgos legibles de cómo escribe el creator
+    // ("Frases cortas", "Casi sin emojis", "Nunca: «¡Hola, familia!»"). Los
+    // escribe la destilación de sus publicaciones (siempre confirmada por él),
+    // él a mano, o una propuesta de "Aprender de mis ediciones" que aceptó. Es
+    // el campo que simplifica la voz: lo que no cabe en los campos tipados
+    // vive aquí en vez de pedir un campo más. Topes en Zod (≤8 × 140).
+    styleNotes: text("style_notes").array().notNull().default([]),
+    // F12.5: «Datos fijos de tu marca» — horario, dirección, WhatsApp, link de
+    // reservas, precios base. Lo que el chat nunca debe inventar. Entra al
+    // prompt como DATO delimitado. Vive en la voz y no en el usuario: cuando
+    // una carpeta tenga su propia voz (fase "Carpetas con contexto"), cada
+    // cliente tendrá sus datos.
+    businessFacts: text("business_facts"),
+    // F12.5: el último "Ver ejemplo de tu voz", `{ text, generatedAt }`. Solo
+    // el último, sin historial: no es un borrador ni va a Biblioteca.
+    lastVoiceExample: jsonb("last_voice_example"),
     extras: jsonb("extras").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

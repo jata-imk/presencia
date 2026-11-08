@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { BrandVoiceForPrompt } from "@presencia/shared";
-import { aiUsageEvents, creditLedger, users } from "../db/schema.js";
+import { aiUsageEvents, brandVoices, creditLedger, users } from "../db/schema.js";
 // Imports solo de tipo: los módulos reales se cargan en beforeAll (env.ts
 // valida el entorno al importar), mismo patrón que trends/telemetria.spec.ts.
 import type { DbService as DbServiceType } from "../db/db.service.js";
@@ -26,6 +26,8 @@ const VOZ: BrandVoiceForPrompt = {
   keyTopics: ["pasteles de temporada"],
   preferredCtas: [],
   referenceExamples: [],
+  styleNotes: [],
+  businessFacts: null,
 };
 
 const USAGE = {
@@ -81,6 +83,7 @@ describe("EjemploDeVozService", () => {
     const { CreditsRepository } = await import("../credits/credits.repository.js");
     const { CreditsService } = await import("../credits/credits.service.js");
     const { EjemploDeVozService } = await import("./ejemplo.service.js");
+    const { BrandVoiceRepository } = await import("./brand-voice.repository.js");
     dbService = new DbService();
     const aiUsage = new AiUsageService(dbService, new AiUsageRepository());
     const credits = new CreditsService(dbService, new CreditsRepository());
@@ -95,7 +98,14 @@ describe("EjemploDeVozService", () => {
         }),
       };
       const voces = { getDefaultForPrompt: () => Promise.resolve(voz) };
-      return new EjemploDeVozService(dbService, ai as never, aiUsage, credits, voces as never);
+      return new EjemploDeVozService(
+        dbService,
+        ai as never,
+        aiUsage,
+        credits,
+        voces as never,
+        new BrandVoiceRepository(),
+      );
     };
   }, 30_000);
 
@@ -107,7 +117,23 @@ describe("EjemploDeVozService", () => {
     if (!user) throw new Error("No se pudo crear el usuario de prueba");
     usuarios.push(user.id);
     userId = user.id;
+    // F12.5: el ejemplo se guarda en la voz, así que tiene que existir la fila.
+    await dbService.runWithTenant(userId, (tx) =>
+      tx
+        .insert(brandVoices)
+        .values({ userId, name: "Mi voz", isDefault: true, niche: ["repostería"] }),
+    );
   });
+
+  function ultimoEjemplo() {
+    return dbService.runWithTenant(userId, async (tx) => {
+      const [fila] = await tx
+        .select({ ejemplo: brandVoices.lastVoiceExample })
+        .from(brandVoices)
+        .where(eq(brandVoices.isDefault, true));
+      return fila?.ejemplo ?? null;
+    });
+  }
 
   afterAll(async () => {
     if (usuarios.length > 0) await dbService.db.delete(users).where(inArray(users.id, usuarios));
@@ -118,7 +144,9 @@ describe("EjemploDeVozService", () => {
     const resultado = await crear("  Pasteles de temporada, ¿ya probaste el de mango?  ").generar(
       userId,
     );
-    expect(resultado).toEqual({ text: "Pasteles de temporada, ¿ya probaste el de mango?" });
+    expect(resultado).toMatchObject({ text: "Pasteles de temporada, ¿ya probaste el de mango?" });
+    // F12.5: se guarda como el último ejemplo, el mismo que se devolvió.
+    expect(await ultimoEjemplo()).toEqual(resultado);
 
     const [cobro, ...otros] = await movimientos("voice_preview");
     expect(otros).toHaveLength(0);
@@ -134,6 +162,7 @@ describe("EjemploDeVozService", () => {
     await expect(crear("   ").generar(userId)).rejects.toThrow("No pudimos escribir el ejemplo");
     expect(await movimientos("voice_preview")).toHaveLength(0);
     expect(await usos()).toHaveLength(1);
+    expect(await ultimoEjemplo()).toBeNull();
   });
 
   it("sin voz de marca no llama al modelo", { timeout: 15_000 }, async () => {

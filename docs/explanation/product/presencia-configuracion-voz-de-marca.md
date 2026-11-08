@@ -239,6 +239,11 @@ la decisión de diseño que sigue vigente, no el número.
 - **Se cobra por tokens, como un turno de chat**, sin deduplicar: es
   efímero y cada click es una llamada real. Con la cuota agotada sale el
   mismo modal de cuota que en el chat y en Ritmo.
+- **F12.5: se guarda el último, sin historial** (backlog "Guardar el último
+  ejemplo de voz"). Sigue sin ser un borrador ni ir a Biblioteca, pero ya no
+  se pierde al cerrar el modal: la pantalla lo muestra al volver. La API lo
+  guarda desde F12.5 PR3; la pantalla lo pinta con la Voz de marca
+  reorganizada (PR5), que también cambia el aviso "no se guarda".
 
 ## 6. Estados especiales
 
@@ -321,6 +326,13 @@ pueda anticipar con opciones fijas.
   infiera la voz automáticamente en vez de que el usuario la
   configure a mano). Interesante pero es una apuesta de producto
   distinta y arriesgada (¿y si infiere mal?); no en esta sesión.
+  _F12.5 lo reconcilia sin contradecirlo:_ destilar la voz parte de
+  publicaciones que el **creator pega a propósito** (onboarding) y
+  devuelve una **propuesta** que él ve, corrige y confirma antes de que se
+  guarde nada. "¿Y si infiere mal?" se responde con "él lo ve y lo
+  arregla". Lo que sigue fuera es lo automático y silencioso: leer su
+  historial y cambiar la voz sin preguntar. La voz viva (aprender de sus
+  ediciones) sigue la misma regla: propone, nunca cambia sola.
 - **Slider de formalidad distinto por red social** (ej. más formal en
   LinkedIn, más relajado en TikTok). Complejidad real, V2.
 - **Preview de los 3 arquetipos simultáneos.** V1 muestra uno

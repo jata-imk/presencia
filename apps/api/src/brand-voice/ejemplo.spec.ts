@@ -18,6 +18,8 @@ const VOZ: BrandVoiceForPrompt = {
   keyTopics: ["pasteles de temporada"],
   preferredCtas: ["Pide el tuyo por DM"],
   referenceExamples: [],
+  styleNotes: [],
+  businessFacts: null,
 };
 
 describe("temaDeEjemplo", () => {

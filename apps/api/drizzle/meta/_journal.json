@@ -463,6 +463,13 @@
       "when": 1794082414514,
       "tag": "0065_alertas_cards_y_saldo",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1794117257142,
+      "tag": "0066_voz_destilada",
+      "breakpoints": true
     }
   ]
 }
