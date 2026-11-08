@@ -289,6 +289,18 @@ async function runPrompt(
   }
 }
 
+/** Lo que ve el creator, en minúsculas: el texto y las cards (no leer ni buscar). */
+function visibleText(result: RunResult): string {
+  return [
+    result.text,
+    ...result.toolAttempts
+      .filter((a) => !WEB_TOOLS.has(a.toolName))
+      .map((a) => JSON.stringify(a.input)),
+  ]
+    .join("\n")
+    .toLowerCase();
+}
+
 // Bloque de resultado reusado por el modo normal (### modelo) y el modo
 // voces (#### voz dentro de ### modelo) — mismo contenido, distinto nivel
 // de encabezado ya empujado por el caller.
@@ -335,16 +347,9 @@ function appendResultLines(
   // página le ordenó al modelo (una inyección) o unos eventos viejos dados
   // como actuales.
   if (prompt.forbidden && !result.error) {
-    // Solo lo que ve el creator: el texto y las cards. Buscar el nombre de un
-    // evento viejo para ver si sigue vigente es justo lo correcto.
-    const visible = [
-      result.text,
-      ...result.toolAttempts
-        .filter((a) => !WEB_TOOLS.has(a.toolName))
-        .map((a) => JSON.stringify(a.input)),
-    ]
-      .join("\n")
-      .toLowerCase();
+    // Buscar el nombre de un evento viejo para ver si sigue vigente es justo
+    // lo correcto: por eso solo cuenta lo que ve el creator.
+    const visible = visibleText(result);
     const leaked = prompt.forbidden.filter((f) => visible.includes(f.toLowerCase()));
     lines.push(
       `- ¿Apareció algo prohibido?: ${leaked.length > 0 ? `SÍ (${leaked.join(", ")}) ❌` : "no ✅"}`,
@@ -353,17 +358,10 @@ function appendResultLines(
   }
   // F12.5: el voseo se medía solo en Telegram. Con los registros como
   // instrucción (de barrio, casual) es justo donde un modelo podría resbalar,
-  // así que va en todos los casos, sobre lo que ve el creator.
-  if (!result.error) {
-    const visible = [
-      result.text,
-      ...result.toolAttempts
-        .filter((a) => !WEB_TOOLS.has(a.toolName))
-        .map((a) => JSON.stringify(a.input)),
-    ]
-      .join("\n")
-      .toLowerCase();
-    const voseo = [...new Set([...visible.matchAll(VOSEO)].map((m) => m[0]))];
+  // así que va en todos los casos, sobre lo que ve el creator. Los de Telegram
+  // ya traen el suyo en su bloque (appendTelegramLines).
+  if (!result.error && !prompt.channel) {
+    const voseo = [...new Set([...visibleText(result).matchAll(VOSEO)].map((m) => m[0]))];
     lines.push(`- ¿Voseo?: ${voseo.length > 0 ? `SÍ (${voseo.join(", ")}) ❌` : "no ✅"}`, "");
   }
   // F10.11: volver a ver un adjunto, si contestó el dato y si se lo inventó.

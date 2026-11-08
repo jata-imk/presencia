@@ -6,6 +6,7 @@ import {
   channelInstruction,
   regionInstruction,
 } from "./system-prompt.js";
+import { VOSEO } from "../../scripts/cultural-suite/telegram-prompts.js";
 
 // system-prompt.ts no depende de Nest/DB (comentario en el archivo) — a
 // diferencia de brand-voice.service.spec.ts, este test importa directo sin
@@ -183,11 +184,18 @@ describe("buildSystemPrompt — el registro es instrucción, no etiqueta (F12.5)
     expect(prompt.indexOf("Cómo aplicar su registro")).toBeGreaterThan(cierre);
   });
 
-  // Sobre la guía sola: el prompt base nombra "vos" y "querés" para prohibirlos.
+  // Sobre la guía sola (el prompt base nombra "vos" y "querés" para
+  // prohibirlos), con el mismo regex que la suite cultural.
   it("ninguna guía vosea", () => {
     for (const zone of FORMALITY_ZONES) {
-      expect(zone.guidance).not.toMatch(/(?<!\p{L})(vos|querés|podés|tenés|sabés)(?!\p{L})/iu);
+      expect([...zone.guidance.toLowerCase().matchAll(VOSEO)]).toEqual([]);
     }
+  });
+
+  it("los modismos del creator mandan sobre la guía del registro", () => {
+    expect(buildSystemPrompt(makeVoice({ formality: 75 }))).toContain(
+      "Sus modismos permitidos y prohibidos mandan sobre esta guía.",
+    );
   });
 });
 

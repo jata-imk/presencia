@@ -1,9 +1,9 @@
 import {
   formalityZoneGuidance,
   formalityZoneLabel,
+  macroRegionPhrase,
   resolveMacroRegion,
   type BrandVoiceForPrompt,
-  type MacroRegionId,
 } from "@presencia/shared";
 
 // Prompt base (F1); buildSystemPrompt() lo ensambla con la voz de marca del
@@ -151,7 +151,10 @@ export function buildSystemPrompt(voice?: BrandVoiceForPrompt | null): string {
   // nuestro); el texto libre que escribió el usuario ya está arriba como dato.
   lines.push(
     "",
-    `Cómo aplicar su registro en las publicaciones: escribe ${formalityZoneGuidance(voice.formality)}`,
+    // La última frase resuelve el choque con la voz: un registro "profesional"
+    // dice "cero coloquialismos", pero si el creator permitió "neta", es suya.
+    `Cómo aplicar su registro en las publicaciones: escribe ${formalityZoneGuidance(voice.formality)} ` +
+      "Sus modismos permitidos y prohibidos mandan sobre esta guía.",
     regionInstruction(voice.marketCountry, voice.marketRegion),
   );
 
@@ -170,22 +173,13 @@ export function buildSystemPrompt(voice?: BrandVoiceForPrompt | null): string {
   return lines.join("\n");
 }
 
-// Cómo se nombra cada macro-región dentro de una oración ("Su público está en
-// …"). Las etiquetas de MACRO_REGIONS son para mostrarse sueltas en la UI.
-const REGION_PHRASE: Record<Exclude<MacroRegionId, "nacional">, string> = {
-  sureste: "el sureste de México",
-  sur: "el sur de México",
-  cdmx: "la Ciudad de México",
-  centro: "el centro de México",
-  bajio: "el Bajío",
-  occidente: "el occidente de México",
-  norte: "el norte de México",
-  noroeste: "el noroeste de México",
-};
-
+// "Regionalismos" son las palabras propias de una región ("uay", "bomba"), no
+// el coloquial mexicano de uso general que piden los registros informales: sin
+// esa precisión, la guía de "de barrio" y esta regla se contradecían.
 const REGIONALISM_RULE =
-  "Usa regionalismos solo si aparecen en sus ejemplos de referencia o en sus " +
-  "modismos permitidos, y nunca imites un acento ni caricaturices a la región.";
+  "Usa regionalismos (palabras propias de una región) solo si aparecen en sus " +
+  "ejemplos de referencia o en sus modismos permitidos, y nunca imites un acento " +
+  "ni caricaturices a la región.";
 
 /**
  * La región como instrucción (F12.5, Mérida/sureste es el beachhead).
@@ -200,7 +194,7 @@ export function regionInstruction(marketCountry: string, marketRegion: string | 
   const macro = resolveMacroRegion(marketCountry, marketRegion);
   if (macro !== "nacional") {
     return (
-      `Su público está en ${REGION_PHRASE[macro]} (la región que dice «Mercado»). Cuando ` +
+      `Su público está en ${macroRegionPhrase(macro)} (la región que dice «Mercado»). Cuando ` +
       "aporte, usa referencias locales reales de esa región (lugares, clima, fiestas, " +
       `comida); nunca inventes lugares ni datos. ${REGIONALISM_RULE}`
     );
@@ -212,8 +206,8 @@ export function regionInstruction(marketCountry: string, marketRegion: string | 
     );
   }
   return (
-    "Escribe para un público de todo su país: evita regionalismos que no se entiendan " +
-    "fuera de una región, salvo sus modismos permitidos."
+    "Escribe para un público de todo su país: evita regionalismos (palabras propias de " +
+    "una región) que no se entiendan fuera de ella, salvo sus modismos permitidos."
   );
 }
 

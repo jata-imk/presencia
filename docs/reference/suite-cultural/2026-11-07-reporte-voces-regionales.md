@@ -248,4 +248,5 @@ _Pendiente de llenar por Jose tras leer el reporte._
 - **Profesional se separa.** Antes, la regia profesional y la neutra de CDMX salían casi idénticas («Ya llegó… ☕️✨ … Te esperamos»), y la profesional hasta decía «break». Ahora: «Descubre nuestro café de temporada… una combinación de canela y piloncillo», sin emoji ni coloquialismos.
 - **De barrio no cambia**, y está bien: ya traía modismos permitidos y CTAs de barrio.
 - **Casual y neutro siguen cerca.** Son zonas vecinas del slider; la diferencia más fina vendrá de las muestras del creator (F12.5 PR3/PR4).
+- **Ojo:** la corrida es anterior a dos ajustes de la revisión del PR1: «de barrio» dejó de decir «de su ciudad», y la guía cierra con «sus modismos permitidos y prohibidos mandan sobre esta guía». Ninguno cambia los casos de arriba, porque las voces de cafetería no traen modismos.
 - **Región sin caricatura.** La cafetería de Mérida no metió «uay» ni «bomba» sin que el creator los usara. Ninguna de las 8 respuestas voseó.

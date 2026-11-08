@@ -169,9 +169,9 @@ export const FORMALITY_ZONES: ReadonlyArray<{ max: number; label: string; guidan
     max: 24,
     label: "De barrio",
     guidance:
-      "como habla la gente en la calle de su ciudad: frases cortas, mucha cercanía, humor y " +
-      "expresiones coloquiales mexicanas que su público usa de verdad. Nada de tecnicismos ni " +
-      "de frases de folleto. Sin groserías, salvo las que estén en sus modismos permitidos.",
+      "como habla la gente en la calle: frases cortas, mucha cercanía, humor y expresiones " +
+      "coloquiales mexicanas de uso general. Nada de tecnicismos ni de frases de folleto. Sin " +
+      "groserías, salvo las que estén en sus modismos permitidos.",
   },
   {
     max: 44,

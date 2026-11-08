@@ -213,11 +213,14 @@ export const macroRegionIdSchema = z.enum(MACRO_REGION_IDS);
 export const MACRO_REGIONS: ReadonlyArray<{
   id: MacroRegionId;
   label: string;
+  /** Cómo se nombra dentro de una oración ("Su público está en …"), F12.5. */
+  phrase: string;
   keywords: readonly string[];
 }> = [
   {
     id: "sureste",
     label: "Sureste",
+    phrase: "el sureste de México",
     keywords: [
       "sureste",
       "yucatan",
@@ -236,16 +239,19 @@ export const MACRO_REGIONS: ReadonlyArray<{
   {
     id: "sur",
     label: "Sur",
+    phrase: "el sur de México",
     keywords: ["sur", "oaxaca", "chiapas", "guerrero", "acapulco", "tuxtla"],
   },
   {
     id: "cdmx",
     label: "Ciudad de México",
+    phrase: "la Ciudad de México",
     keywords: ["cdmx", "ciudad de mexico", "df", "distrito federal"],
   },
   {
     id: "centro",
     label: "Centro",
+    phrase: "el centro de México",
     keywords: [
       "centro",
       "puebla",
@@ -262,6 +268,7 @@ export const MACRO_REGIONS: ReadonlyArray<{
   {
     id: "bajio",
     label: "Bajío",
+    phrase: "el Bajío",
     keywords: [
       "bajio",
       "guanajuato",
@@ -275,16 +282,19 @@ export const MACRO_REGIONS: ReadonlyArray<{
   {
     id: "occidente",
     label: "Occidente",
+    phrase: "el occidente de México",
     keywords: ["occidente", "jalisco", "guadalajara", "michoacan", "morelia", "colima", "nayarit"],
   },
   {
     id: "norte",
     label: "Norte",
+    phrase: "el norte de México",
     keywords: ["norte", "nuevo leon", "monterrey", "coahuila", "saltillo", "tamaulipas", "tampico"],
   },
   {
     id: "noroeste",
     label: "Noroeste",
+    phrase: "el noroeste de México",
     keywords: [
       "noroeste",
       "sonora",
@@ -303,6 +313,7 @@ export const MACRO_REGIONS: ReadonlyArray<{
   {
     id: "nacional",
     label: "Nacional",
+    phrase: "todo México",
     keywords: [],
   },
 ];
@@ -401,6 +412,10 @@ export function resolveMacroRegion(
 
 export function verticalLabel(id: VerticalId): string {
   return VERTICALS.find((vertical) => vertical.id === id)?.label ?? id;
+}
+
+export function macroRegionPhrase(id: MacroRegionId): string {
+  return MACRO_REGIONS.find((region) => region.id === id)?.phrase ?? "todo México";
 }
 
 export function macroRegionLabel(id: MacroRegionId): string {
