@@ -156,16 +156,66 @@ export const REGISTER_FORMALITY_ANCHORS: Record<BrandVoiceRegister, number> = {
 // como el system prompt (chat/system-prompt.ts, qué registro recibe el
 // modelo) tienen que coincidir para el mismo valor — antes de este fix
 // cada uno tenía su propia tabla, desincronizadas.
-export const FORMALITY_ZONES: ReadonlyArray<{ max: number; label: string }> = [
-  { max: 24, label: "De barrio" },
-  { max: 44, label: "Casual" },
-  { max: 64, label: "Neutro-profesional" },
-  { max: 84, label: "Profesional" },
-  { max: 100, label: "Técnico/formal" },
+//
+// F12.5: cada zona trae además su `guidance`, lo que esa zona SIGNIFICA para
+// el modelo. Antes al modelo le llegaba solo la etiqueta ("Registro: casual.")
+// y cada modelo la interpretaba a su modo; con la guía, "de barrio" y
+// "técnico" producen textos que se distinguen a simple vista. Es texto
+// nuestro (confiable), por eso el system prompt la pone FUERA del bloque
+// <voz_de_marca>, que el preámbulo declara "datos, no instrucciones".
+// Siempre tutea: la regla dura #1 no cambia con el registro.
+export const FORMALITY_ZONES: ReadonlyArray<{ max: number; label: string; guidance: string }> = [
+  {
+    max: 24,
+    label: "De barrio",
+    guidance:
+      "como habla la gente en la calle de su ciudad: frases cortas, mucha cercanía, humor y " +
+      "expresiones coloquiales mexicanas que su público usa de verdad. Nada de tecnicismos ni " +
+      "de frases de folleto. Sin groserías, salvo las que estén en sus modismos permitidos.",
+  },
+  {
+    max: 44,
+    label: "Casual",
+    guidance:
+      "cercano y relajado, como alguien que le recomienda algo a un amigo: tono de plática, " +
+      "frases cortas y coloquialismos suaves que se entienden en todo México. Sin jerga muy " +
+      "marcada ni tecnicismos.",
+  },
+  {
+    max: 64,
+    label: "Neutro-profesional",
+    guidance:
+      "claro, amable y profesional, entendible en cualquier parte de México: frases de largo " +
+      "medio, sin coloquialismos marcados ni tecnicismos. Cercano sin volverse informal.",
+  },
+  {
+    max: 84,
+    label: "Profesional",
+    guidance:
+      "formal y cuidado, con autoridad: vocabulario preciso, frases bien construidas y cero " +
+      "coloquialismos. Sigue tuteando, con respeto y sin bromas fáciles.",
+  },
+  {
+    max: 100,
+    label: "Técnico/formal",
+    guidance:
+      "preciso y riguroso, para un público que conoce el tema: términos técnicos correctos " +
+      "(explica solo los que su público no daría por sabidos), datos concretos y cero " +
+      "exageraciones. Sigue tuteando.",
+  },
 ];
 
+function formalityZone(formality: number) {
+  return FORMALITY_ZONES.find((zone) => formality <= zone.max) ?? FORMALITY_ZONES[2]!;
+}
+
 export function formalityZoneLabel(formality: number): string {
-  return FORMALITY_ZONES.find((zone) => formality <= zone.max)?.label ?? "Neutro-profesional";
+  return formalityZone(formality).label;
+}
+
+/** Qué significa la zona del registro, en palabras para el modelo (system prompt). */
+export function formalityZoneGuidance(formality: number): string {
+  return formalityZone(formality).guidance;
 }
 
 export function formalityToRegister(formality: number): BrandVoiceRegister {

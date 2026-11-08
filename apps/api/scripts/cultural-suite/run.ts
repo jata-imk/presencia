@@ -351,6 +351,21 @@ function appendResultLines(
       "",
     );
   }
+  // F12.5: el voseo se medía solo en Telegram. Con los registros como
+  // instrucción (de barrio, casual) es justo donde un modelo podría resbalar,
+  // así que va en todos los casos, sobre lo que ve el creator.
+  if (!result.error) {
+    const visible = [
+      result.text,
+      ...result.toolAttempts
+        .filter((a) => !WEB_TOOLS.has(a.toolName))
+        .map((a) => JSON.stringify(a.input)),
+    ]
+      .join("\n")
+      .toLowerCase();
+    const voseo = [...new Set([...visible.matchAll(VOSEO)].map((m) => m[0]))];
+    lines.push(`- ¿Voseo?: ${voseo.length > 0 ? `SÍ (${voseo.join(", ")}) ❌` : "no ✅"}`, "");
+  }
   // F10.11: volver a ver un adjunto, si contestó el dato y si se lo inventó.
   if (!result.error && verdict) {
     if (prompt.expectsReread !== undefined) {

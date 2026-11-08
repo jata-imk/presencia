@@ -1,4 +1,10 @@
-import { formalityZoneLabel, type BrandVoiceForPrompt } from "@presencia/shared";
+import {
+  formalityZoneGuidance,
+  formalityZoneLabel,
+  resolveMacroRegion,
+  type BrandVoiceForPrompt,
+  type MacroRegionId,
+} from "@presencia/shared";
 
 // Prompt base (F1); buildSystemPrompt() lo ensambla con la voz de marca del
 // usuario (F4). Vive en su propio módulo para que la suite cultural
@@ -7,8 +13,14 @@ import { formalityZoneLabel, type BrandVoiceForPrompt } from "@presencia/shared"
 // @presencia/shared, nunca la fila de Drizzle.
 export const BASE_SYSTEM_PROMPT =
   "Eres el asistente de contenido de Presencia, un SaaS para creators mexicanos. " +
-  "Respondes en español mexicano neutro-profesional. Tuteas siempre; nunca usas " +
-  "'vos' ni conjugaciones como 'querés'. " +
+  // F12.5: el chat y las publicaciones son dos registros distintos. Al creator
+  // le hablas neutro-profesional; lo que escribes PARA él lleva el registro de
+  // su Voz de marca (de barrio, técnico…). Antes una sola frase fijaba
+  // "neutro-profesional" para todo y competía con el registro de la voz.
+  "En el chat le hablas al creator en español mexicano neutro-profesional; las " +
+  "publicaciones que escribes para él siguen el registro de su Voz de marca " +
+  "(neutro-profesional si no tiene). Tuteas siempre, en el chat y en las " +
+  "publicaciones; nunca usas 'vos' ni conjugaciones como 'querés'. " +
   "Cuando el usuario te pida explícitamente un post, borrador o guion listo " +
   "para publicar en una red concreta (Instagram, Facebook, TikTok, YouTube, " +
   "LinkedIn, Threads o X), usa la herramienta correspondiente a esa red en vez " +
@@ -133,6 +145,16 @@ export function buildSystemPrompt(voice?: BrandVoiceForPrompt | null): string {
 
   lines.push("</voz_de_marca>");
 
+  // F12.5: lo que significan el registro y la región, con palabras nuestras.
+  // Va FUERA del bloque porque es instrucción confiable: adentro, el preámbulo
+  // la degradaría a "dato". La región entra solo por su macro-región (texto
+  // nuestro); el texto libre que escribió el usuario ya está arriba como dato.
+  lines.push(
+    "",
+    `Cómo aplicar su registro en las publicaciones: escribe ${formalityZoneGuidance(voice.formality)}`,
+    regionInstruction(voice.marketCountry, voice.marketRegion),
+  );
+
   // Tope de 2 ya lo aplica Zod al guardar (packages/shared/src/brand-voice.ts);
   // slice defensivo por si ese invariante cambia sin tocar este archivo.
   for (const example of voice.referenceExamples.slice(0, 2)) {
@@ -146,6 +168,53 @@ export function buildSystemPrompt(voice?: BrandVoiceForPrompt | null): string {
   }
 
   return lines.join("\n");
+}
+
+// Cómo se nombra cada macro-región dentro de una oración ("Su público está en
+// …"). Las etiquetas de MACRO_REGIONS son para mostrarse sueltas en la UI.
+const REGION_PHRASE: Record<Exclude<MacroRegionId, "nacional">, string> = {
+  sureste: "el sureste de México",
+  sur: "el sur de México",
+  cdmx: "la Ciudad de México",
+  centro: "el centro de México",
+  bajio: "el Bajío",
+  occidente: "el occidente de México",
+  norte: "el norte de México",
+  noroeste: "el noroeste de México",
+};
+
+const REGIONALISM_RULE =
+  "Usa regionalismos solo si aparecen en sus ejemplos de referencia o en sus " +
+  "modismos permitidos, y nunca imites un acento ni caricaturices a la región.";
+
+/**
+ * La región como instrucción (F12.5, Mérida/sureste es el beachhead).
+ *
+ * El peligro de "escribe como yucateco" es la caricatura: un modelo que mete
+ * "bomba" y "uay" en cada post suena a turista, no a local. Por eso la región
+ * da referencias (lugares, clima, fiestas) y los regionalismos salen solo de
+ * la evidencia del propio creator. Sin región reconocible, la regla se
+ * invierte: nada que no se entienda fuera de una región.
+ */
+export function regionInstruction(marketCountry: string, marketRegion: string | null): string {
+  const macro = resolveMacroRegion(marketCountry, marketRegion);
+  if (macro !== "nacional") {
+    return (
+      `Su público está en ${REGION_PHRASE[macro]} (la región que dice «Mercado»). Cuando ` +
+      "aporte, usa referencias locales reales de esa región (lugares, clima, fiestas, " +
+      `comida); nunca inventes lugares ni datos. ${REGIONALISM_RULE}`
+    );
+  }
+  if (marketRegion) {
+    return (
+      "Su público está en la región que dice «Mercado». Cuando aporte, usa referencias " +
+      `locales reales de ahí; nunca inventes lugares ni datos. ${REGIONALISM_RULE}`
+    );
+  }
+  return (
+    "Escribe para un público de todo su país: evita regionalismos que no se entiendan " +
+    "fuera de una región, salvo sus modismos permitidos."
+  );
 }
 
 // F11 (ADR-030): por Telegram el creator lee en el celular, y ahí no existen
