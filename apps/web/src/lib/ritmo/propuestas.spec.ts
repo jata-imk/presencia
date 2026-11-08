@@ -53,13 +53,27 @@ describe("elegirPropuestas", () => {
 });
 
 describe("promptDeTendencia", () => {
-  it("lleva el tema, su fuente, el resumen y pregunta en vez de pedir que la cree", () => {
-    const prompt = promptDeTendencia(item("Rutinas sin apps de pago", "reel", false));
-    expect(prompt).toContain("Rutinas sin apps de pago (visto en xataka.com.mx)");
-    expect(prompt).toContain("Se está moviendo.");
-    expect(prompt).toContain("en TikTok como un reel");
+  it("lleva el tema, el resumen, la fuente con su URL y pregunta en vez de pedir que la cree", () => {
+    const prompt = promptDeTendencia({
+      ...item("Rutinas sin apps de pago", "reel", false),
+      blurb: "Organizan la semana con libreta.",
+    });
+    expect(prompt).toContain("tendencia de mi nicho: Rutinas sin apps de pago.");
+    expect(prompt).toContain("Organizan la semana con libreta.");
+    expect(prompt).toContain("Fuente: xataka.com.mx (https://xataka.com.mx/nota)");
+    expect(prompt).toContain("Aparece en TikTok como un reel");
     expect(prompt).toContain("¿Qué publicación me recomiendas");
     expect(prompt).not.toContain("Quiero crear");
+  });
+
+  // La tarjeta puede decir "Estable" o "Nuevo": el texto no promete impulso.
+  it("no afirma que la tendencia está subiendo", () => {
+    const estable = {
+      ...item("x", "post", false),
+      signal: "stable" as const,
+      blurb: "Sigue igual.",
+    };
+    expect(promptDeTendencia(estable)).not.toMatch(/moviendo|subiendo/i);
   });
 });
 

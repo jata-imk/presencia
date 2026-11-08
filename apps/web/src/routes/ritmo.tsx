@@ -64,14 +64,18 @@ export function RitmoPage() {
   // "Crear en Chat" deja el texto escrito en el composer de un chat nuevo y
   // NO manda nada: Ritmo propone, el Chat crea (presencia-ritmo.md §3). Viaja
   // como `propuesta` y no como `initialPrompt`, que sí dispara la generación.
-  function crearEnChat(item: ConPropuesta) {
-    void navigate("/chats", { state: { propuesta: promptDePropuesta(item) } });
+  // Una sola salida al Chat para los dos botones: es el contrato de estado
+  // que lee chats.tsx, y dos copias se desincronizan.
+  function llevarAlChat(texto: string) {
+    void navigate("/chats", { state: { propuesta: texto } });
   }
-
+  function crearEnChat(item: ConPropuesta) {
+    llevarAlChat(promptDePropuesta(item));
+  }
   // Lo mismo desde una tendencia suelta (F12.5): sin propuesta armada, el
   // texto pregunta qué hacer con el tema en vez de pedir que lo cree.
   function explorarEnChat(item: TrendItem) {
-    void navigate("/chats", { state: { propuesta: promptDeTendencia(item) } });
+    llevarAlChat(promptDeTendencia(item));
   }
 
   // `null` hasta que el resumen diga qué redes hay. La elección del usuario
@@ -302,7 +306,12 @@ export function RitmoPage() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {tendencias.items.map((item) => (
-                <TarjetaTendencia key={item.topic} item={item} onExplorar={explorarEnChat} />
+                // El mismo tema puede venir en dos redes: la llave lleva las dos.
+                <TarjetaTendencia
+                  key={`${item.network}:${item.topic}`}
+                  item={item}
+                  onExplorar={explorarEnChat}
+                />
               ))}
             </div>
           )}

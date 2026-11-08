@@ -279,6 +279,9 @@ export function TarjetaTendencia({
           <button
             type="button"
             onClick={() => onExplorar(item)}
+            // Con varias tarjetas, un lector de pantalla oiría seis botones
+            // iguales: el nombre accesible dice de qué tendencia es cada uno.
+            aria-label={`Explorar en Chat: ${item.topic}`}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 font-display text-[12px] font-semibold text-brand transition-colors hover:bg-secondary"
           >
             <MessageSquare size={13} strokeWidth={1.75} aria-hidden />
