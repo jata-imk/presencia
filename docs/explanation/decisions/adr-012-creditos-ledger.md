@@ -157,3 +157,7 @@ Decisión de Jose:
   - Una cadena caída o un detener antes de la respuesta no cobran.
   - Un cobro que falla se registra en el log y la nota sigue (como `web_search`).
 - **Gate antes de bajar el audio:** que alcance para la nota **más** `minimumTurnUnits`. Sin él se cobraría una nota cuyo turno el chat después rechaza con 402.
+
+## Addendum (2026-11-07, F12.5 PR3) — `voice_distill`: destilar la voz se cobra por tokens
+
+Destilar la voz desde las publicaciones del creator (`POST /api/brand-voice/destilar`, onboarding) se cobra con `charge()` por tokens, tarea `voice_distill` (tier ADAPT, `ADAPT_RATE`) y motivo nuevo `voice_distill` (migración 0066). Es acción del creator: pegó sus publicaciones y siguió. Sin referencia ni deduplicación, como `voice_preview`: devuelve una propuesta que no se guarda en el servidor. Una salida que no pasa el schema se cobra igual (el usage viene en el error), como `card_rewrite`. Desde el mismo PR, `voice_preview` guarda el último ejemplo en la voz (`last_voice_example`) en la misma transacción que su cobro: lo que se cobró es lo que la pantalla muestra al volver.

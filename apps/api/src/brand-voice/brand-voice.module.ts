@@ -4,6 +4,7 @@ import { CreditsModule } from "../credits/credits.module.js";
 import { BrandVoiceController } from "./brand-voice.controller.js";
 import { BrandVoiceRepository } from "./brand-voice.repository.js";
 import { BrandVoiceService } from "./brand-voice.service.js";
+import { DestilarVozService } from "./destilar.service.js";
 import { EjemploDeVozService } from "./ejemplo.service.js";
 
 // AiModule y CreditsModule desde F9.7: "Ver ejemplo de tu voz" llama al
@@ -12,7 +13,7 @@ import { EjemploDeVozService } from "./ejemplo.service.js";
 @Module({
   imports: [AiModule, CreditsModule],
   controllers: [BrandVoiceController],
-  providers: [BrandVoiceService, BrandVoiceRepository, EjemploDeVozService],
+  providers: [BrandVoiceService, BrandVoiceRepository, EjemploDeVozService, DestilarVozService],
   // ChatModule importa esto para leer la voz al ensamblar el system
   // prompt (PR 2, buildSystemPrompt).
   exports: [BrandVoiceService, BrandVoiceRepository],

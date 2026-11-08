@@ -46,6 +46,9 @@ function makeRow(overrides: Partial<BrandVoiceRow> = {}): BrandVoiceRow {
     preferredCtas: [],
     referenceExamples: [],
     imageStyle: null,
+    styleNotes: [],
+    businessFacts: null,
+    lastVoiceExample: null,
     extras: {},
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -297,5 +300,53 @@ describe("Topes de tamaño (Zod) — todo campo viaja en cada generación", () =
     expect(
       updateBrandVoiceBodySchema.safeParse({ referenceExamples: [{ text: "a" }] }).success,
     ).toBe(true);
+  });
+
+  // F12.5: «Así escribes» y los datos fijos también viajan en cada generación.
+  it("topa styleNotes a 8 rasgos de 140 y businessFacts a 1000", () => {
+    const rasgos = (n: number, largo = 10) => Array.from({ length: n }, () => "x".repeat(largo));
+    expect(updateBrandVoiceBodySchema.safeParse({ styleNotes: rasgos(8) }).success).toBe(true);
+    expect(updateBrandVoiceBodySchema.safeParse({ styleNotes: rasgos(9) }).success).toBe(false);
+    expect(updateBrandVoiceBodySchema.safeParse({ styleNotes: rasgos(1, 141) }).success).toBe(
+      false,
+    );
+    expect(updateBrandVoiceBodySchema.safeParse({ businessFacts: "x".repeat(1000) }).success).toBe(
+      true,
+    );
+    expect(updateBrandVoiceBodySchema.safeParse({ businessFacts: "x".repeat(1001) }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe("BrandVoiceService — datos fijos (F12.5)", () => {
+  it('vaciar los datos fijos los borra ("" se guarda como null)', async () => {
+    const updateDefault = vi.fn().mockResolvedValue(makeRow());
+    const repo = makeRepo({
+      findDefault: vi.fn().mockResolvedValue(makeRow({ businessFacts: "viejo" })),
+      updateDefault,
+    });
+    const service = new BrandVoiceService(makeDbService(), repo);
+
+    await service.updateDefault(
+      "user-1",
+      updateBrandVoiceBodySchema.parse({ businessFacts: "  " }),
+    );
+    expect(updateDefault.mock.calls[0]?.[1]).toMatchObject({ businessFacts: null });
+  });
+
+  it("el DTO trae el último ejemplo, y uno mal formado se lee como null", async () => {
+    const ejemplo = { text: "Hola", generatedAt: "2026-11-07T10:00:00.000Z" };
+    const conEjemplo = new BrandVoiceService(
+      makeDbService(),
+      makeRepo({ findDefault: vi.fn().mockResolvedValue(makeRow({ lastVoiceExample: ejemplo })) }),
+    );
+    expect((await conEjemplo.getDefault("user-1")).lastVoiceExample).toEqual(ejemplo);
+
+    const roto = new BrandVoiceService(
+      makeDbService(),
+      makeRepo({ findDefault: vi.fn().mockResolvedValue(makeRow({ lastVoiceExample: { x: 1 } })) }),
+    );
+    expect((await roto.getDefault("user-1")).lastVoiceExample).toBeNull();
   });
 });

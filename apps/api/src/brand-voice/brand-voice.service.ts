@@ -1,6 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   asVerticalId,
+  brandVoiceExampleSchema,
   formalityToRegister,
   imageStyleSchema,
   type ImageStyle,
@@ -9,6 +10,7 @@ import {
   normalizeExpression,
   REGISTER_FORMALITY_ANCHORS,
   type BrandVoiceDto,
+  type BrandVoiceExampleDto,
   type BrandVoiceForPrompt,
   type BrandVoiceReferenceExample,
   type CreateBrandVoiceBody,
@@ -73,6 +75,8 @@ export class BrandVoiceService {
       if (!existing) throw new NotFoundException("Aún no configuras tu voz de marca.");
 
       const patch = this.reconcileFormality(body);
+      // Vaciar el campo es borrarlos: "" y null se guardan igual.
+      if (patch.businessFacts === "") patch.businessFacts = null;
       const allowedExpressions = patch.allowedExpressions ?? existing.allowedExpressions;
       const bannedExpressions = patch.bannedExpressions ?? existing.bannedExpressions;
       const resolved = this.resolveConflicts(allowedExpressions, bannedExpressions);
@@ -136,6 +140,7 @@ export class BrandVoiceService {
       // Validado contra el catálogo, como la vertical: uno retirado viaja
       // como "no eligió" y la pantalla muestra el de siempre.
       imageStyle: asImageStyle(row.imageStyle),
+      lastVoiceExample: asVoiceExample(row.lastVoiceExample),
       ...this.toPromptShape(row),
     };
   }
@@ -154,8 +159,17 @@ export class BrandVoiceService {
       keyTopics: row.keyTopics,
       preferredCtas: row.preferredCtas,
       referenceExamples: row.referenceExamples as BrandVoiceReferenceExample[],
+      styleNotes: row.styleNotes,
+      businessFacts: row.businessFacts,
     };
   }
+}
+
+// jsonb sin tipo en la base: si la forma no es la esperada, se trata como
+// "no hay ejemplo" en vez de mandarle basura a la pantalla.
+function asVoiceExample(value: unknown): BrandVoiceExampleDto | null {
+  const parsed = brandVoiceExampleSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 function asImageStyle(value: string | null): ImageStyle | null {

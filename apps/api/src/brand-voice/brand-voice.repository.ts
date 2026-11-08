@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
 import type {
+  BrandVoiceExampleDto,
   BrandVoiceReferenceExample,
   BrandVoiceRegister,
   ModoEstrategia,
@@ -46,6 +47,11 @@ export type UpdateBrandVoicePatch = Partial<{
   keyTopics: string[];
   preferredCtas: string[];
   referenceExamples: BrandVoiceReferenceExample[];
+  // F12.5: «Así escribes» y «Datos fijos de tu marca».
+  styleNotes: string[];
+  businessFacts: string | null;
+  // F12.5: lo escribe EjemploDeVozService, no el PATCH de la voz.
+  lastVoiceExample: BrandVoiceExampleDto;
   // Configuración › Tendencias (F9.6). Viven en la voz porque son parte de
   // "quién soy y qué me importa", pero las escribe TrendsService, no el PATCH
   // de voz de marca: ver `guardarAjustes`.

@@ -7,6 +7,7 @@ import { buildSystemPrompt } from "../chat/system-prompt.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
+import { BrandVoiceRepository } from "./brand-voice.repository.js";
 import { BrandVoiceService } from "./brand-voice.service.js";
 import { promptDeEjemplo } from "./ejemplo.js";
 
@@ -17,9 +18,10 @@ import { promptDeEjemplo } from "./ejemplo.js";
 //
 // 1. **Manual, nunca automático.** Regenerar en cada tecla sería cobrar por
 //    configurar, no por crear. Por eso es un POST detrás de un botón.
-// 2. **Efímero.** No se guarda en Biblioteca ni aparece como borrador: es una
-//    muestra, no contenido del usuario. No hay fila, así que el cobro no lleva
-//    referencia y no se deduplica — cada click es una llamada al modelo.
+// 2. **No es contenido.** No se guarda en Biblioteca ni aparece como
+//    borrador: es una muestra. Desde F12.5 se guarda el ÚLTIMO en la voz
+//    (`last_voice_example`, sin historial) para mostrarlo al volver; el cobro
+//    sigue sin referencia y sin deduplicar — cada click es una llamada.
 // 3. **Se cobra, y sin anunciar un número.** Por tokens, como un turno de chat
 //    (mismo modelo, misma tarifa: MODEL_BY_TASK y RATE_CARDS). El costo se ve
 //    en la cuota, nunca en el botón (addendum ADR-012).
@@ -34,6 +36,7 @@ export class EjemploDeVozService {
     @Inject(AiUsageService) private readonly aiUsage: AiUsageService,
     @Inject(CreditsService) private readonly credits: CreditsService,
     @Inject(BrandVoiceService) private readonly voices: BrandVoiceService,
+    @Inject(BrandVoiceRepository) private readonly repo: BrandVoiceRepository,
   ) {}
 
   async generar(userId: string): Promise<BrandVoiceExampleDto> {
@@ -79,15 +82,20 @@ export class EjemploDeVozService {
     // el texto (modelo-de-datos.md: "o se cobra y se produce, o ninguna de
     // las dos"; acá producir es entregarlo). Puede sobregirar como cualquier
     // `charge()`: el gate de arriba es lo que evita que sea frecuente.
-    await this.dbService.runWithTenant(userId, (tx) =>
-      this.credits.charge(tx, {
+    //
+    // F12.5: en la misma transacción se guarda como el último ejemplo (sin
+    // historial): lo que se cobró es lo que la pantalla muestra al volver.
+    const ejemplo: BrandVoiceExampleDto = { text, generatedAt: new Date().toISOString() };
+    await this.dbService.runWithTenant(userId, async (tx) => {
+      await this.credits.charge(tx, {
         userId,
         usage: chargeUsageOf(respuesta.usage),
         taskKind: TASK_KIND,
         reason: "voice_preview",
-      }),
-    );
+      });
+      await this.repo.updateDefault(tx, { lastVoiceExample: ejemplo });
+    });
 
-    return { text };
+    return ejemplo;
   }
 }

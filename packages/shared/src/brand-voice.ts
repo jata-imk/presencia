@@ -250,6 +250,13 @@ const shortTag = z.string().trim().min(1).max(40);
 const ctaTag = z.string().trim().min(1).max(80);
 const tagList = (maxItems: number) => z.array(shortTag).max(maxItems);
 
+// F12.5: «Así escribes» y «Datos fijos de tu marca». Viajan en cada
+// generación, como el resto: los topes son costo por mensaje, no estética.
+export const STYLE_NOTES_MAX = 8;
+export const STYLE_NOTE_MAX_LENGTH = 140;
+export const BUSINESS_FACTS_MAX_LENGTH = 1000;
+const styleNote = z.string().trim().min(1).max(STYLE_NOTE_MAX_LENGTH);
+
 export const createBrandVoiceBodySchema = z.object({
   // Los 3 campos obligatorios del onboarding paso "Voz" (doc §1): mercado,
   // nicho/audiencia, registro. audience es la profundización que llega
@@ -288,6 +295,10 @@ export const updateBrandVoiceBodySchema = z.object({
   keyTopics: tagList(20).optional(),
   preferredCtas: z.array(ctaTag).max(20).optional(),
   referenceExamples: z.array(brandVoiceReferenceExampleSchema).max(2).optional(),
+  // F12.5: «Así escribes» (reemplazo total de la lista) y «Datos fijos de tu
+  // marca». `null` o "" en businessFacts = borrarlos.
+  styleNotes: z.array(styleNote).max(STYLE_NOTES_MAX).optional(),
+  businessFacts: z.string().trim().max(BUSINESS_FACTS_MAX_LENGTH).nullable().optional(),
   // F10.6: el estilo visual por defecto de sus imágenes. `null` = el de
   // siempre (Fotográfico natural).
   imageStyle: imageStyleSchema.nullable().optional(),
@@ -343,6 +354,12 @@ export interface BrandVoiceDto {
   keyTopics: string[];
   preferredCtas: string[];
   referenceExamples: BrandVoiceReferenceExample[];
+  /** F12.5: «Así escribes», rasgos legibles de cómo escribe. */
+  styleNotes: string[];
+  /** F12.5: «Datos fijos de tu marca», o `null` si no los ha escrito. */
+  businessFacts: string | null;
+  /** F12.5: el último "Ver ejemplo de tu voz", sin historial. */
+  lastVoiceExample: BrandVoiceExampleDto | null;
   /** F10.6: el estilo visual elegido, o `null` si nunca eligió (= Fotográfico natural). */
   imageStyle: ImageStyle | null;
   createdAt: string;
@@ -367,6 +384,9 @@ export interface BrandVoiceDto {
 //
 // `imageStyle` tampoco: es cómo se DIBUJA, y el chat justo deja de decidirlo
 // (F10.6). Lo lee la API de imágenes, no el prompt del chat.
+//
+// `lastVoiceExample` (F12.5) tampoco: es una muestra de la voz, no la voz.
+// Mandarlo al prompt sería que el modelo se imite a sí mismo.
 export type BrandVoiceForPrompt = Omit<
   BrandVoiceDto,
   | "id"
@@ -378,13 +398,55 @@ export type BrandVoiceForPrompt = Omit<
   | "modo"
   | "modoDerivado"
   | "imageStyle"
+  | "lastVoiceExample"
 >;
 
 /**
  * "Ver ejemplo de tu voz" (F9.7, doc de Voz de marca §5): un post de muestra
- * escrito con la voz guardada. Efímero: no se guarda en ningún lado, así que
- * el DTO es solo el texto.
+ * escrito con la voz guardada. Desde F12.5 se guarda el ÚLTIMO (sin historial)
+ * para que la pantalla lo muestre al volver; sigue sin ser un borrador ni ir a
+ * Biblioteca.
  */
 export interface BrandVoiceExampleDto {
   text: string;
+  /** ISO 8601. */
+  generatedAt: string;
 }
+
+export const brandVoiceExampleSchema = z.object({
+  text: z.string(),
+  generatedAt: z.string(),
+});
+
+/**
+ * Destilar la voz (F12.5, `POST /api/brand-voice/destilar`): 1 a 3
+ * publicaciones del creator, y opcionalmente lo que nunca diría.
+ *
+ * El mínimo de 20 caracteres deja fuera un "hola" pegado por error: de ahí no
+ * sale ningún rasgo y la llamada se cobraría igual.
+ */
+export const DISTILL_SAMPLES_MAX = 3;
+export const destilarVozBodySchema = z.object({
+  samples: z.array(z.string().trim().min(20).max(1200)).min(1).max(DISTILL_SAMPLES_MAX),
+  avoid: z.string().trim().max(200).optional(),
+});
+export type DestilarVozBody = z.infer<typeof destilarVozBodySchema>;
+
+/**
+ * Lo que devuelve destilar: una PROPUESTA de voz, no la voz. No se guarda en
+ * el servidor; la pantalla la muestra, el creator la ajusta y la guarda con el
+ * PATCH de siempre. La voz es del creator, no del sistema.
+ *
+ * Todos los campos son obligatorios (listas vacías si no hay nada): los
+ * modelos con salida estructurada estricta no aceptan opcionales.
+ */
+export const vozDestiladaSchema = z.object({
+  styleNotes: z.array(styleNote).min(1).max(6),
+  formality: z.number().int().min(0).max(100),
+  allowedExpressions: z.array(shortTag).max(10),
+  bannedExpressions: z.array(shortTag).max(10),
+  useAnglicisms: z.boolean(),
+  preferredCtas: z.array(ctaTag).max(5),
+  keyTopics: z.array(shortTag).max(6),
+});
+export type VozDestiladaDto = z.infer<typeof vozDestiladaSchema>;

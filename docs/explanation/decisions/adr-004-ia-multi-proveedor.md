@@ -145,3 +145,10 @@ El enum `ai_task_kind` (`chat`, `chat_title`, `history_compaction`, `post_adapt`
   - Topes: 30 s por intento y 60 s para la cadena.
   - **El detener del creator corta la llamada y no salta al respaldo.**
 - `ai_usage_events.audio_seconds` (migración `0061`): el proveedor cobra por segundo de audio, igual que las imágenes por imagen. `costOf` ya sabía leerlo (bake-off), y `pnpm gasto` lo lee de la base.
+
+**Addendum (F12.5 PR3, 2026-11-07) — el primer call site de `voice_distill`.**
+
+- `voice_distill` existía desde F4.5 en `AI_TASK_KINDS`, enrutada a `AI_MODEL_ADAPT`, sin quién la llamara. Su consumidor es `DestilarVozService` (`apps/api/src/brand-voice/destilar.service.ts`): de 1 a 3 publicaciones del creator a una propuesta de voz con `generateObject` y `vozDestiladaSchema` (shared).
+- **No usa el system prompt del chat.** Aquí el modelo no escribe como el creator: lo lee. El prompt propio (`destilar.ts`) pide describir solo lo que se ve en las muestras, porque un rasgo inventado se vuelve una orden en cada generación posterior. Las muestras van delimitadas como datos.
+- **Todos los campos del schema son obligatorios**, con listas vacías cuando no hay nada: la salida estructurada estricta de OpenAI no acepta opcionales.
+- Tier ADAPT y no CHAT: es análisis corto de texto, no conversación, y no tiene que sonar igual que el chat (eso lo cuida el ejemplo de voz, que sí usa `AI_MODEL_CHAT`).
