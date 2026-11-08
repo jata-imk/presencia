@@ -1,6 +1,14 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { CalendarCheck, ExternalLink, Minus, Pencil, Plus, RefreshCw } from "lucide-react";
+import {
+  CalendarCheck,
+  ExternalLink,
+  MessageSquare,
+  Minus,
+  Pencil,
+  Plus,
+  RefreshCw,
+} from "lucide-react";
 import {
   MODO_ESTRATEGIA_META,
   TREND_FORMAT_LABELS,
@@ -228,7 +236,17 @@ const CLASE_SENAL: Record<TrendItem["signal"], string> = {
  * numérico donde meter un "+24%" y `sourceUrl` es obligatorio, así que una
  * tarjeta sin procedencia no se puede construir.
  */
-export function TarjetaTendencia({ item }: { item: TrendItem }) {
+export function TarjetaTendencia({
+  item,
+  onExplorar,
+}: {
+  item: TrendItem;
+  /**
+   * F12.5: lleva la tendencia al Chat (presencia-ritmo.md, "La sección de
+   * tendencias"). Opcional para que la tarjeta se pueda pintar sin acción.
+   */
+  onExplorar?: (item: TrendItem) => void;
+}) {
   const red = NETWORK_META[item.network];
   return (
     <article className="flex flex-col gap-3 rounded-xl border border-line bg-card p-4">
@@ -245,15 +263,29 @@ export function TarjetaTendencia({ item }: { item: TrendItem }) {
       </div>
       <h3 className="font-display text-[15px] leading-snug font-semibold text-fg">{item.topic}</h3>
       <p className="text-[13px] leading-relaxed text-fg-secondary">{item.blurb}</p>
-      <a
-        href={item.sourceUrl}
-        target="_blank"
-        rel="noreferrer noopener"
-        className="mt-auto flex items-center gap-1.5 border-t border-line-subtle pt-3 text-[11px] text-fg-muted hover:text-fg"
-      >
-        <ExternalLink size={12} />
-        Visto en {item.sourceTitle}
-      </a>
+      <div className="mt-auto flex items-center gap-2 border-t border-line-subtle pt-3">
+        <a
+          href={item.sourceUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-fg-muted hover:text-fg"
+        >
+          <ExternalLink size={12} className="shrink-0" />
+          <span className="truncate">Visto en {item.sourceTitle}</span>
+        </a>
+        {/* Secundario a propósito: el botón fuerte de la página es "Crear en
+            Chat" de las propuestas, que ya traen la publicación armada. */}
+        {onExplorar && (
+          <button
+            type="button"
+            onClick={() => onExplorar(item)}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 font-display text-[12px] font-semibold text-brand transition-colors hover:bg-secondary"
+          >
+            <MessageSquare size={13} strokeWidth={1.75} aria-hidden />
+            Explorar en Chat
+          </button>
+        )}
+      </div>
     </article>
   );
 }

@@ -54,6 +54,24 @@ function formatoEnFrase(format: TrendFormat): string {
  * que el Chat necesita para elegir el arquetipo (un Reel es guion, no copy),
  * y la tendencia con su fuente para que el contenido no pierda de dónde salió.
  */
+/**
+ * El texto que "Explorar en Chat" deja en el composer desde una tendencia
+ * (F12.5, absorbe el backlog "Tarjetas de tendencia → Explorar en Chat").
+ *
+ * A diferencia de la propuesta, la tendencia es un TEMA, no una publicación:
+ * por eso pregunta qué hacer con ella en vez de pedir que la cree. La red y el
+ * formato van como dónde se está moviendo, no como orden: el creator decide.
+ */
+export function promptDeTendencia(item: TrendItem): string {
+  return [
+    `Quiero aprovechar esta tendencia de mi nicho: ${item.topic} (visto en ${item.sourceTitle}).`,
+    "",
+    item.blurb,
+    "",
+    `Se está moviendo en ${NETWORK_LABELS[item.network]} como ${formatoEnFrase(item.format)}. ¿Qué publicación me recomiendas hacer con ella?`,
+  ].join("\n");
+}
+
 export function promptDePropuesta(item: ConPropuesta): string {
   return [
     `Quiero crear ${formatoEnFrase(item.format)} para ${NETWORK_LABELS[item.network]} con esta idea:`,

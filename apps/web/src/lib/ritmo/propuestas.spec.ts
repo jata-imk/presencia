@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { TrendItem } from "@presencia/shared";
-import { elegirPropuestas, promptDePropuesta, type ConPropuesta } from "./propuestas.js";
+import {
+  elegirPropuestas,
+  promptDePropuesta,
+  promptDeTendencia,
+  type ConPropuesta,
+} from "./propuestas.js";
 
 function item(topic: string, format: TrendItem["format"], conPropuesta = true): TrendItem {
   return {
@@ -44,6 +49,17 @@ describe("elegirPropuestas", () => {
 
   it("sin propuestas devuelve vacío", () => {
     expect(elegirPropuestas([])).toEqual([]);
+  });
+});
+
+describe("promptDeTendencia", () => {
+  it("lleva el tema, su fuente, el resumen y pregunta en vez de pedir que la cree", () => {
+    const prompt = promptDeTendencia(item("Rutinas sin apps de pago", "reel", false));
+    expect(prompt).toContain("Rutinas sin apps de pago (visto en xataka.com.mx)");
+    expect(prompt).toContain("Se está moviendo.");
+    expect(prompt).toContain("en TikTok como un reel");
+    expect(prompt).toContain("¿Qué publicación me recomiendas");
+    expect(prompt).not.toContain("Quiero crear");
   });
 });
 
