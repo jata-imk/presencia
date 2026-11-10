@@ -394,10 +394,15 @@ describe("ChannelsService", () => {
       });
 
       const claimedA = await service.claimConnectIntent(userA, intentA.id);
-      const claimedB = await service.claimConnectIntent(userB, intentB.id);
-
       expect(claimedA).toHaveLength(1);
-      expect(claimedB).toHaveLength(0);
+
+      // F12.5: B se entera de por qué (antes recibía [] y la pantalla le
+      // decía "vuelve a intentar"), y su intent NO queda consumido: si
+      // conecta otra cuenta, el reintento la encuentra.
+      await expect(service.claimConnectIntent(userB, intentB.id)).rejects.toThrow(/otro usuario/);
+      provider.seedAccount({ providerRef: "propia_b", network: "x", displayName: "De B" });
+      const reintentoB = await service.claimConnectIntent(userB, intentB.id);
+      expect(reintentoB.map((a) => a.displayName)).toEqual(["De B"]);
 
       const accountsA = await service.listAccounts(userA);
       const accountsB = await service.listAccounts(userB);

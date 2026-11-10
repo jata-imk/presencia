@@ -27,12 +27,27 @@ export function useConectarRed({ createConnectIntent, claimConnectIntent }: Cana
 
   async function iniciar(): Promise<boolean> {
     setMensaje(null);
+    // La pestaña se abre YA, dentro del click, y se lleva a la página del
+    // proveedor cuando llega el intent. Abrirla después del `await` la dejaba
+    // fuera del gesto del usuario, y Safari (iPhone incluido) y Firefox la
+    // bloqueaban sin error: la fila decía "Esperando…" y nada se abría
+    // (revisión del PR4 de F12.5).
+    const pestana = window.open("about:blank", "_blank");
     try {
       const intent = await createConnectIntent();
-      window.open(intent.connectUrl, "_blank", "noopener,noreferrer");
+      if (!pestana) {
+        setMensaje(
+          "Tu navegador bloqueó la pestaña para conectar. Permite ventanas emergentes para Presencia e inténtalo de nuevo.",
+        );
+        return false;
+      }
+      // Lo que hacía "noopener": la página del proveedor no alcanza la nuestra.
+      pestana.opener = null;
+      pestana.location.href = intent.connectUrl;
       setEnCurso({ intentId: intent.id, connectUrl: intent.connectUrl });
       return true;
     } catch {
+      pestana?.close();
       setMensaje("No pudimos iniciar la conexión. Inténtalo de nuevo.");
       return false;
     }

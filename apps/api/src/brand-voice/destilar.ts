@@ -109,9 +109,11 @@ export function limpiarVozDestilada(voz: VozDelModelo): VozDestiladaDto {
  * empata con el mismo término escrito a mano.
  */
 function sinComillas(termino: string): string {
+  // Solo comillas dobles y angulares: el apóstrofo es parte de modismos como
+  // «pa'» o «'ora», y quitarlo cambiaría la palabra.
   return termino
     .trim()
-    .replace(/^["'«“‘]+|["'»”’]+$/gu, "")
+    .replace(/^["«“]+|["»”]+$/gu, "")
     .trim();
 }
 

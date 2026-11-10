@@ -155,12 +155,24 @@ export function OnboardingPage() {
   const [regenerando, setRegenerando] = useState(false);
   const [terminando, setTerminando] = useState(false);
   const [cuota, setCuota] = useState<QuotaStatusDto | null>(null);
-  // Cada cierre lleva su turno: si volvió atrás a medio camino, la respuesta
-  // vieja se descarta (mismo patrón que EjemploDeVoz).
+  // Cada cierre lleva su turno: si empieza otro (cambió algo y volvió), la
+  // respuesta del anterior se descarta (mismo patrón que EjemploDeVoz).
   const turno = useRef(0);
-  // Qué se cerró la última vez: volver al paso 5 sin cambiar nada no vuelve a
-  // pedir (ni a cobrar) la destilación y el post.
-  const cierreHecho = useRef<string | null>(null);
+  // El cierre que ya arrancó (en curso o listo), por su llave: volver al paso
+  // 5 sin cambiar nada no vuelve a pedir (ni a cobrar) nada. Volver ATRÁS no lo
+  // cancela: lo que está en vuelo ya se está pagando, y al regresar se usa.
+  const cierreIniciado = useRef<string | null>(null);
+  // La voz que ya se guardó con éxito, por la misma llave: un reintento
+  // después de un fallo del post no vuelve a destilar ni a guardar.
+  const vozGuardada = useRef<string | null>(null);
+
+  /** Todo lo que cambia la voz o el post: si algo de esto cambia, el cierre se rehace. */
+  function llaveDelCierre(sinLasMuestras: boolean): string {
+    return JSON.stringify({
+      paso1: [datos.pais, datos.zona, datos.ciudad, nichosAGuardar(datos), datos.registro],
+      evidencia: sinLasMuestras ? ["sin-muestras", datos.nunca.trim()] : llaveDe(datos),
+    });
+  }
 
   const limpios = (lista: string[]) => lista.map((r) => r.trim()).filter(Boolean);
   const rasgosCambiados = JSON.stringify(limpios(rasgos)) !== JSON.stringify(rasgosDelPost);
@@ -188,57 +200,96 @@ export function OnboardingPage() {
     }
   }
 
+  /** Guarda la voz de la evidencia. Devuelve los rasgos, o `null` si falló (ya avisó). */
+  async function guardarVozDelCierre(
+    mio: number,
+    sinLasMuestras: boolean,
+  ): Promise<string[] | null> {
+    if (sinLasMuestras) {
+      // Sin publicaciones no hay qué destilar, pero lo que dijo que nunca
+      // diría sigue siendo suyo: entra como rasgo.
+      const nunca = rasgoNunca(datos.nunca);
+      const notas = nunca ? [nunca] : [];
+      try {
+        await apiFetch("/api/brand-voice", { method: "PATCH", body: { styleNotes: notas } });
+        return notas;
+      } catch (e) {
+        if (mio === turno.current) {
+          siEsCuota(e);
+          setFase("error-post");
+        }
+        return null;
+      }
+    }
+
+    let voz: VozDestiladaDto;
+    try {
+      voz = await destilar();
+    } catch (e) {
+      // Solo si falló destilar se tira la promesa: la próxima vez se pide.
+      destilado.current = null;
+      if (mio === turno.current) {
+        siEsCuota(e);
+        setFase("error-lectura");
+      }
+      return null;
+    }
+    try {
+      // El registro NO se toca: lo eligió explícito en el paso 1. Lo que sale
+      // de la evidencia son los rasgos, los modismos y sus ejemplos.
+      await apiFetch("/api/brand-voice", {
+        method: "PATCH",
+        body: {
+          styleNotes: voz.styleNotes,
+          referenceExamples: muestrasUtiles(datos.muestras)
+            .slice(0, 2)
+            .map((text) => ({ text })),
+          allowedExpressions: voz.allowedExpressions,
+          bannedExpressions: voz.bannedExpressions,
+          useAnglicisms: voz.useAnglicisms,
+          preferredCtas: voz.preferredCtas,
+          keyTopics: voz.keyTopics,
+        },
+      });
+      return voz.styleNotes;
+    } catch (e) {
+      // Destilar sí salió (y se pagó): la promesa se queda, y el reintento
+      // solo vuelve a guardar.
+      if (mio === turno.current) {
+        siEsCuota(e);
+        setFase("error-lectura");
+      }
+      return null;
+    }
+  }
+
   async function cerrar(sinLasMuestras: boolean) {
     const mio = ++turno.current;
-    const llave = sinLasMuestras ? "sin-muestras" : llaveDe(datos);
+    const llave = llaveDelCierre(sinLasMuestras);
+    cierreIniciado.current = llave;
     setFase("cargando");
+
     let notas: string[];
-    try {
-      if (sinLasMuestras) {
-        // Sin publicaciones no hay qué destilar, pero lo que dijo que nunca
-        // diría sigue siendo suyo: entra como rasgo.
-        const nunca = rasgoNunca(datos.nunca);
-        notas = nunca ? [nunca] : [];
-        await apiFetch("/api/brand-voice", { method: "PATCH", body: { styleNotes: notas } });
-      } else {
-        const voz = await destilar();
-        if (mio !== turno.current) return;
-        notas = voz.styleNotes;
-        // El registro NO se toca: lo eligió explícito en el paso 1. Lo que
-        // sale de la evidencia son los rasgos, los modismos y sus ejemplos.
-        await apiFetch("/api/brand-voice", {
-          method: "PATCH",
-          body: {
-            styleNotes: notas,
-            referenceExamples: muestrasUtiles(datos.muestras)
-              .slice(0, 2)
-              .map((text) => ({ text })),
-            allowedExpressions: voz.allowedExpressions,
-            bannedExpressions: voz.bannedExpressions,
-            useAnglicisms: voz.useAnglicisms,
-            preferredCtas: voz.preferredCtas,
-            keyTopics: voz.keyTopics,
-          },
-        });
+    if (vozGuardada.current === llave) {
+      notas = limpios(rasgos);
+    } else {
+      const guardadas = await guardarVozDelCierre(mio, sinLasMuestras);
+      if (guardadas === null) {
+        if (mio === turno.current) cierreIniciado.current = null;
+        return;
       }
-    } catch (e) {
+      vozGuardada.current = llave;
       if (mio !== turno.current) return;
-      siEsCuota(e);
-      // La próxima vez se pide de nuevo: la que falló no sirve.
-      destilado.current = null;
-      setFase(sinLasMuestras ? "error-post" : "error-lectura");
-      return;
+      notas = guardadas;
+      setRasgos(notas);
     }
-    if (mio !== turno.current) return;
-    setRasgos(notas);
-    cierreHecho.current = llave;
     await escribirPost(mio, notas);
   }
 
   function entrarAlCierre() {
     setPaso(4);
-    const llave = sinMuestras ? "sin-muestras" : llaveDe(datos);
-    if (cierreHecho.current === llave && fase === "listo") return;
+    const iniciado = cierreIniciado.current === llaveDelCierre(sinMuestras);
+    if (iniciado && (fase === "listo" || fase === "cargando")) return;
     void cerrar(sinMuestras);
   }
 
@@ -262,6 +313,7 @@ export function OnboardingPage() {
   async function ajustar() {
     const mio = ++turno.current;
     const nuevos = limpios(rasgos);
+    setError(null);
     setRegenerando(true);
     try {
       await apiFetch("/api/brand-voice", { method: "PATCH", body: { styleNotes: nuevos } });
@@ -277,8 +329,9 @@ export function OnboardingPage() {
   async function terminar(conPost: boolean) {
     setTerminando(true);
     try {
-      // Rasgos editados sin "Ajustar": igual son su voz, se guardan.
-      if (fase === "listo" && !sinMuestras && rasgosCambiados) {
+      // Rasgos editados sin "Ajustar" (o con un "Ajustar" cuyo post falló):
+      // igual son su voz, se guardan.
+      if (!sinMuestras && vozGuardada.current !== null && rasgosCambiados) {
         await apiFetch("/api/brand-voice", {
           method: "PATCH",
           body: { styleNotes: limpios(rasgos) },
@@ -307,20 +360,15 @@ export function OnboardingPage() {
     }
   }
 
+  // Rehace solo lo que falta: si la voz ya se guardó, solo el post (la llave
+  // de `vozGuardada` lo decide dentro de `cerrar`).
   function reintentar() {
-    if (fase === "error-lectura") {
-      void cerrar(false);
-    } else {
-      const mio = ++turno.current;
-      setFase("cargando");
-      void escribirPost(mio, limpios(rasgos));
-    }
+    void cerrar(sinMuestras);
   }
 
   function volverDelCierre() {
-    // Lo que esté en vuelo se descarta al volver.
-    turno.current += 1;
-    setRegenerando(false);
+    // Lo que esté en vuelo NO se cancela: ya se está pagando, y si vuelve
+    // sin cambiar nada, entrarAlCierre lo usa en vez de pedir otro.
     setPaso(3);
   }
 

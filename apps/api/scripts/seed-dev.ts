@@ -488,7 +488,9 @@ function printCredentials(): void {
 
 // F12.5: una segunda cuenta que SIEMPRE arranca con el onboarding abierto y sin
 // voz. Se recrea en cada corrida (es desechable), así el onboarding se puede
-// recorrer las veces que haga falta sin tocar la cuenta de dev.
+// recorrer las veces que haga falta sin tocar la cuenta de dev. Pensada para
+// PUBLISHING_PROVIDER=fake (el default de dev): con un proveedor real, cada
+// recreación deja huérfano el perfil que el paso "¿Dónde publicas?" creó allá.
 const ONBOARDING_EMAIL = "onboarding@presencia.local";
 
 async function seedOnboarding(): Promise<void> {
