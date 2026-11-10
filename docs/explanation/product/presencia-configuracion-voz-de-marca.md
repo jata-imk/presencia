@@ -26,11 +26,12 @@ Presencia existe para evitar.
 
 ### Su relación con el onboarding: supraconjunto editable, una sola fuente de verdad
 
-El paso "Voz" del onboarding (paso 2 de 5, no-skippable) ya captura una
-versión mínima: mercado, nicho/audiencia, registro/tono. Es, en
+El primer paso del onboarding ("¿Cómo hablas?", no se puede saltar)
+captura la versión mínima: mercado y región, nicho, registro. Es, en
 términos de código, el **constructor con los parámetros obligatorios**
 — lo mínimo para que el objeto `VozDeMarca` exista y no truene el
-resto de la app.
+resto de la app. Desde F12.5 el onboarding además captura evidencia
+(sus publicaciones) y termina con un post en su voz: ver sección 13.
 
 Configuración > Voz de marca es el **mismo objeto**, con las
 propiedades opcionales expuestas y editables. No son dos sistemas que
@@ -149,7 +150,8 @@ cualquier punto intermedio (ej. 62, "un poco más formal que neutro
 pero no tan técnico").
 
 **Por qué esto es correcto y no una inconsistencia:** el onboarding
-necesita ser rápido (3 campos, ~20 segundos, ver overview) — una
+necesita ser rápido (un click por registro, con una frase de ejemplo
+de cada uno) — una
 categoría de un click es más rápido que arrastrar un slider a ciegas
 sin saber qué extremos representa. Configuración es _set-and-forget_
 (la tocás una vez, ajustás de vez en cuando — mismo patrón que la
@@ -498,3 +500,44 @@ marca (`image_style`). Diseño: "Configuracion v2" en Claude Design.
 Lo que NO está (V1): estilos propios o subir una referencia, mezclar dos
 estilos, un estilo por carpeta o por red, y **3D**: venía en el diseño, pero
 el generador no lo entrega con comida ni con lugares (ADR-025).
+
+---
+
+## 13. El onboarding como captura de voz (F12.5)
+
+Diseño: "Onboarding v2" en Claude Design (proyecto "Presencia - Onboarding").
+Antes el onboarding recogía **declaraciones** ("mi tono es cercano"); ahora
+recoge **evidencia** y termina entregando algo, no un "listo". Cinco pasos:
+
+1. **¿Cómo hablas?** País, zona (chips: Norte, Bajío, Occidente, Centro,
+   Sureste, Toda la república) y estado o ciudad; nicho; registro, con una
+   frase de ejemplo por registro. La región se guarda como "ciudad, zona"
+   ("Tekax, Sureste") para que la macro-región salga aunque el pueblo no esté
+   en el catálogo. Es el único paso obligatorio.
+2. **¿Cómo escribes?** De 1 a 3 publicaciones suyas, pegadas tal cual, y
+   "¿Algo que nunca dirías?" (opcional). "Aún no publico" lo salta. Al
+   seguir, la destilación arranca en segundo plano: mientras conecta su red,
+   el modelo ya está leyendo.
+3. **¿Dónde publicas?** Conectar una red con el mismo flujo de Canales
+   (`use-conectar-red.ts`). Se puede omitir. Antes decía "Muy pronto": la
+   publicación existe desde F6/F7.5 y nadie había vuelto a este paso.
+4. **¿Qué buscas?** Metas (Crecer audiencia, Monetizar, Mantener
+   consistencia, Ahorrar tiempo). De ahí se deriva el Modo de Ritmo, así que
+   el texto dice eso y no "el primero marca el ritmo", que traía el mock y no
+   es lo que pasa.
+5. **Así suenas.** Lo que notamos en sus publicaciones («Así escribes»,
+   rasgos editables) y un post en su voz. "Ajustar" reescribe el post con los
+   rasgos editados; "Se oye como yo → Crear mi primer post" lo lleva al chat
+   con ese borrador escrito en la caja, sin mandarlo.
+
+**La voz es del creator, también aquí.** Destilar devuelve una propuesta; lo
+que se guarda es lo que él ve en pantalla, y lo puede corregir ahí mismo. El
+registro que eligió en el paso 1 no lo pisa la destilación: de la evidencia
+salen los rasgos, los modismos, los CTAs reutilizables y sus dos primeras
+publicaciones como ejemplos de referencia. Sin publicaciones, lo que dijo
+que nunca diría entra como rasgo «Nunca: …».
+
+**Cuesta lo de dos acciones suyas:** destilar (`voice_distill`) y el post
+(`voice_preview`), cobrados como cualquier otra generación. Volver al paso 5
+sin cambiar nada no vuelve a pedir ni a cobrar nada. Con la cuota agotada,
+el modal de siempre, y se puede entrar sin borrador.

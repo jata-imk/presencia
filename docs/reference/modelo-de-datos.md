@@ -16,7 +16,7 @@
 
 - `display_name` — nombre público (nullable; la UI cae a `name` si es NULL). Migración 0003. Desde F9.7 `PATCH /api/me` acepta `displayName: null` para borrarlo: Mi perfil se guarda solo, y vaciar el campo tenía que hacer algo.
 - `timezone` — zona IANA (ej. `America/Merida`), default `America/Mexico_City`. La columna existe desde la migración 0000. Edición vía `PATCH /api/me` (`apps/api/src/profile/`, F4 PR 1/4, valida contra `Intl.supportedValuesOf("timeZone")`); la captura automática del navegador (`Intl.DateTimeFormat().resolvedOptions().timeZone`) en el paso "Welcome" del onboarding llega en F4 PR 3/4. La consume toda interpretación de hora humana: programación de posts (F6), "prográmalo mañana" en chat (F3), mejores horarios de Ritmo (F9) y el cierre de ciclo de créditos.
-- `onboarding_completed_at` — timestamptz nullable, gate explícito del onboarding (F4 PR 1/4). NULL → el guard del cliente redirige a `/onboarding` (F4 PR 3/4). Se sella con `POST /api/me/complete-onboarding` en el paso "Ready"; no se infiere de "¿existe una voz default?" para no dejar al usuario atrapado si abandona el flujo a medias.
+- `onboarding_completed_at` — timestamptz nullable, gate explícito del onboarding (F4 PR 1/4). NULL → el guard del cliente redirige a `/onboarding` (F4 PR 3/4). Se sella con `POST /api/me/complete-onboarding` al cerrar el último paso ("Así suenas", F12.5); no se infiere de "¿existe una voz default?" para no dejar al usuario atrapado si abandona el flujo a medias.
 
 **`brand_voices`** — el moat cultural hecho tabla.
 

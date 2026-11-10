@@ -175,6 +175,22 @@ describe("ChannelsService", () => {
     await expect(service.claimConnectIntent(userA, intent.id)).rejects.toThrow(/expiró/);
   });
 
+  // F12.5: el aviso dice "termina de conectar y vuelve a intentar"; el
+  // reintento tiene que poder encontrar la cuenta con el MISMO intent.
+  it(
+    "un claim antes de tiempo no gasta el intent: el reintento encuentra la cuenta",
+    { timeout: 15_000 },
+    async () => {
+      const intent = await service.createConnectIntent(userA);
+      expect(await service.claimConnectIntent(userA, intent.id)).toEqual([]);
+
+      provider.seedAccount({ providerRef: "tarde_1", network: "instagram", displayName: null });
+      const claimed = await service.claimConnectIntent(userA, intent.id);
+      expect(claimed).toHaveLength(1);
+      expect(claimed[0]).toMatchObject({ network: "instagram" });
+    },
+  );
+
   it("reclamar dos veces el mismo intent falla la segunda vez", { timeout: 15_000 }, async () => {
     const intent = await service.createConnectIntent(userA);
     provider.seedAccount({ providerRef: "new_2", network: "linkedin", displayName: null });

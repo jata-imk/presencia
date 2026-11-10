@@ -56,18 +56,26 @@ export function distillPrompt(body: DestilarVozBody): string {
   return (
     `${muestras}${nunca}\n\n` +
     "Devuelve:\n" +
-    "- styleNotes: de 3 a 6 rasgos cortos (máximo 140 caracteres cada uno), en frases " +
-    "impersonales que el creator reconozca como suyas: largo de las frases, cuántos " +
-    "emojis usa y dónde, cómo abre y cómo cierra, signos y mayúsculas, hashtags, cómo le " +
-    "habla a su público. Nada sobre el tema ni el negocio. Si hay algo que nunca diría, " +
-    "agrega un rasgo que empiece con «Nunca:».\n" +
+    // Rasgos de una línea: el creator los lee de un vistazo en «Así escribes»
+    // (Claude Design pide ~7 palabras; la primera prueba en vivo los dio de 15).
+    "- styleNotes: de 3 a 6 rasgos MUY cortos, de máximo 8 palabras cada uno (ej. " +
+    "«Frases cortas y directas», «Cierras con una pregunta», «Sin emojis ni hashtags»), " +
+    "en frases que el creator reconozca como suyas: largo de las frases, emojis, cómo " +
+    "abre y cómo cierra, signos, hashtags, cómo le habla a su público. Nada sobre el tema " +
+    "ni el negocio. Si hay algo que nunca diría, agrega un rasgo que empiece con «Nunca:».\n" +
     `- formality: de 0 a 100, según estas zonas: ${ZONAS}.\n` +
-    "- allowedExpressions: modismos o coloquialismos que aparecen tal cual en las " +
-    "publicaciones (máximo 10, cada uno de hasta 40 caracteres). Vacío si no hay.\n" +
+    // Lo que se guarda aquí viaja en CADA generación: una frase de un post
+    // concreto se volvería muletilla de todos (la primera prueba en vivo guardó
+    // «Ásalo hasta que se ponga negrito…» como CTA y el post siguiente la copió).
+    "- allowedExpressions: modismos o muletillas de 1 a 3 palabras que aparecen tal cual " +
+    "y que usaría en cualquier post (ej. «y ya», «neta»), no frases de una publicación " +
+    "en particular (máximo 10). Vacío si no hay.\n" +
     "- bannedExpressions: palabras o frases cortas de lo que nunca diría (máximo 10, de " +
     "hasta 40 caracteres). Vacío si no dijo nada.\n" +
     "- useAnglicisms: true si usa palabras en inglés.\n" +
-    "- preferredCtas: llamados a la acción que aparecen tal cual (máximo 5). Vacío si no hay.\n" +
+    "- preferredCtas: fórmulas de cierre REUTILIZABLES que repite (máximo 6 palabras, ej. " +
+    "«Cuéntame en los comentarios»), no la pregunta o el cierre de un post concreto. Vacío " +
+    "si cada publicación cierra distinto (máximo 5).\n" +
     "- keyTopics: los temas de los que habla (máximo 6, de hasta 40 caracteres)."
   );
 }
@@ -80,19 +88,31 @@ export function distillPrompt(body: DestilarVozBody): string {
  * los rasgos vacíos: la pantalla lo resuelve pidiéndole uno al creator.
  */
 export function limpiarVozDestilada(voz: VozDelModelo): VozDestiladaDto {
-  const banned = unicos(voz.bannedExpressions, 40, 10);
+  const banned = unicos(voz.bannedExpressions.map(sinComillas), 40, 10);
   const bannedSet = new Set(banned.map(normalizeExpression));
   return {
     styleNotes: unicos(voz.styleNotes, STYLE_NOTE_MAX_LENGTH, 6),
     formality: Math.min(100, Math.max(0, Math.round(voz.formality))),
-    allowedExpressions: unicos(voz.allowedExpressions, 40, Infinity)
+    allowedExpressions: unicos(voz.allowedExpressions.map(sinComillas), 40, Infinity)
       .filter((term) => !bannedSet.has(normalizeExpression(term)))
       .slice(0, 10),
     bannedExpressions: banned,
     useAnglicisms: voz.useAnglicisms,
-    preferredCtas: unicos(voz.preferredCtas, 80, 5),
-    keyTopics: unicos(voz.keyTopics, 40, 6),
+    preferredCtas: unicos(voz.preferredCtas.map(sinComillas), 80, 5),
+    keyTopics: unicos(voz.keyTopics.map(sinComillas), 40, 6),
   };
+}
+
+/**
+ * Los términos son chips: «foodie» se guarda como foodie. El modelo los copia
+ * con las comillas del texto del creator, y un chip con «» se ve roto y no
+ * empata con el mismo término escrito a mano.
+ */
+function sinComillas(termino: string): string {
+  return termino
+    .trim()
+    .replace(/^["'«“‘]+|["'»”’]+$/gu, "")
+    .trim();
 }
 
 function unicos(lista: readonly string[], maxLargo: number, maxItems: number): string[] {

@@ -61,6 +61,16 @@ describe("limpiarVozDestilada", () => {
     expect(limpia.bannedExpressions).toEqual(["Neta"]);
   });
 
+  it("los términos se guardan sin las comillas del texto del creator", () => {
+    const limpia = limpiarVozDestilada({
+      ...base,
+      allowedExpressions: ["«y ya»"],
+      bannedExpressions: ["«¡Hola, familia!»", '"foodie"'],
+    });
+    expect(limpia.bannedExpressions).toEqual(["¡Hola, familia!", "foodie"]);
+    expect(limpia.allowedExpressions).toEqual(["y ya"]);
+  });
+
   // El modelo no respeta largos en salida estricta: lo que se pasa se
   // descarta (no se corta a media frase) y la respuesta cumple el contrato.
   it("descarta lo que se pasa de largo, topa las listas y la formalidad", () => {

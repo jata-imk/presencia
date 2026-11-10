@@ -12,7 +12,20 @@ import { IsotipoGlyph } from "../ui/BrandMark.js";
  * abajo a la derecha) y la tarjeta centrada. Scroll propio: en móvil el
  * registro con el medidor de fuerza no cabe en una pantalla.
  */
-export function AuthShell({ children, above }: { children: ReactNode; above?: ReactNode }) {
+export function AuthShell({
+  children,
+  above,
+  tarjeta = "max-w-[420px]",
+}: {
+  children: ReactNode;
+  above?: ReactNode;
+  /**
+   * F12.5: ancho (y alto mínimo) de la tarjeta. El onboarding la usa de 480px
+   * y con alto fijo en escritorio ("Onboarding v2"), para que no brinque al
+   * cambiar de paso.
+   */
+  tarjeta?: string;
+}) {
   return (
     <main className="relative min-h-dvh overflow-x-hidden bg-app">
       <div
@@ -21,7 +34,9 @@ export function AuthShell({ children, above }: { children: ReactNode; above?: Re
       />
       <div className="relative flex min-h-dvh flex-col items-center justify-center gap-4 px-4 py-10">
         {above}
-        <div className="flex w-full max-w-[420px] animate-[aparecer_280ms_ease-out] flex-col gap-5 rounded-[20px] border border-line-subtle bg-card px-6 pt-8 pb-7 shadow-lg sm:px-10 sm:pt-9 sm:pb-8">
+        <div
+          className={`flex w-full ${tarjeta} animate-[aparecer_280ms_ease-out] flex-col gap-5 rounded-[20px] border border-line-subtle bg-card px-6 pt-8 pb-7 shadow-lg sm:px-10 sm:pt-9 sm:pb-8`}
+        >
           {children}
         </div>
       </div>

@@ -73,6 +73,10 @@ const RAICES_DE_CRECER = [
   "crec",
   "alcance",
   "escalar",
+  // F12.5: "Monetizar" es meta del onboarding nuevo. Vivir del contenido pide
+  // volumen, igual que vender más.
+  "monetiz",
+  "ingres",
 ];
 
 /** Separador de palabras, igual que en el catálogo de verticales. */

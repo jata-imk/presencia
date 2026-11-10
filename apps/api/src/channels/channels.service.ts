@@ -156,6 +156,13 @@ export class ChannelsService {
       const known = new Set(intent.knownAccountRefs as string[]);
       const newAccounts = accounts.filter((a) => !known.has(a.providerRef));
 
+      // F12.5: sin cuentas nuevas conectadas, el intent NO se consume. La
+      // pantalla dice "termina de conectar tu red y vuelve a intentar", y
+      // antes ese reintento fallaba siempre con "Esa conexión ya se usó": el
+      // primer click (el que llegó antes de tiempo) ya lo había gastado. No
+      // se reclamó nada, así que no hay idempotencia que cuidar.
+      if (!newAccounts.some((a) => a.connected)) return [];
+
       // Se consume ya, antes de reclamar: un segundo click en "Conectar" con
       // el mismo intent no debe volver a intentar atribuirse cuentas que ya
       // procesamos (idempotencia del claim, no del efecto en PostFast).
