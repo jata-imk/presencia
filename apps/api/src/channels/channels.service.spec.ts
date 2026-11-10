@@ -175,6 +175,22 @@ describe("ChannelsService", () => {
     await expect(service.claimConnectIntent(userA, intent.id)).rejects.toThrow(/expiró/);
   });
 
+  // F12.5: el aviso dice "termina de conectar y vuelve a intentar"; el
+  // reintento tiene que poder encontrar la cuenta con el MISMO intent.
+  it(
+    "un claim antes de tiempo no gasta el intent: el reintento encuentra la cuenta",
+    { timeout: 15_000 },
+    async () => {
+      const intent = await service.createConnectIntent(userA);
+      expect(await service.claimConnectIntent(userA, intent.id)).toEqual([]);
+
+      provider.seedAccount({ providerRef: "tarde_1", network: "instagram", displayName: null });
+      const claimed = await service.claimConnectIntent(userA, intent.id);
+      expect(claimed).toHaveLength(1);
+      expect(claimed[0]).toMatchObject({ network: "instagram" });
+    },
+  );
+
   it("reclamar dos veces el mismo intent falla la segunda vez", { timeout: 15_000 }, async () => {
     const intent = await service.createConnectIntent(userA);
     provider.seedAccount({ providerRef: "new_2", network: "linkedin", displayName: null });
@@ -378,10 +394,15 @@ describe("ChannelsService", () => {
       });
 
       const claimedA = await service.claimConnectIntent(userA, intentA.id);
-      const claimedB = await service.claimConnectIntent(userB, intentB.id);
-
       expect(claimedA).toHaveLength(1);
-      expect(claimedB).toHaveLength(0);
+
+      // F12.5: B se entera de por qué (antes recibía [] y la pantalla le
+      // decía "vuelve a intentar"), y su intent NO queda consumido: si
+      // conecta otra cuenta, el reintento la encuentra.
+      await expect(service.claimConnectIntent(userB, intentB.id)).rejects.toThrow(/otro usuario/);
+      provider.seedAccount({ providerRef: "propia_b", network: "x", displayName: "De B" });
+      const reintentoB = await service.claimConnectIntent(userB, intentB.id);
+      expect(reintentoB.map((a) => a.displayName)).toEqual(["De B"]);
 
       const accountsA = await service.listAccounts(userA);
       const accountsB = await service.listAccounts(userB);

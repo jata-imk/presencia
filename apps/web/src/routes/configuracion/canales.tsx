@@ -15,6 +15,7 @@ import { TelegramCard } from "../../components/configuracion/TelegramCard.js";
 import { Button } from "../../components/ui/Button.js";
 import { ApiError } from "../../lib/api.js";
 import { useChannels } from "../../lib/use-channels.js";
+import { useConectarRed } from "../../lib/use-conectar-red.js";
 import { useTelegramLink } from "../../lib/use-telegram-link.js";
 import { useTelegramLinkStore } from "../../stores/telegram-link-store.js";
 
@@ -40,56 +41,28 @@ const STATUS_CLASSES: Record<ChannelAccountDto["status"], string> = {
   error: "bg-error-bg text-error-fg",
 };
 
-type ConnectStep = { intentId: string; connectUrl: string } | null;
-
 export function CanalesPage() {
-  const { channels, error, refresh, createConnectIntent, claimConnectIntent, disconnect } =
-    useChannels();
-  const [connectStep, setConnectStep] = useState<ConnectStep>(null);
-  const [claimMessage, setClaimMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function handleStartConnect() {
-    setClaimMessage(null);
-    try {
-      const intent = await createConnectIntent();
-      window.open(intent.connectUrl, "_blank", "noopener,noreferrer");
-      setConnectStep({ intentId: intent.id, connectUrl: intent.connectUrl });
-    } catch {
-      setClaimMessage("No pudimos iniciar la conexión. Inténtalo de nuevo.");
-    }
-  }
+  const canales = useChannels();
+  const { channels, error, refresh, disconnect } = canales;
+  // El baile de conectar vive en un hook compartido con el onboarding (F12.5).
+  const conexion = useConectarRed(canales);
+  const connectStep = conexion.enCurso;
+  const claimMessage = conexion.mensaje;
+  const [desconectando, setDesconectando] = useState(false);
+  const busy = conexion.ocupado || desconectando;
 
   async function handleClaim() {
-    if (!connectStep) return;
-    setBusy(true);
-    try {
-      const claimed = await claimConnectIntent(connectStep.intentId);
-      if (claimed.length === 0) {
-        setClaimMessage(
-          "No detectamos ninguna cuenta nueva todavía. Termina de conectar tu red en la otra pestaña y vuelve a intentar.",
-        );
-      } else {
-        setClaimMessage(null);
-        setConnectStep(null);
-        refresh();
-      }
-    } catch (err) {
-      setClaimMessage(
-        err instanceof ApiError ? err.message : "Algo salió mal confirmando la conexión.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    const reclamadas = await conexion.confirmar();
+    if (reclamadas.length > 0) refresh();
   }
 
   async function handleDisconnect(id: string) {
-    setBusy(true);
+    setDesconectando(true);
     try {
       await disconnect(id);
       refresh();
     } finally {
-      setBusy(false);
+      setDesconectando(false);
     }
   }
 
@@ -114,7 +87,7 @@ export function CanalesPage() {
             <Button onClick={() => void handleClaim()} disabled={busy}>
               Ya conecté mi cuenta
             </Button>
-            <Button variant="secondary" onClick={() => setConnectStep(null)} disabled={busy}>
+            <Button variant="secondary" onClick={conexion.cancelar} disabled={busy}>
               Cancelar
             </Button>
           </div>
@@ -128,7 +101,7 @@ export function CanalesPage() {
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Button
-            onClick={() => void handleStartConnect()}
+            onClick={() => void conexion.iniciar()}
             disabled={busy || connectStep !== null}
             className="inline-flex items-center gap-1.5"
           >

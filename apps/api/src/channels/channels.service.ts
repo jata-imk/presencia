@@ -156,6 +156,13 @@ export class ChannelsService {
       const known = new Set(intent.knownAccountRefs as string[]);
       const newAccounts = accounts.filter((a) => !known.has(a.providerRef));
 
+      // F12.5: sin cuentas nuevas conectadas, el intent NO se consume. La
+      // pantalla dice "termina de conectar tu red y vuelve a intentar", y
+      // antes ese reintento fallaba siempre con "Esa conexión ya se usó": el
+      // primer click (el que llegó antes de tiempo) ya lo había gastado. No
+      // se reclamó nada, así que no hay idempotencia que cuidar.
+      if (!newAccounts.some((a) => a.connected)) return [];
+
       // Se consume ya, antes de reclamar: un segundo click en "Conectar" con
       // el mismo intent no debe volver a intentar atribuirse cuentas que ya
       // procesamos (idempotencia del claim, no del efecto en PostFast).
@@ -173,6 +180,8 @@ export class ChannelsService {
       // a aparecer como "nueva" en el diff — el catch de abajo la reclama
       // sin perderla en silencio.
       const claimed: SocialAccountRow[] = [];
+      // Cuentas nuevas que resultaron ser de otro usuario (ver el catch).
+      let deOtroUsuario = 0;
       for (const account of newAccounts) {
         // listAccounts() no omite cuentas con token revocado, solo las
         // marca (connectionStatus !== "CONNECTED" → connected:false, ver
@@ -216,11 +225,23 @@ export class ChannelsService {
           //     SÍ ve esa fila — hay que reactivarla, no perder el claim en
           //     silencio como pasaba antes.
           const own = await this.repo.findAccountByProviderRef(tx, account.providerRef);
-          if (!own) continue;
+          if (!own) {
+            deOtroUsuario += 1;
+            continue;
+          }
           claimed.push(
             await this.repo.reactivateAccount(tx, own.id, account.displayName ?? own.displayName),
           );
         }
+      }
+      // F12.5 (revisión del PR4): si todo lo nuevo era de otro usuario, decir
+      // eso. Devolver [] haría que la pantalla dijera "vuelve a intentar", y el
+      // reintento chocaría con el intent ya consumido. El throw deshace la
+      // transacción, así que el intent tampoco queda consumido.
+      if (claimed.length === 0 && deOtroUsuario > 0) {
+        throw new ConflictException(
+          "Esa cuenta ya está conectada a otro usuario de Presencia. Conecta otra o escríbenos.",
+        );
       }
       return claimed.map(toDto);
     });

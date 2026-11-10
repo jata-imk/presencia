@@ -36,6 +36,13 @@ describe("modoDeGoals", () => {
     expect(modoDeGoals(["Más ventas/clientes"])).toBe("crecer");
   });
 
+  // F12.5: las metas del onboarding nuevo (Claude Design "Onboarding v2").
+  it("reconoce las metas del onboarding de F12.5", () => {
+    expect(modoDeGoals(["Crecer audiencia"])).toBe("crecer");
+    expect(modoDeGoals(["Monetizar"])).toBe("crecer");
+    expect(modoDeGoals(["Mantener consistencia", "Ahorrar tiempo"])).toBe("mantener");
+  });
+
   it("encuentra la intención también en el texto libre, con acentos", () => {
     // El paso de metas tiene un campo "Algo más (opcional)", así que acá entra
     // texto que nadie escribió pensando en este mapeo.
