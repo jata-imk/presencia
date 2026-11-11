@@ -9,6 +9,7 @@ export type UserRow = typeof users.$inferSelect;
 export type UpdateUserPatch = Partial<{
   displayName: string | null;
   timezone: string;
+  memoryEnabled: boolean;
 }>;
 
 // `users` NO tiene RLS (Better Auth es dueño — modelo-de-datos.md); es el

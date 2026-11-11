@@ -1,6 +1,8 @@
-import { Bookmark, LayoutGrid, SlidersHorizontal, Target } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Bookmark, ChevronDown, Folder, SlidersHorizontal, Target } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
+  BUSINESS_FACTS_MAX_LENGTH,
+  formalityZoneLabel,
   macroRegionLabel,
   MODO_ESTRATEGIA_META,
   MODOS_ESTRATEGIA,
@@ -10,6 +12,7 @@ import {
   verticalLabel,
   VERTICALS,
   type BrandVoiceDto,
+  type BrandVoiceExampleDto,
   type ModoEstrategia,
   type UpdateBrandVoiceBody,
   type VerticalId,
@@ -20,13 +23,14 @@ import {
   EncabezadoDePagina,
   Invitacion,
   MarcaDeGuardado,
-  NotaInfo,
   Pill,
   Seccion,
   SkeletonDePagina,
 } from "../../components/configuracion/primitivas.js";
-import { EjemploDeVoz } from "../../components/configuracion/EjemploDeVoz.js";
+import { AsiEscribes } from "../../components/configuracion/AsiEscribes.js";
+import { MemoriaSeccion } from "../../components/configuracion/MemoriaSeccion.js";
 import { RanuraEjemplo } from "../../components/configuracion/RanuraEjemplo.js";
+import { UltimoEjemplo } from "../../components/configuracion/UltimoEjemplo.js";
 import { FormalitySlider } from "../../components/ui/FormalitySlider.js";
 import { Select } from "../../components/ui/Select.js";
 import { TagInput } from "../../components/ui/TagInput.js";
@@ -38,7 +42,14 @@ import { ApiError, apiFetch } from "../../lib/api.js";
 import { useAutoguardado } from "../../lib/use-autoguardado.js";
 
 // Configuración › Voz de marca (doc presencia-configuracion-voz-de-marca.md,
-// diseño del mock de Claude Design, F9.7).
+// diseño del mock de Claude Design, F9.7; reorganizada en F12.5 con "Voz de
+// marca v3").
+//
+// F12.5: el orden va de lo que el creator entiende de un vistazo a lo
+// técnico. «Así escribes» arriba, luego sus ejemplos (y el último ejemplo
+// generado), identidad con los datos fijos, la memoria, y todo lo de registro,
+// modismos, temas y CTAs plegado en «Ajustes finos». Nada se quitó: solo dejó
+// de competir por la atención con lo que más pesa.
 //
 // Se guarda sola, campo por campo: cada cambio viaja como un PATCH parcial
 // con solo lo que cambió (el schema lo permite: `undefined` = no tocar). Los
@@ -78,6 +89,16 @@ export function VozDeMarcaPage() {
   // Bloque D — hasta 2 slots, por posición.
   const [examples, setExamples] = useState<[string, string]>(["", ""]);
 
+  // F12.5: «Así escribes», datos fijos y el último ejemplo.
+  const [styleNotes, setStyleNotes] = useState<string[]>([]);
+  const [businessFacts, setBusinessFacts] = useState("");
+  const [ultimoEjemplo, setUltimoEjemplo] = useState<BrandVoiceExampleDto | null>(null);
+  // Cuándo cambió la voz por última vez (lo dice el servidor en cada guardado):
+  // si es después del último ejemplo, el ejemplo ya no suena a la voz actual.
+  const [vozActualizada, setVozActualizada] = useState<string | null>(null);
+  const [finosAbiertos, setFinosAbiertos] = useState(false);
+  const idFinos = useId();
+
   // Errores que se ven antes de mandar nada: un país de una letra o un nicho
   // vacío los rechazaría el servidor, y guardar a medias no tiene sentido.
   const [errorPais, setErrorPais] = useState<string | null>(null);
@@ -103,6 +124,7 @@ export function VozDeMarcaPage() {
       // mientras viajaba: pisar un campo recién editado con la respuesta del
       // envío anterior borraría lo último que el usuario tecleó.
       setModoDerivado(updated.modoDerivado);
+      setVozActualizada(updated.updatedAt);
       paisGuardado.current = updated.marketCountry;
       // "Prohibido gana" (brand-voice.service.ts::resolveConflicts): guardar
       // una lista puede cambiar la otra.
@@ -148,6 +170,10 @@ export function VozDeMarcaPage() {
         setKeyTopics(data.keyTopics);
         setPreferredCtas(data.preferredCtas);
         setExamples([data.referenceExamples[0]?.text ?? "", data.referenceExamples[1]?.text ?? ""]);
+        setStyleNotes(data.styleNotes);
+        setBusinessFacts(data.businessFacts ?? "");
+        setUltimoEjemplo(data.lastVoiceExample);
+        setVozActualizada(data.updatedAt);
       })
       .catch((e: unknown) =>
         setLoadError(e instanceof ApiError ? e.message : "No se pudo cargar tu voz de marca."),
@@ -194,20 +220,59 @@ export function VozDeMarcaPage() {
 
   return (
     <div>
+      {/* Doc §1: dónde se ajusta el tono de UN mensaje, siempre a la vista. */}
       <EncabezadoDePagina
         titulo="Voz de marca"
-        subtitulo="Define cómo suena todo tu contenido — de forma persistente y en tu registro real."
+        subtitulo="Así suena todo lo que escribimos por ti. Para ajustar un solo mensaje, usa «Estilo de respuesta» en el Chat."
       />
-      {/* Nota fija (doc §1) — nunca un tooltip escondido. */}
-      <NotaInfo>
-        Esta es tu voz base y persistente — define cómo suena <b>todo</b> tu contenido. Para ajustar
-        el tono de un mensaje puntual, usa <b>«Estilo de respuesta»</b> dentro del Chat.
-      </NotaInfo>
+
+      <AsiEscribes
+        rasgos={styleNotes}
+        estado={auto.estado("styleNotes")}
+        onCambiar={(rasgos) => {
+          setStyleNotes(rasgos);
+          guardar("styleNotes", rasgos, true);
+        }}
+      />
+
+      <Seccion
+        icono={Bookmark}
+        titulo="Tus ejemplos"
+        subtitulo="Hasta 2 publicaciones que suenan a ti. Las usamos como referencia: imitamos su ritmo y su vocabulario, no su contenido."
+      >
+        <div className="flex flex-col gap-2">
+          <div className="grid gap-4 md:grid-cols-2">
+            {([0, 1] as const).map((slot) => (
+              <RanuraEjemplo
+                key={slot}
+                numero={slot === 0 ? 1 : 2}
+                texto={examples[slot]}
+                onGuardar={(texto) => cambiarEjemplo(slot, texto)}
+                onQuitar={() => cambiarEjemplo(slot, "")}
+              />
+            ))}
+          </div>
+          <EstadoDeEjemplos estado={auto.estado("referenceExamples")} />
+        </div>
+        {/* Preview manual (doc §5): un botón, nunca en cada cambio. Un campo
+            que la pantalla ya sabe inválido tampoco está guardado: el ejemplo
+            saldría con el valor anterior, y se cobraría igual. */}
+        <UltimoEjemplo
+          ultimo={ultimoEjemplo}
+          vozCambio={
+            ultimoEjemplo !== null &&
+            vozActualizada !== null &&
+            new Date(vozActualizada) > new Date(ultimoEjemplo.generatedAt)
+          }
+          antesDePedir={async () => (await auto.vaciar()) && !errorPais && !errorNicho}
+          onNuevo={setUltimoEjemplo}
+        />
+      </Seccion>
 
       <Seccion
         icono={Target}
         titulo="Identidad y audiencia"
-        subtitulo="A quién le hablas y desde dónde."
+        subtitulo="A quién le hablas, desde dónde y qué nunca debemos inventar."
       >
         <Campo
           label="Mercado"
@@ -349,177 +414,214 @@ export function VozDeMarcaPage() {
             ))}
           </Select>
         </Campo>
-      </Seccion>
 
-      <Seccion
-        icono={SlidersHorizontal}
-        titulo="Registro y tono"
-        subtitulo="Qué tan formal suenas y qué palabras usas."
-      >
-        <Campo label="Formalidad" htmlFor="formality" estado={auto.estado("formality")}>
-          <FormalitySlider
-            id="formality"
-            value={formality}
-            onChange={(valor) => {
-              setFormality(valor);
-              // register no se manda: el servidor lo recalcula desde formality
-              // (brand-voice.service.ts::reconcileFormality, doc §4).
-              guardar("formality", valor);
-            }}
-          />
-        </Campo>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <Campo
-            label="Modismos permitidos"
-            htmlFor="allowed-expressions"
-            tono="permitido"
-            estado={auto.estado("allowedExpressions")}
-            hint="Aparecen cuando encajan de forma natural — nunca forzados."
-          >
-            <TagInput
-              id="allowed-expressions"
-              value={allowedExpressions}
-              onChange={(next) => {
-                setAllowedExpressions(next);
-                setQuitadosPorConflicto([]);
-                guardar("allowedExpressions", next, true);
-              }}
-              tono="permitido"
-              enConflicto={(tag) => prohibidosNormalizados.has(normalizeExpression(tag))}
-              maxItems={20}
-              maxLength={40}
-              placeholder="Agregar…"
-            />
-          </Campo>
-          <Campo
-            label="Modismos prohibidos"
-            htmlFor="banned-expressions"
-            tono="prohibido"
-            estado={auto.estado("bannedExpressions")}
-            hint="Nunca aparecen, ni siquiera citados."
-          >
-            <TagInput
-              id="banned-expressions"
-              value={bannedExpressions}
-              onChange={(next) => {
-                setBannedExpressions(next);
-                setQuitadosPorConflicto([]);
-                guardar("bannedExpressions", next, true);
-              }}
-              tono="prohibido"
-              maxItems={20}
-              maxLength={40}
-              placeholder="Agregar…"
-            />
-          </Campo>
-        </div>
-        {quitadosPorConflicto.length > 0 && !conflictingTerm && (
-          <Aviso>
-            {quitadosPorConflicto.map((term) => `«${term}»`).join(", ")}{" "}
-            {quitadosPorConflicto.length === 1
-              ? "estaba en las dos listas — lo dejamos"
-              : "estaban en las dos listas — los dejamos"}{" "}
-            solo en <b>prohibidos</b>, por seguridad.
-          </Aviso>
-        )}
-        {conflictingTerm && (
-          <Aviso>
-            <b>«{conflictingTerm}»</b> está en las dos listas — lo tratamos como <b>prohibido</b>{" "}
-            por seguridad.
-          </Aviso>
-        )}
-
-        <div>
-          <div className="flex items-center justify-between gap-4 rounded-md border border-line bg-surface px-4 py-3.5">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="font-display text-base font-semibold text-fg">Permitir anglicismos</p>
-                <MarcaDeGuardado estado={auto.estado("useAnglicisms")} />
-              </div>
-              <p className="mt-0.5 text-xs text-fg-secondary">
-                Palabras en inglés como «engagement», «reels» o «tips».
-              </p>
-            </div>
-            <Toggle
-              checked={useAnglicisms}
-              onChange={(next) => {
-                setUseAnglicisms(next);
-                guardar("useAnglicisms", next, true);
-              }}
-              label="Permitir anglicismos"
-            />
-          </div>
-          {/* El switch no vive en un Campo: su error se dice acá, no solo con
-            el ícono de la marca. */}
-          <ErrorDeGuardado estado={auto.estado("useAnglicisms")} />
-        </div>
-      </Seccion>
-
-      <Seccion icono={LayoutGrid} titulo="Contenido" subtitulo="De qué hablas y cómo cierras.">
         <Campo
-          label="Temas clave / pilares de contenido"
-          htmlFor="key-topics"
-          estado={auto.estado("keyTopics")}
+          label="Datos fijos de tu marca"
+          htmlFor="business-facts"
+          estado={auto.estado("businessFacts")}
+          hint={
+            <span className="flex flex-wrap items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5">
+                <Folder size={13} strokeWidth={1.7} aria-hidden />
+                En una carpeta, sus instrucciones mandan sobre esto.
+              </span>
+              <span>
+                {businessFacts.length} / {BUSINESS_FACTS_MAX_LENGTH}
+              </span>
+            </span>
+          }
         >
-          <TagInput
-            id="key-topics"
-            value={keyTopics}
-            onChange={(next) => {
-              setKeyTopics(next);
-              guardar("keyTopics", next, true);
+          <p className="-mt-1 mb-2 text-xs text-fg-secondary">
+            Lo que siempre debemos saber y nunca inventar: horario, dirección, WhatsApp, link de
+            reservas, precios base.
+          </p>
+          <Textarea
+            id="business-facts"
+            maxLength={BUSINESS_FACTS_MAX_LENGTH}
+            value={businessFacts}
+            onChange={(e) => {
+              setBusinessFacts(e.target.value);
+              // "" -> null: vaciarlo es borrarlos.
+              guardar("businessFacts", e.target.value.trim() || null);
             }}
-            maxItems={20}
-            maxLength={40}
-            placeholder="Escribe y presiona Enter…"
+            rows={4}
+            placeholder="Ej. Abrimos de lunes a sábado de 8 a 14 h. WhatsApp 999 123 4567. Reservas: tusitio.mx/reservas."
           />
-          {keyTopics.length === 0 && <Invitacion>{INVITACION}</Invitacion>}
-        </Campo>
-        <Campo
-          label="CTAs preferidos"
-          htmlFor="preferred-ctas"
-          estado={auto.estado("preferredCtas")}
-        >
-          <TagInput
-            id="preferred-ctas"
-            value={preferredCtas}
-            onChange={(next) => {
-              setPreferredCtas(next);
-              guardar("preferredCtas", next, true);
-            }}
-            maxItems={20}
-            maxLength={80}
-            placeholder="Escribe y presiona Enter…"
-          />
-          {preferredCtas.length === 0 && <Invitacion>{INVITACION}</Invitacion>}
         </Campo>
       </Seccion>
 
-      <Seccion
-        icono={Bookmark}
-        titulo="Ejemplos de referencia"
-        subtitulo="Hasta 2 posts que representen tu voz. De todo lo de esta página, es lo que más influye: imitamos su ritmo y su vocabulario."
-      >
-        <div className="flex flex-col gap-2">
-          <div className="grid gap-4 md:grid-cols-2">
-            {([0, 1] as const).map((slot) => (
-              <RanuraEjemplo
-                key={slot}
-                numero={slot === 0 ? 1 : 2}
-                texto={examples[slot]}
-                onGuardar={(texto) => cambiarEjemplo(slot, texto)}
-                onQuitar={() => cambiarEjemplo(slot, "")}
+      <MemoriaSeccion />
+
+      {/* «Ajustes finos» (F12.5): registro, modismos, anglicismos, temas y
+          CTAs. Plegado por defecto con su resumen: siguen ahí para quien los
+          quiera, sin competir con «Así escribes». */}
+      <section className="mb-5 rounded-lg border border-line bg-card">
+        <button
+          type="button"
+          aria-expanded={finosAbiertos}
+          aria-controls={idFinos}
+          onClick={() => setFinosAbiertos((v) => !v)}
+          className="flex w-full items-center gap-2.75 rounded-lg p-5 text-left md:px-6"
+        >
+          <span className="flex size-8.5 shrink-0 items-center justify-center rounded-md bg-secondary">
+            <SlidersHorizontal size={17} strokeWidth={1.5} className="text-accent" aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-display text-md font-semibold text-fg">Ajustes finos</span>
+            <span className="block truncate text-sm text-fg-muted">
+              {formalityZoneLabel(formality)} · {allowedExpressions.length}{" "}
+              {allowedExpressions.length === 1 ? "modismo permitido" : "modismos permitidos"} ·
+              Anglicismos: {useAnglicisms ? "sí" : "no"} · {keyTopics.length}{" "}
+              {keyTopics.length === 1 ? "tema" : "temas"}
+            </span>
+          </span>
+          <ChevronDown
+            size={18}
+            className={`shrink-0 text-fg-muted transition-transform ${finosAbiertos ? "rotate-180" : ""}`}
+            aria-hidden
+          />
+        </button>
+        {finosAbiertos && (
+          <div id={idFinos} className="flex flex-col gap-5 border-t border-line-subtle p-5 md:p-6">
+            <Campo label="Formalidad" htmlFor="formality" estado={auto.estado("formality")}>
+              <FormalitySlider
+                id="formality"
+                value={formality}
+                onChange={(valor) => {
+                  setFormality(valor);
+                  // register no se manda: el servidor lo recalcula desde formality
+                  // (brand-voice.service.ts::reconcileFormality, doc §4).
+                  guardar("formality", valor);
+                }}
               />
-            ))}
-          </div>
-          <EstadoDeEjemplos estado={auto.estado("referenceExamples")} />
-        </div>
-      </Seccion>
+            </Campo>
 
-      {/* Preview manual (doc §5): un botón, nunca en cada cambio. */}
-      {/* Un campo que la pantalla ya sabe inválido tampoco está guardado: el
-          ejemplo saldría con el valor anterior, y se cobraría igual. */}
-      <EjemploDeVoz antesDePedir={async () => (await auto.vaciar()) && !errorPais && !errorNicho} />
+            <div className="grid gap-4 md:grid-cols-2">
+              <Campo
+                label="Modismos permitidos"
+                htmlFor="allowed-expressions"
+                tono="permitido"
+                estado={auto.estado("allowedExpressions")}
+                hint="Aparecen cuando encajan de forma natural — nunca forzados."
+              >
+                <TagInput
+                  id="allowed-expressions"
+                  value={allowedExpressions}
+                  onChange={(next) => {
+                    setAllowedExpressions(next);
+                    setQuitadosPorConflicto([]);
+                    guardar("allowedExpressions", next, true);
+                  }}
+                  tono="permitido"
+                  enConflicto={(tag) => prohibidosNormalizados.has(normalizeExpression(tag))}
+                  maxItems={20}
+                  maxLength={40}
+                  placeholder="Agregar…"
+                />
+              </Campo>
+              <Campo
+                label="Modismos prohibidos"
+                htmlFor="banned-expressions"
+                tono="prohibido"
+                estado={auto.estado("bannedExpressions")}
+                hint="Nunca aparecen, ni siquiera citados."
+              >
+                <TagInput
+                  id="banned-expressions"
+                  value={bannedExpressions}
+                  onChange={(next) => {
+                    setBannedExpressions(next);
+                    setQuitadosPorConflicto([]);
+                    guardar("bannedExpressions", next, true);
+                  }}
+                  tono="prohibido"
+                  maxItems={20}
+                  maxLength={40}
+                  placeholder="Agregar…"
+                />
+              </Campo>
+            </div>
+            {quitadosPorConflicto.length > 0 && !conflictingTerm && (
+              <Aviso>
+                {quitadosPorConflicto.map((term) => `«${term}»`).join(", ")}{" "}
+                {quitadosPorConflicto.length === 1
+                  ? "estaba en las dos listas — lo dejamos"
+                  : "estaban en las dos listas — los dejamos"}{" "}
+                solo en <b>prohibidos</b>, por seguridad.
+              </Aviso>
+            )}
+            {conflictingTerm && (
+              <Aviso>
+                <b>«{conflictingTerm}»</b> está en las dos listas — lo tratamos como{" "}
+                <b>prohibido</b> por seguridad.
+              </Aviso>
+            )}
+
+            <div>
+              <div className="flex items-center justify-between gap-4 rounded-md border border-line bg-surface px-4 py-3.5">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-display text-base font-semibold text-fg">
+                      Permitir anglicismos
+                    </p>
+                    <MarcaDeGuardado estado={auto.estado("useAnglicisms")} />
+                  </div>
+                  <p className="mt-0.5 text-xs text-fg-secondary">
+                    Palabras en inglés como «engagement», «reels» o «tips».
+                  </p>
+                </div>
+                <Toggle
+                  checked={useAnglicisms}
+                  onChange={(next) => {
+                    setUseAnglicisms(next);
+                    guardar("useAnglicisms", next, true);
+                  }}
+                  label="Permitir anglicismos"
+                />
+              </div>
+              {/* El switch no vive en un Campo: su error se dice acá, no solo con
+            el ícono de la marca. */}
+              <ErrorDeGuardado estado={auto.estado("useAnglicisms")} />
+            </div>
+            <Campo
+              label="Temas clave / pilares de contenido"
+              htmlFor="key-topics"
+              estado={auto.estado("keyTopics")}
+            >
+              <TagInput
+                id="key-topics"
+                value={keyTopics}
+                onChange={(next) => {
+                  setKeyTopics(next);
+                  guardar("keyTopics", next, true);
+                }}
+                maxItems={20}
+                maxLength={40}
+                placeholder="Escribe y presiona Enter…"
+              />
+              {keyTopics.length === 0 && <Invitacion>{INVITACION}</Invitacion>}
+            </Campo>
+            <Campo
+              label="CTAs preferidos"
+              htmlFor="preferred-ctas"
+              estado={auto.estado("preferredCtas")}
+            >
+              <TagInput
+                id="preferred-ctas"
+                value={preferredCtas}
+                onChange={(next) => {
+                  setPreferredCtas(next);
+                  guardar("preferredCtas", next, true);
+                }}
+                maxItems={20}
+                maxLength={80}
+                placeholder="Escribe y presiona Enter…"
+              />
+              {preferredCtas.length === 0 && <Invitacion>{INVITACION}</Invitacion>}
+            </Campo>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

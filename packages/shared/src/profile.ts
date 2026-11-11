@@ -20,6 +20,8 @@ export const updateProfileBodySchema = z.object({
       message: "Esa zona horaria no es válida.",
     })
     .optional(),
+  // F12.5: «Recordar entre chats» (Configuración › Voz de marca › Memoria).
+  memoryEnabled: z.boolean().optional(),
 });
 export type UpdateProfileBody = z.infer<typeof updateProfileBodySchema>;
 
@@ -30,4 +32,6 @@ export interface ProfileDto {
   displayName: string | null;
   timezone: string;
   onboardingCompletedAt: string | null;
+  /** F12.5: apagada, el chat no busca en otros chats ni guarda nada nuevo para recordar. */
+  memoryEnabled: boolean;
 }

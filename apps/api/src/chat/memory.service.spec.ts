@@ -258,4 +258,89 @@ describe("MemoryService", { timeout: 60_000 }, () => {
     const r = await service.search(userId, actual.chatId, "marquesitas");
     expect(r.resultados.some((h) => h.fragmento.includes("otro modelo"))).toBe(false);
   });
+
+  // F12.5: «Recordar entre chats» apagada y «Borrar todo lo que recuerdo».
+  describe("memoria apagada y borrar todo (F12.5)", () => {
+    let apagado: string;
+
+    beforeAll(async () => {
+      const [u] = await dbService.db
+        .insert(users)
+        .values({
+          name: "Sin memoria",
+          email: `sin-memoria-${randomUUID()}@test.local`,
+          memoryEnabled: false,
+        })
+        .returning({ id: users.id });
+      apagado = u!.id;
+    });
+
+    afterAll(async () => {
+      await dbService.db.delete(users).where(eq(users.id, apagado));
+    });
+
+    it("apagada, no guarda nada nuevo para recordar", async () => {
+      const { chatId, messageId } = await chatCon(apagado, "Mis marquesitas de cajeta", "Va.");
+      await service.index({ userId: apagado, chatId, messageId });
+      const filas = await dbService.runWithTenant(apagado, (tx) => tx.select().from(memoryChunks));
+      expect(filas).toEqual([]);
+    });
+
+    it("apagada, no busca en otros chats; sin parte vieja ni paga la consulta", async () => {
+      // Un recuerdo de otro chat (de cuando estaba prendida) que SÍ se parece.
+      const otro = await chatCon(apagado, "¿Qué hashtags uso?", "Usa #Santiago.");
+      await dbService.runWithTenant(apagado, (tx) =>
+        tx.insert(memoryChunks).values({
+          userId: apagado,
+          chatId: otro.chatId,
+          messageId: otro.messageId,
+          content: "Creator: ¿Qué hashtags uso?\nPresencia: Usa #Santiago.",
+          embedding: vectorDe("hashtag"),
+          // El modelo vigente del servicio: solo esos fragmentos cuentan.
+          model: (service as unknown as { modelId: string }).modelId,
+        }),
+      );
+      const actual = await chatCon(apagado, "Hola", "Hola.");
+
+      const prendida = await service.search(apagado, actual.chatId, "el hashtag que me dijiste");
+      expect(prendida.resultados).toHaveLength(1);
+
+      const r = await service.search(
+        apagado,
+        actual.chatId,
+        "el hashtag que me dijiste",
+        undefined,
+        null,
+        true,
+      );
+      expect(r.resultados).toEqual([]);
+      // Con todo el chat a la vista no hay dónde buscar: ni se pide el embedding.
+      const usos = await dbService.runWithTenant(apagado, (tx) =>
+        tx.select().from(aiUsageEvents).where(eq(aiUsageEvents.chatId, actual.chatId)),
+      );
+      expect(usos.filter((u) => u.taskKind === "memory_search")).toHaveLength(1);
+    });
+
+    it("borrar todo deja sin recuerdos a ese usuario y no toca a los demás", async () => {
+      const antesDelOtro = await dbService.runWithTenant(userId, (tx) =>
+        tx.select().from(memoryChunks),
+      );
+      expect(antesDelOtro.length).toBeGreaterThan(0);
+
+      const borrados = await service.forgetAll(apagado);
+      expect(borrados).toBeGreaterThan(0);
+      expect(
+        await dbService.runWithTenant(apagado, (tx) => tx.select().from(memoryChunks)),
+      ).toEqual([]);
+      const despuesDelOtro = await dbService.runWithTenant(userId, (tx) =>
+        tx.select().from(memoryChunks),
+      );
+      expect(despuesDelOtro).toHaveLength(antesDelOtro.length);
+    });
+
+    it("isEnabled lee la preferencia del usuario", async () => {
+      expect(await service.isEnabled(apagado)).toBe(false);
+      expect(await service.isEnabled(userId)).toBe(true);
+    });
+  });
 });

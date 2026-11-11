@@ -1288,11 +1288,24 @@ dijo en esta parte de la conversación: "Recordé lo que
 hablamos antes en este chat" cuando el recuerdo es del mismo
 chat.
 
+**El interruptor y borrar todo (F12.5):** en Configuración ›
+Voz de marca › Memoria. "Recordar entre chats" apagada: el
+chat ya no busca en sus otros chats (sí en la parte vieja del
+mismo, como cualquier chat largo) y no se guarda nada nuevo
+para recordar. "Borrar todo lo que recuerdo" borra los
+recuerdos, no los chats, y pide confirmación. Así lo resuelven
+ChatGPT ("Consultar historial de chats") y Claude ("Buscar y
+consultar chats"): un interruptor que el usuario entiende, no
+una lista de recuerdos sueltos.
+
 **Lo que no hace en V1:** no hay pantalla para ver o borrar
-recuerdos sueltos ni un interruptor para apagarla. Borrar un
-chat borra su memoria; archivarlo no. Si un creator lo pide,
-se agrega. No se cobra: buscar e indexar cuestan menos de
-una unidad.
+recuerdos sueltos (son pedazos de conversación, no hechos
+como los de ChatGPT, y una lista de fragmentos no se lee).
+Borrar un chat borra su memoria; archivarlo no. No se cobra:
+buscar e indexar cuestan menos de una unidad. La memoria es
+global: un CM que lleva varios clientes la tiene compartida
+entre todos, y "Solo esta carpeta" llega con las carpetas con
+contexto (fase después de F12).
 
 ### Leer enlaces y buscar en la web (F10.10)
 

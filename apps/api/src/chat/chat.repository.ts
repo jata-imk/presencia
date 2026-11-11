@@ -13,6 +13,7 @@ import {
   ne,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import type { ExternalChannel, MessageStatus } from "@presencia/shared";
 import { chatSummaries, chats, memoryChunks, messages } from "../db/schema.js";
@@ -230,6 +231,12 @@ export class ChatRepository {
     return Boolean(row);
   }
 
+  /** F12.5: «Borrar todo lo que recuerdo». RLS acota al usuario. Devuelve cuántos borró. */
+  async deleteAllMemoryChunks(tx: Tx): Promise<number> {
+    const rows = await tx.delete(memoryChunks).returning({ id: memoryChunks.id });
+    return rows.length;
+  }
+
   /** F10.8: guarda un fragmento; uno solo por respuesta (índice único). */
   async insertMemoryChunk(
     tx: Tx,
@@ -254,6 +261,11 @@ export class ChatRepository {
        * `null` excluye el chat actual entero, como antes.
        */
       visibleFromMessageId: string | null;
+      /**
+       * F12.5: la memoria entre chats está apagada → solo la parte vieja de
+       * ESTE chat (la de antes de `visibleFromMessageId`), nunca otros.
+       */
+      onlyThisChat?: boolean;
       model: string;
       embedding: number[];
       limit: number;
@@ -276,26 +288,7 @@ export class ChatRepository {
       .from(memoryChunks)
       .innerJoin(chats, eq(chats.id, memoryChunks.chatId))
       .innerJoin(messages, eq(messages.id, memoryChunks.messageId))
-      .where(
-        and(
-          eq(memoryChunks.model, input.model),
-          input.visibleFromMessageId
-            ? or(
-                ne(memoryChunks.chatId, input.chatId),
-                // Del chat actual, lo anterior a la frontera. La subconsulta va
-                // acotada al mismo chat: un id ajeno o que ya no existe da NULL
-                // y el chat actual queda fuera, como antes.
-                and(
-                  eq(memoryChunks.chatId, input.chatId),
-                  lt(
-                    messages.createdAt,
-                    sql`(select m.created_at from messages m where m.id = ${input.visibleFromMessageId} and m.chat_id = ${input.chatId})`,
-                  ),
-                ),
-              )
-            : ne(memoryChunks.chatId, input.chatId),
-        ),
-      )
+      .where(and(eq(memoryChunks.model, input.model), memoryScope(input)))
       .orderBy(distance)
       .limit(input.limit);
     // relaxed_order puede devolverlos casi en orden: se ordena aquí de nuevo.
@@ -426,4 +419,33 @@ export class ChatRepository {
   async deleteChat(tx: Tx, chatId: string): Promise<void> {
     await tx.delete(chats).where(eq(chats.id, chatId));
   }
+}
+
+/**
+ * Dónde busca la memoria (F10.8, F10.8.1, F12.5).
+ *
+ * - Prendida: los OTROS chats y, de este, lo anterior a la frontera (lo que el
+ *   modelo ya solo ve resumido).
+ * - Apagada (`onlyThisChat`): solo lo anterior a la frontera de este chat.
+ *
+ * La subconsulta de la frontera va acotada al mismo chat: un id ajeno o que ya
+ * no existe da NULL y el chat actual queda fuera.
+ */
+function memoryScope(input: {
+  chatId: string;
+  visibleFromMessageId: string | null;
+  onlyThisChat?: boolean;
+}): SQL | undefined {
+  const parteViejaDeEste = input.visibleFromMessageId
+    ? and(
+        eq(memoryChunks.chatId, input.chatId),
+        lt(
+          messages.createdAt,
+          sql`(select m.created_at from messages m where m.id = ${input.visibleFromMessageId} and m.chat_id = ${input.chatId})`,
+        ),
+      )
+    : undefined;
+  if (input.onlyThisChat) return parteViejaDeEste ?? sql`false`;
+  const otrosChats = ne(memoryChunks.chatId, input.chatId);
+  return parteViejaDeEste ? or(otrosChats, parteViejaDeEste) : otrosChats;
 }

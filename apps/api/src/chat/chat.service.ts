@@ -623,6 +623,9 @@ export class ChatService {
     channel: MessageChannel = "web",
   ): Promise<void> {
     const { abortController, release } = turn;
+    // F12.5: «Recordar entre chats». En paralelo con lo que sigue; se espera
+    // al armar las tools. `isEnabled` nunca lanza (apagada por error = prendida).
+    const memoryEnabledPromise = this.memory.isEnabled(userId);
 
     // Las cards creadas durante este turno (closure compartido con la tool):
     // onEnd las vincula al mensaje assistant una vez que existe.
@@ -712,6 +715,7 @@ export class ChatService {
       trace.runId,
     );
     const modelHistory = context.messages;
+    const memoryEnabled = await memoryEnabledPromise;
     const tools = {
       ...buildPublicationCardTools({
         userId,
@@ -726,16 +730,32 @@ export class ChatService {
       // sus OTROS chats y, desde F10.8.1, en la parte de este que ya solo ve
       // resumida (antes de `oldestVisibleMessageId`). Nunca lanza: sin
       // memoria, el turno sigue igual.
+      //
+      // F12.5: con «Recordar entre chats» apagada, la tool sigue (el prompt
+      // base y la nota del historial la nombran, y un chat largo la necesita
+      // para lo suyo), pero solo busca en la parte vieja de ESTE chat, y su
+      // descripción se lo dice al modelo para que no prometa otra cosa.
       [MEMORY_TOOL_NAME]: tool({
-        description:
-          "Busca en las conversaciones anteriores del creator (otros chats) y en la parte " +
-          "vieja de esta conversación que ya solo ves resumida. Úsala cuando se refiera a " +
-          "algo que no ves completo aquí: de otra conversación, o un detalle de antes en " +
-          "esta que el resumen no trae. Devuelve fragmentos con el título del chat, la " +
-          "fecha y si son de esta misma conversación.",
+        description: memoryEnabled
+          ? "Busca en las conversaciones anteriores del creator (otros chats) y en la parte " +
+            "vieja de esta conversación que ya solo ves resumida. Úsala cuando se refiera a " +
+            "algo que no ves completo aquí: de otra conversación, o un detalle de antes en " +
+            "esta que el resumen no trae. Devuelve fragmentos con el título del chat, la " +
+            "fecha y si son de esta misma conversación."
+          : "Busca SOLO en la parte vieja de esta conversación que ya solo ves resumida: el " +
+            "creator apagó la memoria entre chats, así que no puedes ver sus otras " +
+            "conversaciones. Si se refiere a algo de otra conversación, dile con naturalidad " +
+            "que no tienes acceso a sus otros chats y pídele que te cuente lo que necesitas.",
         inputSchema: memorySearchInputSchema,
         execute: ({ consulta }) =>
-          this.memory.search(userId, chatId, consulta, trace.runId, context.oldestVisibleMessageId),
+          this.memory.search(
+            userId,
+            chatId,
+            consulta,
+            trace.runId,
+            context.oldestVisibleMessageId,
+            !memoryEnabled,
+          ),
       }),
       // F10.10 (ADR-028): leer un enlace. Nunca lanza por la página: lo que
       // salga mal es un `estado` que el modelo le dice al creator.

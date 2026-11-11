@@ -17,7 +17,7 @@ export class ProfileService {
     return this.toDto(row);
   }
 
-  // Sella el gate del onboarding (paso "Ready") — apps/web/src/routes/protected.tsx
+  // Sella el gate del onboarding (al cerrar "Así suenas") — apps/web/src/routes/protected.tsx
   // redirige a /onboarding mientras onboardingCompletedAt sea null.
   async completeOnboarding(userId: string): Promise<ProfileDto> {
     const row = await this.repo.completeOnboarding(userId);
@@ -32,6 +32,7 @@ export class ProfileService {
       displayName: row.displayName,
       timezone: row.timezone,
       onboardingCompletedAt: row.onboardingCompletedAt?.toISOString() ?? null,
+      memoryEnabled: row.memoryEnabled,
     };
   }
 }

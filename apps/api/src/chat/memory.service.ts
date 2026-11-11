@@ -7,7 +7,9 @@ import {
   createEmbeddingModelResolver,
   parseModelId,
 } from "../ai/provider-registry.js";
+import { eq } from "drizzle-orm";
 import { DbService } from "../db/db.service.js";
+import { users } from "../db/schema.js";
 import { env } from "../env.js";
 import { BossService } from "../jobs/boss.service.js";
 import { toUIMessage } from "./chat-summary.js";
@@ -78,6 +80,10 @@ export class MemoryService {
    * la respuesta ya no existe (se reintentó), no hace nada.
    */
   async index({ userId, chatId, messageId, runId }: MemoryIndexJob): Promise<void> {
+    // F12.5: con la memoria apagada no se guarda nada nuevo para recordar. Se
+    // revisa aquí (en el job) y no al encolar: lo que importa es lo que el
+    // creator tenga puesto cuando se vaya a guardar.
+    if (!(await this.isEnabled(userId))) return;
     const { exchange, done } = await this.dbService.runWithTenant(userId, async (tx) => ({
       exchange: await this.repo.findExchange(tx, chatId, messageId),
       done: await this.repo.hasMemoryChunk(tx, messageId),
@@ -123,13 +129,19 @@ export class MemoryService {
     consulta: string,
     runId?: string,
     visibleFromMessageId: string | null = null,
+    /** F12.5: memoria apagada → solo la parte vieja de este chat. */
+    onlyThisChat = false,
   ): Promise<MemorySearchOutput> {
+    // Apagada y con el chat completo a la vista, no hay dónde buscar: ni
+    // siquiera se paga el embedding de la consulta.
+    if (onlyThisChat && visibleFromMessageId === null) return { resultados: [] };
     try {
       const vector = await this.embed(userId, chatId, consulta, "query", runId);
       const rows = await this.dbService.runWithTenant(userId, (tx) =>
         this.repo.searchMemory(tx, {
           chatId,
           visibleFromMessageId,
+          onlyThisChat,
           model: this.modelId,
           embedding: vector,
           limit: MEMORY_RESULTS,
@@ -149,6 +161,30 @@ export class MemoryService {
       console.error(`[memoria] No se pudo buscar en la memoria del chat ${chatId}:`, error);
       return { resultados: [] };
     }
+  }
+
+  /**
+   * F12.5: «Recordar entre chats». `users` no tiene RLS (Better Auth): se
+   * filtra por id explícito, como ProfileRepository. Si la lectura falla, se
+   * asume prendida, el default de la columna: una memoria que no se pudo
+   * consultar no debe tumbar el turno.
+   */
+  async isEnabled(userId: string): Promise<boolean> {
+    try {
+      const [row] = await this.dbService.db
+        .select({ enabled: users.memoryEnabled })
+        .from(users)
+        .where(eq(users.id, userId));
+      return row?.enabled ?? true;
+    } catch (error) {
+      console.error(`[memoria] No se pudo leer si ${userId} tiene la memoria prendida:`, error);
+      return true;
+    }
+  }
+
+  /** F12.5: «Borrar todo lo que recuerdo». Borra los fragmentos; los chats no se tocan. */
+  async forgetAll(userId: string): Promise<number> {
+    return this.dbService.runWithTenant(userId, (tx) => this.repo.deleteAllMemoryChunks(tx));
   }
 
   /** Un embedding, con su fila en `ai_usage_events` (tokens estimados si el proveedor no los da). */
