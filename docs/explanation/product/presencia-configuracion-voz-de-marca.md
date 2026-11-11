@@ -57,6 +57,11 @@ un tooltip escondido):
 > de respuesta' dentro del Chat."_
 
 Con link inverso desde el selector de Chat: _"Ver mi Voz de marca →"_.
+
+_F12.5 ("Voz de marca v3"): la nota se volvió la bajada del título —
+"Así suena todo lo que escribimos por ti. Para ajustar un solo mensaje,
+usa «Estilo de respuesta» en el Chat."—, siempre visible, sin caja
+aparte que compita con «Así escribes»._
 Barato de implementar, mata la confusión de raíz sin necesitar
 explicación cada vez.
 
@@ -541,3 +546,50 @@ que nunca diría entra como rasgo «Nunca: …».
 (`voice_preview`), cobrados como cualquier otra generación. Volver al paso 5
 sin cambiar nada no vuelve a pedir ni a cobrar nada. Con la cuota agotada,
 el modal de siempre, y se puede entrar sin borrador.
+
+---
+
+## 14. La página reorganizada (F12.5, "Voz de marca v3")
+
+Diseño: "Voz de marca v3" en Claude Design. Mismos campos de siempre, en un
+orden que va de lo que el creator entiende de un vistazo a lo técnico. Es la
+misma idea que el resumen de memoria de ChatGPT: lo primero que ve es qué
+sabe Presencia de cómo escribe, no un formulario.
+
+1. **Así escribes.** La tarjeta protagonista: de 0 a 8 rasgos legibles
+   ("Frases cortas", "Nunca: «¡Hola, familia!»"), cada uno editable en su
+   lugar, con "Agregar rasgo". Los escriben el onboarding (destilados de sus
+   publicaciones y confirmados por él), él a mano, o una propuesta de
+   "Aprender de mis ediciones" que aceptó (F12.5 PR6). Sin rasgos, invita a
+   escribir uno o a pegar una publicación en «Tus ejemplos».
+2. **Tus ejemplos.** Las dos ranuras de siempre y, debajo, **el último
+   ejemplo generado** en línea, ya no en un modal que se perdía al cerrarlo.
+   Si la voz cambió después de escribirlo, lo dice ("Tu voz cambió desde este
+   ejemplo"): el servidor guarda el ejemplo sin mover `updated_at`, así que
+   la comparación es honesta. Regenerar sigue siendo manual y sin precio en
+   el botón; el diseño traía "≈2 créditos" y no va (addendum ADR-012).
+3. **Identidad y audiencia**, más **Datos fijos de tu marca**: horario,
+   dirección, WhatsApp, link de reservas, precios base, hasta 1000
+   caracteres. Llegan al chat en su propio bloque, como dato, con la regla de
+   usarlos tal cual y preguntar lo que falte. La nota "En una carpeta, sus
+   instrucciones mandan sobre esto" anticipa las carpetas con contexto.
+4. **Memoria.** "Recordar entre chats" (on/off) y "Borrar todo lo que
+   recuerdo" con confirmación. Ver `presencia-chat.md`, "La memoria entre
+   chats". Apagada, la pantalla lo dice: no busca en sus chats anteriores y
+   no guarda nada nuevo para recordar.
+5. **Ajustes finos**, plegado, con su resumen en una línea ("Casual · 3
+   modismos permitidos · Anglicismos: sí · 2 temas"): formalidad, modismos,
+   anglicismos, temas y CTAs, igual que antes. Siguen ahí para quien los
+   quiera; solo dejaron de competir con lo que más pesa.
+
+"Aprender de mis ediciones" va entre «Así escribes» y «Tus ejemplos»: llega
+con F12.5 PR6.
+
+**Más compacta (F12.5, a pedido de Jose).** Configuración se sentía "muy
+grande y separada". Inputs y selects bajaron de ~42 a ~36 px (texto de 14 a
+13 px), los chips de ~46 a ~38 px, las secciones tienen menos padding y huecos
+de 16 px en vez de 20, y las ayudas y errores quedaron en 11.5 px pegados a su
+campo. Vive en las piezas compartidas (`primitivas.tsx`, `campo-estilo.ts`,
+`TagInput`), así que todas las páginas de Configuración cambian igual. El
+editor del panel de publicación comparte `Textarea` y `TagInput` y quedó
+consistente.

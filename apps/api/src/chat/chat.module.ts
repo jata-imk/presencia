@@ -15,6 +15,7 @@ import { ChatRepository } from "./chat.repository.js";
 import { ChatService } from "./chat.service.js";
 import { ChatTitleService } from "./chat-title.service.js";
 import { HistoryCompactionService } from "./history-compaction.service.js";
+import { MemoryController } from "./memory.controller.js";
 import { MemoryService } from "./memory.service.js";
 
 @Module({
@@ -28,7 +29,7 @@ import { MemoryService } from "./memory.service.js";
     JobsModule,
     WebModule,
   ],
-  controllers: [ChatController, CardRewriteController],
+  controllers: [ChatController, CardRewriteController, MemoryController],
   providers: [
     ChatService,
     ChatRepository,

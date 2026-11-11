@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "memory_forgotten_at" timestamp with time zone;

@@ -7,7 +7,9 @@ import {
   createEmbeddingModelResolver,
   parseModelId,
 } from "../ai/provider-registry.js";
+import { eq, sql } from "drizzle-orm";
 import { DbService } from "../db/db.service.js";
+import { users } from "../db/schema.js";
 import { env } from "../env.js";
 import { BossService } from "../jobs/boss.service.js";
 import { toUIMessage } from "./chat-summary.js";
@@ -78,11 +80,19 @@ export class MemoryService {
    * la respuesta ya no existe (se reintentó), no hace nada.
    */
   async index({ userId, chatId, messageId, runId }: MemoryIndexJob): Promise<void> {
+    // F12.5: con la memoria apagada no se guarda nada nuevo para recordar. Se
+    // revisa aquí (en el job) y no al encolar: lo que importa es lo que el
+    // creator tenga puesto cuando se vaya a guardar.
+    const prefs = await this.preferences(userId);
+    if (!prefs.enabled) return;
     const { exchange, done } = await this.dbService.runWithTenant(userId, async (tx) => ({
       exchange: await this.repo.findExchange(tx, chatId, messageId),
       done: await this.repo.hasMemoryChunk(tx, messageId),
     }));
     if (done || !exchange || exchange.reply.role !== "assistant") return;
+    // F12.5: un job que ya estaba en cola cuando borró todo no devuelve a la
+    // memoria lo que se dijo antes de borrar.
+    if (prefs.forgottenAt && exchange.reply.createdAt <= prefs.forgottenAt) return;
     const { reply, previous } = exchange;
     const content = exchangeText(
       previous?.role === "user" ? toUIMessage(previous) : undefined,
@@ -149,6 +159,45 @@ export class MemoryService {
       console.error(`[memoria] No se pudo buscar en la memoria del chat ${chatId}:`, error);
       return { resultados: [] };
     }
+  }
+
+  /**
+   * F12.5: «Recordar entre chats» y el último «Borrar todo». `users` no tiene
+   * RLS (Better Auth): se filtra por id explícito, como ProfileRepository.
+   *
+   * Si la lectura falla, cuenta como APAGADA: es un interruptor de privacidad,
+   * y un error de la base no debe buscar ni guardar en contra de lo que el
+   * creator eligió (revisión del PR5). El turno sigue, solo sin memoria.
+   */
+  async preferences(userId: string): Promise<{ enabled: boolean; forgottenAt: Date | null }> {
+    try {
+      const [row] = await this.dbService.db
+        .select({ enabled: users.memoryEnabled, forgottenAt: users.memoryForgottenAt })
+        .from(users)
+        .where(eq(users.id, userId));
+      return { enabled: row?.enabled ?? false, forgottenAt: row?.forgottenAt ?? null };
+    } catch (error) {
+      console.error(`[memoria] No se pudo leer la memoria de ${userId}; va apagada:`, error);
+      return { enabled: false, forgottenAt: null };
+    }
+  }
+
+  /** F12.5: ¿«Recordar entre chats» está prendida? Nunca lanza (ver `preferences`). */
+  async isEnabled(userId: string): Promise<boolean> {
+    return (await this.preferences(userId)).enabled;
+  }
+
+  /**
+   * F12.5: «Borrar todo lo que recuerdo». Borra los fragmentos (los chats no
+   * se tocan) y sella el momento, para que un `memory.index` que ya estaba en
+   * cola no devuelva lo de antes.
+   */
+  async forgetAll(userId: string): Promise<number> {
+    await this.dbService.db
+      .update(users)
+      .set({ memoryForgottenAt: sql`now()` })
+      .where(eq(users.id, userId));
+    return this.dbService.runWithTenant(userId, (tx) => this.repo.deleteAllMemoryChunks(tx));
   }
 
   /** Un embedding, con su fila en `ai_usage_events` (tokens estimados si el proveedor no los da). */

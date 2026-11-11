@@ -7,4 +7,4 @@
 // de font-size en la misma clase gana la que Tailwind emita última, no la que
 // esté después en el string.
 export const CAMPO_BASE =
-  "w-full rounded-md border-[1.5px] border-line bg-secondary px-3.5 py-2.5 text-fg outline-none placeholder:text-fg-muted transition-[border-color,box-shadow,background-color] focus:border-line-focus focus:bg-card focus:ring-3 focus:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-60";
+  "w-full rounded-md border-[1.5px] border-line bg-secondary px-3 py-2 text-fg outline-none placeholder:text-fg-muted transition-[border-color,box-shadow,background-color] focus:border-line-focus focus:bg-card focus:ring-3 focus:ring-focus-ring disabled:cursor-not-allowed disabled:opacity-60";

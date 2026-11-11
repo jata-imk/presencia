@@ -156,7 +156,7 @@ export function OnboardingPage() {
   const [terminando, setTerminando] = useState(false);
   const [cuota, setCuota] = useState<QuotaStatusDto | null>(null);
   // Cada cierre lleva su turno: si empieza otro (cambió algo y volvió), la
-  // respuesta del anterior se descarta (mismo patrón que EjemploDeVoz).
+  // respuesta del anterior se descarta (mismo patrón que UltimoEjemplo).
   const turno = useRef(0);
   // El cierre que ya arrancó (en curso o listo), por su llave: volver al paso
   // 5 sin cambiar nada no vuelve a pedir (ni a cobrar) nada. Volver ATRÁS no lo

@@ -258,4 +258,101 @@ describe("MemoryService", { timeout: 60_000 }, () => {
     const r = await service.search(userId, actual.chatId, "marquesitas");
     expect(r.resultados.some((h) => h.fragmento.includes("otro modelo"))).toBe(false);
   });
+
+  // F12.5: «Recordar entre chats» apagada y «Borrar todo lo que recuerdo».
+  describe("memoria apagada y borrar todo (F12.5)", () => {
+    let apagado: string;
+
+    beforeAll(async () => {
+      const [u] = await dbService.db
+        .insert(users)
+        .values({
+          name: "Sin memoria",
+          email: `sin-memoria-${randomUUID()}@test.local`,
+          memoryEnabled: false,
+        })
+        .returning({ id: users.id });
+      apagado = u!.id;
+    });
+
+    afterAll(async () => {
+      await dbService.db.delete(users).where(eq(users.id, apagado));
+    });
+
+    it("apagada, no guarda nada nuevo para recordar", async () => {
+      const { chatId, messageId } = await chatCon(apagado, "Mis marquesitas de cajeta", "Va.");
+      await service.index({ userId: apagado, chatId, messageId });
+      const filas = await dbService.runWithTenant(apagado, (tx) => tx.select().from(memoryChunks));
+      expect(filas).toEqual([]);
+    });
+
+    it("borrar todo deja sin recuerdos a ese usuario y no toca a los demás", async () => {
+      // Un recuerdo de cuando estaba prendida.
+      const otro = await chatCon(apagado, "¿Qué hashtags uso?", "Usa #Santiago.");
+      await dbService.runWithTenant(apagado, (tx) =>
+        tx.insert(memoryChunks).values({
+          userId: apagado,
+          chatId: otro.chatId,
+          messageId: otro.messageId,
+          content: "Creator: ¿Qué hashtags uso?\nPresencia: Usa #Santiago.",
+          embedding: vectorDe("hashtag"),
+          // El modelo vigente del servicio: solo esos fragmentos cuentan.
+          model: (service as unknown as { modelId: string }).modelId,
+        }),
+      );
+      const antesDelOtro = await dbService.runWithTenant(userId, (tx) =>
+        tx.select().from(memoryChunks),
+      );
+      expect(antesDelOtro.length).toBeGreaterThan(0);
+
+      const borrados = await service.forgetAll(apagado);
+      expect(borrados).toBe(1);
+      expect(
+        await dbService.runWithTenant(apagado, (tx) => tx.select().from(memoryChunks)),
+      ).toEqual([]);
+      const despuesDelOtro = await dbService.runWithTenant(userId, (tx) =>
+        tx.select().from(memoryChunks),
+      );
+      expect(despuesDelOtro).toHaveLength(antesDelOtro.length);
+    });
+
+    // Un memory.index que ya estaba en cola al borrar (expira en 2 min) no
+    // devuelve a la memoria lo que se dijo antes de borrar.
+    it("después de borrar todo, un job en cola de antes no regresa el intercambio", async () => {
+      const [prendido] = await dbService.db
+        .insert(users)
+        .values({ name: "Olvida", email: `olvida-${randomUUID()}@test.local` })
+        .returning({ id: users.id });
+      const dueno = prendido!.id;
+      try {
+        // Con un minuto de margen: `forgottenAt` lo sella el reloj de Postgres
+        // y estas fechas el de la máquina de pruebas (en la app, los dos son
+        // el de la base).
+        const viejo = await chatCon(dueno, "Mis marquesitas de cajeta", "Va.", Date.now() - 60_000);
+        await service.forgetAll(dueno);
+        await service.index({ userId: dueno, ...viejo }); // el job que estaba en cola
+        expect(
+          await dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks)),
+        ).toEqual([]);
+        // Lo que se dice después de borrar sí se recuerda.
+        const nuevo = await chatCon(
+          dueno,
+          "Mis marquesitas de nutella",
+          "Va.",
+          Date.now() + 60_000,
+        );
+        await service.index({ userId: dueno, ...nuevo });
+        expect(
+          await dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks)),
+        ).toHaveLength(1);
+      } finally {
+        await dbService.db.delete(users).where(eq(users.id, dueno));
+      }
+    });
+
+    it("isEnabled lee la preferencia del usuario", async () => {
+      expect(await service.isEnabled(apagado)).toBe(false);
+      expect(await service.isEnabled(userId)).toBe(true);
+    });
+  });
 });
