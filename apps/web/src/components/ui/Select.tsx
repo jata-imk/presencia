@@ -7,7 +7,7 @@ export function Select({
   ...rest
 }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select className={`${CAMPO_BASE} cursor-pointer text-base ${className}`} {...rest}>
+    <select className={`${CAMPO_BASE} cursor-pointer text-sm ${className}`} {...rest}>
       {children}
     </select>
   );

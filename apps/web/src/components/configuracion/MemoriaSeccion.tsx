@@ -31,9 +31,15 @@ export function MemoriaSeccion() {
       .catch(() => setError("No pudimos cargar tu memoria."));
   }, []);
 
+  // Mientras viaja un cambio, el switch espera: dos clics rápidos con uno que
+  // falla dejaban la pantalla diciendo lo contrario del servidor (revisión
+  // del PR5).
+  const [guardando, setGuardando] = useState(false);
+
   async function cambiar(siguiente: boolean) {
     const antes = prendida;
     setPrendida(siguiente);
+    setGuardando(true);
     setError(null);
     setAviso(null);
     try {
@@ -41,6 +47,8 @@ export function MemoriaSeccion() {
     } catch (e) {
       setPrendida(antes);
       setError(e instanceof ApiError ? e.message : "No pudimos guardar el cambio.");
+    } finally {
+      setGuardando(false);
     }
   }
 
@@ -66,38 +74,38 @@ export function MemoriaSeccion() {
 
   return (
     <Seccion icono={BrainCircuit} titulo="Memoria">
-      <div className="flex items-center justify-between gap-4 rounded-md border border-line bg-surface px-4 py-3.5">
+      <div className="flex items-center justify-between gap-4 rounded-md border border-line bg-surface px-3.5 py-2.5">
         <div>
-          <p className="font-display text-base font-semibold text-fg">Recordar entre chats</p>
-          <p className="mt-0.5 text-xs leading-normal text-fg-secondary">
+          <p className="font-display text-sm font-semibold text-fg">Recordar entre chats</p>
+          <p className="mt-0.5 text-[11.5px] leading-snug text-fg-secondary">
             Cuando mencionas algo de otra conversación, Presencia lo busca en tus chats anteriores.
           </p>
           {prendida === false && (
-            <p className="mt-1.5 text-xs text-warning-fg">
-              Apagada: no busca en tus otros chats, y mientras esté así no guarda nada nuevo para
-              recordar.
+            <p className="mt-1 text-[11.5px] leading-snug text-warning-fg">
+              Apagada: no busca en tus chats anteriores, y mientras esté así no guarda nada nuevo
+              para recordar.
             </p>
           )}
         </div>
         <Toggle
           checked={prendida ?? true}
-          disabled={prendida === null}
+          disabled={prendida === null || guardando}
           onChange={(siguiente) => void cambiar(siguiente)}
           label="Recordar entre chats"
         />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="flex items-center gap-2 text-xs text-fg-muted">
-          <MessageSquareX size={15} strokeWidth={1.6} aria-hidden />
+        <p className="flex items-center gap-1.5 text-[11.5px] text-fg-muted">
+          <MessageSquareX size={14} strokeWidth={1.6} aria-hidden />
           Borrar un chat borra lo que se recordaba de él.
         </p>
         <button
           type="button"
           onClick={() => setConfirmando(true)}
-          className="inline-flex items-center gap-2 rounded-lg border-[1.5px] border-error-border bg-card px-3.5 py-2 font-display text-[13px] font-semibold text-error-fg hover:bg-error-bg"
+          className="inline-flex items-center gap-1.5 rounded-lg border-[1.5px] border-error-border bg-card px-3 py-1.5 font-display text-[12.5px] font-semibold text-error-fg hover:bg-error-bg"
         >
-          <Trash2 size={15} strokeWidth={1.8} aria-hidden />
+          <Trash2 size={14} strokeWidth={1.8} aria-hidden />
           Borrar todo lo que recuerdo
         </button>
       </div>

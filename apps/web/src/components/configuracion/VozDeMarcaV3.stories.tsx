@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { fn } from "storybook/test";
+import { fn, within } from "storybook/test";
 import type { ProfileDto } from "@presencia/shared";
 import { AsiEscribes } from "./AsiEscribes.js";
 import { MemoriaSeccion } from "./MemoriaSeccion.js";
@@ -96,6 +96,47 @@ export const MemoriaApagada: Story = {
   name: "Memoria apagada",
   render: () => <MemoriaSeccion />,
   parameters: { api: { "/api/me": { body: yo(false) } } },
+};
+
+/** Sin backend, "Regenerar" falla: el error se dice bajo el ejemplo. */
+export const UltimoEjemploError: Story = {
+  name: "Último ejemplo (no se pudo escribir)",
+  render: () => (
+    <UltimoEjemplo
+      ultimo={EJEMPLO}
+      vozCambio={false}
+      antesDePedir={() => Promise.resolve(true)}
+      onNuevo={fn()}
+    />
+  ),
+  parameters: {
+    api: {
+      "/api/brand-voice/ejemplo": {
+        status: 503,
+        body: { statusCode: 503, message: "No pudimos escribir el ejemplo. Inténtalo de nuevo." },
+      },
+    },
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: /Regenerar/ }));
+  },
+};
+
+/** Después de borrar: el aviso de que olvidó. */
+export const MemoriaBorrada: Story = {
+  name: "Memoria borrada (aviso)",
+  render: () => <MemoriaSeccion />,
+  parameters: {
+    api: { "/api/me": { body: yo(true) }, "/api/memoria": { body: { borrados: 12 } } },
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(
+      await canvas.findByRole("button", { name: /Borrar todo lo que recuerdo/ }),
+    );
+    // El modal vive en un portal, fuera del canvas de la historia.
+    const borrar = await within(document.body).findByRole("button", { name: "Borrar memoria" });
+    await userEvent.click(borrar);
+  },
 };
 
 /** La confirmación de borrar: no se deshace, por eso pregunta. */

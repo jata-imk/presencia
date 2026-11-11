@@ -193,11 +193,15 @@ export const users = pgTable("users", {
   // credits/rate-card.ts). Default al tier más bajo — nunca NULL, para que
   // ensureCurrentCycle siempre pueda resolver una cuota.
   planTier: planTier("plan_tier").notNull().default("creator"),
-  // F12.5: «Recordar entre chats». Apagada, el chat no busca en sus OTROS
-  // chats (sí en la parte vieja del mismo, como cualquier chat largo) y no se
-  // guarda nada nuevo para recordar. Es del usuario y no de la voz: la
-  // memoria cruza todas sus voces y carpetas.
+  // F12.5: «Recordar entre chats». Apagada, el chat no busca en la memoria
+  // (ni en otros chats ni en la parte vieja del mismo: un chat largo se queda
+  // con su resumen) y no se guarda nada nuevo para recordar. Es del usuario y
+  // no de la voz: la memoria cruza todas sus voces y carpetas.
   memoryEnabled: boolean("memory_enabled").notNull().default(true),
+  // F12.5: el último «Borrar todo lo que recuerdo». Los `memory.index` que ya
+  // estaban en cola al borrar (expiran en 2 min) no deben volver a guardar
+  // intercambios de antes: el índice ignora lo anterior a este momento.
+  memoryForgottenAt: timestamp("memory_forgotten_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

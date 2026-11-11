@@ -286,8 +286,8 @@ describe("MemoryService", { timeout: 60_000 }, () => {
       expect(filas).toEqual([]);
     });
 
-    it("apagada, no busca en otros chats; sin parte vieja ni paga la consulta", async () => {
-      // Un recuerdo de otro chat (de cuando estaba prendida) que SÍ se parece.
+    it("borrar todo deja sin recuerdos a ese usuario y no toca a los demás", async () => {
+      // Un recuerdo de cuando estaba prendida.
       const otro = await chatCon(apagado, "¿Qué hashtags uso?", "Usa #Santiago.");
       await dbService.runWithTenant(apagado, (tx) =>
         tx.insert(memoryChunks).values({
@@ -300,35 +300,13 @@ describe("MemoryService", { timeout: 60_000 }, () => {
           model: (service as unknown as { modelId: string }).modelId,
         }),
       );
-      const actual = await chatCon(apagado, "Hola", "Hola.");
-
-      const prendida = await service.search(apagado, actual.chatId, "el hashtag que me dijiste");
-      expect(prendida.resultados).toHaveLength(1);
-
-      const r = await service.search(
-        apagado,
-        actual.chatId,
-        "el hashtag que me dijiste",
-        undefined,
-        null,
-        true,
-      );
-      expect(r.resultados).toEqual([]);
-      // Con todo el chat a la vista no hay dónde buscar: ni se pide el embedding.
-      const usos = await dbService.runWithTenant(apagado, (tx) =>
-        tx.select().from(aiUsageEvents).where(eq(aiUsageEvents.chatId, actual.chatId)),
-      );
-      expect(usos.filter((u) => u.taskKind === "memory_search")).toHaveLength(1);
-    });
-
-    it("borrar todo deja sin recuerdos a ese usuario y no toca a los demás", async () => {
       const antesDelOtro = await dbService.runWithTenant(userId, (tx) =>
         tx.select().from(memoryChunks),
       );
       expect(antesDelOtro.length).toBeGreaterThan(0);
 
       const borrados = await service.forgetAll(apagado);
-      expect(borrados).toBeGreaterThan(0);
+      expect(borrados).toBe(1);
       expect(
         await dbService.runWithTenant(apagado, (tx) => tx.select().from(memoryChunks)),
       ).toEqual([]);
@@ -336,6 +314,40 @@ describe("MemoryService", { timeout: 60_000 }, () => {
         tx.select().from(memoryChunks),
       );
       expect(despuesDelOtro).toHaveLength(antesDelOtro.length);
+    });
+
+    // Un memory.index que ya estaba en cola al borrar (expira en 2 min) no
+    // devuelve a la memoria lo que se dijo antes de borrar.
+    it("después de borrar todo, un job en cola de antes no regresa el intercambio", async () => {
+      const [prendido] = await dbService.db
+        .insert(users)
+        .values({ name: "Olvida", email: `olvida-${randomUUID()}@test.local` })
+        .returning({ id: users.id });
+      const dueno = prendido!.id;
+      try {
+        // Con un minuto de margen: `forgottenAt` lo sella el reloj de Postgres
+        // y estas fechas el de la máquina de pruebas (en la app, los dos son
+        // el de la base).
+        const viejo = await chatCon(dueno, "Mis marquesitas de cajeta", "Va.", Date.now() - 60_000);
+        await service.forgetAll(dueno);
+        await service.index({ userId: dueno, ...viejo }); // el job que estaba en cola
+        expect(
+          await dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks)),
+        ).toEqual([]);
+        // Lo que se dice después de borrar sí se recuerda.
+        const nuevo = await chatCon(
+          dueno,
+          "Mis marquesitas de nutella",
+          "Va.",
+          Date.now() + 60_000,
+        );
+        await service.index({ userId: dueno, ...nuevo });
+        expect(
+          await dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks)),
+        ).toHaveLength(1);
+      } finally {
+        await dbService.db.delete(users).where(eq(users.id, dueno));
+      }
     });
 
     it("isEnabled lee la preferencia del usuario", async () => {

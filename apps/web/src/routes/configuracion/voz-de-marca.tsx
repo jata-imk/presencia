@@ -60,6 +60,16 @@ const INVITACION = "Agrega esto para que tu contenido suene aún más a ti.";
 
 type CampoDeVoz = keyof UpdateBrandVoiceBody;
 
+/** Los campos que viven dentro de «Ajustes finos». */
+const CAMPOS_FINOS: CampoDeVoz[] = [
+  "formality",
+  "allowedExpressions",
+  "bannedExpressions",
+  "useAnglicisms",
+  "keyTopics",
+  "preferredCtas",
+];
+
 export function VozDeMarcaPage() {
   const [voice, setVoice] = useState<BrandVoiceDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -193,6 +203,12 @@ export function VozDeMarcaPage() {
   const conflictingTerm = allowedExpressions.find((term) =>
     prohibidosNormalizados.has(normalizeExpression(term)),
   );
+
+  // «Ajustes finos» se abre solo si adentro hay algo que el creator tiene que
+  // ver: un guardado que falló o un modismo en las dos listas. Plegado, el
+  // error quedaba escondido (revisión del PR5).
+  const errorEnFinos = CAMPOS_FINOS.some((campo) => auto.estado(campo)?.tipo === "error");
+  const finosVisibles = finosAbiertos || errorEnFinos || Boolean(conflictingTerm);
 
   // Lo que el servidor va a usar si el select queda en automático. Se calcula
   // con las MISMAS funciones que usa la API (shared/verticals.ts): si la
@@ -455,20 +471,25 @@ export function VozDeMarcaPage() {
       {/* «Ajustes finos» (F12.5): registro, modismos, anglicismos, temas y
           CTAs. Plegado por defecto con su resumen: siguen ahí para quien los
           quiera, sin competir con «Así escribes». */}
-      <section className="mb-5 rounded-lg border border-line bg-card">
+      <section className="mb-4 rounded-lg border border-line bg-card">
         <button
           type="button"
-          aria-expanded={finosAbiertos}
+          aria-expanded={finosVisibles}
           aria-controls={idFinos}
           onClick={() => setFinosAbiertos((v) => !v)}
-          className="flex w-full items-center gap-2.75 rounded-lg p-5 text-left md:px-6"
+          className="flex w-full items-center gap-2.5 rounded-lg p-4 text-left md:px-5"
         >
-          <span className="flex size-8.5 shrink-0 items-center justify-center rounded-md bg-secondary">
-            <SlidersHorizontal size={17} strokeWidth={1.5} className="text-accent" aria-hidden />
+          <span className="flex size-7.5 shrink-0 items-center justify-center rounded-md bg-secondary">
+            <SlidersHorizontal size={16} strokeWidth={1.5} className="text-accent" aria-hidden />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block font-display text-md font-semibold text-fg">Ajustes finos</span>
-            <span className="block truncate text-sm text-fg-muted">
+            {errorEnFinos && (
+              <span className="block text-[12.5px] text-error-fg">
+                Un cambio de aquí no se guardó. Revísalo abajo.
+              </span>
+            )}
+            <span className="block truncate text-[12.5px] text-fg-muted">
               {formalityZoneLabel(formality)} · {allowedExpressions.length}{" "}
               {allowedExpressions.length === 1 ? "modismo permitido" : "modismos permitidos"} ·
               Anglicismos: {useAnglicisms ? "sí" : "no"} · {keyTopics.length}{" "}
@@ -476,13 +497,13 @@ export function VozDeMarcaPage() {
             </span>
           </span>
           <ChevronDown
-            size={18}
-            className={`shrink-0 text-fg-muted transition-transform ${finosAbiertos ? "rotate-180" : ""}`}
+            size={17}
+            className={`shrink-0 text-fg-muted transition-transform ${finosVisibles ? "rotate-180" : ""}`}
             aria-hidden
           />
         </button>
-        {finosAbiertos && (
-          <div id={idFinos} className="flex flex-col gap-5 border-t border-line-subtle p-5 md:p-6">
+        {finosVisibles && (
+          <div id={idFinos} className="flex flex-col gap-4 border-t border-line-subtle p-4 md:p-5">
             <Campo label="Formalidad" htmlFor="formality" estado={auto.estado("formality")}>
               <FormalitySlider
                 id="formality"
@@ -558,15 +579,15 @@ export function VozDeMarcaPage() {
             )}
 
             <div>
-              <div className="flex items-center justify-between gap-4 rounded-md border border-line bg-surface px-4 py-3.5">
+              <div className="flex items-center justify-between gap-4 rounded-md border border-line bg-surface px-3.5 py-2.5">
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="font-display text-base font-semibold text-fg">
+                    <p className="font-display text-sm font-semibold text-fg">
                       Permitir anglicismos
                     </p>
                     <MarcaDeGuardado estado={auto.estado("useAnglicisms")} />
                   </div>
-                  <p className="mt-0.5 text-xs text-fg-secondary">
+                  <p className="mt-0.5 text-[11.5px] text-fg-secondary">
                     Palabras en inglés como «engagement», «reels» o «tips».
                   </p>
                 </div>

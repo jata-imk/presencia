@@ -90,11 +90,11 @@ export function TagInput({
   }
 
   return (
-    <div className="flex min-h-11.5 flex-wrap items-center gap-2 rounded-md border-[1.5px] border-line bg-card p-2 transition-[border-color,box-shadow] focus-within:border-line-focus focus-within:ring-3 focus-within:ring-focus-ring">
+    <div className="flex min-h-9.5 flex-wrap items-center gap-1.5 rounded-md border-[1.5px] border-line bg-card p-1.5 transition-[border-color,box-shadow] focus-within:border-line-focus focus-within:ring-3 focus-within:ring-focus-ring">
       {value.map((tag) => (
         <span
           key={tag}
-          className={`inline-flex items-center gap-1 rounded-full border py-1.25 pr-1.5 pl-3 text-[12.5px] leading-tight font-medium ${
+          className={`inline-flex items-center gap-1 rounded-full border py-0.75 pr-1.5 pl-2.5 text-xs leading-tight font-medium ${
             CLASE_TONO[enConflicto?.(tag) ? "conflicto" : tono]
           }`}
         >
@@ -121,7 +121,7 @@ export function TagInput({
           onBlur={addTag}
           maxLength={maxLength}
           placeholder={value.length === 0 ? placeholder : undefined}
-          className="min-w-24 flex-1 bg-transparent p-1 text-sm text-fg placeholder:text-fg-muted focus:outline-none"
+          className="min-w-24 flex-1 bg-transparent px-1 py-0.5 text-sm text-fg placeholder:text-fg-muted focus:outline-none"
         />
       )}
     </div>

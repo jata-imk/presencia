@@ -477,6 +477,13 @@
       "when": 1794359579464,
       "tag": "0067_memoria_on_off",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1794360778317,
+      "tag": "0068_memoria_olvidada",
+      "breakpoints": true
     }
   ]
 }

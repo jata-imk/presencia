@@ -19,9 +19,9 @@ import type { EstadoDeCampo } from "../../lib/autoguardado.js";
 
 export function EncabezadoDePagina({ titulo, subtitulo }: { titulo: string; subtitulo: string }) {
   return (
-    <div className="mb-5">
-      <h1 className="mb-1.5 font-display text-xl font-bold text-fg">{titulo}</h1>
-      <p className="text-base text-fg-secondary">{subtitulo}</p>
+    <div className="mb-4">
+      <h1 className="mb-1 font-display text-xl font-bold text-fg">{titulo}</h1>
+      <p className="text-sm text-fg-secondary">{subtitulo}</p>
     </div>
   );
 }
@@ -33,18 +33,24 @@ interface SeccionProps {
   children: ReactNode;
 }
 
-/** Un bloque de la página: tarjeta con cuadrito de ícono, título y subtítulo. */
+/**
+ * Un bloque de la página: tarjeta con cuadrito de ícono, título y subtítulo.
+ *
+ * F12.5: más compacta (padding, huecos y textos un paso abajo). Jose sentía
+ * Configuración "muy grande y separada": inputs altos, ayudas lejos de su
+ * campo. Afecta a todas las páginas de Configuración por igual.
+ */
 export function Seccion({ icono: Icono, titulo, subtitulo, children }: SeccionProps) {
   return (
-    <section className="mb-5 rounded-lg border border-line bg-card p-5 md:p-6">
-      <div className="mb-1.5 flex items-center gap-2.75">
-        <div className="flex size-8.5 shrink-0 items-center justify-center rounded-md bg-secondary">
-          <Icono size={17} strokeWidth={1.5} className="text-accent" aria-hidden />
+    <section className="mb-4 rounded-lg border border-line bg-card p-4 md:p-5">
+      <div className="mb-1 flex items-center gap-2.5">
+        <div className="flex size-7.5 shrink-0 items-center justify-center rounded-md bg-secondary">
+          <Icono size={16} strokeWidth={1.5} className="text-accent" aria-hidden />
         </div>
         <h2 className="font-display text-md font-semibold text-fg">{titulo}</h2>
       </div>
-      {subtitulo && <p className="mb-5 text-sm text-fg-muted md:ml-11.25">{subtitulo}</p>}
-      <div className="flex flex-col gap-5">{children}</div>
+      {subtitulo && <p className="mb-4 text-[12.5px] text-fg-muted md:ml-10">{subtitulo}</p>}
+      <div className="flex flex-col gap-4">{children}</div>
     </section>
   );
 }
@@ -83,7 +89,7 @@ export function Campo({
   const mensajeDeError = error ?? (estado?.tipo === "error" ? estado.mensaje : null);
   return (
     <div className="flex min-w-0 flex-col">
-      <div className="mb-2 flex min-h-5 flex-wrap items-center gap-2">
+      <div className="mb-1.5 flex min-h-4.5 flex-wrap items-center gap-2">
         <label
           htmlFor={htmlFor}
           className={`font-display text-[11px] font-semibold tracking-wider uppercase ${TONO_LABEL[tono]}`}
@@ -95,11 +101,11 @@ export function Campo({
       </div>
       {children}
       {mensajeDeError ? (
-        <p role="alert" className="mt-1.5 text-xs text-error-fg">
+        <p role="alert" className="mt-1 text-[11.5px] leading-snug text-error-fg">
           {mensajeDeError}
         </p>
       ) : (
-        hint && <p className="mt-1.5 text-xs text-fg-muted">{hint}</p>
+        hint && <p className="mt-1 text-[11.5px] leading-snug text-fg-muted">{hint}</p>
       )}
     </div>
   );
@@ -144,16 +150,16 @@ export function Pill({ children }: { children: ReactNode }) {
 /** Nota azul con ícono de info: contexto fijo de la página, nunca un tooltip escondido. */
 export function NotaInfo({ children }: { children: ReactNode }) {
   return (
-    <div className="mb-7 flex items-start gap-2.75 rounded-lg border border-info-border bg-info-bg px-4 py-3.25">
-      <Info size={17} strokeWidth={1.75} className="mt-px shrink-0 text-info-fg" aria-hidden />
-      <div className="text-sm leading-relaxed text-fg">{children}</div>
+    <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-info-border bg-info-bg px-3.5 py-2.75">
+      <Info size={16} strokeWidth={1.75} className="mt-px shrink-0 text-info-fg" aria-hidden />
+      <div className="text-[12.5px] leading-relaxed text-fg">{children}</div>
     </div>
   );
 }
 
 /** "Agrega esto para que…": invitación ámbar bajo un campo vacío, que no bloquea nada. */
 export function Invitacion({ children }: { children: ReactNode }) {
-  return <p className="mt-2 text-xs text-warning-fg italic">{children}</p>;
+  return <p className="mt-1.5 text-[11.5px] leading-snug text-warning-fg italic">{children}</p>;
 }
 
 const TONO_AVISO = {
@@ -176,8 +182,8 @@ export function Aviso({
 }) {
   const { Icono, caja, texto } = TONO_AVISO[tono];
   return (
-    <div className={`flex items-start gap-2.5 rounded-md border px-3.5 py-3 ${caja}`}>
-      <Icono size={17} strokeWidth={1.8} className={`mt-px shrink-0 ${texto}`} aria-hidden />
+    <div className={`flex items-start gap-2 rounded-md border px-3 py-2.5 ${caja}`}>
+      <Icono size={15} strokeWidth={1.8} className={`mt-px shrink-0 ${texto}`} aria-hidden />
       <div className={`text-xs leading-normal ${texto}`}>{children}</div>
     </div>
   );

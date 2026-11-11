@@ -624,7 +624,8 @@ export class ChatService {
   ): Promise<void> {
     const { abortController, release } = turn;
     // F12.5: «Recordar entre chats». En paralelo con lo que sigue; se espera
-    // al armar las tools. `isEnabled` nunca lanza (apagada por error = prendida).
+    // al armar las tools. `isEnabled` nunca lanza (una lectura fallida cuenta
+    // como apagada: es un interruptor de privacidad).
     const memoryEnabledPromise = this.memory.isEnabled(userId);
 
     // Las cards creadas durante este turno (closure compartido con la tool):
@@ -731,10 +732,11 @@ export class ChatService {
       // resumida (antes de `oldestVisibleMessageId`). Nunca lanza: sin
       // memoria, el turno sigue igual.
       //
-      // F12.5: con «Recordar entre chats» apagada, la tool sigue (el prompt
-      // base y la nota del historial la nombran, y un chat largo la necesita
-      // para lo suyo), pero solo busca en la parte vieja de ESTE chat, y su
-      // descripción se lo dice al modelo para que no prometa otra cosa.
+      // F12.5: con «Recordar entre chats» apagada, la tool sigue registrada
+      // (el prompt base y la nota del historial la nombran: sin ella hablarían
+      // de una herramienta que no existe), pero no busca nada ni paga el
+      // embedding, y su descripción se lo dice al modelo. Apagada es apagada:
+      // tampoco la parte vieja de este chat, que se queda con su resumen.
       [MEMORY_TOOL_NAME]: tool({
         description: memoryEnabled
           ? "Busca en las conversaciones anteriores del creator (otros chats) y en la parte " +
@@ -742,20 +744,21 @@ export class ChatService {
             "algo que no ves completo aquí: de otra conversación, o un detalle de antes en " +
             "esta que el resumen no trae. Devuelve fragmentos con el título del chat, la " +
             "fecha y si son de esta misma conversación."
-          : "Busca SOLO en la parte vieja de esta conversación que ya solo ves resumida: el " +
-            "creator apagó la memoria entre chats, así que no puedes ver sus otras " +
-            "conversaciones. Si se refiere a algo de otra conversación, dile con naturalidad " +
-            "que no tienes acceso a sus otros chats y pídele que te cuente lo que necesitas.",
+          : "El creator apagó la memoria entre chats: esta herramienta no devuelve nada. No " +
+            "puedes ver sus otras conversaciones ni los detalles viejos de esta que el resumen " +
+            "no trae. Si se refiere a algo que no ves, dile con naturalidad que no lo tienes a " +
+            "la mano y pídele que te cuente lo que necesitas.",
         inputSchema: memorySearchInputSchema,
         execute: ({ consulta }) =>
-          this.memory.search(
-            userId,
-            chatId,
-            consulta,
-            trace.runId,
-            context.oldestVisibleMessageId,
-            !memoryEnabled,
-          ),
+          memoryEnabled
+            ? this.memory.search(
+                userId,
+                chatId,
+                consulta,
+                trace.runId,
+                context.oldestVisibleMessageId,
+              )
+            : Promise.resolve({ resultados: [] }),
       }),
       // F10.10 (ADR-028): leer un enlace. Nunca lanza por la página: lo que
       // salga mal es un `estado` que el modelo le dice al creator.

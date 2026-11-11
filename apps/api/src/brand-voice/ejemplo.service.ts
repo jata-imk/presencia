@@ -49,6 +49,11 @@ export class EjemploDeVozService {
 
     const modelo = this.ai.resolveForTask(TASK_KIND);
     const arranque = Date.now();
+    // La voz con la que se escribe es la de AHORA: si cambia mientras el
+    // modelo escribe, el ejemplo ya es viejo. Por eso se fecha al pedir y no
+    // al terminar; así la pantalla compara bien contra `updatedAt` (revisión
+    // del PR5).
+    const pedidoEn = new Date(arranque).toISOString();
     const respuesta = await generateText({
       model: modelo.model,
       // El MISMO system prompt que el chat: si el ejemplo se escribiera con
@@ -85,7 +90,7 @@ export class EjemploDeVozService {
     //
     // F12.5: en la misma transacción se guarda como el último ejemplo (sin
     // historial): lo que se cobró es lo que la pantalla muestra al volver.
-    const ejemplo: BrandVoiceExampleDto = { text, generatedAt: new Date().toISOString() };
+    const ejemplo: BrandVoiceExampleDto = { text, generatedAt: pedidoEn };
     await this.dbService.runWithTenant(userId, async (tx) => {
       await this.credits.charge(tx, {
         userId,

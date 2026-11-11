@@ -575,8 +575,8 @@ sabe Presencia de cómo escribe, no un formulario.
    instrucciones mandan sobre esto" anticipa las carpetas con contexto.
 4. **Memoria.** "Recordar entre chats" (on/off) y "Borrar todo lo que
    recuerdo" con confirmación. Ver `presencia-chat.md`, "La memoria entre
-   chats". Apagada, la pantalla lo dice: no busca en sus otros chats y no
-   guarda nada nuevo para recordar.
+   chats". Apagada, la pantalla lo dice: no busca en sus chats anteriores y
+   no guarda nada nuevo para recordar.
 5. **Ajustes finos**, plegado, con su resumen en una línea ("Casual · 3
    modismos permitidos · Anglicismos: sí · 2 temas"): formalidad, modismos,
    anglicismos, temas y CTAs, igual que antes. Siguen ahí para quien los
@@ -584,3 +584,12 @@ sabe Presencia de cómo escribe, no un formulario.
 
 "Aprender de mis ediciones" va entre «Así escribes» y «Tus ejemplos»: llega
 con F12.5 PR6.
+
+**Más compacta (F12.5, a pedido de Jose).** Configuración se sentía "muy
+grande y separada". Inputs y selects bajaron de ~42 a ~36 px (texto de 14 a
+13 px), los chips de ~46 a ~38 px, las secciones tienen menos padding y huecos
+de 16 px en vez de 20, y las ayudas y errores quedaron en 11.5 px pegados a su
+campo. Vive en las piezas compartidas (`primitivas.tsx`, `campo-estilo.ts`,
+`TagInput`), así que todas las páginas de Configuración cambian igual. El
+editor del panel de publicación comparte `Textarea` y `TagInput` y quedó
+consistente.

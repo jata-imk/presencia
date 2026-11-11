@@ -261,11 +261,6 @@ export class ChatRepository {
        * `null` excluye el chat actual entero, como antes.
        */
       visibleFromMessageId: string | null;
-      /**
-       * F12.5: la memoria entre chats está apagada → solo la parte vieja de
-       * ESTE chat (la de antes de `visibleFromMessageId`), nunca otros.
-       */
-      onlyThisChat?: boolean;
       model: string;
       embedding: number[];
       limit: number;
@@ -422,11 +417,8 @@ export class ChatRepository {
 }
 
 /**
- * Dónde busca la memoria (F10.8, F10.8.1, F12.5).
- *
- * - Prendida: los OTROS chats y, de este, lo anterior a la frontera (lo que el
- *   modelo ya solo ve resumido).
- * - Apagada (`onlyThisChat`): solo lo anterior a la frontera de este chat.
+ * Dónde busca la memoria (F10.8, F10.8.1): los OTROS chats y, de este, lo
+ * anterior a la frontera (lo que el modelo ya solo ve resumido).
  *
  * La subconsulta de la frontera va acotada al mismo chat: un id ajeno o que ya
  * no existe da NULL y el chat actual queda fuera.
@@ -434,18 +426,17 @@ export class ChatRepository {
 function memoryScope(input: {
   chatId: string;
   visibleFromMessageId: string | null;
-  onlyThisChat?: boolean;
 }): SQL | undefined {
-  const parteViejaDeEste = input.visibleFromMessageId
-    ? and(
-        eq(memoryChunks.chatId, input.chatId),
-        lt(
-          messages.createdAt,
-          sql`(select m.created_at from messages m where m.id = ${input.visibleFromMessageId} and m.chat_id = ${input.chatId})`,
-        ),
-      )
-    : undefined;
-  if (input.onlyThisChat) return parteViejaDeEste ?? sql`false`;
   const otrosChats = ne(memoryChunks.chatId, input.chatId);
-  return parteViejaDeEste ? or(otrosChats, parteViejaDeEste) : otrosChats;
+  if (!input.visibleFromMessageId) return otrosChats;
+  return or(
+    otrosChats,
+    and(
+      eq(memoryChunks.chatId, input.chatId),
+      lt(
+        messages.createdAt,
+        sql`(select m.created_at from messages m where m.id = ${input.visibleFromMessageId} and m.chat_id = ${input.chatId})`,
+      ),
+    ),
+  );
 }

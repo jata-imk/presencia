@@ -1290,10 +1290,12 @@ chat.
 
 **El interruptor y borrar todo (F12.5):** en Configuración ›
 Voz de marca › Memoria. "Recordar entre chats" apagada: el
-chat ya no busca en sus otros chats (sí en la parte vieja del
-mismo, como cualquier chat largo) y no se guarda nada nuevo
-para recordar. "Borrar todo lo que recuerdo" borra los
-recuerdos, no los chats, y pide confirmación. Así lo resuelven
+chat no busca en la memoria (ni en otros chats ni en la parte
+vieja del mismo: un chat largo se queda con su resumen) y no se
+guarda nada nuevo para recordar, así que al volver a prenderla
+lo dicho mientras estuvo apagada no aparece. "Borrar todo lo
+que recuerdo" borra los recuerdos, no los chats, y pide
+confirmación. Así lo resuelven
 ChatGPT ("Consultar historial de chats") y Claude ("Buscar y
 consultar chats"): un interruptor que el usuario entiende, no
 una lista de recuerdos sueltos.

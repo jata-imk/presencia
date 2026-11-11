@@ -61,8 +61,8 @@ export function UltimoEjemplo({ ultimo, vozCambio, antesDePedir, onNuevo }: Ulti
   }
 
   return (
-    <div className="border-t border-line-subtle pt-5">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <div className="border-t border-line-subtle pt-4">
+      <div className="mb-2.5 flex flex-wrap items-center justify-between gap-3">
         <p className="flex items-center gap-2 font-display text-sm font-semibold text-fg">
           <Sparkles size={16} strokeWidth={1.6} className="text-accent" aria-hidden />
           {ultimo ? "Tu último ejemplo" : "Escucha cómo suenas"}
@@ -76,7 +76,7 @@ export function UltimoEjemplo({ ultimo, vozCambio, antesDePedir, onNuevo }: Ulti
           type="button"
           onClick={() => void pedir()}
           disabled={generando}
-          className="inline-flex items-center gap-2 rounded-lg border-[1.5px] border-line-focus bg-secondary px-3.5 py-2 font-display text-[13px] font-semibold text-brand transition-colors hover:bg-secondary-hover disabled:opacity-60"
+          className="inline-flex items-center gap-1.5 rounded-lg border-[1.5px] border-line-focus bg-secondary px-3 py-1.5 font-display text-[12.5px] font-semibold text-brand transition-colors hover:bg-secondary-hover disabled:opacity-60"
         >
           <RefreshCw
             size={14}
@@ -105,7 +105,7 @@ export function UltimoEjemplo({ ultimo, vozCambio, antesDePedir, onNuevo }: Ulti
                 Tu voz cambió desde este ejemplo. Regenéralo para escuchar cómo suena ahora.
               </p>
             )}
-            <p className="rounded-lg border border-line-subtle bg-surface p-4 text-[14.5px] leading-relaxed whitespace-pre-wrap text-fg">
+            <p className="rounded-lg border border-line-subtle bg-surface px-3.5 py-3 text-sm leading-relaxed whitespace-pre-wrap text-fg">
               {ultimo.text}
             </p>
           </>
@@ -120,7 +120,7 @@ export function UltimoEjemplo({ ultimo, vozCambio, antesDePedir, onNuevo }: Ulti
           </p>
         )}
       </div>
-      <p className="mt-2 text-xs text-fg-muted">
+      <p className="mt-1.5 text-[11.5px] text-fg-muted">
         Guardamos solo el último ejemplo generado. No es un borrador ni va a tu Biblioteca.
       </p>
 
