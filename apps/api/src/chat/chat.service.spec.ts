@@ -203,7 +203,12 @@ describe("ChatService · el turno por un TurnSink", () => {
         {} as never,
         { maybeTitle: noop } as never,
         { maybeEnqueue: noop } as never,
-        { search: () => Promise.resolve([]), enqueueIndex: noop } as never,
+        {
+          search: () => Promise.resolve([]),
+          enqueueIndex: noop,
+          // F12.5: el turno pregunta si «Recordar entre chats» está prendida.
+          isEnabled: () => Promise.resolve(true),
+        } as never,
         {
           resolveForMessage: (_tx: unknown, _chat: string, _id: string, m: UIMessage) =>
             Promise.resolve({ parts: m.parts, ids: [] }),
