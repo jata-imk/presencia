@@ -7,6 +7,7 @@ import {
   MODO_ESTRATEGIA_META,
   MODOS_ESTRATEGIA,
   normalizeExpression,
+  STYLE_NOTES_MAX,
   resolveMacroRegion,
   verticalDeNicho,
   verticalLabel,
@@ -27,6 +28,7 @@ import {
   Seccion,
   SkeletonDePagina,
 } from "../../components/configuracion/primitivas.js";
+import { AprenderDeEdiciones } from "../../components/configuracion/AprenderDeEdiciones.js";
 import { AsiEscribes } from "../../components/configuracion/AsiEscribes.js";
 import { MemoriaSeccion } from "../../components/configuracion/MemoriaSeccion.js";
 import { RanuraEjemplo } from "../../components/configuracion/RanuraEjemplo.js";
@@ -231,6 +233,17 @@ export function VozDeMarcaPage() {
     );
   }
 
+  function agregarRasgo(rasgo: string): boolean {
+    if (styleNotes.some((nota) => normalizeExpression(nota) === normalizeExpression(rasgo))) {
+      return true;
+    }
+    if (styleNotes.length >= STYLE_NOTES_MAX) return false;
+    const siguientes = [...styleNotes, rasgo];
+    setStyleNotes(siguientes);
+    guardar("styleNotes", siguientes, true);
+    return true;
+  }
+
   if (loadError) return <p className="text-sm text-error-fg">{loadError}</p>;
   if (!voice) return <SkeletonDePagina />;
 
@@ -250,6 +263,10 @@ export function VozDeMarcaPage() {
           guardar("styleNotes", rasgos, true);
         }}
       />
+
+      {/* F12.5 voz viva: entre «Así escribes» y «Tus ejemplos» (Voz de marca
+          v3). Lo aceptado entra por el mismo autoguardado que editar a mano. */}
+      <AprenderDeEdiciones onAgregar={agregarRasgo} />
 
       <Seccion
         icono={Bookmark}

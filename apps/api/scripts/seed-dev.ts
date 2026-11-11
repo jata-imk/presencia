@@ -38,6 +38,7 @@ import {
 import type { CardContent, SocialNetwork } from "@presencia/shared";
 import { seedTurnStates } from "./seed-estados.js";
 import { seedRitmo } from "./seed-ritmo.js";
+import { seedVozViva } from "./seed-voz-viva.js";
 
 const dbService = new DbService();
 
@@ -87,6 +88,8 @@ async function seed(): Promise<void> {
       seedTurnStates(tx, yaExiste.id),
     );
     logTurnStates(estados);
+    // F12.5: igual que los estados del turno, la propuesta vuelve en cada corrida.
+    logVozViva(await dbService.runWithTenant(yaExiste.id, (tx) => seedVozViva(tx, yaExiste.id)));
     printCredentials();
     return;
   }
@@ -178,10 +181,12 @@ async function seed(): Promise<void> {
     const ritmo = await seedRitmo(tx, user.id, cuentaDe);
     // En la misma transacción: si algo falla, la cuenta no queda a medias.
     const estados = await seedTurnStates(tx, user.id);
+    const vozViva = await seedVozViva(tx, user.id);
 
-    return { rows, ritmo, estados };
+    return { rows, ritmo, estados, vozViva };
   });
   logTurnStates(creados.estados);
+  logVozViva(creados.vozViva);
 
   console.log(
     `· Usuario creado con ${String(creados.rows.length)} chats, 1 carpeta y 1 voz de marca.`,
@@ -476,6 +481,14 @@ async function seedCalendar(
 function logTurnStates(count: number): void {
   console.log(
     `· Estados del turno: ${String(count)} chats (re)creados en la carpeta "Estados del turno".`,
+  );
+}
+
+/** F12.5: las publicaciones editadas de «Aprender de mis ediciones» (scripts/seed-voz-viva.ts). */
+function logVozViva(count: number): void {
+  console.log(
+    `· Voz viva: ${String(count)} publicaciones sin emojis en "Voz viva: ediciones de ejemplo" ` +
+      "(propuesta en Configuración › Voz de marca).",
   );
 }
 

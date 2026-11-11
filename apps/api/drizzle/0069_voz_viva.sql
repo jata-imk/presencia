@@ -1,0 +1,2 @@
+ALTER TABLE "brand_voices" ADD COLUMN "learn_from_edits" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+ALTER TABLE "brand_voices" ADD COLUMN "voice_proposal_decisions" jsonb DEFAULT '{}'::jsonb NOT NULL;

@@ -338,6 +338,15 @@ export const brandVoices = pgTable(
     // F12.5: el último "Ver ejemplo de tu voz", `{ text, generatedAt }`. Solo
     // el último, sin historial: no es un borrador ni va a Biblioteca.
     lastVoiceExample: jsonb("last_voice_example"),
+    // F12.5: «Aprender de mis ediciones». Prendido, las reglas de voz viva
+    // (packages/shared/src/voz-viva.ts) comparan lo que escribió la IA con lo
+    // que el creator programó y proponen rasgos. Vive en la voz y no en el
+    // usuario: las ediciones de una carpeta con voz propia hablan de esa voz.
+    learnFromEdits: boolean("learn_from_edits").notNull().default(true),
+    // F12.5: la última decisión del creator por regla, `{ [regla]: { decision,
+    // at } }`. Una regla solo vuelve a proponer con publicaciones posteriores
+    // a `at`: un "No" no se pregunta otra vez con la misma evidencia.
+    voiceProposalDecisions: jsonb("voice_proposal_decisions").notNull().default({}),
     extras: jsonb("extras").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
