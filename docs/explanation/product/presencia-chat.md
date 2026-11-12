@@ -1294,7 +1294,7 @@ chat no busca en la memoria (ni en otros chats ni en la parte
 vieja del mismo: un chat largo se queda con su resumen) y no se
 guarda nada nuevo para recordar, así que al volver a prenderla
 lo dicho mientras estuvo apagada no aparece (ni con un
-reindexado posterior: prenderla sella el momento). "Borrar todo lo
+reindexado posterior: cada respuesta dicha así queda marcada). "Borrar todo lo
 que recuerdo" borra los recuerdos, no los chats, y pide
 confirmación. Así lo resuelven
 ChatGPT ("Consultar historial de chats") y Claude ("Buscar y

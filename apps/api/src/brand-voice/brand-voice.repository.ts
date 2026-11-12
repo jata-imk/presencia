@@ -62,23 +62,26 @@ export type UpdateBrandVoicePatch = Partial<{
   extras: Record<string, unknown>;
 }>;
 
-/** Los campos de `BrandVoiceForPrompt`: los que cambian cómo escribe el chat. */
-const CAMPOS_QUE_SUENAN = [
-  "marketCountry",
-  "marketRegion",
-  "niche",
-  "audience",
-  "register",
-  "formality",
-  "allowedExpressions",
-  "bannedExpressions",
-  "useAnglicisms",
-  "keyTopics",
-  "preferredCtas",
-  "referenceExamples",
-  "styleNotes",
-  "businessFacts",
-] as const satisfies readonly (keyof BrandVoiceForPrompt & keyof UpdateBrandVoicePatch)[];
+// Los campos de `BrandVoiceForPrompt`: los que cambian cómo escribe el chat.
+// Un Record sobre sus llaves, y no una lista: un campo nuevo del prompt que
+// falte aquí no compila (revisión del PR7).
+const SUENAN: Record<keyof BrandVoiceForPrompt, true> = {
+  marketCountry: true,
+  marketRegion: true,
+  niche: true,
+  audience: true,
+  register: true,
+  formality: true,
+  allowedExpressions: true,
+  bannedExpressions: true,
+  useAnglicisms: true,
+  keyTopics: true,
+  preferredCtas: true,
+  referenceExamples: true,
+  styleNotes: true,
+  businessFacts: true,
+};
+export const CAMPOS_QUE_SUENAN = Object.keys(SUENAN) as (keyof BrandVoiceForPrompt)[];
 
 @Injectable()
 export class BrandVoiceRepository {
@@ -136,18 +139,28 @@ export class BrandVoiceRepository {
   }
 
   /**
-   * `updated_at` se mueve solo si cambia algo que SUENA (lo que viaja al
-   * prompt): es lo que la pantalla compara contra el último ejemplo para decir
-   * "Tu voz cambió". Los ajustes de Tendencias, el estilo de imagen, el nombre
-   * o `extras` no cambian cómo escribe, y movían el aviso en falso (revisión
-   * de la fase).
+   * `updated_at` se mueve solo si `suena`: si cambió el VALOR de algo que viaja
+   * al prompt (lo decide el servicio contra la fila de antes). Es lo que la
+   * pantalla compara contra el último ejemplo para decir "Tu voz cambió". Los
+   * ajustes de Tendencias, el estilo de imagen, el nombre, `extras` o un
+   * autoguardado que reenvía lo mismo no cambian cómo escribe, y movían el
+   * aviso en falso (revisión de la fase y del PR7).
    */
-  async updateDefault(tx: Tx, patch: UpdateBrandVoicePatch): Promise<BrandVoiceRow> {
+  async updateDefault(
+    tx: Tx,
+    patch: UpdateBrandVoicePatch,
+    opciones: { suena: boolean },
+  ): Promise<BrandVoiceRow> {
     const set = omitUndefined(patch);
-    const suena = CAMPOS_QUE_SUENAN.some((campo) => campo in set);
+    // Sin nada que escribir (un PATCH `{}`), un UPDATE sin SET no es SQL.
+    if (!opciones.suena && Object.keys(set).length === 0) {
+      const actual = await this.findDefault(tx);
+      if (!actual) throw new Error("No se pudo actualizar la voz de marca");
+      return actual;
+    }
     const [row] = await tx
       .update(brandVoices)
-      .set(suena ? { ...set, updatedAt: sql`now()` } : set)
+      .set(opciones.suena ? { ...set, updatedAt: sql`now()` } : set)
       .where(eq(brandVoices.isDefault, true))
       .returning();
     if (!row) throw new Error("No se pudo actualizar la voz de marca");

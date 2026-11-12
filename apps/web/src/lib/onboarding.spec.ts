@@ -17,9 +17,10 @@ describe("regionAGuardar", () => {
     expect(regionAGuardar("Tekax", "Sureste")).toBe("Tekax, Sureste");
   });
 
-  it("si la ciudad ya dice su macro-región, la zona no la pisa", () => {
-    expect(regionAGuardar("CDMX", "Centro")).toBe("CDMX");
+  it("si la ciudad está en el catálogo, la zona no la pisa", () => {
+    expect(resolveMacroRegion("MX", regionAGuardar("CDMX", "Centro") ?? null)).toBe("cdmx");
     expect(resolveMacroRegion("MX", regionAGuardar("León", "Centro") ?? null)).toBe("bajio");
+    expect(resolveMacroRegion("MX", regionAGuardar("Tekax", "Sureste") ?? null)).toBe("sureste");
   });
 
   it("«Toda la república» no se guarda como región", () => {

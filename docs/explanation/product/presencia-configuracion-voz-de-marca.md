@@ -518,9 +518,10 @@ recoge **evidencia** y termina entregando algo, no un "listo". Cinco pasos:
    Sureste, Toda la república) y estado o ciudad; nicho; registro, con una
    frase de ejemplo por registro. La región se guarda como "ciudad, zona"
    ("Tekax, Sureste") para que la macro-región salga aunque el pueblo no esté
-   en el catálogo. Si la ciudad sola ya la dice, se guarda sin la zona: con
-   "CDMX, Centro" ganaba Centro (la clave más larga), y "León, Centro" caía en
-   Centro y no en el Bajío. Es el único paso obligatorio.
+   en el catálogo. Si la ciudad sí está, ella decide y la zona no la pisa:
+   `resolveMacroRegion` da prioridad a un estado o ciudad sobre un nombre de
+   zona ("CDMX, Centro" es CDMX y "León, Centro" es el Bajío). Es el único
+   paso obligatorio.
 2. **¿Cómo escribes?** De 1 a 3 publicaciones suyas, pegadas tal cual, y
    "¿Algo que nunca dirías?" (opcional). "Aún no publico" lo salta. Al
    seguir, la destilación arranca en segundo plano: mientras conecta su red,

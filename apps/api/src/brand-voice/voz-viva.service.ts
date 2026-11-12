@@ -93,15 +93,20 @@ export class VozVivaService {
         }
         const todas = await this.repo.ediciones(tx, voz.id);
         const decisiones = decisionesDeVoz(voz.voiceProposalDecisions);
+        // Lo que las reglas ya están proponiendo en pantalla: la IA no lo repite.
+        const pendientes = proponerAjustesDeVoz(todas, { rasgos: voz.styleNotes, decisiones });
         return {
           ediciones: todas.filter(fueEditada).slice(0, REVISAR_EDICIONES_MAX),
           rasgos: voz.styleNotes,
-          // Lo que las reglas ya están proponiendo en pantalla: la IA no lo repite.
-          pendientes: proponerAjustesDeVoz(todas, { rasgos: voz.styleNotes, decisiones }),
+          pendientes,
           // Y lo que ya dijo que no: la revisión pagada no se lo vuelve a
-          // proponer con otras palabras (revisión de la fase).
+          // proponer con otras palabras (revisión de la fase). Salvo que la
+          // regla ya lo esté proponiendo otra vez con evidencia nueva: entonces
+          // es un tema abierto, no uno cerrado (revisión del PR7).
           rechazadas: REGLAS_DE_VOZ_VIVA.filter(
-            (regla) => decisiones[regla]?.decision === "descartada",
+            (regla) =>
+              decisiones[regla]?.decision === "descartada" &&
+              !pendientes.some((p) => p.id === regla),
           ),
         };
       },

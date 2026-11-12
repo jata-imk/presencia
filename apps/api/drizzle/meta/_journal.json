@@ -491,6 +491,13 @@
       "when": 1794362538608,
       "tag": "0069_voz_viva",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1794452914924,
+      "tag": "0070_memoria_saltada",
+      "breakpoints": true
     }
   ]
 }

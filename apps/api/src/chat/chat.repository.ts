@@ -237,7 +237,6 @@ export class ChatRepository {
     return rows.length;
   }
 
-  /** F10.8: guarda un fragmento; uno solo por respuesta (índice único). */
   /**
    * F12.5: «Recordar entre chats» y el último «Borrar todo», con la fila del
    * usuario bloqueada (FOR SHARE) hasta el fin de la transacción. `users` no
@@ -255,6 +254,15 @@ export class ChatRepository {
     return row;
   }
 
+  /**
+   * F12.5: esta respuesta se dijo con la memoria apagada. `memory.index` y
+   * `memoria:reindexar` ya no la guardan nunca.
+   */
+  async markMemorySkipped(tx: Tx, messageId: string): Promise<void> {
+    await tx.update(messages).set({ memorySkipped: true }).where(eq(messages.id, messageId));
+  }
+
+  /** F10.8: guarda un fragmento; uno solo por respuesta (índice único). */
   async insertMemoryChunk(
     tx: Tx,
     row: Omit<typeof memoryChunks.$inferInsert, "id" | "createdAt">,

@@ -377,9 +377,11 @@ describe("MemoryService", { timeout: 60_000 }, () => {
       }
     });
 
-    // Revisión de la fase: al volver a prenderla, lo dicho con la memoria
-    // apagada sigue fuera, aunque un reindexado lo vuelva a encolar.
-    it("volver a prenderla no guarda lo que se dijo mientras estaba apagada", async () => {
+    // Revisión de la fase y del PR7: lo dicho con la memoria apagada sigue
+    // fuera al volver a prenderla, aunque un reindexado lo vuelva a pedir; y
+    // lo de ANTES de la pausa se puede seguir reindexando (un sello en el
+    // usuario lo habría perdido al cambiar de modelo).
+    it("lo dicho con la memoria apagada no se guarda ni reindexando; lo de antes sí", async () => {
       const { ProfileRepository } = await import("../profile/profile.repository.js");
       const perfiles = new ProfileRepository(dbService);
       const [prendido] = await dbService.db
@@ -387,26 +389,29 @@ describe("MemoryService", { timeout: 60_000 }, () => {
         .values({ name: "Pausa", email: `pausa-${randomUUID()}@test.local` })
         .returning({ id: users.id });
       const dueno = prendido!.id;
+      const fragmentos = () =>
+        dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks));
       try {
+        // Antes de la pausa: su job falló (no hay fragmento todavía).
+        const antes = await chatCon(dueno, "Mis lasañas", "Va.");
+
         await perfiles.update(dueno, { memoryEnabled: false });
-        // Margen de un minuto: el sello es del reloj de Postgres (ver arriba).
-        const apagadaEntonces = await chatCon(dueno, "Mis marquesitas", "Va.", Date.now() - 60_000);
+        const enPausa = await chatCon(dueno, "Mis marquesitas", "Va.");
+        await service.index({ userId: dueno, ...enPausa }); // el job de ese turno
         await perfiles.update(dueno, { memoryEnabled: true });
-        await service.index({ userId: dueno, ...apagadaEntonces });
-        expect(
-          await dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks)),
-        ).toEqual([]);
 
-        // Prenderla otra vez estando prendida no mueve el sello.
-        const antes = await service.preferences(dueno);
-        await perfiles.update(dueno, { memoryEnabled: true });
-        expect((await service.preferences(dueno)).forgottenAt).toEqual(antes.forgottenAt);
-
-        const despues = await chatCon(dueno, "Mis lasañas", "Va.", Date.now() + 60_000);
-        await service.index({ userId: dueno, ...despues });
-        expect(
-          await dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks)),
-        ).toHaveLength(1);
+        // Un reindexado pide las dos otra vez.
+        await service.index({ userId: dueno, ...enPausa });
+        await service.index({ userId: dueno, ...antes });
+        const guardados = await fragmentos();
+        expect(guardados.map((f) => f.messageId)).toEqual([antes.messageId]);
+        const [marcada] = await dbService.runWithTenant(dueno, (tx) =>
+          tx
+            .select({ saltada: messages.memorySkipped })
+            .from(messages)
+            .where(eq(messages.id, enPausa.messageId)),
+        );
+        expect(marcada?.saltada).toBe(true);
       } finally {
         await dbService.db.delete(users).where(eq(users.id, dueno));
       }

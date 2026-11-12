@@ -1,0 +1,1 @@
+ALTER TABLE "messages" ADD COLUMN "memory_skipped" boolean DEFAULT false NOT NULL;

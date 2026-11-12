@@ -83,13 +83,23 @@ export class MemoryService {
     // F12.5: con la memoria apagada no se guarda nada nuevo para recordar. Se
     // revisa aquí (en el job) y no al encolar: lo que importa es lo que el
     // creator tenga puesto cuando se vaya a guardar.
+    //
+    // Apagada, la respuesta se marca (`memory_skipped`) en vez de solo
+    // saltarla: así tampoco la guarda un `memoria:reindexar` después de
+    // volver a prenderla (revisión del PR7).
     const prefs = await this.preferences(userId);
-    if (!prefs.enabled) return;
+    if (!prefs.enabled) {
+      await this.dbService.runWithTenant(userId, (tx) =>
+        this.repo.markMemorySkipped(tx, messageId),
+      );
+      return;
+    }
     const { exchange, done } = await this.dbService.runWithTenant(userId, async (tx) => ({
       exchange: await this.repo.findExchange(tx, chatId, messageId),
       done: await this.repo.hasMemoryChunk(tx, messageId),
     }));
     if (done || !exchange || exchange.reply.role !== "assistant") return;
+    if (exchange.reply.memorySkipped) return;
     // F12.5: un job que ya estaba en cola cuando borró todo no devuelve a la
     // memoria lo que se dijo antes de borrar.
     if (prefs.forgottenAt && exchange.reply.createdAt <= prefs.forgottenAt) return;
@@ -110,7 +120,10 @@ export class MemoryService {
         // que uno de los dos espera al otro: o este ve el sello nuevo, o el
         // borrado se lleva lo que este insertó.
         const ahora = await this.repo.lockMemoryPreferences(tx, userId);
-        if (!ahora?.enabled) return;
+        if (!ahora?.enabled) {
+          await this.repo.markMemorySkipped(tx, messageId);
+          return;
+        }
         if (ahora.forgottenAt && reply.createdAt <= ahora.forgottenAt) return;
         await this.repo.insertMemoryChunk(tx, {
           userId,

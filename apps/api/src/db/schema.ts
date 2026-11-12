@@ -503,6 +503,13 @@ export const messages = pgTable(
     // es la transcripción; cuánto duraba, en segundos. `null` = se escribió.
     // El audio no se guarda (ADR-030).
     voiceSeconds: smallint("voice_seconds"),
+    // F12.5: la respuesta se dijo con «Recordar entre chats» apagada (lo marca
+    // el job de `memory.index` al encontrarla así). Nunca se guarda para
+    // recordar, tampoco en un `memoria:reindexar` posterior: es lo que la
+    // pantalla promete. Por respuesta y no un sello en el usuario, porque un
+    // sello borraría también lo de antes de la pausa al reindexar por cambio
+    // de modelo (revisión del PR7).
+    memorySkipped: boolean("memory_skipped").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

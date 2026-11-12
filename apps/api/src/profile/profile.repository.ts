@@ -27,19 +27,9 @@ export class ProfileRepository {
 
   async update(userId: string, patch: UpdateUserPatch): Promise<UserRow> {
     const set = omitUndefined(patch);
-    // F12.5: al volver a prender «Recordar entre chats», lo que se dijo con la
-    // memoria apagada sigue fuera. Se sella el momento (el mismo sello de
-    // «Borrar todo»): un `memoria:reindexar` posterior no guarda esas
-    // respuestas, que es lo que la pantalla prometió (revisión de la fase).
-    const sello =
-      patch.memoryEnabled === true
-        ? {
-            memoryForgottenAt: sql`case when ${users.memoryEnabled} then ${users.memoryForgottenAt} else now() end`,
-          }
-        : {};
     const [row] = await this.dbService.db
       .update(users)
-      .set({ ...set, ...sello, updatedAt: sql`now()` })
+      .set({ ...set, updatedAt: sql`now()` })
       .where(eq(users.id, userId))
       .returning();
     if (!row) throw new Error("No se pudo actualizar tu perfil");

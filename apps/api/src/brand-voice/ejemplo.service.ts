@@ -8,6 +8,7 @@ import { buildSystemPrompt } from "../chat/system-prompt.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
+import { ahoraIso } from "../db/reloj.js";
 import { BrandVoiceRepository } from "./brand-voice.repository.js";
 import { BrandVoiceService } from "./brand-voice.service.js";
 import { promptDeEjemplo } from "./ejemplo.js";
@@ -56,7 +57,7 @@ export class EjemploDeVozService {
     // pone `updated_at`: con el de la app, un desfase entre el servidor y la
     // base prendía o escondía "Tu voz cambió" (revisión de la fase).
     const reloj = await this.dbService.db.execute<{ ahora: string }>(
-      sql`select to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as ahora`,
+      sql`select ${ahoraIso()} as ahora`,
     );
     const pedidoEn = reloj.rows[0]?.ahora ?? new Date(arranque).toISOString();
     const respuesta = await generateText({

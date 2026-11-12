@@ -144,8 +144,9 @@ export function fueEditada(edicion: EdicionDePublicacion): boolean {
 // ── Las reglas ───────────────────────────────────────────────────────
 
 // Extended_Pictographic también incluye ©, ®, ™, ‼ y ⁉: quitar el ™ de una
-// marca no es quitar emojis (revisión de la fase).
-const EMOJI = /(?![©®™‼⁉])\p{Extended_Pictographic}/gu;
+// marca no es quitar emojis (revisión de la fase). Con el selector de emoji
+// (U+FE0F, como los ponen los teclados: ‼️) sí son emojis (revisión del PR7).
+const EMOJI = /[©®™‼⁉]\uFE0F|(?![©®™‼⁉])\p{Extended_Pictographic}/gu;
 // Un hashtag escrito dentro del texto, además de los del campo aparte.
 const HASHTAG_EN_TEXTO = /(?:^|\s)#[\p{L}\p{N}_]+/gu;
 
@@ -243,7 +244,7 @@ export function rasgoCubreRegla(rasgo: string, regla: ReglaDeVozViva): boolean {
 
 // `test` con la bandera g guarda estado entre llamadas: para "¿tiene uno?"
 // va una copia sin ella.
-const EMOJI_UNO = /(?![©®™‼⁉])\p{Extended_Pictographic}/u;
+const EMOJI_UNO = /[©®™‼⁉]\uFE0F|(?![©®™‼⁉])\p{Extended_Pictographic}/u;
 
 /** Cuántas evidencias se muestran por propuesta: dos se leen de un vistazo. */
 const EVIDENCIAS_MAX = 2;

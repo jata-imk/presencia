@@ -133,6 +133,7 @@ describe("BrandVoiceService — formality ↔ register (doc §4)", () => {
     expect(repo.updateDefault).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ formality: 92, register: "tecnico" }),
+      expect.anything(),
     );
   });
 
@@ -153,6 +154,7 @@ describe("BrandVoiceService — formality ↔ register (doc §4)", () => {
     expect(repo.updateDefault).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ register: "profesional", formality: 75 }),
+      expect.anything(),
     );
   });
 });
@@ -178,6 +180,7 @@ describe("BrandVoiceService — prohibido gana (doc §6)", () => {
     expect(repo.updateDefault).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ allowedExpressions: ["chido"], bannedExpressions: ["Wey"] }),
+      expect.anything(),
     );
   });
 
@@ -201,6 +204,7 @@ describe("BrandVoiceService — prohibido gana (doc §6)", () => {
     expect(repo.updateDefault).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ allowedExpressions: [] }),
+      expect.anything(),
     );
   });
 
@@ -221,7 +225,41 @@ describe("BrandVoiceService — prohibido gana (doc §6)", () => {
     expect(repo.updateDefault).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ allowedExpressions: ["chido"] }),
+      expect.anything(),
     );
+  });
+});
+
+describe("BrandVoiceService — qué cuenta como cambio de voz (F12.5)", () => {
+  const conRepo = () => {
+    const existing = makeRow({ styleNotes: ["Frases cortas"] });
+    const repo = makeRepo({
+      findDefault: vi.fn().mockResolvedValue(existing),
+      updateDefault: vi
+        .fn()
+        .mockImplementation((_tx: Tx, patch: object) =>
+          Promise.resolve(makeRow({ ...existing, ...patch })),
+        ),
+    });
+    return { repo, service: new BrandVoiceService(makeDbService(), repo) };
+  };
+  const suena = (repo: BrandVoiceRepository) =>
+    vi.mocked(repo.updateDefault).mock.calls[0]?.[2]?.suena;
+
+  it("un rasgo nuevo suena; reenviar los mismos no", async () => {
+    const a = conRepo();
+    await a.service.updateDefault("user-1", { styleNotes: ["Frases cortas", "Sin emojis"] });
+    expect(suena(a.repo)).toBe(true);
+
+    const b = conRepo();
+    await b.service.updateDefault("user-1", { styleNotes: ["Frases cortas"] });
+    expect(suena(b.repo)).toBe(false);
+  });
+
+  it("el estilo de imagen no suena", async () => {
+    const { repo, service } = conRepo();
+    await service.updateDefault("user-1", { imageStyle: null });
+    expect(suena(repo)).toBe(false);
   });
 });
 
@@ -238,6 +276,7 @@ describe("BrandVoiceService — estilo visual (F10.6)", () => {
     expect(repo.updateDefault).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ imageStyle: "neo" }),
+      expect.anything(),
     );
     expect(dto.imageStyle).toBe("neo");
   });

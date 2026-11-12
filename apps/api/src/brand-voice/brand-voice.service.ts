@@ -19,6 +19,7 @@ import {
 import { DbService } from "../db/db.service.js";
 import {
   BrandVoiceRepository,
+  CAMPOS_QUE_SUENAN,
   type BrandVoiceRow,
   type UpdateBrandVoicePatch,
 } from "./brand-voice.repository.js";
@@ -94,7 +95,13 @@ export class BrandVoiceService {
         patch.bannedExpressions = resolved.bannedExpressions;
       }
 
-      const updated = await this.repo.updateDefault(tx, patch);
+      // ¿Cambió el VALOR de algo que suena? Un autoguardado que reenvía lo
+      // mismo no es un cambio de voz (revisión del PR7).
+      const suena = CAMPOS_QUE_SUENAN.some((campo) => {
+        const nuevo = (patch as Record<string, unknown>)[campo];
+        return nuevo !== undefined && JSON.stringify(nuevo) !== JSON.stringify(existing[campo]);
+      });
+      const updated = await this.repo.updateDefault(tx, patch, { suena });
       return this.toDto(updated);
     });
   }

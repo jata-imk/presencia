@@ -1,4 +1,4 @@
-import { resolveMacroRegion, type BrandVoiceRegister, type SocialNetwork } from "@presencia/shared";
+import type { BrandVoiceRegister, SocialNetwork } from "@presencia/shared";
 import { NETWORK_LABELS } from "./network-labels.js";
 
 // Lo puro del onboarding (F12.5, Claude Design "Onboarding v2"): catálogos,
@@ -117,16 +117,12 @@ export function paisAGuardar(pais: string): string {
  * encuentre la macro-región aunque la ciudad sea un pueblo que no reconoce
  * ("Tekax, Sureste"). `undefined` si no dijo nada.
  *
- * Si la ciudad sola ya dice su macro-región, la zona no se agrega: gana la
- * clave más larga, y "CDMX, Centro" caía en Centro y "León, Centro" en Centro
- * en vez de Bajío (revisión de la fase). Lo que escribió es más preciso que el
- * chip que eligió.
+ * Si la ciudad está en el catálogo, ella decide y la zona no la pisa
+ * ("CDMX, Centro" es CDMX): lo resuelve `resolveMacroRegion`, que da
+ * prioridad a un lugar sobre un nombre de zona.
  */
 export function regionAGuardar(ciudad: string, zona: string | null): string | undefined {
-  const lugar = ciudad.trim();
-  const conZona = zona && zona !== TODA_LA_REPUBLICA ? zona : "";
-  if (lugar && conZona && resolveMacroRegion("MX", lugar) !== "nacional") return lugar;
-  const partes = [lugar, conZona].filter(Boolean);
+  const partes = [ciudad.trim(), zona && zona !== TODA_LA_REPUBLICA ? zona : ""].filter(Boolean);
   return partes.length > 0 ? partes.join(", ") : undefined;
 }
 

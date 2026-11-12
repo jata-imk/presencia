@@ -56,6 +56,13 @@ describe("proponerAjustesDeVoz", () => {
     expect(proponerAjustesDeVoz([marca(), marca(), marca(), marca()], SIN_NADA)).toEqual([]);
   });
 
+  it("‼️ con el selector de emoji sí cuenta como emoji", () => {
+    const grito = () => edicion("¡Últimos lugares‼\uFE0F", "¡Últimos lugares!");
+    expect(proponerAjustesDeVoz([grito(), grito(), grito(), grito()], SIN_NADA)[0]?.id).toBe(
+      "emojis",
+    );
+  });
+
   it("con 3 no hay patrón", () => {
     const ediciones = [conEmojis(), conEmojis(), conEmojis(), intacta(), intacta()];
     expect(proponerAjustesDeVoz(ediciones, SIN_NADA)).toEqual([]);

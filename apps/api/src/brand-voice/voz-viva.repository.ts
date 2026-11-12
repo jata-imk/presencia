@@ -8,6 +8,7 @@ import {
 } from "@presencia/shared";
 import { brandVoices, cardVersions, chats, folders, publicationCards } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
+import { ahoraIso } from "../db/reloj.js";
 
 // Lo que lee y escribe «Aprender de mis ediciones» (F12.5). Como el resto de
 // los repositorios, sin filtrar por user_id: el RLS de la transacción es el
@@ -107,7 +108,7 @@ export class VozVivaRepository {
     // `at` con el reloj de Postgres, el mismo que fecha las versiones contra
     // las que se compara: con el de la app, un desfase entre servidores haría
     // que una edición anterior al "No" contara como posterior.
-    const at = sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+    const at = ahoraIso();
     await tx
       .update(brandVoices)
       .set({

@@ -50,13 +50,20 @@ async function main(): Promise<void> {
           .returning({ id: memoryChunks.id });
         borrados += viejos.length;
       }
-      // Las respuestas (assistant) de sus chats que no tienen fragmento.
+      // Las respuestas (assistant) de sus chats que no tienen fragmento, salvo
+      // las que se dijeron con la memoria apagada (F12.5, `memory_skipped`).
       const rows = await tx
         .select({ messageId: messages.id, chatId: messages.chatId })
         .from(messages)
         .innerJoin(chats, eq(chats.id, messages.chatId))
         .leftJoin(memoryChunks, eq(memoryChunks.messageId, messages.id))
-        .where(and(eq(messages.role, "assistant"), isNull(memoryChunks.id)));
+        .where(
+          and(
+            eq(messages.role, "assistant"),
+            eq(messages.memorySkipped, false),
+            isNull(memoryChunks.id),
+          ),
+        );
       return rows;
     });
     // Uno que falla (un 429, un timeout) no tumba el resto: se cuenta y se
