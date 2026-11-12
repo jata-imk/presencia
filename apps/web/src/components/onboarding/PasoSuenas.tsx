@@ -2,7 +2,15 @@ import { AlertCircle, Plus, RefreshCw, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { STYLE_NOTE_MAX_LENGTH, STYLE_NOTES_MAX, type SocialNetwork } from "@presencia/shared";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
-import { BotonAtras, BotonSecundario, Etiqueta, Pie, Titulo } from "./Piezas.js";
+import {
+  BotonAtras,
+  BotonPrimario,
+  BotonSecundario,
+  Etiqueta,
+  Pie,
+  Pista,
+  Titulo,
+} from "./Piezas.js";
 
 // Paso 5 · Así suenas (Onboarding v2, ScreenSuenas). El cierre: lo que
 // notamos en sus publicaciones («Así escribes», editable) y un post en su voz.
@@ -71,15 +79,12 @@ export function PasoSuenas(props: PasoSuenasProps) {
                 Tus publicaciones siguen aquí. Puedes intentarlo otra vez o seguir sin esto.
               </p>
               <div className="flex flex-wrap gap-2">
-                <BotonSecundario
-                  onClick={props.onReintentar}
-                  className="px-3.25! py-2! text-[13px]! text-fg!"
-                >
+                <BotonSecundario onClick={props.onReintentar} className="text-fg!">
                   Reintentar
                 </BotonSecundario>
                 <BotonSecundario
                   onClick={props.onSeguirSin}
-                  className="border-transparent! bg-transparent! px-3.25! py-2! text-[13px]!"
+                  className="border-transparent! bg-transparent!"
                 >
                   Seguir sin esto
                 </BotonSecundario>
@@ -149,24 +154,23 @@ export function PasoSuenas(props: PasoSuenasProps) {
                 Ajustar
               </BotonSecundario>
             )}
-            <button
-              type="button"
+            <BotonPrimario
+              acento
               onClick={props.onTerminar}
               disabled={regenerando || terminando}
-              // En móvil va primero y a todo lo ancho: junto a ← y "Ajustar" se
-              // partía en tres renglones a 375px.
-              className="flex-1 rounded-[10px] bg-accent-cta px-4 py-2.25 font-display text-[13px] font-semibold tracking-tight text-accent-cta-fg transition-[transform,background-color] hover:bg-accent-cta-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 max-[520px]:order-first max-[520px]:basis-full"
+              // Va primero y a todo lo ancho, en cualquier ancho: junto a ← y
+              // "Ajustar" se partía en dos renglones (en tres a 375px) y estiraba
+              // los tres botones a ~55 px (medido, PR de densidad).
+              className="order-first basis-full"
             >
               {terminando
                 ? "Un momento…"
                 : fase === "listo"
                   ? "Se oye como yo → Crear mi primer post"
                   : "Crear mi primer post →"}
-            </button>
+            </BotonPrimario>
           </Pie>
-          <p className="mt-3 text-center text-xs text-fg-muted">
-            Todo esto lo puedes cambiar después en Configuración › Voz de marca.
-          </p>
+          <Pista>Todo esto lo puedes cambiar después en Configuración › Voz de marca.</Pista>
         </>
       )}
     </>

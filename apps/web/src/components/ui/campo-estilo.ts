@@ -1,7 +1,8 @@
 // La piel común de los campos de texto (F9.7, mock de Claude Design): relleno
 // lavanda en reposo, borde de 1.5px, y al enfocar pasa a blanco con borde
 // orquídea y un halo suave. Una sola constante para que TextInput, Textarea y
-// Select no se desincronicen. La usan Configuración y el onboarding.
+// Select no se desincronicen. La usa Configuración (y el panel de publicación);
+// el onboarding tiene su propia piel con la misma medida (onboarding/Piezas.tsx).
 //
 // Sin tamaño de texto a propósito: cada input pone el suyo. Con dos utilities
 // de font-size en la misma clase gana la que Tailwind emita última, no la que

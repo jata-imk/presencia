@@ -85,7 +85,7 @@ export function PasoEscribes({
           <button
             type="button"
             onClick={() => onCambiar({ muestras: [...muestras, ""] })}
-            className="flex items-center justify-center gap-1.5 rounded-[10px] border-[1.5px] border-dashed border-line-focus p-2 font-display text-[13.5px] font-medium text-brand hover:bg-secondary"
+            className="flex items-center justify-center gap-1.5 rounded-[10px] border-[1.5px] border-dashed border-line-focus p-2 font-display text-sm font-medium text-brand hover:bg-secondary"
           >
             <Plus size={15} strokeWidth={1.8} aria-hidden />
             Agregar otra

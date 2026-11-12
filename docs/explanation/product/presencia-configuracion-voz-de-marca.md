@@ -633,5 +633,8 @@ consistente.
 
 El onboarding tiene sus piezas propias (`components/onboarding/Piezas.tsx`:
 título, etiquetas, chips, campos y botones) y recibió la misma escala en un
-PR aparte: campos de ~36 px con texto de 13, botones de ~40, título de 22 px
-y huecos un paso abajo.
+PR aparte. Medido en el navegador (Chromium, protocolo de DevTools), no
+calculado: campos y botones de 36.6 px con `text-sm` (13 px), igual que un
+campo de Configuración; chips de 30.8; título de 22 px; ayudas de 11.5 y
+errores de 12. En "Así suenas" el botón de cierre va en su propio renglón,
+porque junto a ← y "Ajustar" se partía en dos y estiraba los tres a ~55 px.

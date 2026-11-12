@@ -174,7 +174,7 @@ export function PasoHablas({
       </div>
 
       {error && (
-        <p role="alert" className="mt-4 text-sm text-error-fg">
+        <p role="alert" className="mt-3 text-xs text-error-fg">
           {error}
         </p>
       )}

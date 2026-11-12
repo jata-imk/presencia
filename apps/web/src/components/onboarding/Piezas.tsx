@@ -5,9 +5,11 @@ import { Fragment, type ButtonHTMLAttributes, type ReactNode } from "react";
 // onb2-shared.jsx). El mock trae colores de la paleta fija; aquí todo sale de
 // los tokens del tema, así que el onboarding se ve bien en claro y en oscuro.
 //
-// Densidad: la misma escala que Configuración (pedido de Jose, F12.5): campos
-// de ~36 px con texto de 13, botones de ~40, título y huecos un paso abajo
-// del mock, que se sentía "muy grande y separado".
+// Densidad: la misma escala que Configuración (pedido de Jose, F12.5): texto
+// `text-sm` (13 px con su interlineado, el mismo token que los campos de
+// Configuración), campos y botones de la misma altura, título y huecos un paso
+// abajo del mock, que se sentía "muy grande y separado". Las alturas medidas
+// están en el doc de Voz de marca §14.
 
 export const PASOS = ["Tú", "Escribes", "Redes", "Metas", "Listo"] as const;
 
@@ -125,17 +127,26 @@ export function Pie({ children }: { children: ReactNode }) {
   return <div className="mt-auto flex flex-wrap gap-2 pt-4">{children}</div>;
 }
 
+// Borde de 1.5 en todos (transparente en el primario): así el primario y el
+// secundario miden lo mismo aunque queden en renglones distintos.
 const BASE =
-  "rounded-[10px] px-4 py-2.25 font-display text-[13px] transition-[transform,background-color] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100";
+  "rounded-[10px] border-[1.5px] px-4 py-2 font-display text-sm transition-[transform,background-color] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100";
 
 export function BotonPrimario({
   className = "",
+  acento = false,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement>) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  /** El color de cierre (rosa): el último botón del onboarding. */
+  acento?: boolean;
+}) {
+  const color = acento
+    ? "bg-accent-cta text-accent-cta-fg hover:bg-accent-cta-hover"
+    : "bg-primary text-primary-fg hover:bg-primary-hover";
   return (
     <button
       type="button"
-      className={`${BASE} flex-1 bg-primary font-semibold tracking-tight text-primary-fg hover:bg-primary-hover ${className}`}
+      className={`${BASE} flex-1 border-transparent font-semibold tracking-tight ${color} ${className}`}
       {...rest}
     />
   );
@@ -148,7 +159,7 @@ export function BotonSecundario({
   return (
     <button
       type="button"
-      className={`${BASE} shrink-0 border-[1.5px] border-line bg-card font-medium text-fg-secondary hover:bg-secondary ${className}`}
+      className={`${BASE} shrink-0 border-line bg-card font-medium text-fg-secondary hover:bg-secondary ${className}`}
       {...rest}
     />
   );
@@ -174,6 +185,11 @@ export function BotonAtras({
   );
 }
 
-/** Caja de texto del onboarding: borde de 1.5, halo de foco con el token. */
+/**
+ * Caja de texto del onboarding: borde de 1.5, halo de foco con el token. No
+ * sale de `CAMPO_BASE` (ui/campo-estilo.ts) porque la piel es otra (fondo de
+ * tarjeta, no lavanda) y mezclar las dos dejaría utilities en conflicto; la
+ * medida sí es la misma (px-3 py-2, text-sm).
+ */
 export const CAMPO =
-  "w-full rounded-[10px] border-[1.5px] border-line bg-card px-3 py-2 text-[13px] text-fg outline-none transition-[border-color,box-shadow] placeholder:text-fg-muted focus:border-line-focus focus:ring-3 focus:ring-focus-ring";
+  "w-full rounded-[10px] border-[1.5px] border-line bg-card px-3 py-2 text-sm text-fg outline-none transition-[border-color,box-shadow] placeholder:text-fg-muted focus:border-line-focus focus:ring-3 focus:ring-focus-ring";
