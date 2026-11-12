@@ -30,6 +30,8 @@ interface SeccionProps {
   icono: LucideIcon;
   titulo: string;
   subtitulo?: string;
+  /** A la derecha del título (F12.5: el interruptor de «Aprender de mis ediciones»). */
+  accion?: ReactNode;
   children: ReactNode;
 }
 
@@ -40,14 +42,15 @@ interface SeccionProps {
  * Configuración "muy grande y separada": inputs altos, ayudas lejos de su
  * campo. Afecta a todas las páginas de Configuración por igual.
  */
-export function Seccion({ icono: Icono, titulo, subtitulo, children }: SeccionProps) {
+export function Seccion({ icono: Icono, titulo, subtitulo, accion, children }: SeccionProps) {
   return (
     <section className="mb-4 rounded-lg border border-line bg-card p-4 md:p-5">
       <div className="mb-1 flex items-center gap-2.5">
         <div className="flex size-7.5 shrink-0 items-center justify-center rounded-md bg-secondary">
           <Icono size={16} strokeWidth={1.5} className="text-accent" aria-hidden />
         </div>
-        <h2 className="font-display text-md font-semibold text-fg">{titulo}</h2>
+        <h2 className="min-w-0 flex-1 font-display text-md font-semibold text-fg">{titulo}</h2>
+        {accion}
       </div>
       {subtitulo && <p className="mb-4 text-[12.5px] text-fg-muted md:ml-10">{subtitulo}</p>}
       <div className="flex flex-col gap-4">{children}</div>

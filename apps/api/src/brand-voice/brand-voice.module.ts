@@ -6,6 +6,8 @@ import { BrandVoiceRepository } from "./brand-voice.repository.js";
 import { BrandVoiceService } from "./brand-voice.service.js";
 import { DestilarVozService } from "./destilar.service.js";
 import { EjemploDeVozService } from "./ejemplo.service.js";
+import { VozVivaRepository } from "./voz-viva.repository.js";
+import { VozVivaService } from "./voz-viva.service.js";
 
 // AiModule y CreditsModule desde F9.7: "Ver ejemplo de tu voz" llama al
 // modelo y cobra. Ninguno de los dos importa este módulo, así que no hay
@@ -13,7 +15,14 @@ import { EjemploDeVozService } from "./ejemplo.service.js";
 @Module({
   imports: [AiModule, CreditsModule],
   controllers: [BrandVoiceController],
-  providers: [BrandVoiceService, BrandVoiceRepository, EjemploDeVozService, DestilarVozService],
+  providers: [
+    BrandVoiceService,
+    BrandVoiceRepository,
+    EjemploDeVozService,
+    DestilarVozService,
+    VozVivaService,
+    VozVivaRepository,
+  ],
   // ChatModule importa esto para leer la voz al ensamblar el system
   // prompt (PR 2, buildSystemPrompt).
   exports: [BrandVoiceService, BrandVoiceRepository],

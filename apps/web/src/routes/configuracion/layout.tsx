@@ -15,6 +15,7 @@ import {
 import { useEffect, useRef } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { ultimaRutaDeLaApp } from "../../lib/ultima-ruta.js";
+import { useVozVivaStore } from "../../stores/voz-viva-store.js";
 
 // Configuración tiene su propio shell (F9.7, mock de Claude Design): no vive
 // dentro del sidebar de la app sino que lo reemplaza, con un header propio y
@@ -35,6 +36,8 @@ interface NavItem {
   icon: LucideIcon;
 }
 
+const VOZ_DE_MARCA = "/configuracion/voz-de-marca";
+
 interface NavGroup {
   title: string;
   items: NavItem[];
@@ -51,7 +54,7 @@ const GROUPS: NavGroup[] = [
   {
     title: "CONTENIDO",
     items: [
-      { label: "Voz de marca", to: "/configuracion/voz-de-marca", icon: Mic },
+      { label: "Voz de marca", to: VOZ_DE_MARCA, icon: Mic },
       // F9.6: la personalización de la búsqueda de tendencias de Ritmo. El
       // mock es anterior a esta página, así que el ícono no sale de ahí.
       { label: "Tendencias", to: "/configuracion/tendencias", icon: TrendingUp },
@@ -83,6 +86,14 @@ export function ConfiguracionLayout() {
   const { pathname } = useLocation();
   const activa = seccionActiva(pathname);
   const pestanas = useRef<HTMLElement>(null);
+  // F12.5: un punto en «Voz de marca» cuando hay propuestas de «Aprender de
+  // mis ediciones». Es el único aviso: no hay notificaciones en la app
+  // (overview §8).
+  const cargarPropuestas = useVozVivaStore((s) => s.cargar);
+  const hayPropuestas = useVozVivaStore((s) => (s.datos?.propuestas.length ?? 0) > 0);
+  useEffect(() => {
+    void cargarPropuestas();
+  }, [cargarPropuestas]);
 
   // En móvil la pestaña activa puede quedar fuera de la fila (Facturación es
   // la última): se trae a la vista al navegar, o la página no diría dónde
@@ -135,7 +146,11 @@ export function ConfiguracionLayout() {
                 {group.title}
               </p>
               {group.items.map((item) => (
-                <ItemDeNav key={item.to} item={item} />
+                <ItemDeNav
+                  key={item.to}
+                  item={item}
+                  punto={item.to === VOZ_DE_MARCA && hayPropuestas}
+                />
               ))}
             </div>
           ))}
@@ -148,7 +163,12 @@ export function ConfiguracionLayout() {
           className="flex shrink-0 [scrollbar-width:none] gap-1 overflow-x-auto border-b border-line bg-card px-3 py-2 md:hidden"
         >
           {ITEMS.map((item) => (
-            <ItemDeNav key={item.to} item={item} compacto />
+            <ItemDeNav
+              key={item.to}
+              item={item}
+              compacto
+              punto={item.to === VOZ_DE_MARCA && hayPropuestas}
+            />
           ))}
         </nav>
 
@@ -162,7 +182,14 @@ export function ConfiguracionLayout() {
   );
 }
 
-function ItemDeNav({ item, compacto = false }: { item: NavItem; compacto?: boolean }) {
+interface ItemDeNavProps {
+  item: NavItem;
+  compacto?: boolean;
+  /** Hay algo que ver adentro (las propuestas de voz viva). */
+  punto?: boolean;
+}
+
+function ItemDeNav({ item, compacto = false, punto = false }: ItemDeNavProps) {
   const Icon = item.icon;
   return (
     <NavLink
@@ -184,6 +211,12 @@ function ItemDeNav({ item, compacto = false }: { item: NavItem; compacto?: boole
             aria-hidden
           />
           {item.label}
+          {punto && (
+            <span className="ml-auto flex items-center pl-1">
+              <span className="size-2 rounded-full bg-accent-cta" aria-hidden />
+              <span className="sr-only">(tienes propuestas)</span>
+            </span>
+          )}
         </>
       )}
     </NavLink>

@@ -7,6 +7,7 @@ import {
   MODO_ESTRATEGIA_META,
   MODOS_ESTRATEGIA,
   normalizeExpression,
+  STYLE_NOTES_MAX,
   resolveMacroRegion,
   verticalDeNicho,
   verticalLabel,
@@ -27,6 +28,10 @@ import {
   Seccion,
   SkeletonDePagina,
 } from "../../components/configuracion/primitivas.js";
+import {
+  AprenderDeEdiciones,
+  type ResultadoDeAgregar,
+} from "../../components/configuracion/AprenderDeEdiciones.js";
 import { AsiEscribes } from "../../components/configuracion/AsiEscribes.js";
 import { MemoriaSeccion } from "../../components/configuracion/MemoriaSeccion.js";
 import { RanuraEjemplo } from "../../components/configuracion/RanuraEjemplo.js";
@@ -231,6 +236,20 @@ export function VozDeMarcaPage() {
     );
   }
 
+  // «Agregar» de «Aprender de mis ediciones»: mismo autoguardado que editar a
+  // mano, y ESPERA a que el servidor lo confirme. Si no, la decisión se anotaba
+  // aunque el rasgo nunca se guardara (revisión del PR6).
+  async function agregarRasgo(rasgo: string): Promise<ResultadoDeAgregar> {
+    if (styleNotes.some((nota) => normalizeExpression(nota) === normalizeExpression(rasgo))) {
+      return "ok";
+    }
+    if (styleNotes.length >= STYLE_NOTES_MAX) return "lleno";
+    const siguientes = [...styleNotes, rasgo];
+    setStyleNotes(siguientes);
+    guardar("styleNotes", siguientes, true);
+    return (await auto.vaciar()) ? "ok" : "error";
+  }
+
   if (loadError) return <p className="text-sm text-error-fg">{loadError}</p>;
   if (!voice) return <SkeletonDePagina />;
 
@@ -250,6 +269,10 @@ export function VozDeMarcaPage() {
           guardar("styleNotes", rasgos, true);
         }}
       />
+
+      {/* F12.5 voz viva: entre «Así escribes» y «Tus ejemplos» (Voz de marca
+          v3). Lo aceptado entra por el mismo autoguardado que editar a mano. */}
+      <AprenderDeEdiciones onAgregar={agregarRasgo} />
 
       <Seccion
         icono={Bookmark}

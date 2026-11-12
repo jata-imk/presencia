@@ -19,5 +19,6 @@ export * from "./telegram.js";
 export * from "./text.js";
 export * from "./trends.js";
 export * from "./verticals.js";
+export * from "./voz-viva.js";
 export * from "./web.js";
 export * from "./web-sources.js";

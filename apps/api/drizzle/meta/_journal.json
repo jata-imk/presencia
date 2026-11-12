@@ -484,6 +484,13 @@
       "when": 1794360778317,
       "tag": "0068_memoria_olvidada",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1794362538608,
+      "tag": "0069_voz_viva",
+      "breakpoints": true
     }
   ]
 }
