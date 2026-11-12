@@ -57,6 +57,8 @@ async function publicada(opts: {
   groupId?: string;
   /** Una reescritura que el creator pidió a la IA ("Más corto"): versión 2, `ai`. */
   reescrita?: string;
+  /** Editó a mano (v2) y después restauró esa misma edición (v3). */
+  restauraSuEdicion?: boolean;
 }) {
   await dbService.runWithTenant(userId, async (tx) => {
     const [card] = await tx
@@ -90,6 +92,13 @@ async function publicada(opts: {
         instruction: "Más corto",
         content: { archetype: "text_first", body: opts.reescrita, hashtags: [] },
       });
+    }
+    if (opts.restauraSuEdicion) {
+      const suya = { archetype: "text_first", body: opts.final, hashtags: [] };
+      await tx.insert(cardVersions).values([
+        { userId, cardId: card.id, n: 2, source: "manual", content: suya },
+        { userId, cardId: card.id, n: 3, source: "restore", restoredFrom: 2, content: suya },
+      ]);
     }
   });
 }
@@ -185,12 +194,13 @@ describe("VozVivaService", () => {
   });
 
   it(
-    "no cuenta borradores, canceladas, otra voz ni el mismo grupo dos veces",
+    "no cuenta borradores, canceladas, otra voz ni el mismo grupo dos veces; sí las huérfanas",
     { timeout: 20_000 },
     async () => {
       await publicada({ original: BORRADOR, final: EDITADO, status: "draft" });
       await publicada({ original: BORRADOR, final: EDITADO, status: "canceled" });
-      // Una card huérfana (su chat se borró): no se sabe con qué voz se escribió.
+      // Una card huérfana (su chat se borró) SÍ cuenta: en V1 ninguna carpeta
+      // tiene voz propia, y borrar el chat no deshace la edición.
       await publicada({ original: BORRADOR, final: EDITADO, chat: null });
       // Un chat en una carpeta con otra voz.
       const otroChat = await dbService.runWithTenant(userId, async (tx) => {
@@ -216,7 +226,7 @@ describe("VozVivaService", () => {
       await publicada({ original: BORRADOR, final: EDITADO, status: "failed" });
 
       const { propuestas, edicionesParaRevisar } = await crear().propuestas(userId);
-      expect(edicionesParaRevisar).toBe(2);
+      expect(edicionesParaRevisar).toBe(3);
       expect(propuestas).toEqual([]);
     },
   );
@@ -262,6 +272,15 @@ describe("VozVivaService", () => {
       expect(edicionesParaRevisar).toBe(0);
     },
   );
+
+  it("restaurar su propia edición no la vuelve texto de la IA", { timeout: 20_000 }, async () => {
+    for (let i = 0; i < 4; i++) {
+      await publicada({ original: BORRADOR, final: EDITADO, restauraSuEdicion: true });
+    }
+    const { propuestas, edicionesParaRevisar } = await crear().propuestas(userId);
+    expect(edicionesParaRevisar).toBe(4);
+    expect(propuestas.map((p) => p.id)).toEqual(["emojis"]);
+  });
 
   it(
     "revisar: apagado avisa sin mandar nada al modelo ni cobrar",

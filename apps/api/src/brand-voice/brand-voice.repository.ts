@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
 import type {
   BrandVoiceExampleDto,
+  BrandVoiceForPrompt,
   BrandVoiceReferenceExample,
   BrandVoiceRegister,
   ModoEstrategia,
@@ -61,6 +62,24 @@ export type UpdateBrandVoicePatch = Partial<{
   extras: Record<string, unknown>;
 }>;
 
+/** Los campos de `BrandVoiceForPrompt`: los que cambian cómo escribe el chat. */
+const CAMPOS_QUE_SUENAN = [
+  "marketCountry",
+  "marketRegion",
+  "niche",
+  "audience",
+  "register",
+  "formality",
+  "allowedExpressions",
+  "bannedExpressions",
+  "useAnglicisms",
+  "keyTopics",
+  "preferredCtas",
+  "referenceExamples",
+  "styleNotes",
+  "businessFacts",
+] as const satisfies readonly (keyof BrandVoiceForPrompt & keyof UpdateBrandVoicePatch)[];
+
 @Injectable()
 export class BrandVoiceRepository {
   async findDefault(tx: Tx): Promise<BrandVoiceRow | undefined> {
@@ -116,11 +135,19 @@ export class BrandVoiceRepository {
       .where(eq(brandVoices.isDefault, true));
   }
 
+  /**
+   * `updated_at` se mueve solo si cambia algo que SUENA (lo que viaja al
+   * prompt): es lo que la pantalla compara contra el último ejemplo para decir
+   * "Tu voz cambió". Los ajustes de Tendencias, el estilo de imagen, el nombre
+   * o `extras` no cambian cómo escribe, y movían el aviso en falso (revisión
+   * de la fase).
+   */
   async updateDefault(tx: Tx, patch: UpdateBrandVoicePatch): Promise<BrandVoiceRow> {
     const set = omitUndefined(patch);
+    const suena = CAMPOS_QUE_SUENAN.some((campo) => campo in set);
     const [row] = await tx
       .update(brandVoices)
-      .set({ ...set, updatedAt: sql`now()` })
+      .set(suena ? { ...set, updatedAt: sql`now()` } : set)
       .where(eq(brandVoices.isDefault, true))
       .returning();
     if (!row) throw new Error("No se pudo actualizar la voz de marca");

@@ -82,15 +82,19 @@ export class BrandVoiceService {
       // Un rasgo repetido ("Frases cortas" y "frases cortas") ocuparía dos de
       // los 8 lugares y viajaría dos veces en cada prompt.
       if (patch.styleNotes) patch.styleNotes = uniqueExpressions(patch.styleNotes);
-      const allowedExpressions = patch.allowedExpressions ?? existing.allowedExpressions;
-      const bannedExpressions = patch.bannedExpressions ?? existing.bannedExpressions;
-      const resolved = this.resolveConflicts(allowedExpressions, bannedExpressions);
+      // "Prohibido gana" solo hace falta si cambió alguna de las dos listas. Sin
+      // tocarlas, mandarlas igual hacía que cada PATCH contara como un cambio
+      // a la voz (updated_at) aunque fuera el estilo de imagen.
+      if (patch.allowedExpressions !== undefined || patch.bannedExpressions !== undefined) {
+        const resolved = this.resolveConflicts(
+          patch.allowedExpressions ?? existing.allowedExpressions,
+          patch.bannedExpressions ?? existing.bannedExpressions,
+        );
+        patch.allowedExpressions = resolved.allowedExpressions;
+        patch.bannedExpressions = resolved.bannedExpressions;
+      }
 
-      const updated = await this.repo.updateDefault(tx, {
-        ...patch,
-        allowedExpressions: resolved.allowedExpressions,
-        bannedExpressions: resolved.bannedExpressions,
-      });
+      const updated = await this.repo.updateDefault(tx, patch);
       return this.toDto(updated);
     });
   }

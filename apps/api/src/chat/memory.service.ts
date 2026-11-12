@@ -102,16 +102,25 @@ export class MemoryService {
 
     const vector = await this.embed(userId, chatId, content, "document", runId);
     try {
-      await this.dbService.runWithTenant(userId, (tx) =>
-        this.repo.insertMemoryChunk(tx, {
+      await this.dbService.runWithTenant(userId, async (tx) => {
+        // Otra vez, ya con la fila del usuario bloqueada: el embedding tarda, y
+        // un «Borrar todo» o un apagado que llegó mientras tanto ganaba la
+        // carrera y este insert devolvía a la memoria lo de antes (revisión de
+        // la fase). `forgetAll` actualiza esa misma fila en su transacción, así
+        // que uno de los dos espera al otro: o este ve el sello nuevo, o el
+        // borrado se lleva lo que este insertó.
+        const ahora = await this.repo.lockMemoryPreferences(tx, userId);
+        if (!ahora?.enabled) return;
+        if (ahora.forgottenAt && reply.createdAt <= ahora.forgottenAt) return;
+        await this.repo.insertMemoryChunk(tx, {
           userId,
           chatId,
           messageId,
           content,
           embedding: vector,
           model: this.modelId,
-        }),
-      );
+        });
+      });
     } catch (error) {
       // La respuesta se borró mientras se calculaba el embedding (el creator
       // regeneró o borró el chat): ya no hay intercambio que recordar.
@@ -193,11 +202,16 @@ export class MemoryService {
    * cola no devuelva lo de antes.
    */
   async forgetAll(userId: string): Promise<number> {
-    await this.dbService.db
-      .update(users)
-      .set({ memoryForgottenAt: sql`now()` })
-      .where(eq(users.id, userId));
-    return this.dbService.runWithTenant(userId, (tx) => this.repo.deleteAllMemoryChunks(tx));
+    // Sello y borrado en UNA transacción: el `index` bloquea la misma fila de
+    // `users` antes de insertar, así que nunca queda un fragmento de antes del
+    // sello (revisión de la fase).
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      await tx
+        .update(users)
+        .set({ memoryForgottenAt: sql`now()` })
+        .where(eq(users.id, userId));
+      return this.repo.deleteAllMemoryChunks(tx);
+    });
   }
 
   /** Un embedding, con su fila en `ai_usage_events` (tokens estimados si el proveedor no los da). */

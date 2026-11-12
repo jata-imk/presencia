@@ -350,6 +350,68 @@ describe("MemoryService", { timeout: 60_000 }, () => {
       }
     });
 
+    // Revisión de la fase: el embedding tarda, y un «Borrar todo» que llega
+    // mientras tanto ganaba la carrera.
+    it("un «Borrar todo» durante el embedding no deja el fragmento", async () => {
+      const [prendido] = await dbService.db
+        .insert(users)
+        .values({ name: "Carrera", email: `carrera-${randomUUID()}@test.local` })
+        .returning({ id: users.id });
+      const dueno = prendido!.id;
+      try {
+        const viejo = await chatCon(dueno, "Mis marquesitas", "Va.", Date.now() - 60_000);
+        const lento = new MockEmbeddingModelV4({
+          doEmbed: async ({ values }) => {
+            await service.forgetAll(dueno); // llega mientras se calcula
+            return { embeddings: values.map((v) => vectorDe(String(v))), warnings: [] };
+          },
+        });
+        Object.assign(service, { resolve: () => lento });
+        await service.index({ userId: dueno, ...viejo });
+        expect(
+          await dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks)),
+        ).toEqual([]);
+      } finally {
+        Object.assign(service, { resolve: () => modelo });
+        await dbService.db.delete(users).where(eq(users.id, dueno));
+      }
+    });
+
+    // Revisión de la fase: al volver a prenderla, lo dicho con la memoria
+    // apagada sigue fuera, aunque un reindexado lo vuelva a encolar.
+    it("volver a prenderla no guarda lo que se dijo mientras estaba apagada", async () => {
+      const { ProfileRepository } = await import("../profile/profile.repository.js");
+      const perfiles = new ProfileRepository(dbService);
+      const [prendido] = await dbService.db
+        .insert(users)
+        .values({ name: "Pausa", email: `pausa-${randomUUID()}@test.local` })
+        .returning({ id: users.id });
+      const dueno = prendido!.id;
+      try {
+        await perfiles.update(dueno, { memoryEnabled: false });
+        // Margen de un minuto: el sello es del reloj de Postgres (ver arriba).
+        const apagadaEntonces = await chatCon(dueno, "Mis marquesitas", "Va.", Date.now() - 60_000);
+        await perfiles.update(dueno, { memoryEnabled: true });
+        await service.index({ userId: dueno, ...apagadaEntonces });
+        expect(
+          await dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks)),
+        ).toEqual([]);
+
+        // Prenderla otra vez estando prendida no mueve el sello.
+        const antes = await service.preferences(dueno);
+        await perfiles.update(dueno, { memoryEnabled: true });
+        expect((await service.preferences(dueno)).forgottenAt).toEqual(antes.forgottenAt);
+
+        const despues = await chatCon(dueno, "Mis lasañas", "Va.", Date.now() + 60_000);
+        await service.index({ userId: dueno, ...despues });
+        expect(
+          await dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks)),
+        ).toHaveLength(1);
+      } finally {
+        await dbService.db.delete(users).where(eq(users.id, dueno));
+      }
+    });
+
     it("isEnabled lee la preferencia del usuario", async () => {
       expect(await service.isEnabled(apagado)).toBe(false);
       expect(await service.isEnabled(userId)).toBe(true);

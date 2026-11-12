@@ -143,7 +143,9 @@ export function fueEditada(edicion: EdicionDePublicacion): boolean {
 
 // ── Las reglas ───────────────────────────────────────────────────────
 
-const EMOJI = /\p{Extended_Pictographic}/gu;
+// Extended_Pictographic también incluye ©, ®, ™, ‼ y ⁉: quitar el ™ de una
+// marca no es quitar emojis (revisión de la fase).
+const EMOJI = /(?![©®™‼⁉])\p{Extended_Pictographic}/gu;
 // Un hashtag escrito dentro del texto, además de los del campo aparte.
 const HASHTAG_EN_TEXTO = /(?:^|\s)#[\p{L}\p{N}_]+/gu;
 
@@ -225,6 +227,11 @@ const REGLAS: Record<ReglaDeVozViva, Regla> = {
   },
 };
 
+/** El rasgo que propone una regla ("Casi sin emojis"). */
+export function rasgoDeRegla(regla: ReglaDeVozViva): string {
+  return REGLAS[regla].rasgo;
+}
+
 /**
  * Si un rasgo ya dice lo que propone la regla ("Sin emojis" cubre a la de
  * emojis). Lo usa «Revisar mis ediciones» para no repetir con la IA una
@@ -236,7 +243,7 @@ export function rasgoCubreRegla(rasgo: string, regla: ReglaDeVozViva): boolean {
 
 // `test` con la bandera g guarda estado entre llamadas: para "¿tiene uno?"
 // va una copia sin ella.
-const EMOJI_UNO = /\p{Extended_Pictographic}/u;
+const EMOJI_UNO = /(?![©®™‼⁉])\p{Extended_Pictographic}/u;
 
 /** Cuántas evidencias se muestran por propuesta: dos se leen de un vistazo. */
 const EVIDENCIAS_MAX = 2;

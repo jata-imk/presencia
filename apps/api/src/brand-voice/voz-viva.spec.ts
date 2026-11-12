@@ -51,6 +51,11 @@ describe("proponerAjustesDeVoz", () => {
     expect(propuesta?.evidencia).toHaveLength(2);
   });
 
+  it("quitar ™ o © de una marca no es quitar emojis", () => {
+    const marca = () => edicion("Lanzamos Café Ruta™ © 2026", "Lanzamos Café Ruta 2026");
+    expect(proponerAjustesDeVoz([marca(), marca(), marca(), marca()], SIN_NADA)).toEqual([]);
+  });
+
   it("con 3 no hay patrón", () => {
     const ediciones = [conEmojis(), conEmojis(), conEmojis(), intacta(), intacta()];
     expect(proponerAjustesDeVoz(ediciones, SIN_NADA)).toEqual([]);
