@@ -8,7 +8,8 @@ import { apiFetch } from "../lib/api.js";
 // propuesta apaga el punto sin volver a preguntar al servidor.
 //
 // Las propuestas de «Revisar mis ediciones» (origen "ia") viven solo aquí:
-// son efímeras, y una revisión nueva reemplaza a la anterior.
+// son efímeras (se pierden al recargar), y una revisión nueva reemplaza a la
+// anterior.
 
 interface VozVivaState {
   datos: PropuestasDeVozDto | null;
@@ -21,6 +22,22 @@ interface VozVivaState {
 
 // Una sola lectura en vuelo: el layout y la sección la piden al montar.
 let enVuelo: Promise<void> | null = null;
+// Cuántas veces se escribió el store desde la pantalla. Una lectura que salió
+// antes de una escritura (prender o apagar, "Agregar", una revisión) trae datos
+// viejos y no la pisa (revisión del PR6).
+let escrituras = 0;
+
+// Las propuestas de la última revisión con IA, ya pagadas, sin decidir. Viven
+// aparte del resto porque el servidor no las conoce: apagar y volver a prender
+// no debe tirarlas (revisión del PR6). Apagado, solo no se muestran.
+let revisionPagada: PropuestaDeVozDto[] = [];
+
+/** Lo que dice el servidor, más la revisión pagada si sigue aprendiendo. */
+function conRevision(nuevos: PropuestasDeVozDto): PropuestasDeVozDto {
+  return nuevos.aprender
+    ? { ...nuevos, propuestas: [...nuevos.propuestas, ...revisionPagada] }
+    : nuevos;
+}
 
 export const useVozVivaStore = create<VozVivaState>()(
   devtools(
@@ -28,24 +45,28 @@ export const useVozVivaStore = create<VozVivaState>()(
       datos: null,
       error: false,
       cargar: () => {
+        const mia = escrituras;
         enVuelo ??= apiFetch<PropuestasDeVozDto>("/api/brand-voice/propuestas")
           .then((datos) => {
-            // Las de una revisión con IA siguen en pantalla hasta que decida.
-            const revision = get().datos?.propuestas.filter((p) => p.origen === "ia") ?? [];
-            set(
-              { datos: { ...datos, propuestas: [...datos.propuestas, ...revision] }, error: false },
-              false,
-              "vozViva/cargar",
-            );
+            if (escrituras !== mia) return;
+            set({ datos: conRevision(datos), error: false }, false, "vozViva/cargar");
           })
-          .catch(() => set({ error: true }, false, "vozViva/error"))
+          .catch(() => {
+            if (escrituras === mia) set({ error: true }, false, "vozViva/error");
+          })
           .finally(() => {
             enVuelo = null;
           });
         return enVuelo;
       },
-      poner: (datos) => set({ datos, error: false }, false, "vozViva/poner"),
+      // Prender o apagar: la revisión ya pagada se queda si sigue aprendiendo.
+      poner: (datos) => {
+        escrituras++;
+        set({ datos: conRevision(datos), error: false }, false, "vozViva/poner");
+      },
       quitar: (id) => {
+        escrituras++;
+        revisionPagada = revisionPagada.filter((p) => p.id !== id);
         const datos = get().datos;
         if (!datos) return;
         set(
@@ -55,8 +76,11 @@ export const useVozVivaStore = create<VozVivaState>()(
         );
       },
       ponerRevision: (propuestas) => {
+        escrituras++;
+        revisionPagada = propuestas;
         const datos = get().datos;
-        if (!datos) return;
+        // Apagado mientras el modelo pensaba: no se muestra (ni prende el punto).
+        if (!datos?.aprender) return;
         set(
           {
             datos: {
@@ -72,3 +96,10 @@ export const useVozVivaStore = create<VozVivaState>()(
     { name: "voz-viva" },
   ),
 );
+
+/** Para historias y tests: el store y su estado de módulo vuelven a cero. */
+export function resetVozVivaStore(): void {
+  revisionPagada = [];
+  escrituras++;
+  useVozVivaStore.setState({ datos: null, error: false });
+}

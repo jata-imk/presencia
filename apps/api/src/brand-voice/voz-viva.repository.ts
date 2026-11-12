@@ -27,10 +27,12 @@ export class VozVivaRepository {
    * publicarse), con lo que escribió la IA y lo que quedó, de la más reciente a
    * la más vieja.
    *
-   * - Lo que escribió la IA es la versión 1 de la card (`source: chat`), que
-   *   se guarda la primera vez que la card cambia. Sin versión 1, la card
-   *   nunca se editó: original y final son lo mismo, y cuenta igual (programar
-   *   el borrador tal cual también dice algo).
+   * - "Lo que escribió la IA" es la última versión que NO es una edición a
+   *   mano: la original (`chat`), una reescritura que pidió ("Más corto",
+   *   `ai`) o una que restauró. Contra la v1, lo que recortó la IA a pedido
+   *   contaba como si lo hubiera recortado el creator (revisión del PR6). Sin
+   *   versiones, la card nunca cambió: original y final son lo mismo, y cuenta
+   *   igual (programar el borrador tal cual también dice algo).
    * - Solo las de chats que escriben con esta voz: sin carpeta, o en una
    *   carpeta sin voz propia o con esta. Las de una carpeta con otra voz
    *   hablan de otra voz (fase "Carpetas con contexto").
@@ -42,24 +44,21 @@ export class VozVivaRepository {
       (select max(${cardVersions.updatedAt}) from ${cardVersions} where ${cardVersions.cardId} = ${publicationCards.id}),
       ${publicationCards.createdAt}
     )`;
+    const original = sql<unknown>`(
+      select ${cardVersions.content} from ${cardVersions}
+      where ${cardVersions.cardId} = ${publicationCards.id} and ${cardVersions.source} <> 'manual'
+      order by ${cardVersions.n} desc limit 1
+    )`;
     const filas = await tx
       .select({
         groupId: publicationCards.groupId,
         final: publicationCards.content,
-        original: cardVersions.content,
+        original,
         momento,
       })
       .from(publicationCards)
       .innerJoin(chats, eq(chats.id, publicationCards.chatId))
       .leftJoin(folders, eq(folders.id, chats.folderId))
-      .leftJoin(
-        cardVersions,
-        and(
-          eq(cardVersions.cardId, publicationCards.id),
-          eq(cardVersions.n, 1),
-          eq(cardVersions.source, "chat"),
-        ),
-      )
       .where(
         and(
           inArray(publicationCards.status, ["scheduled", "published", "failed"]),

@@ -55,6 +55,8 @@ async function publicada(opts: {
   chat?: string | null;
   status?: "scheduled" | "published" | "failed" | "draft" | "canceled";
   groupId?: string;
+  /** Una reescritura que el creator pidió a la IA ("Más corto"): versión 2, `ai`. */
+  reescrita?: string;
 }) {
   await dbService.runWithTenant(userId, async (tx) => {
     const [card] = await tx
@@ -77,6 +79,16 @@ async function publicada(opts: {
         n: 1,
         source: "chat",
         content: { archetype: "text_first", body: opts.original, hashtags: [] },
+      });
+    }
+    if (opts.reescrita !== undefined) {
+      await tx.insert(cardVersions).values({
+        userId,
+        cardId: card.id,
+        n: 2,
+        source: "ai",
+        instruction: "Más corto",
+        content: { archetype: "text_first", body: opts.reescrita, hashtags: [] },
       });
     }
   });
@@ -234,6 +246,36 @@ describe("VozVivaService", () => {
       });
       expect((await voz()).updatedAt).toEqual(antes);
       expect((await servicio.aprender(userId, true)).propuestas).toHaveLength(1);
+    },
+  );
+
+  it(
+    "lo que cambió la IA a pedido no cuenta como edición del creator",
+    { timeout: 20_000 },
+    async () => {
+      // La IA le quitó los emojis ("Más corto") y el creator programó eso tal cual.
+      for (let i = 0; i < 4; i++) {
+        await publicada({ original: BORRADOR, reescrita: EDITADO, final: EDITADO });
+      }
+      const { propuestas, edicionesParaRevisar } = await crear().propuestas(userId);
+      expect(propuestas).toEqual([]);
+      expect(edicionesParaRevisar).toBe(0);
+    },
+  );
+
+  it(
+    "revisar: apagado avisa sin mandar nada al modelo ni cobrar",
+    { timeout: 20_000 },
+    async () => {
+      await publicada({ original: BORRADOR, final: EDITADO });
+      await publicada({ original: "Qué chido verte", final: "Qué padre verte" });
+      const servicio = crear();
+      await servicio.aprender(userId, false);
+      await expect(servicio.revisar(userId)).rejects.toThrow("Prende «Aprender de mis ediciones»");
+      const cobros = await dbService.runWithTenant(userId, (tx) =>
+        tx.select().from(creditLedger).where(eq(creditLedger.reason, "voice_distill")),
+      );
+      expect(cobros).toHaveLength(0);
     },
   );
 

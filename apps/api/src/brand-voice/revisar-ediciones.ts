@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   normalizeExpression,
   rasgoCubreRegla,
+  withHashtags,
   STYLE_NOTE_MAX_LENGTH,
   type EdicionDePublicacion,
   type EvidenciaDeVoz,
@@ -50,14 +51,14 @@ export const revisionDelModeloSchema = z.object({
 });
 export type RevisionDelModelo = z.infer<typeof revisionDelModeloSchema>;
 
-function textoCompleto(t: TextoDePublicacion): string {
-  const tags = t.hashtags.map((tag) => `#${tag.replace(/^#+/, "")}`).join(" ");
-  return tags ? `${t.texto}\n\n${tags}` : t.texto;
-}
+// Como se publica: el texto y, al final, sus hashtags (post-text.ts).
+const textoCompleto = (t: TextoDePublicacion) => withHashtags(t.texto, t.hashtags);
 
 export function revisarPrompt(
   ediciones: readonly EdicionDePublicacion[],
   rasgos: readonly string[],
+  /** Lo que las reglas ya le están proponiendo: todavía NO es su voz. */
+  propuestos: readonly string[] = [],
 ): string {
   const n = neutralizeDelimiters;
   const pares = ediciones
@@ -71,8 +72,15 @@ export function revisarPrompt(
     rasgos.length > 0
       ? `\n\nRasgos que ya tiene guardados (no los repitas):\n${rasgos.map((r) => `- ${n(r)}`).join("\n")}`
       : "";
+  // Aparte de lo guardado: decirle al modelo que ya "tiene" un rasgo que solo
+  // se le está proponiendo lo haría leer las ediciones con una voz que no es
+  // la suya (revisión del PR6).
+  const yaPropuesto =
+    propuestos.length > 0
+      ? `\n\nAjustes que ya le estamos proponiendo y todavía no acepta (no los repitas):\n${propuestos.map((r) => `- ${n(r)}`).join("\n")}`
+      : "";
   return (
-    `${pares}${yaSabe}\n\n` +
+    `${pares}${yaSabe}${yaPropuesto}\n\n` +
     `Devuelve hasta ${String(PROPUESTAS_MAX)} propuestas, solo de cambios que se repiten en ` +
     "al menos dos ediciones. Si no hay ninguno claro, devuelve la lista vacía. Cada una con:\n" +
     // El rasgo es lo que se guarda en «Así escribes» y viaja en cada

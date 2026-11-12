@@ -1,8 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useEffect } from "react";
 import { fn } from "storybook/test";
 import type { PropuestasDeVozDto } from "@presencia/shared";
-import { useVozVivaStore } from "../../stores/voz-viva-store.js";
+import { resetVozVivaStore } from "../../stores/voz-viva-store.js";
 import { AprenderDeEdiciones } from "./AprenderDeEdiciones.js";
 
 // «Aprender de mis ediciones» (F12.5, Claude Design "Voz de marca v3"). Los
@@ -11,19 +10,19 @@ import { AprenderDeEdiciones } from "./AprenderDeEdiciones.js";
 
 const meta = {
   title: "Configuración/Aprender de mis ediciones",
+  // El store es uno para toda la app: cada historia arranca limpia ANTES de
+  // montar (un efecto del decorador correría después del de la sección y
+  // descartaría su primera lectura), y la sección lo llena desde su
+  // `parameters.api`.
+  beforeEach: () => {
+    resetVozVivaStore();
+  },
   decorators: [
-    (Story) => {
-      // El store es uno para toda la app: cada historia arranca limpia y la
-      // sección lo llena desde su `parameters.api`.
-      useEffect(() => {
-        useVozVivaStore.setState({ datos: null, error: false });
-      }, []);
-      return (
-        <div className="max-w-(--content-max-w)">
-          <Story />
-        </div>
-      );
-    },
+    (Story) => (
+      <div className="max-w-(--content-max-w)">
+        <Story />
+      </div>
+    ),
   ],
 } satisfies Meta;
 
@@ -66,7 +65,7 @@ const api = (datos: PropuestasDeVozDto, extra: Record<string, unknown> = {}) => 
   ...extra,
 });
 
-const agregar = { onAgregar: fn(() => true) };
+const agregar = { onAgregar: fn(() => Promise.resolve("ok" as const)) };
 
 export const ConPropuestas: Story = {
   name: "Con propuestas",
@@ -172,10 +171,34 @@ export const RevisionSinPatron: Story = {
 /** Ya tiene 8 rasgos: "Agregar" no cabe y lo dice. */
 export const SinLugar: Story = {
   name: "Agregar sin lugar (8 de 8)",
-  render: () => <AprenderDeEdiciones onAgregar={fn(() => false)} />,
+  render: () => <AprenderDeEdiciones onAgregar={fn(() => Promise.resolve("lleno" as const))} />,
   parameters: { api: api(CON_PROPUESTAS) },
   play: async ({ canvas, userEvent }) => {
     const [primera] = await canvas.findAllByRole("button", { name: "Agregar" });
     if (primera) await userEvent.click(primera);
+  },
+};
+
+/** El autoguardado de «Así escribes» falló: la propuesta se queda y lo dice. */
+export const AgregarFallo: Story = {
+  name: "Agregar (no se pudo guardar)",
+  render: () => <AprenderDeEdiciones onAgregar={fn(() => Promise.resolve("error" as const))} />,
+  parameters: { api: api(CON_PROPUESTAS) },
+  play: async ({ canvas, userEvent }) => {
+    const [primera] = await canvas.findAllByRole("button", { name: "Agregar" });
+    if (primera) await userEvent.click(primera);
+  },
+};
+
+export const ErrorDeCarga: Story = {
+  name: "No se pudieron cargar",
+  render: () => <AprenderDeEdiciones {...agregar} />,
+  parameters: {
+    api: {
+      "/api/brand-voice/propuestas": {
+        status: 503,
+        body: { statusCode: 503, message: "Sin servicio" },
+      },
+    },
   },
 };

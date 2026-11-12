@@ -24,6 +24,14 @@ describe("revisarPrompt", () => {
     expect(prompt.match(/<\/publicado>/g)).toHaveLength(2);
     expect(prompt).toContain("- Frases cortas");
   });
+
+  it("separa lo guardado de lo que solo se le está proponiendo", () => {
+    const prompt = revisarPrompt(EDICIONES, ["Frases cortas"], ["Casi sin emojis"]);
+    expect(prompt).toContain("Rasgos que ya tiene guardados (no los repitas):\n- Frases cortas");
+    expect(prompt).toContain(
+      "Ajustes que ya le estamos proponiendo y todavía no acepta (no los repitas):\n- Casi sin emojis",
+    );
+  });
 });
 
 describe("limpiarRevision", () => {

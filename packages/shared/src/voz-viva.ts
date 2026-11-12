@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeHashtags } from "./publication.js";
 import { normalizeExpression } from "./text.js";
 
 /**
@@ -107,9 +108,13 @@ export function decisionesDeVoz(valor: unknown): DecisionesDeVoz {
 export function textoDePublicacion(content: unknown): TextoDePublicacion | null {
   if (typeof content !== "object" || content === null) return null;
   const c = content as Record<string, unknown>;
-  const hashtags = Array.isArray(c.hashtags)
-    ? c.hashtags.filter((tag): tag is string => typeof tag === "string")
-    : [];
+  // Normalizados como al publicar: una card de antes de F10.8.4 guardaba
+  // "#cafe" o "cafe,merida", y sin esto contarían distinto de lo que sale.
+  const hashtags = normalizeHashtags(
+    Array.isArray(c.hashtags)
+      ? c.hashtags.filter((tag): tag is string => typeof tag === "string")
+      : [],
+  );
   const s = (valor: unknown) => (typeof valor === "string" ? valor : "");
   switch (c.archetype) {
     case "visual_first":
@@ -152,10 +157,13 @@ interface Regla {
   /** El rasgo que se propone para «Así escribes». */
   rasgo: string;
   /**
-   * Si un rasgo que ya tiene contiene alguna de estas raíces, ya lo dijo con
-   * sus palabras ("Sin emojis") y proponer "Casi sin emojis" sería repetirle.
+   * Si un rasgo (ya normalizado: minúsculas, sin acentos) dice lo mismo que la
+   * regla con sus palabras ("Sin emojis"), proponer "Casi sin emojis" sería
+   * repetirle. Pide la misma DIRECCIÓN, no solo la palabra: "Usa muchos
+   * emojis" no la calla (revisión del PR6), y "Pregunta corta" tampoco calla
+   * la de largo.
    */
-  raices: string[];
+  cubre: RegExp;
   /** Si el borrador de la IA tenía de qué quitar. Si no, no es evidencia ni a favor ni en contra. */
   aplica: (original: TextoDePublicacion) => boolean;
   /** Si el creator lo quitó (o lo redujo a la mitad o menos). */
@@ -175,7 +183,8 @@ const reducido =
 const REGLAS: Record<ReglaDeVozViva, Regla> = {
   emojis: {
     rasgo: "Casi sin emojis",
-    raices: ["emoji"],
+    cubre:
+      /\b(?:sin|pocos?|casi|nunca|evita\w*|quita\w*|cero|ningun\w*|no (?:usa|pone|lleva)\w*)\b[^.]*\bemoji/,
     aplica: (o) => contarEmojis(o) > 0,
     cumple: reducido(contarEmojis),
     mensaje: (c, n) => `Quitaste emojis ${deTus(c, n)}.`,
@@ -183,7 +192,8 @@ const REGLAS: Record<ReglaDeVozViva, Regla> = {
   },
   hashtags: {
     rasgo: "Pocos hashtags",
-    raices: ["hashtag"],
+    cubre:
+      /\b(?:sin|pocos?|casi|nunca|evita\w*|quita\w*|cero|ningun\w*|no (?:usa|pone|lleva)\w*)\b[^.]*\bhashtag/,
     aplica: (o) => contarHashtags(o) >= 2,
     cumple: reducido(contarHashtags),
     mensaje: (c, n) => `Quitaste hashtags ${deTus(c, n)}.`,
@@ -194,8 +204,10 @@ const REGLAS: Record<ReglaDeVozViva, Regla> = {
   },
   largo: {
     rasgo: "Textos cortos y al grano",
-    // "Frases cortas", "Textos breves": ya lo dijo.
-    raices: ["cort", "brev"],
+    // "Textos breves", "Al grano": ya lo dijo. "Frases cortas" habla del
+    // largo de cada frase, no del texto: no la calla.
+    cubre:
+      /\b(?:textos?|posts?|publicaciones?|captions?|copys?)\b[^.]*\b(?:cort[oa]s?|breves?)\b|\bal grano\b|\bconcis[oa]s?\b/,
     // Recortar un texto de dos líneas no dice nada del creator.
     aplica: (o) => largo(o) >= 120,
     cumple: (o, f) => largo(f) <= largo(o) * 0.7,
@@ -204,7 +216,8 @@ const REGLAS: Record<ReglaDeVozViva, Regla> = {
   },
   exclamaciones: {
     rasgo: "Pocos signos de exclamación",
-    raices: ["exclamac"],
+    cubre:
+      /\b(?:sin|pocos?|casi|nunca|evita\w*|quita\w*|cero|ningun\w*|no (?:usa|pone|lleva)\w*)\b[^.]*(?:\bexclamac|!)/,
     aplica: (o) => contarExclamaciones(o) > 0,
     cumple: reducido(contarExclamaciones),
     mensaje: (c, n) => `Quitaste signos de exclamación ${deTus(c, n)}.`,
@@ -218,8 +231,7 @@ const REGLAS: Record<ReglaDeVozViva, Regla> = {
  * propuesta que la regla ya está haciendo.
  */
 export function rasgoCubreRegla(rasgo: string, regla: ReglaDeVozViva): boolean {
-  const normalizado = normalizeExpression(rasgo);
-  return REGLAS[regla].raices.some((raiz) => normalizado.includes(raiz));
+  return REGLAS[regla].cubre.test(normalizeExpression(rasgo));
 }
 
 // `test` con la bandera g guarda estado entre llamadas: para "¿tiene uno?"
@@ -282,7 +294,7 @@ function recortar(texto: string): string {
 
 function lineaDeHashtags(t: TextoDePublicacion): string {
   const enTexto = (t.texto.match(HASHTAG_EN_TEXTO) ?? []).map((tag) => tag.trim());
-  const delCampo = t.hashtags.map((tag) => `#${tag.replace(/^#+/, "")}`);
+  const delCampo = t.hashtags.map((tag) => `#${tag}`);
   return [...enTexto, ...delCampo].join(" ");
 }
 

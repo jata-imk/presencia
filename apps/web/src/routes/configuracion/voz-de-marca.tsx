@@ -28,7 +28,10 @@ import {
   Seccion,
   SkeletonDePagina,
 } from "../../components/configuracion/primitivas.js";
-import { AprenderDeEdiciones } from "../../components/configuracion/AprenderDeEdiciones.js";
+import {
+  AprenderDeEdiciones,
+  type ResultadoDeAgregar,
+} from "../../components/configuracion/AprenderDeEdiciones.js";
 import { AsiEscribes } from "../../components/configuracion/AsiEscribes.js";
 import { MemoriaSeccion } from "../../components/configuracion/MemoriaSeccion.js";
 import { RanuraEjemplo } from "../../components/configuracion/RanuraEjemplo.js";
@@ -233,15 +236,18 @@ export function VozDeMarcaPage() {
     );
   }
 
-  function agregarRasgo(rasgo: string): boolean {
+  // «Agregar» de «Aprender de mis ediciones»: mismo autoguardado que editar a
+  // mano, y ESPERA a que el servidor lo confirme. Si no, la decisión se anotaba
+  // aunque el rasgo nunca se guardara (revisión del PR6).
+  async function agregarRasgo(rasgo: string): Promise<ResultadoDeAgregar> {
     if (styleNotes.some((nota) => normalizeExpression(nota) === normalizeExpression(rasgo))) {
-      return true;
+      return "ok";
     }
-    if (styleNotes.length >= STYLE_NOTES_MAX) return false;
+    if (styleNotes.length >= STYLE_NOTES_MAX) return "lleno";
     const siguientes = [...styleNotes, rasgo];
     setStyleNotes(siguientes);
     guardar("styleNotes", siguientes, true);
-    return true;
+    return (await auto.vaciar()) ? "ok" : "error";
   }
 
   if (loadError) return <p className="text-sm text-error-fg">{loadError}</p>;

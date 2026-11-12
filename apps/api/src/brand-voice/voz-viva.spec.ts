@@ -3,6 +3,7 @@ import {
   decisionesDeVoz,
   fueEditada,
   proponerAjustesDeVoz,
+  rasgoCubreRegla,
   textoDePublicacion,
   type EdicionDePublicacion,
 } from "@presencia/shared";
@@ -81,6 +82,20 @@ describe("proponerAjustesDeVoz", () => {
     expect(proponerAjustesDeVoz(ediciones, { rasgos: ["Sin EMOJIS"], decisiones: {} })).toEqual([]);
   });
 
+  it("un rasgo que dice lo contrario, o solo comparte la palabra, no la calla", () => {
+    const emojis = [conEmojis(), conEmojis(), conEmojis(), conEmojis()];
+    expect(
+      proponerAjustesDeVoz(emojis, { rasgos: ["Usa muchos emojis"], decisiones: {} }),
+    ).toHaveLength(1);
+    expect(rasgoCubreRegla("Quita los emojis y cierra con punto", "emojis")).toBe(true);
+    expect(rasgoCubreRegla("Nunca usa emojis", "emojis")).toBe(true);
+    // "Frases cortas" es el largo de cada frase; "pregunta corta", de una pregunta.
+    expect(rasgoCubreRegla("Frases cortas y directas", "largo")).toBe(false);
+    expect(rasgoCubreRegla("Abre con una pregunta corta", "largo")).toBe(false);
+    expect(rasgoCubreRegla("Textos breves, al grano", "largo")).toBe(true);
+    expect(rasgoCubreRegla("Pocos signos de exclamación", "exclamaciones")).toBe(true);
+  });
+
   it("después de un «No» solo cuentan las publicaciones posteriores", () => {
     const antes = [conEmojis(), conEmojis(), conEmojis(), conEmojis()];
     const decididaEn = new Date(reloj + 1).toISOString();
@@ -133,6 +148,16 @@ describe("fueEditada", () => {
 });
 
 describe("textoDePublicacion", () => {
+  it("normaliza los hashtags como al publicar", () => {
+    expect(
+      textoDePublicacion({
+        archetype: "text_first",
+        body: "x",
+        hashtags: ["#cafe", "merida,yucatan"],
+      })?.hashtags,
+    ).toEqual(["cafe", "merida", "yucatan"]);
+  });
+
   it("lee los tres arquetipos y rechaza lo que no reconoce", () => {
     expect(textoDePublicacion({ archetype: "text_first", body: "Hola", hashtags: ["a"] })).toEqual({
       texto: "Hola",

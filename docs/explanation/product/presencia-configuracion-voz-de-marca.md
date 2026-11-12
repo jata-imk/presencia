@@ -594,21 +594,26 @@ algo de su voz. Nada cambia sin que diga que sí.
   quitar), en al menos 4 se ve el cambio. Las programadas sin tocar también
   cuentan, en contra: dejar los emojis es decir que estaban bien. Se miran las
   programadas, publicadas y fallidas (no borradores ni canceladas), una por
-  grupo multi-red, y solo de chats que escriben con esta voz.
+  grupo multi-red, y solo de chats que escriben con esta voz. "Lo que escribió
+  la IA" es su última versión que no es una edición a mano: si el creator le
+  pidió "Más corto", lo que recortó la IA no cuenta como recorte suyo.
 - **Cada propuesta dice qué notó y qué se suma** ("Quitaste emojis en 4 de tus
   últimas 5 publicaciones. Se suma a «Así escribes»: Casi sin emojis"), con
   "Ver evidencia": la línea del borrador tachada y la de su edición.
 - **"Agregar"** suma el rasgo por el mismo autoguardado que editar «Así
   escribes» a mano (un solo escritor de `style_notes`). **"No"** se anota: la
   regla no vuelve a preguntar con la misma evidencia, solo con publicaciones
-  posteriores. Si ya tiene un rasgo que lo dice ("Sin emojis"), no se propone.
+  posteriores. Si ya tiene un rasgo que lo dice ("Sin emojis"), no se propone; uno que
+  dice lo contrario ("Usa muchos emojis") o solo comparte la palabra ("Abre con
+  una pregunta corta") no la calla.
 - **«Revisar mis ediciones»** busca con IA lo que las reglas no ven ("cambiaste
   «chido» por «padre»"). A pedido y cobrado (`voice_distill`), sin precio en
   el botón; necesita al menos 2 publicaciones editadas. Sus propuestas son
   efímeras: viven en la pantalla hasta que dice "Agregar" o "No".
 - **Un punto en «Voz de marca»** del sub-nav de Configuración cuando hay
   propuestas. Es el único aviso: no hay notificaciones en la app (overview §8).
-- **Interruptor** en la tarjeta. Apagado, no hay propuestas ni revisión.
+- **Interruptor** en la tarjeta. Apagado, no hay propuestas ni revisión (la
+  API también se niega a revisar: no manda las ediciones al modelo ni cobra).
 
 **Más compacta (F12.5, a pedido de Jose).** Configuración se sentía "muy
 grande y separada". Inputs y selects bajaron de ~42 a ~36 px (texto de 14 a

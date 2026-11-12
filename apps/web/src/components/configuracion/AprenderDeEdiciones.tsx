@@ -2,6 +2,7 @@ import { LoaderCircle, PenLine, ScanSearch, Sparkles } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import {
   REVISAR_EDICIONES_MINIMO,
+  STYLE_NOTES_MAX,
   type PropuestaDeVozDto,
   type QuotaStatusDto,
   type RevisionDeEdicionesDto,
@@ -24,9 +25,12 @@ import { Aviso, Seccion } from "./primitivas.js";
 // - «Revisar mis ediciones» llama al modelo y se cobra; sin precio en el botón
 //   (addendum ADR-012). El diseño traía "≈3 créditos" y no va.
 
+/** Cómo terminó sumar un rasgo a «Así escribes». */
+export type ResultadoDeAgregar = "ok" | "lleno" | "error";
+
 interface AprenderDeEdicionesProps {
-  /** Suma el rasgo a «Así escribes». `false` si no cupo (ya tiene 8). */
-  onAgregar: (rasgo: string) => boolean;
+  /** Suma el rasgo a «Así escribes» y espera a que se guarde. */
+  onAgregar: (rasgo: string) => Promise<ResultadoDeAgregar>;
 }
 
 export function AprenderDeEdiciones({ onAgregar }: AprenderDeEdicionesProps) {
@@ -181,7 +185,7 @@ function Revisando() {
 
 interface PropuestaProps {
   propuesta: PropuestaDeVozDto;
-  onAgregar: (rasgo: string) => boolean;
+  onAgregar: (rasgo: string) => Promise<ResultadoDeAgregar>;
   /** Ya decidió: sale de la lista. */
   onListo: () => void;
 }
@@ -203,14 +207,21 @@ function Propuesta({ propuesta, onAgregar, onListo }: PropuestaProps) {
   }
 
   async function agregar() {
+    setEnviando(true);
     setError(null);
-    if (!onAgregar(propuesta.rasgo)) {
-      setError("Ya tienes 8 rasgos. Quita uno en «Así escribes» para agregar este.");
+    const resultado = await onAgregar(propuesta.rasgo);
+    if (resultado !== "ok") {
+      setError(
+        resultado === "lleno"
+          ? `Ya tienes ${String(STYLE_NOTES_MAX)} rasgos. Quita uno en «Así escribes» para agregar este.`
+          : "No pudimos guardar el rasgo. Revisa «Así escribes» y vuelve a intentarlo.",
+      );
+      setEnviando(false);
       return;
     }
     onListo();
-    // El rasgo ya se guardó por «Así escribes»; si anotar la decisión falla,
-    // la regla tampoco vuelve a proponerlo: ya hay un rasgo que lo dice.
+    // El rasgo ya está guardado; si anotar la decisión falla, la regla tampoco
+    // vuelve a proponerlo: ya hay un rasgo que lo dice.
     await decidir("aceptada").catch(() => undefined);
   }
 

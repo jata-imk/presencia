@@ -84,17 +84,20 @@ export class VozVivaService {
       userId,
       async (tx) => {
         const voz = await this.vozDefault(tx);
+        // Apagado es apagado: una pestaña vieja o un POST directo mandarían sus
+        // ediciones al modelo y cobrarían (revisión del PR6).
+        if (!voz.learnFromEdits) {
+          throw new ConflictException("Prende «Aprender de mis ediciones» para revisarlas.");
+        }
         const todas = await this.repo.ediciones(tx, voz.id);
         return {
           ediciones: todas.filter(fueEditada).slice(0, REVISAR_EDICIONES_MAX),
           rasgos: voz.styleNotes,
           // Lo que las reglas ya están proponiendo en pantalla: la IA no lo repite.
-          pendientes: voz.learnFromEdits
-            ? proponerAjustesDeVoz(todas, {
-                rasgos: voz.styleNotes,
-                decisiones: decisionesDeVoz(voz.voiceProposalDecisions),
-              })
-            : [],
+          pendientes: proponerAjustesDeVoz(todas, {
+            rasgos: voz.styleNotes,
+            decisiones: decisionesDeVoz(voz.voiceProposalDecisions),
+          }),
         };
       },
     );
@@ -127,7 +130,11 @@ export class VozVivaService {
         model: modelo.model,
         system: REVISAR_SYSTEM,
         schema: revisionDelModeloSchema,
-        prompt: revisarPrompt(ediciones, [...rasgos, ...pendientes.map((p) => p.rasgo)]),
+        prompt: revisarPrompt(
+          ediciones,
+          rasgos,
+          pendientes.map((p) => p.rasgo),
+        ),
       });
     } catch (error) {
       // Mismo trato que destilar: un objeto inválido se pagó igual.
