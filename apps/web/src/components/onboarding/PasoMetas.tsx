@@ -44,7 +44,7 @@ export function PasoMetas({
         ¿Qué buscas con tu contenido?
       </Titulo>
 
-      <div className="grid grid-cols-1 gap-2.25 min-[521px]:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 min-[521px]:grid-cols-2">
         {METAS.map(({ id, label, descripcion }) => {
           const elegida = datos.metas.includes(id);
           const Icono = ICONOS[id];
@@ -54,7 +54,7 @@ export function PasoMetas({
               type="button"
               aria-pressed={elegida}
               onClick={() => alternar(id)}
-              className={`flex flex-col gap-2.5 rounded-xl border-[1.5px] px-3.5 py-4 text-left transition-colors ${
+              className={`flex flex-col gap-2 rounded-xl border-[1.5px] px-3.5 py-3 text-left transition-colors ${
                 elegida
                   ? "border-line-focus bg-tint-plum shadow-sm"
                   : "border-line bg-card hover:bg-secondary"

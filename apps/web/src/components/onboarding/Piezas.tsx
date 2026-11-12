@@ -4,6 +4,10 @@ import { Fragment, type ButtonHTMLAttributes, type ReactNode } from "react";
 // Las piezas del onboarding (F12.5, Claude Design "Onboarding v2",
 // onb2-shared.jsx). El mock trae colores de la paleta fija; aquí todo sale de
 // los tokens del tema, así que el onboarding se ve bien en claro y en oscuro.
+//
+// Densidad: la misma escala que Configuración (pedido de Jose, F12.5): campos
+// de ~36 px con texto de 13, botones de ~40, título y huecos un paso abajo
+// del mock, que se sentía "muy grande y separado".
 
 export const PASOS = ["Tú", "Escribes", "Redes", "Metas", "Listo"] as const;
 
@@ -59,10 +63,10 @@ export function Stepper({ paso }: { paso: number }) {
 export function Titulo({ children, sub }: { children: ReactNode; sub?: ReactNode }) {
   return (
     <div>
-      <h1 className="mb-1.5 font-display text-[26px] leading-tight font-bold tracking-tight text-brand">
+      <h1 className="mb-1 font-display text-[22px] leading-tight font-bold tracking-tight text-brand">
         {children}
       </h1>
-      {sub && <p className="text-sm leading-normal text-pretty text-fg-secondary">{sub}</p>}
+      {sub && <p className="text-[13px] leading-normal text-pretty text-fg-secondary">{sub}</p>}
     </div>
   );
 }
@@ -78,21 +82,21 @@ export function Etiqueta({
 }) {
   const Tag = htmlFor ? "label" : "p";
   return (
-    <div className="mb-2.25 flex items-baseline gap-1.5">
+    <div className="mb-1.5 flex items-baseline gap-1.5">
       <Tag
         htmlFor={htmlFor}
-        className="font-display text-[11.5px] font-semibold tracking-wider text-fg-secondary uppercase"
+        className="font-display text-[11px] font-semibold tracking-wider text-fg-secondary uppercase"
       >
         {children}
       </Tag>
-      {pista && <span className="text-xs text-fg-muted">{pista}</span>}
+      {pista && <span className="text-[11.5px] text-fg-muted">{pista}</span>}
     </div>
   );
 }
 
 /** Lo que falta para seguir, centrado arriba de los botones. */
 export function Pista({ children }: { children: ReactNode }) {
-  return <p className="mt-4 text-center text-xs text-fg-muted">{children}</p>;
+  return <p className="mt-3 text-center text-[11.5px] text-fg-muted">{children}</p>;
 }
 
 export function Chip({
@@ -104,7 +108,7 @@ export function Chip({
     <button
       type="button"
       aria-pressed={activo}
-      className={`rounded-full border-[1.5px] px-3.25 py-1.75 font-display text-[13px] font-medium tracking-tight transition-colors ${
+      className={`rounded-full border-[1.5px] px-3 py-1.25 font-display text-[12.5px] font-medium tracking-tight transition-colors ${
         activo
           ? "border-line-focus bg-tint-plum text-brand"
           : "border-line bg-card text-fg-secondary hover:bg-secondary"
@@ -118,11 +122,11 @@ export function Chip({
 
 /** El pie con los botones, empujado al fondo de la tarjeta. */
 export function Pie({ children }: { children: ReactNode }) {
-  return <div className="mt-auto flex flex-wrap gap-2 pt-5.5">{children}</div>;
+  return <div className="mt-auto flex flex-wrap gap-2 pt-4">{children}</div>;
 }
 
 const BASE =
-  "rounded-[10px] px-4 py-2.75 font-display text-sm transition-[transform,background-color] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100";
+  "rounded-[10px] px-4 py-2.25 font-display text-[13px] transition-[transform,background-color] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100";
 
 export function BotonPrimario({
   className = "",
@@ -172,4 +176,4 @@ export function BotonAtras({
 
 /** Caja de texto del onboarding: borde de 1.5, halo de foco con el token. */
 export const CAMPO =
-  "w-full rounded-[10px] border-[1.5px] border-line bg-card px-3.25 py-2.5 text-sm text-fg outline-none transition-[border-color,box-shadow] placeholder:text-fg-muted focus:border-line-focus focus:ring-3 focus:ring-focus-ring";
+  "w-full rounded-[10px] border-[1.5px] border-line bg-card px-3 py-2 text-[13px] text-fg outline-none transition-[border-color,box-shadow] placeholder:text-fg-muted focus:border-line-focus focus:ring-3 focus:ring-focus-ring";

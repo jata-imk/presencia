@@ -103,7 +103,7 @@ export function PasoSuenas(props: PasoSuenasProps) {
           {!sinMuestras && <AsiEscribes {...props} />}
           <section>
             <Etiqueta>Un post en tu voz</Etiqueta>
-            <article className="rounded-xl border border-line-subtle bg-card p-4.5 shadow-xs">
+            <article className="rounded-xl border border-line-subtle bg-card p-4 shadow-xs">
               <div className="mb-3 flex items-center gap-2 text-fg-secondary">
                 {red &&
                   (() => {
@@ -119,7 +119,7 @@ export function PasoSuenas(props: PasoSuenasProps) {
                   renglones={["w-full", "w-[92%]", "w-[70%] mb-4", "w-[86%]", "w-[54%]"]}
                 />
               ) : (
-                <p className="text-[15px] leading-relaxed text-pretty whitespace-pre-wrap text-fg">
+                <p className="text-sm leading-relaxed text-pretty whitespace-pre-wrap text-fg">
                   {post}
                 </p>
               )}
@@ -155,7 +155,7 @@ export function PasoSuenas(props: PasoSuenasProps) {
               disabled={regenerando || terminando}
               // En móvil va primero y a todo lo ancho: junto a ← y "Ajustar" se
               // partía en tres renglones a 375px.
-              className="flex-1 rounded-[10px] bg-accent-cta px-4 py-2.75 font-display text-sm font-semibold tracking-tight text-accent-cta-fg transition-[transform,background-color] hover:bg-accent-cta-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 max-[520px]:order-first max-[520px]:basis-full"
+              className="flex-1 rounded-[10px] bg-accent-cta px-4 py-2.25 font-display text-[13px] font-semibold tracking-tight text-accent-cta-fg transition-[transform,background-color] hover:bg-accent-cta-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 max-[520px]:order-first max-[520px]:basis-full"
             >
               {terminando
                 ? "Un momento…"
@@ -201,7 +201,7 @@ function Cargando({ sinMuestras }: { sinMuestras: boolean }) {
           </div>
         )}
         <Etiqueta>Un post en tu voz</Etiqueta>
-        <div className="rounded-xl border border-line-subtle p-4.5">
+        <div className="rounded-xl border border-line-subtle p-4">
           <Esqueleto
             renglones={[
               "w-[40%] h-2.5! mb-4",
@@ -250,7 +250,7 @@ function AsiEscribes({ rasgos, onCambiarRasgos }: PasoSuenasProps) {
             // El rasgo puede repetirse a medias mientras se edita; el índice
             // es la identidad de la fila.
             key={i}
-            className="group flex items-center gap-2.5 rounded-[10px] py-1.75 pr-2 pl-2.5 hover:bg-secondary"
+            className="group flex items-center gap-2.5 rounded-[10px] py-1.25 pr-2 pl-2.5 hover:bg-secondary"
           >
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-line-focus" />
             {editando === i ? (
@@ -265,14 +265,14 @@ function AsiEscribes({ rasgos, onCambiarRasgos }: PasoSuenasProps) {
                   if (e.key === "Enter") confirmar(i, e.currentTarget.value);
                   if (e.key === "Escape") confirmar(i, rasgo);
                 }}
-                className="min-w-0 flex-1 border-b-[1.5px] border-line-focus bg-transparent py-0.5 text-sm text-fg outline-none"
+                className="min-w-0 flex-1 border-b-[1.5px] border-line-focus bg-transparent py-0.5 text-[13px] text-fg outline-none"
               />
             ) : (
               <button
                 type="button"
                 onClick={() => setEditando(i)}
                 title="Editar"
-                className="min-w-0 flex-1 cursor-text py-0.5 text-left text-sm leading-snug text-fg"
+                className="min-w-0 flex-1 cursor-text py-0.5 text-left text-[13px] leading-snug text-fg"
               >
                 {rasgo}
               </button>

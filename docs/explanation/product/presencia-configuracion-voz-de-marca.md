@@ -630,3 +630,8 @@ campo. Vive en las piezas compartidas (`primitivas.tsx`, `campo-estilo.ts`,
 `TagInput`), así que todas las páginas de Configuración cambian igual. El
 editor del panel de publicación comparte `Textarea` y `TagInput` y quedó
 consistente.
+
+El onboarding tiene sus piezas propias (`components/onboarding/Piezas.tsx`:
+título, etiquetas, chips, campos y botones) y recibió la misma escala en un
+PR aparte: campos de ~36 px con texto de 13, botones de ~40, título de 22 px
+y huecos un paso abajo.

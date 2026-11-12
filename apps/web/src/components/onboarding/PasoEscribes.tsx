@@ -36,10 +36,10 @@ export function PasoEscribes({
           // El índice es la identidad de la ranura: solo se quitan desde la
           // segunda en adelante y nunca se reordenan.
           <div key={i}>
-            <div className="mb-1.5 flex items-center justify-between">
+            <div className="mb-1 flex items-center justify-between">
               <label
                 htmlFor={`muestra-${String(i)}`}
-                className="font-display text-[11.5px] font-semibold tracking-wider text-fg-secondary uppercase"
+                className="font-display text-[11px] font-semibold tracking-wider text-fg-secondary uppercase"
               >
                 Publicación {i + 1}
               </label>
@@ -85,7 +85,7 @@ export function PasoEscribes({
           <button
             type="button"
             onClick={() => onCambiar({ muestras: [...muestras, ""] })}
-            className="flex items-center justify-center gap-1.5 rounded-[10px] border-[1.5px] border-dashed border-line-focus p-2.5 font-display text-[13.5px] font-medium text-brand hover:bg-secondary"
+            className="flex items-center justify-center gap-1.5 rounded-[10px] border-[1.5px] border-dashed border-line-focus p-2 font-display text-[13.5px] font-medium text-brand hover:bg-secondary"
           >
             <Plus size={15} strokeWidth={1.8} aria-hidden />
             Agregar otra
