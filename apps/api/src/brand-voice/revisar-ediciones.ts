@@ -57,9 +57,14 @@ const textoCompleto = (t: TextoDePublicacion) => withHashtags(t.texto, t.hashtag
 export function revisarPrompt(
   ediciones: readonly EdicionDePublicacion[],
   rasgos: readonly string[],
-  /** Lo que las reglas ya le están proponiendo: todavía NO es su voz. */
-  propuestos: readonly string[] = [],
+  otros: {
+    /** Lo que las reglas ya le están proponiendo: todavía NO es su voz. */
+    propuestos?: readonly string[];
+    /** Lo que ya dijo que no (revisión de la fase). */
+    rechazados?: readonly string[];
+  } = {},
 ): string {
+  const { propuestos = [], rechazados = [] } = otros;
   const n = neutralizeDelimiters;
   const pares = ediciones
     .map(
@@ -79,8 +84,12 @@ export function revisarPrompt(
     propuestos.length > 0
       ? `\n\nAjustes que ya le estamos proponiendo y todavía no acepta (no los repitas):\n${propuestos.map((r) => `- ${n(r)}`).join("\n")}`
       : "";
+  const yaRechazo =
+    rechazados.length > 0
+      ? `\n\nAjustes que ya rechazó (no los propongas, tampoco con otras palabras):\n${rechazados.map((r) => `- ${n(r)}`).join("\n")}`
+      : "";
   return (
-    `${pares}${yaSabe}${yaPropuesto}\n\n` +
+    `${pares}${yaSabe}${yaPropuesto}${yaRechazo}\n\n` +
     `Devuelve hasta ${String(PROPUESTAS_MAX)} propuestas, solo de cambios que se repiten en ` +
     "al menos dos ediciones. Si no hay ninguno claro, devuelve la lista vacía. Cada una con:\n" +
     // El rasgo es lo que se guarda en «Así escribes» y viaja en cada
@@ -107,8 +116,9 @@ export function limpiarRevision(
   ediciones: readonly EdicionDePublicacion[],
   rasgos: readonly string[],
   /**
-   * Las reglas que ya están proponiendo algo en pantalla: una propuesta de la
-   * IA que dice lo mismo ("Quita los emojis…" junto a la de emojis) sobra.
+   * Las reglas que ya están proponiendo algo en pantalla, o que el creator ya
+   * rechazó: una propuesta de la IA que dice lo mismo ("Quita los emojis…"
+   * junto a la de emojis, o después de su "No") sobra.
    */
   reglasPendientes: readonly ReglaDeVozViva[] = [],
 ): PropuestaDeVozDto[] {

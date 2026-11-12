@@ -386,6 +386,17 @@ function esMexico(marketCountry: string): boolean {
  * mexicanas, y aplicarlas a otro país produciría una llave con cara de válida
  * y sin ningún significado.
  */
+/** Las claves que son el nombre de una zona y no un lugar: pierden ante un estado o ciudad. */
+const NOMBRES_DE_ZONA = new Set([
+  "norte",
+  "noroeste",
+  "occidente",
+  "bajio",
+  "centro",
+  "sur",
+  "sureste",
+]);
+
 export function resolveMacroRegion(
   marketCountry: string,
   marketRegion: string | null,
@@ -400,14 +411,25 @@ export function resolveMacroRegion(
   // probaba antes que `nuevo leon`— y "Baja California Sur" caía en Sur. Dos
   // de los mercados más grandes del país en la caché equivocada, y sin forma
   // de notarlo: la región no da error, solo trae las tendencias de otra parte.
-  let mejor: { id: MacroRegionId; largo: number } | null = null;
+  //
+  // F12.5: y un estado o una ciudad le gana a un nombre de zona, sin importar
+  // el largo. El onboarding guarda "ciudad, zona", y con el largo mandando
+  // "CDMX, Centro" caía en Centro y "León, Centro" en Centro y no en el Bajío
+  // (revisión de la fase y del PR7). La zona solo decide cuando la ciudad no
+  // está en el catálogo ("Tekax, Sureste").
+  let especifica: { id: MacroRegionId; largo: number } | null = null;
+  let deZona: { id: MacroRegionId; largo: number } | null = null;
   for (const region of MACRO_REGIONS) {
     for (const palabra of region.keywords) {
       if (!reconoce(texto, palabra)) continue;
-      if (!mejor || palabra.length > mejor.largo) mejor = { id: region.id, largo: palabra.length };
+      const actual = NOMBRES_DE_ZONA.has(palabra) ? deZona : especifica;
+      if (actual && palabra.length <= actual.largo) continue;
+      const nuevo = { id: region.id, largo: palabra.length };
+      if (NOMBRES_DE_ZONA.has(palabra)) deZona = nuevo;
+      else especifica = nuevo;
     }
   }
-  return mejor?.id ?? "nacional";
+  return (especifica ?? deZona)?.id ?? "nacional";
 }
 
 export function verticalLabel(id: VerticalId): string {

@@ -16,7 +16,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import type { ExternalChannel, MessageStatus } from "@presencia/shared";
-import { chatSummaries, chats, memoryChunks, messages } from "../db/schema.js";
+import { chatSummaries, chats, memoryChunks, messages, users } from "../db/schema.js";
 import { replaceableTitleSources } from "./chat-title.js";
 import type { Tx } from "../db/db.service.js";
 import { CHAT_CHANGED_CHANNEL, encodeChatChanged } from "../realtime/card-events.js";
@@ -235,6 +235,31 @@ export class ChatRepository {
   async deleteAllMemoryChunks(tx: Tx): Promise<number> {
     const rows = await tx.delete(memoryChunks).returning({ id: memoryChunks.id });
     return rows.length;
+  }
+
+  /**
+   * F12.5: «Recordar entre chats» y el último «Borrar todo», con la fila del
+   * usuario bloqueada (FOR SHARE) hasta el fin de la transacción. `users` no
+   * tiene RLS: se filtra por id.
+   */
+  async lockMemoryPreferences(
+    tx: Tx,
+    userId: string,
+  ): Promise<{ enabled: boolean; forgottenAt: Date | null } | undefined> {
+    const [row] = await tx
+      .select({ enabled: users.memoryEnabled, forgottenAt: users.memoryForgottenAt })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("share");
+    return row;
+  }
+
+  /**
+   * F12.5: esta respuesta se dijo con la memoria apagada. `memory.index` y
+   * `memoria:reindexar` ya no la guardan nunca.
+   */
+  async markMemorySkipped(tx: Tx, messageId: string): Promise<void> {
+    await tx.update(messages).set({ memorySkipped: true }).where(eq(messages.id, messageId));
   }
 
   /** F10.8: guarda un fragmento; uno solo por respuesta (índice único). */

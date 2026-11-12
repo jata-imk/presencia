@@ -518,7 +518,10 @@ recoge **evidencia** y termina entregando algo, no un "listo". Cinco pasos:
    Sureste, Toda la república) y estado o ciudad; nicho; registro, con una
    frase de ejemplo por registro. La región se guarda como "ciudad, zona"
    ("Tekax, Sureste") para que la macro-región salga aunque el pueblo no esté
-   en el catálogo. Es el único paso obligatorio.
+   en el catálogo. Si la ciudad sí está, ella decide y la zona no la pisa:
+   `resolveMacroRegion` da prioridad a un estado o ciudad sobre un nombre de
+   zona ("CDMX, Centro" es CDMX y "León, Centro" es el Bajío). Es el único
+   paso obligatorio.
 2. **¿Cómo escribes?** De 1 a 3 publicaciones suyas, pegadas tal cual, y
    "¿Algo que nunca dirías?" (opcional). "Aún no publico" lo salta. Al
    seguir, la destilación arranca en segundo plano: mientras conecta su red,
@@ -565,8 +568,9 @@ sabe Presencia de cómo escribe, no un formulario.
 2. **Tus ejemplos.** Las dos ranuras de siempre y, debajo, **el último
    ejemplo generado** en línea, ya no en un modal que se perdía al cerrarlo.
    Si la voz cambió después de escribirlo, lo dice ("Tu voz cambió desde este
-   ejemplo"): el servidor guarda el ejemplo sin mover `updated_at`, así que
-   la comparación es honesta. Regenerar sigue siendo manual y sin precio en
+   ejemplo"): el servidor guarda el ejemplo sin mover `updated_at`, que solo
+   se mueve cuando cambia algo que suena (no con Tendencias ni el estilo de
+   imagen), y lo fecha con el mismo reloj, así que la comparación es honesta. Regenerar sigue siendo manual y sin precio en
    el botón; el diseño traía "≈2 créditos" y no va (addendum ADR-012).
 3. **Identidad y audiencia**, más **Datos fijos de tu marca**: horario,
    dirección, WhatsApp, link de reservas, precios base, hasta 1000
@@ -594,9 +598,12 @@ algo de su voz. Nada cambia sin que diga que sí.
   quitar), en al menos 4 se ve el cambio. Las programadas sin tocar también
   cuentan, en contra: dejar los emojis es decir que estaban bien. Se miran las
   programadas, publicadas y fallidas (no borradores ni canceladas), una por
-  grupo multi-red, y solo de chats que escriben con esta voz. "Lo que escribió
-  la IA" es su última versión que no es una edición a mano: si el creator le
-  pidió "Más corto", lo que recortó la IA no cuenta como recorte suyo.
+  grupo multi-red, y solo de chats que escriben con esta voz (las de un chat
+  ya borrado cuentan como de la voz default: en V1 ninguna carpeta tiene voz
+  propia). "Lo que escribió la IA" es su última versión escrita por la IA: si
+  el creator le pidió "Más corto", lo que recortó la IA no cuenta como recorte
+  suyo, y restaurar su propia edición no la vuelve texto de la IA. Quitar ™ o
+  © de una marca no cuenta como quitar emojis.
 - **Cada propuesta dice qué notó y qué se suma** ("Quitaste emojis en 4 de tus
   últimas 5 publicaciones. Se suma a «Así escribes»: Casi sin emojis"), con
   "Ver evidencia": la línea del borrador tachada y la de su edición.

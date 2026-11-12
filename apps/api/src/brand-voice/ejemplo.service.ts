@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { generateText } from "ai";
+import { sql } from "drizzle-orm";
 import type { BrandVoiceExampleDto } from "@presencia/shared";
 import { AiUsageService } from "../ai/ai-usage.service.js";
 import { AiService } from "../ai/ai.service.js";
@@ -7,6 +8,7 @@ import { buildSystemPrompt } from "../chat/system-prompt.js";
 import { CreditsService } from "../credits/credits.service.js";
 import { chargeUsageOf, getRateCard } from "../credits/rate-card.js";
 import { DbService } from "../db/db.service.js";
+import { ahoraIso } from "../db/reloj.js";
 import { BrandVoiceRepository } from "./brand-voice.repository.js";
 import { BrandVoiceService } from "./brand-voice.service.js";
 import { promptDeEjemplo } from "./ejemplo.js";
@@ -51,9 +53,13 @@ export class EjemploDeVozService {
     const arranque = Date.now();
     // La voz con la que se escribe es la de AHORA: si cambia mientras el
     // modelo escribe, el ejemplo ya es viejo. Por eso se fecha al pedir y no
-    // al terminar; así la pantalla compara bien contra `updatedAt` (revisión
-    // del PR5).
-    const pedidoEn = new Date(arranque).toISOString();
+    // al terminar (revisión del PR5), y con el reloj de Postgres, el mismo que
+    // pone `updated_at`: con el de la app, un desfase entre el servidor y la
+    // base prendía o escondía "Tu voz cambió" (revisión de la fase).
+    const reloj = await this.dbService.db.execute<{ ahora: string }>(
+      sql`select ${ahoraIso()} as ahora`,
+    );
+    const pedidoEn = reloj.rows[0]?.ahora ?? new Date(arranque).toISOString();
     const respuesta = await generateText({
       model: modelo.model,
       // El MISMO system prompt que el chat: si el ejemplo se escribiera con

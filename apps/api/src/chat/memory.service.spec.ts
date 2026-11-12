@@ -350,6 +350,73 @@ describe("MemoryService", { timeout: 60_000 }, () => {
       }
     });
 
+    // Revisión de la fase: el embedding tarda, y un «Borrar todo» que llega
+    // mientras tanto ganaba la carrera.
+    it("un «Borrar todo» durante el embedding no deja el fragmento", async () => {
+      const [prendido] = await dbService.db
+        .insert(users)
+        .values({ name: "Carrera", email: `carrera-${randomUUID()}@test.local` })
+        .returning({ id: users.id });
+      const dueno = prendido!.id;
+      try {
+        const viejo = await chatCon(dueno, "Mis marquesitas", "Va.", Date.now() - 60_000);
+        const lento = new MockEmbeddingModelV4({
+          doEmbed: async ({ values }) => {
+            await service.forgetAll(dueno); // llega mientras se calcula
+            return { embeddings: values.map((v) => vectorDe(String(v))), warnings: [] };
+          },
+        });
+        Object.assign(service, { resolve: () => lento });
+        await service.index({ userId: dueno, ...viejo });
+        expect(
+          await dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks)),
+        ).toEqual([]);
+      } finally {
+        Object.assign(service, { resolve: () => modelo });
+        await dbService.db.delete(users).where(eq(users.id, dueno));
+      }
+    });
+
+    // Revisión de la fase y del PR7: lo dicho con la memoria apagada sigue
+    // fuera al volver a prenderla, aunque un reindexado lo vuelva a pedir; y
+    // lo de ANTES de la pausa se puede seguir reindexando (un sello en el
+    // usuario lo habría perdido al cambiar de modelo).
+    it("lo dicho con la memoria apagada no se guarda ni reindexando; lo de antes sí", async () => {
+      const { ProfileRepository } = await import("../profile/profile.repository.js");
+      const perfiles = new ProfileRepository(dbService);
+      const [prendido] = await dbService.db
+        .insert(users)
+        .values({ name: "Pausa", email: `pausa-${randomUUID()}@test.local` })
+        .returning({ id: users.id });
+      const dueno = prendido!.id;
+      const fragmentos = () =>
+        dbService.runWithTenant(dueno, (tx) => tx.select().from(memoryChunks));
+      try {
+        // Antes de la pausa: su job falló (no hay fragmento todavía).
+        const antes = await chatCon(dueno, "Mis lasañas", "Va.");
+
+        await perfiles.update(dueno, { memoryEnabled: false });
+        const enPausa = await chatCon(dueno, "Mis marquesitas", "Va.");
+        await service.index({ userId: dueno, ...enPausa }); // el job de ese turno
+        await perfiles.update(dueno, { memoryEnabled: true });
+
+        // Un reindexado pide las dos otra vez.
+        await service.index({ userId: dueno, ...enPausa });
+        await service.index({ userId: dueno, ...antes });
+        const guardados = await fragmentos();
+        expect(guardados.map((f) => f.messageId)).toEqual([antes.messageId]);
+        const [marcada] = await dbService.runWithTenant(dueno, (tx) =>
+          tx
+            .select({ saltada: messages.memorySkipped })
+            .from(messages)
+            .where(eq(messages.id, enPausa.messageId)),
+        );
+        expect(marcada?.saltada).toBe(true);
+      } finally {
+        await dbService.db.delete(users).where(eq(users.id, dueno));
+      }
+    });
+
     it("isEnabled lee la preferencia del usuario", async () => {
       expect(await service.isEnabled(apagado)).toBe(false);
       expect(await service.isEnabled(userId)).toBe(true);

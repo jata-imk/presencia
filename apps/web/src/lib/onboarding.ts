@@ -116,6 +116,10 @@ export function paisAGuardar(pais: string): string {
  * estado, y la zona si eligió una. Las dos juntas para que `resolveMacroRegion`
  * encuentre la macro-región aunque la ciudad sea un pueblo que no reconoce
  * ("Tekax, Sureste"). `undefined` si no dijo nada.
+ *
+ * Si la ciudad está en el catálogo, ella decide y la zona no la pisa
+ * ("CDMX, Centro" es CDMX): lo resuelve `resolveMacroRegion`, que da
+ * prioridad a un lugar sobre un nombre de zona.
  */
 export function regionAGuardar(ciudad: string, zona: string | null): string | undefined {
   const partes = [ciudad.trim(), zona && zona !== TODA_LA_REPUBLICA ? zona : ""].filter(Boolean);

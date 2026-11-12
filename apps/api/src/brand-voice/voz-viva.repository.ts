@@ -8,6 +8,7 @@ import {
 } from "@presencia/shared";
 import { brandVoices, cardVersions, chats, folders, publicationCards } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
+import { ahoraIso } from "../db/reloj.js";
 
 // Lo que lee y escribe «Aprender de mis ediciones» (F12.5). Como el resto de
 // los repositorios, sin filtrar por user_id: el RLS de la transacción es el
@@ -27,15 +28,19 @@ export class VozVivaRepository {
    * publicarse), con lo que escribió la IA y lo que quedó, de la más reciente a
    * la más vieja.
    *
-   * - "Lo que escribió la IA" es la última versión que NO es una edición a
-   *   mano: la original (`chat`), una reescritura que pidió ("Más corto",
-   *   `ai`) o una que restauró. Contra la v1, lo que recortó la IA a pedido
-   *   contaba como si lo hubiera recortado el creator (revisión del PR6). Sin
-   *   versiones, la card nunca cambió: original y final son lo mismo, y cuenta
-   *   igual (programar el borrador tal cual también dice algo).
+   * - "Lo que escribió la IA" es su última versión escrita por la IA: la
+   *   original (`chat`), una reescritura que pidió ("Más corto", `ai`) o la
+   *   restauración de una de esas. Contra la v1, lo que recortó la IA a pedido
+   *   contaba como si lo hubiera recortado el creator (revisión del PR6); y
+   *   restaurar su PROPIA edición no la vuelve texto de la IA (revisión de la
+   *   fase). Sin versiones, la card nunca cambió: original y final son lo
+   *   mismo, y cuenta igual (programar el borrador tal cual también dice algo).
    * - Solo las de chats que escriben con esta voz: sin carpeta, o en una
    *   carpeta sin voz propia o con esta. Las de una carpeta con otra voz
-   *   hablan de otra voz (fase "Carpetas con contexto").
+   *   hablan de otra voz (fase "Carpetas con contexto"). Las huérfanas (su
+   *   chat se borró) cuentan como de la voz default: en V1 ninguna carpeta
+   *   tiene voz propia, y borrar el chat no deshace lo que el creator editó
+   *   (revisión de la fase). Cuando las carpetas tengan voz, esto se revisa.
    * - Una sola por grupo multi-red: la misma edición hecha en Instagram y en
    *   Facebook es una decisión, no dos.
    */
@@ -45,9 +50,11 @@ export class VozVivaRepository {
       ${publicationCards.createdAt}
     )`;
     const original = sql<unknown>`(
-      select ${cardVersions.content} from ${cardVersions}
-      where ${cardVersions.cardId} = ${publicationCards.id} and ${cardVersions.source} <> 'manual'
-      order by ${cardVersions.n} desc limit 1
+      select v.content from card_versions v
+      left join card_versions r on r.card_id = v.card_id and r.n = v.restored_from
+      where v.card_id = ${publicationCards.id}
+        and (v.source in ('chat', 'ai') or (v.source = 'restore' and r.source in ('chat', 'ai')))
+      order by v.n desc limit 1
     )`;
     const filas = await tx
       .select({
@@ -57,7 +64,7 @@ export class VozVivaRepository {
         momento,
       })
       .from(publicationCards)
-      .innerJoin(chats, eq(chats.id, publicationCards.chatId))
+      .leftJoin(chats, eq(chats.id, publicationCards.chatId))
       .leftJoin(folders, eq(folders.id, chats.folderId))
       .where(
         and(
@@ -101,7 +108,7 @@ export class VozVivaRepository {
     // `at` con el reloj de Postgres, el mismo que fecha las versiones contra
     // las que se compara: con el de la app, un desfase entre servidores haría
     // que una edición anterior al "No" contara como posterior.
-    const at = sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+    const at = ahoraIso();
     await tx
       .update(brandVoices)
       .set({

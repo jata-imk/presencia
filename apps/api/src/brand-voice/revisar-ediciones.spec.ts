@@ -26,10 +26,16 @@ describe("revisarPrompt", () => {
   });
 
   it("separa lo guardado de lo que solo se le está proponiendo", () => {
-    const prompt = revisarPrompt(EDICIONES, ["Frases cortas"], ["Casi sin emojis"]);
+    const prompt = revisarPrompt(EDICIONES, ["Frases cortas"], {
+      propuestos: ["Casi sin emojis"],
+      rechazados: ["Pocos hashtags"],
+    });
     expect(prompt).toContain("Rasgos que ya tiene guardados (no los repitas):\n- Frases cortas");
     expect(prompt).toContain(
       "Ajustes que ya le estamos proponiendo y todavía no acepta (no los repitas):\n- Casi sin emojis",
+    );
+    expect(prompt).toContain(
+      "Ajustes que ya rechazó (no los propongas, tampoco con otras palabras):\n- Pocos hashtags",
     );
   });
 });

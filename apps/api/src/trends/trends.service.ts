@@ -209,11 +209,16 @@ export class TrendsService {
       const voz = await this.voiceRepo.findDefault(tx);
       if (!voz) throw new NotFoundException("Aún no configuras tu voz de marca.");
       await this.repo.reemplazarFuentes(tx, userId, body.fuentes);
-      await this.voiceRepo.updateDefault(tx, {
-        trendPrompt: body.prompt || null,
-        trendExclude: body.excluye || null,
-        trendLangs: body.langs,
-      });
+      // Lo que se busca en Tendencias no cambia cómo suena la voz.
+      await this.voiceRepo.updateDefault(
+        tx,
+        {
+          trendPrompt: body.prompt || null,
+          trendExclude: body.excluye || null,
+          trendLangs: body.langs,
+        },
+        { suena: false },
+      );
     });
     return this.ajustes(userId);
   }
