@@ -38,7 +38,7 @@ export function PasoRedes(props: PasoRedesProps) {
 
       <div>
         <Grupo fuerte>Recomendadas</Grupo>
-        <ul className="mb-4.5 flex flex-col gap-2">
+        <ul className="mb-3.5 flex flex-col gap-1.75">
           {RECOMENDADAS.map((red) => (
             <FilaRed key={red} red={red} grande {...props} />
           ))}
@@ -69,7 +69,7 @@ export function PasoRedes(props: PasoRedesProps) {
 
 function Grupo({ children, fuerte = false }: { children: string; fuerte?: boolean }) {
   return (
-    <div className="mb-2.25 flex items-center gap-2">
+    <div className="mb-1.5 flex items-center gap-2">
       <span
         className={`font-display text-[11px] font-semibold tracking-wider whitespace-nowrap uppercase ${
           fuerte ? "text-brand" : "text-fg-muted"
@@ -113,19 +113,19 @@ function FilaRed({
         onClick={() => onConectar(red)}
         disabled={conectada || esperando !== null}
         className={`flex w-full items-center gap-3.25 text-left disabled:cursor-default ${
-          grande ? "px-3.5 py-3" : "px-3.25 py-2.25"
+          grande ? "px-3.25 py-2.5" : "px-3 py-2"
         } ${bloqueada ? "opacity-50" : ""}`}
       >
         <span
           className={`flex shrink-0 items-center justify-center rounded-lg bg-secondary ${
-            grande ? "size-9.5" : "size-7.5"
+            grande ? "size-8.5" : "size-7"
           }`}
         >
-          <meta.Logo size={grande ? 20 : 17} />
+          <meta.Logo size={grande ? 18 : 16} />
         </span>
         <span className="flex flex-1 flex-col gap-px">
           <span
-            className={`font-display font-semibold text-fg ${grande ? "text-[14.5px]" : "text-[13.5px]"}`}
+            className={`font-display font-semibold text-fg ${grande ? "text-[13.5px]" : "text-[13px]"}`}
           >
             {meta.label}
           </span>
@@ -150,7 +150,7 @@ function FilaRed({
         )}
       </button>
       {enEspera && (
-        <div className={`flex flex-wrap gap-2 pr-3.5 pb-3 ${grande ? "pl-16.25" : "pl-14"}`}>
+        <div className={`flex flex-wrap gap-2 pr-3.5 pb-3 ${grande ? "pl-15" : "pl-13.25"}`}>
           <BotonSecundario
             onClick={onConfirmar}
             disabled={ocupado}

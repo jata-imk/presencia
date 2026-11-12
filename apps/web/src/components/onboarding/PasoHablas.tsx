@@ -46,10 +46,10 @@ export function PasoHablas({
         ¿Cómo hablas?
       </Titulo>
 
-      <div className="flex flex-col gap-5.5">
+      <div className="flex flex-col gap-4">
         <section>
           <Etiqueta htmlFor={idCiudad}>De dónde eres</Etiqueta>
-          <div className="mb-2.5 flex gap-2">
+          <div className="mb-2 flex gap-2">
             <div className="relative shrink-0">
               <label htmlFor={idPais} className="sr-only">
                 País
@@ -58,7 +58,7 @@ export function PasoHablas({
                 id={idPais}
                 value={datos.pais}
                 onChange={(e) => onCambiar({ pais: e.target.value })}
-                className="h-full cursor-pointer appearance-none rounded-[10px] border-[1.5px] border-line-focus bg-tint-plum py-2.25 pr-8 pl-3.25 font-display text-[13.5px] font-semibold text-brand outline-none focus:ring-3 focus:ring-focus-ring"
+                className="h-full cursor-pointer appearance-none rounded-[10px] border-[1.5px] border-line-focus bg-tint-plum py-2 pr-8 pl-3 font-display text-[13px] font-semibold text-brand outline-none focus:ring-3 focus:ring-focus-ring"
               >
                 {PAISES.map((pais) => (
                   <option key={pais}>{pais}</option>
@@ -125,7 +125,7 @@ export function PasoHablas({
               maxLength={40}
               onChange={(e) => onCambiar({ otroNicho: e.target.value })}
               placeholder="Ej. Viajes en moto, finanzas para freelancers…"
-              className={`${CAMPO} mt-2.5`}
+              className={`${CAMPO} mt-2`}
             />
           )}
         </section>
@@ -142,7 +142,7 @@ export function PasoHablas({
                   role="radio"
                   aria-checked={elegido}
                   onClick={() => onCambiar({ registro: registro.id })}
-                  className={`flex items-center gap-3 rounded-[10px] border-[1.5px] px-3.25 py-2.25 text-left transition-colors ${
+                  className={`flex items-center gap-3 rounded-[10px] border-[1.5px] px-3 py-1.75 text-left transition-colors ${
                     elegido
                       ? "border-line-focus bg-tint-plum"
                       : "border-line bg-card hover:bg-secondary"
@@ -158,11 +158,11 @@ export function PasoHablas({
                   </span>
                   <span className="flex min-w-0 flex-col gap-px">
                     <span
-                      className={`font-display text-[13.5px] font-semibold ${elegido ? "text-brand" : "text-fg"}`}
+                      className={`font-display text-[13px] font-semibold ${elegido ? "text-brand" : "text-fg"}`}
                     >
                       {registro.label}
                     </span>
-                    <span className="text-xs leading-snug text-fg-secondary">
+                    <span className="text-[11.5px] leading-snug text-fg-secondary">
                       {registro.ejemplo}
                     </span>
                   </span>
@@ -174,7 +174,7 @@ export function PasoHablas({
       </div>
 
       {error && (
-        <p role="alert" className="mt-4 text-sm text-error-fg">
+        <p role="alert" className="mt-3 text-xs text-error-fg">
           {error}
         </p>
       )}
