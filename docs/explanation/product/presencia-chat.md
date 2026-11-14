@@ -256,6 +256,12 @@ guardada en el módulo Biblioteca (no requiere click manual
 de "guardar"). Reduce fricción y refuerza que el contenido
 no se pierde.
 
+> **F12:** el indicador no se construyó, y Biblioteca quedó como
+> repositorio de **imágenes**, no de publicaciones (ver
+> `presencia-biblioteca.md`, sección 1). El texto de una
+> publicación no necesita "guardarse": vive en su chat y se
+> encuentra con la búsqueda. Lo que se guarda solo es su imagen.
+
 En el cuerpo de la card, el preview real de cómo se va a
 ver en LinkedIn:
 
@@ -1628,6 +1634,14 @@ no curado. Si el usuario quiere borrar algo, puede hacerlo
 desde Biblioteca. Pero por default todo se guarda. Esto
 respeta la promesa "todo lo creado vive en un solo lugar".
 
+**Cómo quedó (F12):** lo que entra solo a Biblioteca son las
+**imágenes** (generadas y subidas, elegidas y descartadas). Las
+publicaciones no: su lugar es el chat donde nacieron y el
+Calendario. El indicador "✓ Guardado en Biblioteca" de la card
+no existe. La razón de fondo es la misma, aplicada a lo que sí
+se puede perder: una imagen ya pagada. Detalle en
+`presencia-biblioteca.md`.
+
 ### Por qué cancelar programación tiene undo pero eliminar conversación NO
 
 - **Cancelar programación:** acción reversible y de bajo
@@ -1691,13 +1705,23 @@ sigue accesible desde la vista "Archivados".
   hashtags; el creator graba y sube el video. No generamos
   el video con IA en V1 (caro, lento, calidad dudosa). V2 si
   se valida.
-- **Generar imágenes como acción suelta sin contexto de post.**
-  La generación de imagen SÍ es central y de cara al usuario
-  (es ciudadano de primera clase en el arquetipo visual-first:
-  regenerar, variar estilo, carrusel, subir propia). Lo que NO
-  hay es un "generador de imágenes" genérico desligado de una
-  publicación; la imagen siempre vive dentro de una card de
-  publicación, no como herramienta suelta tipo Midjourney.
+- **Un generador de imágenes tipo Midjourney.** La generación
+  de imagen SÍ es central y de cara al usuario (es ciudadano de
+  primera clase en el arquetipo visual-first: regenerar, variar
+  estilo, carrusel, subir propia). Lo que NO hay es una
+  herramienta de imágenes por sí misma: sin galería, sin lotes,
+  sin estilos fuera de los siete de Presencia.
+
+  _Hasta F12 este punto decía más: "la imagen siempre vive
+  dentro de una card de publicación". Jose lo quitó el
+  2026-11-06. Desde F12 se puede pedir una **imagen suelta**,
+  sin borrador: el asistente la propone y el creator da clic en
+  "Generar" (o la genera directo si se lo piden sin
+  ambigüedad), se guarda en Biblioteca y se usa después en
+  cualquier card. Sigue siendo una imagen **para publicar**, no
+  un fin en sí. Detalle en `presencia-biblioteca.md`, sección 4._
+
+- **Video y audio sueltos.** La imagen suelta es solo imagen.
 
 ---
 
@@ -1714,11 +1738,14 @@ monitoreadas por Ritmo.
 
 **Con Analíticas:** Los posts publicados (estado publicado
 de las cards) tienen link "Ver estadísticas" que lleva a
-Analíticas con ese post resaltado.
+Analíticas con el detalle de ese post abierto (F12,
+`presencia-analiticas.md`).
 
-**Con Biblioteca:** Todas las publicaciones generadas se
-guardan automáticamente. Las imágenes generadas viven en
-Biblioteca.
+**Con Biblioteca:** Las imágenes generadas y subidas viven en
+Biblioteca; las que nacen en un chat recuerdan cuál. Desde una card,
+"Usar de Biblioteca" trae cualquier imagen del creator. El
+asistente puede proponer imágenes sueltas, sin borrador (F12,
+`presencia-biblioteca.md`).
 
 **Con Configuración (Voz de marca):** La voz configurada en
 Configuración alimenta TODO el output del Chat. El chip de

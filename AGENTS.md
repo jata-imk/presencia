@@ -10,8 +10,8 @@ V1: web app (React) + bot de Telegram, 5 módulos (Chats, Calendario, Ritmo, Ana
 
 | Dónde                         | Qué hay                                                                                                                                    |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `docs/explanation/product/`   | Lore docs: overview (leer primero), chat, calendario, ritmo, configuración/voz de marca                                                    |
-| `docs/explanation/decisions/` | ADRs 001–030 — fuente de verdad de arquitectura (índice en su `README.md`)                                                                 |
+| `docs/explanation/product/`   | Lore docs: overview (leer primero), chat, calendario, ritmo, analíticas, biblioteca, configuración/voz de marca                            |
+| `docs/explanation/decisions/` | ADRs 001–031 — fuente de verdad de arquitectura (índice en su `README.md`)                                                                 |
 | `docs/reference/`             | Contratos: modelo de datos + RLS, infraestructura, design tokens, panorama de modelos, suite cultural, bake-offs, sonda de releer adjuntos |
 | `docs/how-to/`                | Recetas operativas: entorno, desplegar (incluye backups), ver el gasto en modelos, trabajar con IA, ver estados en Storybook               |
 | `docs/tutorials/`             | Todavía no existe: se crea cuando haya un recorrido que valga la pena escribir                                                             |

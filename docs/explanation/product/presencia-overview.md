@@ -213,17 +213,27 @@ Detalles en `presencia-ritmo.md`.
 
 #### Analíticas
 
-El módulo de evaluación. Performance detallado de las
-publicaciones: engagement, alcance, conversión. Comparativas
-entre plataformas. Insights accionables ("tus posts educativos
-generan 3x más engagement").
+El módulo de evaluación. Rendimiento de cada publicación:
+alcance, interacciones, engagement. Tres lentes (por red, por
+publicación, por concepto multi-red) y hallazgos con su base
+("en Instagram, tus carruseles tuvieron 2.4 veces más
+interacción; basado en 18 publicaciones"). Nunca compara una
+red contra otra: cada publicación se mide contra el promedio
+del creator en esa misma red.
+
+Detalles en `presencia-analiticas.md`.
 
 #### Biblioteca
 
-El repositorio multimedia. Donde viven todos los assets
-generados por la IA (imágenes, videos, audio) y los que el
-usuario subió. Cada asset linkea de vuelta a su chat de origen.
-Es el "Drive creativo" de la app.
+El repositorio de imágenes. Donde viven todas las que generó
+la IA y las que el usuario subió. Las que nacieron en un chat
+recuerdan su chat y su card de origen; también se puede subir o
+generar una imagen suelta, sin borrador, que no tiene ninguno.
+Cualquiera se puede usar en cualquier publicación. Es el
+"Drive creativo" de la app. En V1 son solo imágenes: video y
+audio quedan fuera.
+
+Detalles en `presencia-biblioteca.md`.
 
 ### La página de Configuración
 
@@ -759,11 +769,18 @@ caer en feature creep.
 
 ### Lo que viene (en orden)
 
-**Ahora:** Analíticas y Biblioteca. Son los módulos menos
+**Ahora:** Analíticas y Biblioteca (F12). Son los módulos menos
 críticos para el primer momento del producto. Un usuario
 puede empezar a usar Presencia sin tener analíticas perfectas
 todavía (ya las verá cuando publique varias semanas).
 Biblioteca también puede ser más sencilla al principio.
+
+Las dos ya están diseñadas en Claude Design ("Presencia
+Analytics Overview" y "Presencia - Biblioteca"). V1 construye
+el núcleo de Analíticas y deja fuera lo que pide datos que la
+ingesta no tiene (historial importado, métricas de cuenta, tipo
+de contenido por IA, reporte en PDF): ver los no-objetivos de
+`presencia-analiticas.md`.
 
 ### El criterio general
 

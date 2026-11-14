@@ -122,17 +122,23 @@ onboarding a lo más nuevo/opcional.
   "cómo suena" sin que la Voz de marca se vuelva una feature de gestión
   de biblioteca paralela.
 
+  _Decisión de F12 (2026-11-13):_ Biblioteca quedó como repositorio de
+  **imágenes**, no de posts, así que "Elegir de Biblioteca" ya no tiene
+  destino. La intención se conserva con otro nombre: **"Elegir de tus
+  publicadas"**, un selector de publicaciones ya publicadas. Hasta que
+  se construya (en F12), el botón sigue apagado.
+
 ---
 
 ## 3. Tipo de input por campo
 
-| Campo                                       | Tipo de input                               | Por qué                                                                                                                                            |
-| ------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Mercado, nicho/audiencia, temas clave, CTAs | Chips + texto libre                         | Mismo patrón que el onboarding: listas abiertas con sugerencias, el usuario reconoce el patrón porque ya lo vio en paso 2 de 5.                    |
-| Modismos permitidos/prohibidos              | Tag input libre (sin presets)               | Nadie va a adivinar qué modismo específico quieres prohibir — es vocabulario abierto y personal, no una lista de opciones que se puedan pre-armar. |
-| Anglicismos                                 | Toggle sí/no                                | Es binario de verdad, no necesita más granularidad.                                                                                                |
-| Formalidad                                  | Slider continuo                             | Ver sección 4.                                                                                                                                     |
-| Ejemplos de referencia                      | Selector de Biblioteca + upload/pegar texto | Ver Bloque D.                                                                                                                                      |
+| Campo                                       | Tipo de input                        | Por qué                                                                                                                                            |
+| ------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mercado, nicho/audiencia, temas clave, CTAs | Chips + texto libre                  | Mismo patrón que el onboarding: listas abiertas con sugerencias, el usuario reconoce el patrón porque ya lo vio en paso 2 de 5.                    |
+| Modismos permitidos/prohibidos              | Tag input libre (sin presets)        | Nadie va a adivinar qué modismo específico quieres prohibir — es vocabulario abierto y personal, no una lista de opciones que se puedan pre-armar. |
+| Anglicismos                                 | Toggle sí/no                         | Es binario de verdad, no necesita más granularidad.                                                                                                |
+| Formalidad                                  | Slider continuo                      | Ver sección 4.                                                                                                                                     |
+| Ejemplos de referencia                      | Selector de publicadas + pegar texto | Ver Bloque D. El diseño decía "Selector de Biblioteca"; desde F12 es "Elegir de tus publicadas".                                                   |
 
 ---
 
@@ -273,7 +279,9 @@ calidad, no es un gate.
 **El diseño:** los 2 slots del Bloque D se muestran vacíos con CTA
 suave: _"Elige un post de tu Biblioteca o pega uno tuyo"_ (tuteo). Sin esto,
 la IA sigue generando con las reglas de tono/registro — los ejemplos
-son un plus, no un requisito.
+son un plus, no un requisito. _(F12: el copy pasa a "Elige una de tus
+publicadas o pega una tuya" cuando se construya el selector; ver la
+decisión en el Bloque D.)_
 
 ### Modismos en conflicto (mismo modismo en permitidos Y prohibidos)
 
@@ -378,9 +386,11 @@ sub-página, Configuración › Tendencias (sección 10).
 afecta directamente al Calendario... pero sí afecta a Chat
 indirectamente").
 
-**Con Biblioteca:** los ejemplos de referencia del Bloque D se
-eligen desde ahí (ver sección 2). Es la única integración bidireccional
-de esta pantalla.
+**Con Biblioteca:** ninguna para los ejemplos de referencia. El diseño
+los elegía desde ahí, pero Biblioteca quedó como repositorio de imágenes
+(F12): los ejemplos se eligen de las publicaciones publicadas (Bloque D).
+Lo que sí comparten es el estilo de imagen de la voz, que se aplica a las
+imágenes sueltas (`presencia-biblioteca.md`, sección 4).
 
 ---
 
@@ -469,7 +479,9 @@ Cómo se comporta, y por qué:
   "Guardar" en la ranura. Un post pegado a medias no es un ejemplo, y
   guardarlo mientras se pega alimentaría cada generación con basura.
 - **"Elegir de Biblioteca"** se ve deshabilitado, con un tooltip de
-  "Próximamente", hasta que exista el módulo Biblioteca.
+  "Próximamente". No se prende cuando llegue el módulo Biblioteca, que es
+  de imágenes: se reemplaza por "Elegir de tus publicadas" (decisión de
+  F12 en el Bloque D).
 
 Lo que técnicamente lo sostiene: `apps/web/src/lib/autoguardado.ts`
 (probado con timers falsos) y el hook `use-autoguardado.ts`.
