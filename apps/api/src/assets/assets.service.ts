@@ -9,6 +9,7 @@ import {
   type AssetWithOrigin,
   type InsertAssetInput,
 } from "./assets.repository.js";
+import { downloadNameFor } from "./download-name.js";
 import { extensionFor, inspectImage } from "./image-inspect.js";
 
 /** Un archivo ya guardado en el storage cuya fila todavía no se escribió. */
@@ -42,7 +43,8 @@ export class AssetsService {
    */
   async storeImage(input: {
     userId: string;
-    cardId: string;
+    /** Dónde nació. Null: se subió directo a Biblioteca (F12), sin card. */
+    cardId: string | null;
     chatId: string | null;
     data: Uint8Array;
     source: AssetRow["source"];
@@ -104,16 +106,24 @@ export class AssetsService {
     return this.repo.insert(tx, stored);
   }
 
-  /** Cómo entregarle el archivo al navegador, o `null` si no existe o no es suyo. */
+  /**
+   * Cómo entregarle el archivo al navegador, o `null` si no existe o no es
+   * suyo. Con `download` (F12, "Descargar" de Biblioteca) va para guardarse,
+   * con un nombre de archivo: el que traía al subirse o, si la dibujó un
+   * generador, uno armado con su id.
+   */
   async deliver(
     userId: string,
     assetId: string,
-  ): Promise<{ delivery: AssetDelivery; mimeType: string } | null> {
+    options: { download?: boolean } = {},
+  ): Promise<{ delivery: AssetDelivery; mimeType: string; downloadName: string | null } | null> {
     const row = await this.dbService.runWithTenant(userId, (tx) => this.repo.findById(tx, assetId));
     if (!row) return null;
+    const downloadName = options.download ? downloadNameFor(row) : null;
     return {
-      delivery: await this.storage.deliver(row.storageKey, row.mimeType),
+      delivery: await this.storage.deliver(row.storageKey, row.mimeType, downloadName ?? undefined),
       mimeType: row.mimeType,
+      downloadName,
     };
   }
 }
