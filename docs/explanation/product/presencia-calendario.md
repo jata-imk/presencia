@@ -182,7 +182,9 @@ El modal muestra la **card de publicación completa**,
 idéntica a como se vería en Chat:
 
 - Header con icono LinkedIn + nombre + badge "Programado"
-- Indicador "✓ Guardado en Biblioteca" a la derecha
+- Indicador "✓ Guardado en Biblioteca" a la derecha (no se
+  construyó: Biblioteca guarda imágenes, no publicaciones; ver
+  `presencia-biblioteca.md`)
 - Banner Icy Blue: "📅 Programado para viernes 24 de octubre
   a las 14:00"
 - Preview real del post con avatar de Jose, su nombre,
@@ -1125,14 +1127,18 @@ Integración hacia adelante:
 
 - Los posts publicados tienen acceso a "Ver estadísticas"
   desde su menú contextual y desde el modal "Ver".
-- El click lleva a Analíticas con ese post resaltado.
+- El click lleva a Analíticas con el detalle de ese post abierto
+  (F12, `presencia-analiticas.md`).
 
 ### Con Biblioteca
 
 Sin integración directa visible desde el Calendario. La
-Biblioteca recibe los assets generados automáticamente desde
-Chat. El Calendario no genera assets, solo programa
-publicaciones que ya los tienen.
+Biblioteca recibe las imágenes generadas y subidas en el Chat.
+El Calendario no genera imágenes, solo programa publicaciones
+que ya las tienen. Dos efectos cruzados desde F12: una imagen
+que está en una publicación programada no se puede eliminar de
+Biblioteca, y si se elimina la de una ya publicada, su miniatura
+aquí pasa al ícono de su formato.
 
 ### Con Configuración
 
