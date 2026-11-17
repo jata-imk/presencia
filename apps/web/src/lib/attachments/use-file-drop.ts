@@ -6,7 +6,7 @@ import { room } from "./attachments.js";
 export type DropVerdict = "accept" | "type" | "limit";
 
 // Arrastrar y soltar archivos sobre una zona (F10.9): la columna del chat, no
-// toda la ventana. Mientras se arrastra, el navegador NO deja leer los nombres
+// toda la ventana; desde F12, también la pantalla de Biblioteca. Mientras se arrastra, el navegador NO deja leer los nombres
 // de los archivos, solo sus tipos: con eso se adelanta el rechazo de lo que
 // seguro no se acepta (video, audio, una imagen en otro formato, un
 // comprimido). Lo demás pasa: el tipo de un .csv o un .md depende del sistema
@@ -34,14 +34,20 @@ export function dropVerdict(types: string[], current: number): DropVerdict {
 }
 
 export function useFileDrop({
-  current,
+  current = 0,
   onFiles,
   disabled = false,
+  judge,
 }: {
   /** Cuántos adjuntos tiene ya el composer. */
-  current: number;
+  current?: number;
   onFiles: (files: File[]) => void;
   disabled?: boolean;
+  /**
+   * F12: el veredicto de otra zona (Biblioteca, que solo acepta imágenes y no
+   * tiene tope por lote). Sin esto vale el del composer del chat.
+   */
+  judge?: (types: string[]) => DropVerdict;
 }) {
   const [drag, setDrag] = useState<{ verdict: DropVerdict; count: number } | null>(null);
   // El veredicto también en un ref: los dragover que llegan antes del
@@ -57,10 +63,8 @@ export function useFileDrop({
       event.preventDefault();
       depth.current += 1;
       const items = Array.from(event.dataTransfer.items).filter((item) => item.kind === "file");
-      verdict.current = dropVerdict(
-        items.map((item) => item.type),
-        current,
-      );
+      const types = items.map((item) => item.type);
+      verdict.current = judge ? judge(types) : dropVerdict(types, current);
       setDrag({ verdict: verdict.current, count: items.length });
     },
     onDragOver(event: DragEvent) {

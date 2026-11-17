@@ -108,6 +108,10 @@ buscas, para no competir con los resultados.
 - **Sin selector de orden.** Lo más nuevo va arriba, siempre. Se agrega si
   alguien lo pide.
 
+Con filtros o búsqueda aparece cuántas imágenes hay ("12 resultados"). Si
+todavía quedan por cargar dice "Más de 60 resultados": el total exacto no se
+sabe hasta llegar al final, y un número inventado sería peor que uno abierto.
+
 ### La cuadrícula
 
 Celdas cuadradas iguales; la imagen se ve **completa**, sin recortes, sobre un
@@ -116,6 +120,16 @@ fondo tenue. Así el formato real (4:5, 1:1, 16:9) se reconoce de un vistazo.
 Cada celda dice su origen (IA o subida), la red y el estado de su card, y lleva
 la marca "Elegida" si está puesta en una publicación. Al pasar el cursor:
 abrir, descargar y copiar el prompt.
+
+El renglón principal de la celda es el chat donde nació. Sin chat dice
+"Subida a Biblioteca" si la subiste directo aquí, y "Sin chat de origen" si
+su chat se eliminó. La red y el estado son los de la card donde está puesta
+hoy; si no está en ninguna, los de la card donde nació. Es la misma regla con
+la que filtran "Red" y "Estado de la card", así que lo que dice la celda es lo
+que encuentra el filtro.
+
+Los grupos de fecha son "Hoy", "Esta semana" (los últimos siete días, igual
+que el atajo) y después el mes.
 
 **Los recortes no aparecen.** Cuando una imagen entra a un carrusel con otra
 proporción, Presencia guarda una copia recortada; es la misma imagen, así que
@@ -155,6 +169,11 @@ dicen qué pasó y qué hacer:
 
 Lo subido aquí no tiene card ni chat: queda como "Subida a Biblioteca", lista
 para usarse.
+
+Suben hasta tres a la vez; las demás esperan su turno ("En espera"). Un
+archivo que no pasa por tipo o por peso lo dice de inmediato, sin viajar. Si
+nada de lo que arrastras es una imagen que aceptamos, la pantalla lo avisa
+antes de que sueltes.
 
 ### "Elegir de Biblioteca"
 
@@ -372,8 +391,11 @@ existir. Las carpetas no se construyen en esta fase.
 
 ## 9. Pendiente de diseño (brief para Claude Design)
 
-Dos piezas de este módulo no están en el proyecto "Presencia - Biblioteca". Se
-diseñan antes de construirse; el resto ya está.
+Dos piezas de este módulo no estaban en el proyecto "Presencia - Biblioteca"
+cuando se escribió esta spec. Jose las diseñó el 2026-11-16 a partir de este
+brief (el modal y la celda "Generando…" están en `BibliotecaApp.dc.html`; el
+bloque del chat, en "Presencia - Chat"). El brief se queda como registro de lo
+que se pidió.
 
 ### 9.1 Modal "Generar imagen" (Biblioteca)
 

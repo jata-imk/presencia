@@ -171,6 +171,26 @@ En oscuro se aclara y el ícono va oscuro, como el CTA primario.
 
 **Texto secundario sobre la burbuja del creator** (la cabecera "Nota de voz · 0:42"): `--interactive-primary-fg-muted` (`text-primary-fg-muted`, 75%) y `--interactive-primary-divider` (`border-primary-divider`, 20%). Son `color-mix` de `--interactive-primary-fg`, así voltean solos con el tema y no hay que escribir un `/NN` sobre un token (la trampa de arriba).
 
+## Biblioteca (`--lib-*`, F12)
+
+La pantalla va sobre `--bg-surface` (el `--content` del diseño), no sobre `--bg-app`: la celda es un tono apenas más plum que el fondo, y sobre `--bg-app` no se distinguiría.
+
+| Token              | Claro                     | Oscuro    | Utility              | Para qué                                                      |
+| ------------------ | ------------------------- | --------- | -------------------- | ------------------------------------------------------------- |
+| `--lib-tile-bg`    | `#F3EEF6`                 | `#231629` | `bg-lib-tile`        | El cuadro tenue donde la imagen va completa                   |
+| `--lib-action-bg`  | `--bg-card` al 94%        | se deriva | `bg-lib-action`      | Botones que flotan sobre la imagen (abrir, descargar, copiar) |
+| `--lib-tile-shade` | `--color-plum-950` al 30% | igual     | `from-lib-shade`     | Sombra arriba de la celda, para leer esos botones             |
+| `--lib-chosen-bg`  | `--color-plum-800`        | igual     | `bg-lib-chosen`      | Insignia "Elegida"                                            |
+| `--lib-chosen-fg`  | `#FFFFFF`                 | igual     | `text-lib-chosen-fg` | Su texto                                                      |
+| `--lib-drop-veil`  | `--bg-app` al 60%         | se deriva | `bg-lib-veil`        | Velo sobre la pantalla al arrastrar archivos                  |
+| `--lib-drop-bg`    | `--bg-card` al 88%        | se deriva | `bg-lib-drop`        | El recuadro punteado de "Suelta para subir"                   |
+
+Solo `--lib-tile-bg` tiene override en oscuro. Los tres que se derivan salen de `--bg-card` y `--bg-app`, que ya voltean. La insignia y la sombra van **sobre la imagen**, no sobre la interfaz, así que son iguales en los dos temas (mismo criterio que el visor).
+
+Lo demás de la pantalla reusa lo que ya había: `--status-info*` para "Programado", `--status-success*` para "Publicado", `--bg-tint-plum` para la píldora de filtro encendida y `.skeleton` para la carga.
+
+**El acomodo sale del contenedor, no de la ventana.** La raíz de la pantalla es un `@container` y los cortes son `@lg` (512 px: de 2 columnas a rejilla fluida), `@2xl` (672 px: la lista gana sus columnas) y `@4xl` (896 px: bento `2fr 1fr 1fr`). Con el sidebar ancho o el drawer de programar abierto, el espacio real de la pantalla es otro que el de la ventana, y un `md:` la dejaría en acomodo de escritorio dentro de 500 px.
+
 ## Movimiento (ADR-014)
 
 Decisión completa en [ADR-014](../explanation/decisions/adr-014-estrategia-de-animacion.md); acá el resumen operativo.
@@ -179,7 +199,7 @@ Decisión completa en [ADR-014](../explanation/decisions/adr-014-estrategia-de-a
 - **CSS puro** (`@keyframes` en `app.css`) para loops ambientales infinitos (`glow-rotate`, `glow-pulse`, `shimmer`, `dot-pulse`, `stream-cursor`) y micro-transiciones de hover/focus. Nunca al revés.
 - **Ningún componente hardcodea su propia duración/easing** — mismo criterio que "tokens, no hex" (AGENTS.md #2), aplicado a movimiento.
 - **Accesibilidad:** `<MotionConfig reducedMotion="user">` en `App.tsx` cubre todo `motion.*` de una vez; los `@keyframes` ambientales se apagan enteros bajo `@media (prefers-reduced-motion: reduce)` en `app.css` (no se acortan — son decorativos, no comunican estado).
-- **Un solo eje de scroll vertical por región** (precisado en el addendum de F7 — antes decía "por pantalla"): el App Shell (`routes/protected.tsx`) es `h-dvh overflow-hidden`, con un contenedor `overflow-y-auto` **por defecto** para el `<Outlet/>` — que la ruta puede apagar declarando `handle: { ownScroll: true }` cuando maneja su propio alto (el Calendario, F7). El drawer de programación es un hermano flex (`motion.aside` con `width` animado) en desktop, nunca un overlay `fixed inset-0` — eso fue lo que producía scrolls encimados (F6 PR4→PR5). En mobile sí es bottom-sheet modal con backdrop.
+- **Un solo eje de scroll vertical por región** (precisado en el addendum de F7 — antes decía "por pantalla"): el App Shell (`routes/protected.tsx`) es `h-dvh overflow-hidden`, con un contenedor `overflow-y-auto` **por defecto** para el `<Outlet/>` — que la ruta puede apagar declarando `handle: { ownScroll: true }` cuando maneja su propio alto (el Calendario, F7; Biblioteca, F12). El drawer de programación es un hermano flex (`motion.aside` con `width` animado) en desktop, nunca un overlay `fixed inset-0` — eso fue lo que producía scrolls encimados (F6 PR4→PR5). En mobile sí es bottom-sheet modal con backdrop.
 
 ## Pendientes
 

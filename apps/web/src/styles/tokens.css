@@ -384,6 +384,21 @@
   --ritmo-senal-estable-fg: var(--ritmo-formato-post-fg);
   --ritmo-senal-nuevo-fg: var(--ritmo-formato-carrusel-fg);
 
+  /* Biblioteca (F12, Claude Design "Presencia - Biblioteca").
+     La celda es un cuadro tenue donde la imagen va completa: un tono entre
+     --bg-surface (el fondo de la pantalla) y --bg-tint-plum, que es el único
+     valor que no se deriva. Lo demás sale de tokens que ya voltean con el
+     tema: los botones que flotan sobre la imagen y el velo del arrastre. La
+     insignia "Elegida" y la sombra bajo esos botones van sobre la imagen, no
+     sobre la interfaz, así que son iguales en los dos temas. */
+  --lib-tile-bg: #f3eef6;
+  --lib-action-bg: color-mix(in srgb, var(--bg-card) 94%, transparent);
+  --lib-tile-shade: color-mix(in srgb, var(--color-plum-950) 30%, transparent);
+  --lib-chosen-bg: var(--color-plum-800);
+  --lib-chosen-fg: #ffffff;
+  --lib-drop-veil: color-mix(in srgb, var(--bg-app) 60%, transparent);
+  --lib-drop-bg: color-mix(in srgb, var(--bg-card) 88%, transparent);
+
   /* Configuración (F9.7, mock de Claude Design).
      Foreground de estado para TEXTO: --status-success/-warning/-error/-info
      son colores de relleno y de ícono, y como texto chico sobre blanco no
@@ -533,6 +548,9 @@
   --ritmo-gancho-border: var(--color-plum-500);
   --cal-group-bg: color-mix(in srgb, var(--color-pink-orchid) 16%, transparent);
 
+  /* Biblioteca: solo la celda; lo demás se deriva de tokens que ya voltean. */
+  --lib-tile-bg: #231629;
+
   --status-success-fg: #7fd6a4;
   --status-warning-fg: #fcd34d;
   --status-error-fg: #fca5a5;
@@ -640,6 +658,14 @@
   --color-ritmo-gancho-border: var(--ritmo-gancho-border);
   --color-ritmo-senal-estable-fg: var(--ritmo-senal-estable-fg);
   --color-ritmo-senal-nuevo-fg: var(--ritmo-senal-nuevo-fg);
+
+  --color-lib-tile: var(--lib-tile-bg);
+  --color-lib-action: var(--lib-action-bg);
+  --color-lib-shade: var(--lib-tile-shade);
+  --color-lib-chosen: var(--lib-chosen-bg);
+  --color-lib-chosen-fg: var(--lib-chosen-fg);
+  --color-lib-veil: var(--lib-drop-veil);
+  --color-lib-drop: var(--lib-drop-bg);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);

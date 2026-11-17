@@ -26,6 +26,7 @@ const SECTION_LABEL: Record<string, string> = {
   chats: "Chats",
   calendario: "Calendario",
   ritmo: "Ritmo",
+  biblioteca: "Biblioteca",
   configuracion: "Configuración",
 };
 

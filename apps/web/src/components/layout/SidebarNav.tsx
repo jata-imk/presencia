@@ -43,7 +43,7 @@ const MODULES = [
   { icon: Calendar, label: "Calendario", to: "/calendario" },
   { icon: Activity, label: "Ritmo", to: "/ritmo" },
   { icon: BarChart2, label: "Analíticas", to: null },
-  { icon: BookOpen, label: "Biblioteca", to: null },
+  { icon: BookOpen, label: "Biblioteca", to: "/biblioteca" },
 ] as const;
 
 // "Hasta 5 carpetas visibles + link Ver todas" (overview §5).
