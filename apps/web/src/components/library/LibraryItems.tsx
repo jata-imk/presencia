@@ -1,4 +1,5 @@
 import { Check, Copy, Download, Maximize2, Sparkles, Upload } from "lucide-react";
+import { memo } from "react";
 import { assetContentUrl, type LibraryAssetDto } from "@presencia/shared";
 import { Tooltip } from "../ui/Tooltip.js";
 import { formatSize } from "../../lib/attachments/attachments.js";
@@ -13,6 +14,7 @@ import {
   pickLabel,
   shortDate,
   statusKind,
+  type CardMatch,
   type LibraryGroup,
   type LibraryStatusKind,
 } from "../../lib/library/library.js";
@@ -39,6 +41,11 @@ interface ItemsProps extends LibraryItemActions {
    * que no dice cuántas tiene (diría las que hay cargadas, no las que son).
    */
   hasMore: boolean;
+  /**
+   * Los filtros de red y de estado que están puestos: una imagen que está en
+   * varias cards se describe con la que los cumple.
+   */
+  match: CardMatch;
   timeZone: string;
   now: Date;
 }
@@ -55,8 +62,8 @@ const PILL: Record<LibraryStatusKind, string> = {
   published: "bg-success-bg text-success-fg",
 };
 
-function statusOf(asset: LibraryAssetDto): LibraryStatusKind | null {
-  const card = displayCard(asset);
+function statusOf(asset: LibraryAssetDto, match: CardMatch): LibraryStatusKind | null {
+  const card = displayCard(asset, match);
   return card ? statusKind(card.status) : null;
 }
 
@@ -108,11 +115,12 @@ const ACTION_CLASS =
 
 function Tile({
   asset,
+  match,
   onOpen,
   onCopyPrompt,
   onDownload,
-}: { asset: LibraryAssetDto } & LibraryItemActions) {
-  const status = statusOf(asset);
+}: { asset: LibraryAssetDto; match: CardMatch } & LibraryItemActions) {
+  const status = statusOf(asset, match);
   const name = assetName(asset);
   return (
     <li className="group flex min-w-0 flex-col gap-2">
@@ -182,7 +190,7 @@ function Tile({
         <div className="truncate text-sm font-medium text-fg">{chatLabel(asset)}</div>
         <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-xs whitespace-nowrap text-fg-secondary">
           <OriginIcon asset={asset} size={13} />
-          <span>{networkLabel(asset)}</span>
+          <span>{networkLabel(asset, match)}</span>
           {status && (
             <>
               <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${DOT[status]}`} />
@@ -207,7 +215,14 @@ function GroupHeading({ group, counted }: { group: LibraryGroup; counted: boolea
 export const GRID_CLASS =
   "grid grid-cols-2 gap-x-3 gap-y-4 @lg:grid-cols-[repeat(auto-fill,minmax(148px,1fr))] @lg:gap-x-4 @lg:gap-y-5";
 
-export function LibraryGrid({ groups, hasMore, ...actions }: Omit<ItemsProps, "timeZone" | "now">) {
+// Memo en las dos vistas: el avance de una subida vuelve a pintar la pantalla
+// varias veces por segundo, y sin esto arrastraría cientos de celdas.
+export const LibraryGrid = memo(function LibraryGrid({
+  groups,
+  hasMore,
+  match,
+  ...actions
+}: Omit<ItemsProps, "timeZone" | "now">) {
   return (
     <>
       {groups.map((group, index) => (
@@ -215,14 +230,14 @@ export function LibraryGrid({ groups, hasMore, ...actions }: Omit<ItemsProps, "t
           <GroupHeading group={group} counted={!hasMore || index < groups.length - 1} />
           <ul className={GRID_CLASS}>
             {group.items.map((asset) => (
-              <Tile key={asset.id} asset={asset} {...actions} />
+              <Tile key={asset.id} asset={asset} match={match} {...actions} />
             ))}
           </ul>
         </section>
       ))}
     </>
   );
-}
+});
 
 // Las columnas de la lista. En angosto solo miniatura y nombre; lo demás se
 // resume en el segundo renglón del nombre.
@@ -231,17 +246,20 @@ const LIST_COLS =
 
 function Row({
   asset,
+  match,
   timeZone,
   now,
   onOpen,
-}: { asset: LibraryAssetDto; timeZone: string; now: Date } & Pick<LibraryItemActions, "onOpen">) {
-  const status = statusOf(asset);
-  const card = displayCard(asset);
+}: { asset: LibraryAssetDto; match: CardMatch; timeZone: string; now: Date } & Pick<
+  LibraryItemActions,
+  "onOpen"
+>) {
+  const status = statusOf(asset, match);
+  const card = displayCard(asset, match);
+  const network = networkLabel(asset, match);
   const date = shortDate(asset.createdAt, timeZone, now);
   const wide = [ORIGIN_LABELS[asset.origin], pickLabel(asset)].filter(Boolean).join(" · ");
-  const narrow = [chatLabel(asset), card ? networkLabel(asset) : null, date]
-    .filter(Boolean)
-    .join(" · ");
+  const narrow = [chatLabel(asset), card ? network : null, date].filter(Boolean).join(" · ");
   return (
     <li className="border-t border-line">
       <button
@@ -266,7 +284,7 @@ function Row({
           {chatLabel(asset)}
         </span>
         <span className="hidden min-w-0 items-center gap-1.5 text-sm whitespace-nowrap text-fg-secondary @2xl:flex">
-          <span>{networkLabel(asset)}</span>
+          <span>{network}</span>
           {status && (
             <span
               className={`flex h-5 items-center rounded-full px-[7px] text-xs font-medium ${PILL[status]}`}
@@ -286,7 +304,14 @@ function Row({
   );
 }
 
-export function LibraryList({ groups, hasMore, timeZone, now, onOpen }: ItemsProps) {
+export const LibraryList = memo(function LibraryList({
+  groups,
+  hasMore,
+  match,
+  timeZone,
+  now,
+  onOpen,
+}: Omit<ItemsProps, "onCopyPrompt" | "onDownload">) {
   return (
     <div className="overflow-hidden rounded-lg border border-line bg-card">
       <div
@@ -314,11 +339,18 @@ export function LibraryList({ groups, hasMore, timeZone, now, onOpen }: ItemsPro
           </h2>
           <ul>
             {group.items.map((asset) => (
-              <Row key={asset.id} asset={asset} timeZone={timeZone} now={now} onOpen={onOpen} />
+              <Row
+                key={asset.id}
+                asset={asset}
+                match={match}
+                timeZone={timeZone}
+                now={now}
+                onOpen={onOpen}
+              />
             ))}
           </ul>
         </section>
       ))}
     </div>
   );
-}
+});

@@ -27,6 +27,7 @@ const noop = () => undefined;
 const ITEMS = {
   groups: GROUPS,
   hasMore: false,
+  match: { network: null, cardStatus: null },
   timeZone: "America/Merida",
   now: NOW,
   onOpen: noop,
@@ -191,7 +192,7 @@ export const ArrastreRechazado: Story = {
   render: () => (
     <Frame tall>
       <LibraryGrid {...ITEMS} />
-      <LibraryDropOverlay verdict="type" />
+      <LibraryDropOverlay verdict="type" count={3} />
     </Frame>
   ),
 };

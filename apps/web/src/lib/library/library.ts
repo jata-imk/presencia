@@ -131,21 +131,32 @@ export interface LibraryGroup {
   items: LibraryAssetDto[];
 }
 
-const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+// Un formateador por zona y por forma: construir un `Intl.DateTimeFormat` es
+// caro, y la lista pide uno por fila en cada render.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatter(
+  kind: string,
+  locale: string,
+  timeZone: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  const key = `${kind}|${timeZone}`;
+  let found = formatters.get(key);
+  if (!found) {
+    found = new Intl.DateTimeFormat(locale, { timeZone, ...options });
+    formatters.set(key, found);
+  }
+  return found;
+}
 
 /** Año, mes y día de un instante, en la zona del creator. */
 function dayParts(date: Date, timeZone: string): { year: number; month: number; day: number } {
-  let formatter = dayFormatters.get(timeZone);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-    dayFormatters.set(timeZone, formatter);
-  }
-  const parts = formatter.formatToParts(date);
+  const parts = formatter("day", "en-CA", timeZone, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
   const part = (type: Intl.DateTimeFormatPartTypes) =>
     Number(parts.find((p) => p.type === type)?.value ?? 0);
   return { year: part("year"), month: part("month"), day: part("day") };
@@ -165,11 +176,14 @@ function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+const WEEK_MS = LIBRARY_WEEK_DAYS * 24 * 60 * 60 * 1000;
+
 /**
  * "Hoy", "Esta semana" y después el mes ("Septiembre", "Diciembre 2025" si es
- * de otro año). "Esta semana" son los últimos `LIBRARY_WEEK_DAYS` días, como
- * el atajo del bento, no la semana del calendario: un lunes la semana del
- * calendario estaría vacía y el fin de semana caería en el mes.
+ * de otro año). "Esta semana" son las últimas `LIBRARY_WEEK_DAYS` × 24 horas,
+ * la misma ventana del atajo del bento y de su contador: con días de
+ * calendario, algo de hace 6 días y 11 horas contaría en el atajo y caería
+ * bajo el mes. No es la semana del calendario: un lunes estaría vacía.
  *
  * Respeta el orden en que llegan las imágenes (lo más nuevo primero).
  */
@@ -178,20 +192,19 @@ export function groupByDate(items: LibraryAssetDto[], timeZone: string, now: Dat
   const thisYear = dayParts(now, timeZone).year;
   for (const item of items) {
     const created = new Date(item.createdAt);
-    const ago = daysAgo(created, now, timeZone);
     let key: string;
     let label: string;
-    if (ago <= 0) {
+    if (daysAgo(created, now, timeZone) <= 0) {
       key = "today";
       label = "Hoy";
-    } else if (ago < LIBRARY_WEEK_DAYS) {
+    } else if (now.getTime() - created.getTime() < WEEK_MS) {
       key = "week";
       label = "Esta semana";
     } else {
       const { year, month } = dayParts(created, timeZone);
       key = `${String(year)}-${String(month).padStart(2, "0")}`;
       const name = capitalize(
-        new Intl.DateTimeFormat("es-MX", { timeZone, month: "long" }).format(created),
+        formatter("month", "es-MX", timeZone, { month: "long" }).format(created),
       );
       label = year === thisYear ? name : `${name} ${String(year)}`;
     }
@@ -206,8 +219,7 @@ export function groupByDate(items: LibraryAssetDto[], timeZone: string, now: Dat
 export function shortDate(iso: string, timeZone: string, now: Date): string {
   const date = new Date(iso);
   if (daysAgo(date, now, timeZone) <= 0) {
-    const time = new Intl.DateTimeFormat("es-MX", {
-      timeZone,
+    const time = formatter("time", "es-MX", timeZone, {
       hour: "2-digit",
       minute: "2-digit",
       hourCycle: "h23",
@@ -215,8 +227,7 @@ export function shortDate(iso: string, timeZone: string, now: Date): string {
     return `Hoy, ${time}`;
   }
   const sameYear = dayParts(date, timeZone).year === dayParts(now, timeZone).year;
-  const parts = new Intl.DateTimeFormat("es-MX", {
-    timeZone,
+  const parts = formatter(sameYear ? "short" : "short-year", "es-MX", timeZone, {
     day: "numeric",
     month: "short",
     ...(!sameYear && { year: "numeric" }),
@@ -230,17 +241,31 @@ export function shortDate(iso: string, timeZone: string, now: Date): string {
 
 // ── Cómo se llama cada cosa ───────────────────────────────────────────────
 
-/**
- * La card con la que se describe una imagen: donde está puesta hoy y, si no
- * está en ninguna, donde nació. Es la misma regla con la que la API filtra
- * por red y por estado, así que lo que dice la celda es lo que encuentra el
- * filtro.
- */
-export function displayCard(asset: LibraryAssetDto): LibraryCardRef | null {
-  return asset.uses[0] ?? asset.bornInCard;
-}
-
 export type LibraryStatusKind = LibraryCardStatus;
+
+/** Los filtros que hablan de una card: con cuál de las suyas se describe la imagen. */
+export type CardMatch = Pick<LibraryFilters, "network" | "cardStatus">;
+
+/**
+ * La card con la que se describe una imagen: una donde está puesta hoy y, si
+ * no está en ninguna, donde nació. Son las mismas cards contra las que la API
+ * filtra por red y por estado.
+ *
+ * Una imagen puede estar en varias, y la API filtra contra CUALQUIERA: con un
+ * filtro puesto se prefiere la que lo cumple. Sin eso, bajo "Red: LinkedIn"
+ * una celda podía decir "Instagram" (su otra card) y el filtro parecía roto.
+ */
+export function displayCard(asset: LibraryAssetDto, match?: CardMatch): LibraryCardRef | null {
+  const cards = asset.uses.length > 0 ? asset.uses : asset.bornInCard ? [asset.bornInCard] : [];
+  if (match?.network || match?.cardStatus) {
+    const fits = (card: LibraryCardRef) =>
+      (!match.network || card.network === match.network) &&
+      (!match.cardStatus || statusKind(card.status) === match.cardStatus);
+    const found = cards.find(fits);
+    if (found) return found;
+  }
+  return cards[0] ?? null;
+}
 
 /**
  * El estado de la card como lo ofrece el filtro: una publicación que falló
@@ -264,8 +289,8 @@ export const ORIGIN_LABELS: Record<LibraryOrigin, string> = {
   uploaded: "Subida por ti",
 };
 
-export function networkLabel(asset: LibraryAssetDto): string {
-  const card = displayCard(asset);
+export function networkLabel(asset: LibraryAssetDto, match?: CardMatch): string {
+  const card = displayCard(asset, match);
   return card ? NETWORK_LABELS[card.network] : "Sin card";
 }
 

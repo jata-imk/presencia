@@ -1,5 +1,6 @@
 import { Check, ChevronDown, LayoutGrid, List, Search, X } from "lucide-react";
 import {
+  LIBRARY_SEARCH_MAX,
   NETWORK_LABELS,
   type LibraryCardStatus,
   type LibraryOrigin,
@@ -176,6 +177,8 @@ export function LibraryToolbar({
             value={search}
             onChange={(event) => onSearch(event.target.value)}
             aria-label="Buscar en tu Biblioteca"
+            // El tope de la API (`libraryQuerySchema`): más largo responde 400.
+            maxLength={LIBRARY_SEARCH_MAX}
             placeholder="Busca por prompt, texto alternativo o chat"
             className="min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-fg-muted"
           />

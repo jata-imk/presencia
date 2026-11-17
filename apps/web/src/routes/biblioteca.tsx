@@ -51,8 +51,26 @@ import { showToast } from "../stores/toast-store.js";
 // selección múltiple y eliminar llegan en el siguiente; "Generar imagen", con
 // su backend.
 
+/** Relleno de tipo para `now` antes de la primera respuesta; nunca se pinta. */
+const EPOCH = new Date(0);
+
 /** Cuánto se espera a que dejen de teclear antes de buscar. */
 const SEARCH_DELAY_MS = 250;
+
+// Fuera del componente: no leen su estado, y así no cambian entre renders (la
+// cuadrícula y la lista van en `memo`).
+function copyPrompt(asset: LibraryAssetDto) {
+  const prompt = copyablePrompt(asset);
+  if (!prompt) return;
+  navigator.clipboard.writeText(prompt).then(
+    () => showToast({ title: "Prompt copiado", tone: "success", durationMs: 2500 }),
+    () => showToast({ title: "No se pudo copiar el prompt" }),
+  );
+}
+
+function announceDownload(asset: LibraryAssetDto) {
+  showToast({ title: `Descargando ${assetName(asset)}`, tone: "success", durationMs: 2500 });
+}
 
 export function LibraryPage() {
   const timeZone = useTimezone();
@@ -66,11 +84,15 @@ export function LibraryPage() {
 
   const { summary, error: summaryError, reload: reloadSummary } = useLibrarySummary();
   const list = useLibraryItems(search);
-  const { reload: reloadItems, loadMore } = list;
+  const { reload: reloadItems, loadMore, prepend } = list;
 
-  const uploads = useLibraryUploads(() => {
+  const uploads = useLibraryUploads((assets) => {
     reloadSummary();
-    reloadItems();
+    // Sin filtros ni búsqueda, lo recién subido va arriba y ya: recargar
+    // tiraría las páginas cargadas y el lugar de la lectura. Con ellos no se
+    // sabe si lo nuevo los cumple, así que se vuelve a preguntar.
+    if (search === "") prepend(assets);
+    else reloadItems();
   });
   const fileInput = useRef<HTMLInputElement>(null);
   const pickFiles = () => fileInput.current?.click();
@@ -116,30 +138,21 @@ export function LibraryPage() {
     setText("");
   }
 
-  function copyPrompt(asset: LibraryAssetDto) {
-    const prompt = copyablePrompt(asset);
-    if (!prompt) return;
-    navigator.clipboard.writeText(prompt).then(
-      () => showToast({ title: "Prompt copiado", tone: "success", durationMs: 2500 }),
-      () => showToast({ title: "No se pudo copiar el prompt" }),
-    );
-  }
-
-  function announceDownload(asset: LibraryAssetDto) {
-    showToast({ title: `Descargando ${assetName(asset)}`, tone: "success", durationMs: 2500 });
-  }
-
   const error = summaryError ?? list.error;
   const searching = query !== "";
   const narrowed = searching || hasFilters(filters);
   // Vacía es "sin filtros ni búsqueda, no hay nada". Mientras llega la
   // respuesta de haberlos quitado (`stale`) todavía no se sabe.
   const empty = !narrowed && !list.stale && items?.length === 0;
+  const { network, cardStatus } = filters;
+  const match = useMemo(() => ({ network, cardStatus }), [network, cardStatus]);
   const itemProps = {
     groups,
     hasMore: list.hasMore,
+    match,
     timeZone,
-    now: loadedAt ?? new Date(),
+    // Solo se pintan con `items`, y entonces `loadedAt` ya existe.
+    now: loadedAt ?? EPOCH,
     onOpen: setViewing,
     onCopyPrompt: copyPrompt,
     onDownload: announceDownload,
@@ -183,8 +196,10 @@ export function LibraryPage() {
         </button>
       </header>
 
-      {/* Vacía no hay nada que filtrar: la barra no aparece. */}
-      {!empty && !error && (
+      {/* Vacía no hay nada que filtrar: la barra no aparece. Con error sí se
+          queda: si lo que falló fue esta búsqueda o este filtro, quitarlo es
+          la salida, y "Reintentar" solo repetiría lo mismo. */}
+      {!empty && (
         <LibraryToolbar
           search={text}
           onSearch={setText}
@@ -268,7 +283,7 @@ export function LibraryPage() {
       </div>
 
       <UploadPanel uploads={uploads.uploads} busy={uploads.busy} onClose={uploads.clear} />
-      {drag && <LibraryDropOverlay verdict={drag.verdict} />}
+      {drag && <LibraryDropOverlay verdict={drag.verdict} count={drag.count} />}
 
       {viewing && (
         <ImageViewer

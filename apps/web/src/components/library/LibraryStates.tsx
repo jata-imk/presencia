@@ -1,6 +1,7 @@
 import { CloudOff, MessageSquare, RefreshCw, SearchX, Sparkles, Upload } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
+import { BENTO_GRID_CLASS, BENTO_SPANS } from "./LibraryBento.js";
 import { GRID_CLASS } from "./LibraryItems.js";
 
 // Los estados de Biblioteca que no son "hay imágenes" (F12,
@@ -163,11 +164,11 @@ function BentoSkeletonCell({ className, wide }: { className: string; wide?: bool
 export function LibrarySkeleton() {
   return (
     <div role="status" aria-label="Cargando tu Biblioteca">
-      <div className="mb-7 grid grid-cols-2 gap-2 @lg:grid-cols-3 @lg:grid-rows-[150px_auto] @lg:gap-3 @4xl:grid-cols-[2fr_1fr_1fr] @4xl:grid-rows-[118px_88px]">
-        <BentoSkeletonCell wide className="@lg:col-span-2 @4xl:col-span-1 @4xl:row-span-2" />
-        <BentoSkeletonCell className="@4xl:col-span-2" />
-        <BentoSkeletonCell className="" />
-        <BentoSkeletonCell className="@lg:col-span-2 @4xl:col-span-1" />
+      <div className={BENTO_GRID_CLASS}>
+        <BentoSkeletonCell wide className={BENTO_SPANS.week} />
+        <BentoSkeletonCell className={BENTO_SPANS.ready} />
+        <BentoSkeletonCell className={BENTO_SPANS.uploads} />
+        <BentoSkeletonCell className={BENTO_SPANS.published} />
       </div>
       <GridSkeleton />
     </div>

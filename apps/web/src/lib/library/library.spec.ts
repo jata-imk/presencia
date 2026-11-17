@@ -106,8 +106,10 @@ describe("grupos de fecha", () => {
         asset({ id: "hoy", createdAt: "2026-11-17T16:42:00.000Z" }),
         // 05:30 UTC del 17 todavía es el 16 a las 23:30 en Mérida.
         asset({ id: "ayer", createdAt: "2026-11-17T05:30:00.000Z" }),
-        asset({ id: "hace-6", createdAt: "2026-11-11T20:00:00.000Z" }),
-        asset({ id: "hace-7", createdAt: "2026-11-10T20:00:00.000Z" }),
+        // Hace 7 días de calendario pero 6 días y 22 horas: sigue dentro de
+        // la ventana del atajo "Generadas esta semana", así que va con ella.
+        asset({ id: "casi-7", createdAt: "2026-11-10T20:00:00.000Z" }),
+        asset({ id: "hace-7", createdAt: "2026-11-10T17:00:00.000Z" }),
         asset({ id: "octubre", createdAt: "2026-10-03T20:00:00.000Z" }),
         asset({ id: "otro-anio", createdAt: "2025-12-24T20:00:00.000Z" }),
       ],
@@ -116,7 +118,7 @@ describe("grupos de fecha", () => {
     );
     expect(groups.map((g) => [g.label, g.items.map((i) => i.id)])).toEqual([
       ["Hoy", ["hoy"]],
-      ["Esta semana", ["ayer", "hace-6"]],
+      ["Esta semana", ["ayer", "casi-7"]],
       ["Noviembre", ["hace-7"]],
       ["Octubre", ["octubre"]],
       ["Diciembre 2025", ["otro-anio"]],
@@ -136,6 +138,18 @@ describe("cómo se llama cada imagen", () => {
     expect(displayCard(asset({ uses: [used] }))).toBe(used);
     expect(networkLabel(asset({ uses: [used] }))).toBe("LinkedIn");
     expect(networkLabel(asset({ bornInCard: null }))).toBe("Sin card");
+  });
+
+  it("con un filtro de red o de estado, se describe con la card que lo cumple", () => {
+    const instagram = card({ id: "card-ig", network: "instagram", status: "published" });
+    const linkedin = card({ id: "card-li", network: "linkedin", status: "failed" });
+    const inBoth = asset({ uses: [instagram, linkedin] });
+    expect(displayCard(inBoth)).toBe(instagram);
+    expect(displayCard(inBoth, { network: "linkedin", cardStatus: null })).toBe(linkedin);
+    // Una publicación que falló cuenta como borrador, igual que en el filtro.
+    expect(displayCard(inBoth, { network: null, cardStatus: "draft" })).toBe(linkedin);
+    // Si ninguna cumple (no debería llegar así), se queda con la primera.
+    expect(displayCard(inBoth, { network: "x", cardStatus: null })).toBe(instagram);
   });
 
   it("una publicación que falló cuenta como borrador; una cancelada no dice estado", () => {

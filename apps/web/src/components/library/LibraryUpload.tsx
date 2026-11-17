@@ -11,8 +11,17 @@ import { UPLOAD_TYPE_ERROR, uploadsTitle, type LibraryUpload } from "../../lib/l
  * el topbar. Si nada de lo que se arrastra es una imagen que aceptamos, lo
  * dice antes de soltar.
  */
-export function LibraryDropOverlay({ verdict }: { verdict: "accept" | "type" | "limit" }) {
+export function LibraryDropOverlay({
+  verdict,
+  count = 1,
+}: {
+  verdict: "accept" | "type" | "limit";
+  /** Cuántos archivos se arrastran, para decirlo en singular o en plural. */
+  count?: number;
+}) {
   const reject = verdict !== "accept";
+  const rejected =
+    count > 1 ? "Estos archivos no se pueden subir" : "Este archivo no se puede subir";
   return (
     <div
       role="status"
@@ -32,7 +41,7 @@ export function LibraryDropOverlay({ verdict }: { verdict: "accept" | "type" | "
           {reject ? <Ban size={30} aria-hidden /> : <CloudUpload size={30} aria-hidden />}
         </div>
         <div className="mt-1.5 font-display text-[22px] font-semibold text-brand">
-          {reject ? "Este archivo no se puede subir" : "Suelta para subir a tu Biblioteca"}
+          {reject ? rejected : "Suelta para subir a tu Biblioteca"}
         </div>
         <div className={`text-base ${reject ? "text-error-fg" : "text-fg-secondary"}`}>
           {reject ? UPLOAD_TYPE_ERROR : "JPG, PNG o WebP de hasta 10 MB"}

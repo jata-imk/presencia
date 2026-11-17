@@ -12,6 +12,20 @@ import { plural, type LibraryShortcut } from "../../lib/library/library.js";
 // posiciones escritas, así que las tres rejillas (2, 3 y 2fr·1fr·1fr) usan el
 // mismo marcado.
 
+/**
+ * La rejilla y lo que abarca cada celda, en el orden en que se pintan. El
+ * esqueleto de carga (LibraryStates.tsx) usa estas mismas clases: si no
+ * coincidieran, la pantalla brincaría al llegar los datos.
+ */
+export const BENTO_GRID_CLASS =
+  "mb-7 grid grid-cols-2 gap-2 @lg:grid-cols-3 @lg:grid-rows-[150px_auto] @lg:gap-3 @4xl:grid-cols-[2fr_1fr_1fr] @4xl:grid-rows-[118px_88px]";
+export const BENTO_SPANS = {
+  week: "@lg:col-span-2 @4xl:col-span-1 @4xl:row-span-2",
+  ready: "@4xl:col-span-2",
+  uploads: "",
+  published: "@lg:col-span-2 @4xl:col-span-1",
+} as const;
+
 /** Cuántas miniaturas caben en "Listas para publicar". */
 const READY_THUMBS = 3;
 
@@ -92,15 +106,11 @@ export function LibraryBento({
 }) {
   const { generatedThisWeek, readyToPublish, uploaded, published } = summary;
   return (
-    <div
-      role="group"
-      aria-label="Atajos"
-      className="mb-7 grid grid-cols-2 gap-2 @lg:grid-cols-3 @lg:grid-rows-[150px_auto] @lg:gap-3 @4xl:grid-cols-[2fr_1fr_1fr] @4xl:grid-rows-[118px_88px]"
-    >
+    <div role="group" aria-label="Atajos" className={BENTO_GRID_CLASS}>
       <Cell
         on={active === "week"}
         onClick={() => onToggle("week")}
-        className="flex-col gap-3 @lg:col-span-2 @4xl:col-span-1 @4xl:row-span-2"
+        className={`flex-col gap-3 ${BENTO_SPANS.week}`}
       >
         <span className="flex items-start gap-2">
           <Heading
@@ -118,7 +128,7 @@ export function LibraryBento({
       <Cell
         on={active === "ready"}
         onClick={() => onToggle("ready")}
-        className="flex-col gap-3 @4xl:col-span-2 @4xl:flex-row @4xl:items-start"
+        className={`flex-col gap-3 @4xl:flex-row @4xl:items-start ${BENTO_SPANS.ready}`}
       >
         <Heading
           title="Listas para publicar"
@@ -151,7 +161,7 @@ export function LibraryBento({
       <Cell
         on={active === "published"}
         onClick={() => onToggle("published")}
-        className="items-start gap-2.5 @lg:col-span-2 @4xl:col-span-1"
+        className={`items-start gap-2.5 ${BENTO_SPANS.published}`}
       >
         <IconBox tone="success">
           <CircleCheck size={16} aria-hidden />

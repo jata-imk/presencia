@@ -55,7 +55,11 @@ interface Loaded {
   search: string;
   items: LibraryAssetDto[];
   nextCursor: string | null;
-  /** Cuándo llegó la primera página: el "ahora" de sus grupos de fecha. */
+  /**
+   * El "ahora" de sus grupos de fecha: cuándo llegó la primera página, o
+   * cuándo se volvió a esta pestaña (una pantalla abierta desde ayer no puede
+   * seguir diciendo "Hoy").
+   */
   loadedAt: Date;
 }
 
@@ -79,6 +83,11 @@ export function useLibraryItems(search: string) {
   const latest = useRef(loaded);
   latest.current = loaded;
   const moreInFlight = useRef(false);
+  // La primera página viene en camino. Mientras tanto no se pide "la
+  // siguiente": al recargar la misma consulta, lo que hay en pantalla todavía
+  // trae el cursor de la lista vieja, y su página caería detrás de la primera
+  // página nueva, saltándose las de en medio.
+  const refreshing = useRef(false);
 
   useEffect(() => {
     const token = ++request.current;
@@ -86,20 +95,36 @@ export function useLibraryItems(search: string) {
     setError(null);
     setMoreFailed(false);
     moreInFlight.current = false;
+    refreshing.current = true;
     setLoadingMore(false);
     fetchLibraryPage(search, undefined, abort.signal)
       .then((page) => {
-        if (token === request.current) setLoaded({ search, ...page, loadedAt: new Date() });
+        if (token !== request.current) return;
+        refreshing.current = false;
+        setLoaded({ search, ...page, loadedAt: new Date() });
       })
       .catch((e: unknown) => {
-        if (token === request.current && !abort.signal.aborted) setError(mensajeDe(e));
+        if (token !== request.current || abort.signal.aborted) return;
+        refreshing.current = false;
+        setError(mensajeDe(e));
       });
     return () => abort.abort();
   }, [search, attempt]);
 
+  // Al volver a la pestaña se refresca el "ahora" de los grupos de fecha.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      setLoaded((prev) => prev && { ...prev, loadedAt: new Date() });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
   const loadMore = useCallback(() => {
     const current = latest.current;
-    if (!current?.nextCursor || current.search !== search || moreInFlight.current) return;
+    if (!current?.nextCursor || current.search !== search) return;
+    if (moreInFlight.current || refreshing.current) return;
     const token = request.current;
     moreInFlight.current = true;
     setLoadingMore(true);
@@ -131,6 +156,19 @@ export function useLibraryItems(search: string) {
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
 
+  /**
+   * Pone imágenes nuevas al principio de lo cargado, sin volver a pedir nada:
+   * lo recién subido, cuando no hay filtros que pudiera no cumplir. Recargar
+   * tiraría las páginas ya cargadas y el lugar donde iba la lectura.
+   */
+  const prepend = useCallback((assets: LibraryAssetDto[]) => {
+    setLoaded((prev) => {
+      if (!prev) return prev;
+      const fresh = new Set(assets.map((asset) => asset.id));
+      return { ...prev, items: [...assets, ...prev.items.filter((item) => !fresh.has(item.id))] };
+    });
+  }, []);
+
   return {
     items: loaded?.items ?? null,
     loadedAt: loaded?.loadedAt ?? null,
@@ -142,6 +180,7 @@ export function useLibraryItems(search: string) {
     moreFailed,
     loadMore,
     reload,
+    prepend,
   };
 }
 
@@ -151,18 +190,31 @@ const UPLOADS_AT_ONCE = 3;
 /**
  * Las subidas de la pantalla: una fila por archivo, con su avance y su error.
  * Lo que no pasa la revisión local (tipo, peso) entra ya como error, sin
- * viajar. `onUploaded` avisa cuando el lote terminó y algo sí subió.
+ * viajar. `onUploaded` avisa cuando el lote terminó, con lo que sí subió (lo
+ * más nuevo primero).
+ *
+ * Salir de la pantalla no cancela lo que va en camino, a propósito: el
+ * archivo ya se eligió y llega a Biblioteca igual. Lo que se apaga es el
+ * aviso a una pantalla que ya no está.
  */
-export function useLibraryUploads(onUploaded: () => void) {
+export function useLibraryUploads(onUploaded: (assets: LibraryAssetDto[]) => void) {
   const [uploads, setUploads] = useState<LibraryUpload[]>([]);
   const queue = useRef<{ id: string; file: File }[]>([]);
   const active = useRef(0);
-  const landed = useRef(false);
+  const landed = useRef<LibraryAssetDto[]>([]);
   const nextId = useRef(0);
   const notify = useRef(onUploaded);
   notify.current = onUploaded;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const patch = useCallback((id: string, change: Partial<LibraryUpload>) => {
+    if (!mounted.current) return;
     setUploads((list) => list.map((u) => (u.id === id ? { ...u, ...change } : u)));
   }, []);
 
@@ -173,8 +225,8 @@ export function useLibraryUploads(onUploaded: () => void) {
       active.current += 1;
       patch(next.id, { status: "uploading" });
       uploadToLibrary(next.file, (percent) => patch(next.id, { percent }))
-        .promise.then(() => {
-          landed.current = true;
+        .promise.then((asset) => {
+          landed.current.unshift(asset);
           patch(next.id, { status: "done", percent: 100 });
         })
         .catch((e: unknown) => {
@@ -189,8 +241,9 @@ export function useLibraryUploads(onUploaded: () => void) {
         .finally(() => {
           active.current -= 1;
           if (active.current === 0 && queue.current.length === 0) {
-            if (landed.current) notify.current();
-            landed.current = false;
+            const assets = landed.current;
+            landed.current = [];
+            if (assets.length > 0 && mounted.current) notify.current(assets);
           } else {
             pump();
           }
