@@ -36,6 +36,7 @@ import {
   users,
 } from "../src/db/schema.js";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
+import { seedBiblioteca, type BibliotecaSembrada } from "./seed-biblioteca.js";
 import { seedTurnStates } from "./seed-estados.js";
 import { seedRitmo } from "./seed-ritmo.js";
 import { seedVozViva } from "./seed-voz-viva.js";
@@ -90,6 +91,12 @@ async function seed(): Promise<void> {
     logTurnStates(estados);
     // F12.5: igual que los estados del turno, la propuesta vuelve en cada corrida.
     logVozViva(await dbService.runWithTenant(yaExiste.id, (tx) => seedVozViva(tx, yaExiste.id)));
+    // F12: lo que se borre probando Biblioteca también vuelve.
+    logBiblioteca(
+      await dbService.runWithTenant(yaExiste.id, (tx) =>
+        seedBiblioteca(tx, yaExiste.id, buildAssetStorage()),
+      ),
+    );
     printCredentials();
     return;
   }
@@ -182,11 +189,13 @@ async function seed(): Promise<void> {
     // En la misma transacción: si algo falla, la cuenta no queda a medias.
     const estados = await seedTurnStates(tx, user.id);
     const vozViva = await seedVozViva(tx, user.id);
+    const biblioteca = await seedBiblioteca(tx, user.id, buildAssetStorage());
 
-    return { rows, ritmo, estados, vozViva };
+    return { rows, ritmo, estados, vozViva, biblioteca };
   });
   logTurnStates(creados.estados);
   logVozViva(creados.vozViva);
+  logBiblioteca(creados.biblioteca);
 
   console.log(
     `· Usuario creado con ${String(creados.rows.length)} chats, 1 carpeta y 1 voz de marca.`,
@@ -489,6 +498,13 @@ function logVozViva(count: number): void {
   console.log(
     `· Voz viva: ${String(count)} publicaciones sin emojis en "Voz viva: ediciones de ejemplo" ` +
       "(propuesta en Configuración › Voz de marca).",
+  );
+}
+
+function logBiblioteca(sembrada: BibliotecaSembrada): void {
+  console.log(
+    `· Biblioteca: ${String(sembrada.imagenes)} imágenes en "Biblioteca: imágenes de ejemplo" ` +
+      "(elegida, variantes descartadas con su linaje, publicada y subidas sin card).",
   );
 }
 

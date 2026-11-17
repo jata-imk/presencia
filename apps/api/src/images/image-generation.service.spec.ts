@@ -190,6 +190,9 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     // recuerda para "Regenerar".
     expect(rows[0]!.prompt).toContain(imageStyleDef("foto").prompt);
     expect(rows[0]!.prompt).toContain(NO_TEXT_NO_LOGOS);
+    // F12: aparte del compuesto, lo que pidió tal cual. Es lo que Biblioteca
+    // muestra y busca.
+    expect(rows[0]!.description).toBe("Taza de café de olla, más cerca");
     expect(dto.imageJob).toMatchObject({ style: "foto" });
     expect(enqueue).toHaveBeenCalledTimes(1);
     expect(enqueue.mock.calls[0]![1]).toEqual({ userId, cardId, batchId: dto.imageJob!.id });
@@ -531,6 +534,8 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
       parentAssetId: parentId,
     });
     expect(rows[0]!.prompt).toContain("Conserva todo lo que no se pidió cambiar");
+    // F12: una edición no describe una imagen; lo que pidió es la instrucción.
+    expect(rows[0]!.description).toBeNull();
 
     await service.run({ userId, cardId, batchId: dto.imageJob!.id });
 
@@ -586,6 +591,8 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     const second = rows.find((r) => r.slideId === S2)!;
     expect(second.prompt).toContain("Qué se ve: Un café de olla servido");
     expect(second.prompt).not.toContain("el local por fuera");
+    expect(second.description).toContain("Un café de olla servido");
+    expect(second.description).not.toContain("Qué se ve");
 
     await service.run({ userId, cardId, batchId: dto.imageJob!.id });
     const final = await card(cardId);

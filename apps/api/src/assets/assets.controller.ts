@@ -7,12 +7,14 @@ import {
   NotFoundException,
   Param,
   Patch,
+  Query,
   Res,
 } from "@nestjs/common";
 import type { Response } from "express";
 import { cardIdParamSchema, updateAssetAltBodySchema } from "@presencia/shared";
 import type { SessionUser } from "../auth/auth.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
+import { attachmentDisposition } from "./asset-storage.js";
 import { AssetsService } from "./assets.service.js";
 
 /**
@@ -48,15 +50,23 @@ export class AssetsController {
   async content(
     @CurrentUser() user: SessionUser,
     @Param("id") id: string,
+    @Query("download") download: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
     const parsed = cardIdParamSchema.safeParse({ id });
     if (!parsed.success) throw new BadRequestException("El id de la imagen no es válido.");
 
-    const found = await this.service.deliver(user.id, parsed.data.id);
+    // F12: `?download=1` es "Descargar" de Biblioteca: para guardarla, no para
+    // mostrarla (mismo trato que los adjuntos del chat).
+    const toSave = download === "1";
+    const found = await this.service.deliver(user.id, parsed.data.id, { download: toSave });
     if (!found) throw new NotFoundException("No encontramos esa imagen.");
 
-    const { delivery, mimeType } = found;
+    const { delivery, mimeType, downloadName } = found;
+    // Con R2 el nombre ya va en la URL firmada; con disco local lo pone la API.
+    if (downloadName && delivery.kind === "bytes") {
+      res.setHeader("Content-Disposition", attachmentDisposition(downloadName));
+    }
     if (delivery.kind === "redirect") {
       // Menos que lo que dura la URL firmada (10 min): el navegador reusa la
       // redirección un rato sin volver a pedirla, y nunca guarda una que ya

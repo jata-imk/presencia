@@ -10,6 +10,7 @@ import { env } from "./env.js";
 import { FoldersModule } from "./folders/folders.module.js";
 import { HealthController } from "./health.controller.js";
 import { ImagesModule } from "./images/images.module.js";
+import { LibraryModule } from "./library/library.module.js";
 import { ScheduledJobsModule } from "./jobs/scheduled-jobs.module.js";
 import { ProfileModule } from "./profile/profile.module.js";
 import { RealtimeModule } from "./realtime/realtime.module.js";
@@ -28,6 +29,7 @@ import { SearchModule } from "./search/search.module.js";
     FoldersModule,
     SearchModule,
     RitmoModule,
+    LibraryModule,
     RealtimeModule,
     // F11: el canal Telegram. Solo aquí, nunca en el worker: el bot atiende en el
     // proceso que serializa los turnos del chat (ADR-030).

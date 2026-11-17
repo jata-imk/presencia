@@ -107,6 +107,8 @@ export interface ImagePlacement {
 /** Una fila que se va a pedir: su prompt compuesto y su slide. */
 interface RequestedImage {
   prompt: string;
+  /** F12: lo que pidió el creator, sin componer. Null en una edición. */
+  description: string | null;
   slideId: string | null;
 }
 
@@ -205,7 +207,11 @@ export class ImageGenerationService {
           );
         }
         const prompt = composeImagePrompt(described, voice ?? null, style);
-        return Array.from({ length: IMAGES_PER_GENERATION }, () => ({ prompt, slideId: id }));
+        return Array.from({ length: IMAGES_PER_GENERATION }, () => ({
+          prompt,
+          description: described,
+          slideId: id,
+        }));
       });
     } else {
       if (body.slideIds) throw new BadRequestException("Esta publicación no es un carrusel.");
@@ -213,8 +219,10 @@ export class ImageGenerationService {
       const prompt = composeImagePrompt(body.prompt, voice ?? null, style);
       // FIRST_SLIDE_ID y no null: si la card se vuelve carrusel mientras
       // genera, la imagen sigue yendo a ESTE slide aunque ya no sea la portada.
+      const description = body.prompt.trim();
       images = Array.from({ length: IMAGES_PER_GENERATION }, () => ({
         prompt,
+        description,
         slideId: FIRST_SLIDE_ID,
       }));
       // El prompt editado se guarda en la card: la próxima vez la card muestra
@@ -288,7 +296,12 @@ export class ImageGenerationService {
       // la voz y "Regenerar" después de ajustar cambiaba de estilo.
       style: (card.imageJob as CardImageJob | null)?.style,
       images: [
-        { prompt: composeEditPrompt(body.instruction), slideId: slide?.id ?? FIRST_SLIDE_ID },
+        {
+          prompt: composeEditPrompt(body.instruction),
+          // Lo que pidió ya está en `instruction`.
+          description: null,
+          slideId: slide?.id ?? FIRST_SLIDE_ID,
+        },
       ],
       slideIds: [slide?.id ?? FIRST_SLIDE_ID],
       instruction: body.instruction,
@@ -371,6 +384,7 @@ export class ImageGenerationService {
           provider: spec.provider.provider,
           model: spec.provider.modelName,
           prompt: image.prompt,
+          description: image.description,
           slideId: image.slideId,
           instruction: spec.instruction,
           parentAssetId: spec.parentAssetId,

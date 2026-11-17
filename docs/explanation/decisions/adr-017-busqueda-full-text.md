@@ -68,3 +68,13 @@ Las columnas `search_tsv` se referencian desde el repositorio con plantillas `sq
 ## Atajos de teclado globales
 
 Convención que estrena el ⌘K, escrita acá para no abrir un ADR entero por un keybinding: **un solo listener a `document` por atajo**, montado en el componente dueño de la superficie que abre. `preventDefault()` es obligatorio (Ctrl+K enfoca la omnibox en Chrome/Windows). Se ignoran `e.repeat` y `e.isComposing` (IME). **No** se filtra por "el foco está en un input": ⌘K tiene que abrir aunque estés escribiendo en el composer, es la convención universal de las paletas de comandos.
+
+## Addendum (F12 PR2, 2026-11-14) — el buscador de Biblioteca no usa este FTS
+
+Biblioteca filtra sus imágenes mientras se escribe ("Busca por prompt, texto alternativo o chat") y lo hace con `LIKE '%palabra%'` sobre el texto sin acentos (`f_unaccent(lower(…))`), una condición por palabra. Es justo lo que arriba se descarta para el ⌘K, y aquí es lo correcto por tres razones que allá no aplican:
+
+- **Filtra con cada tecla.** El FTS empata palabras completas (stemeadas): "caf" no encuentra "café" hasta que se termina de escribir. En un filtro en vivo eso se ve como una lista que se vacía y se vuelve a llenar.
+- **El conjunto es chico y ya está acotado.** Son las imágenes de un creator (cientos), no todos sus mensajes. El argumento contra `LIKE` era que no usa índice; aquí no hay índice que usar.
+- **El texto vive en cuatro tablas.** La descripción y la instrucción están en `image_generations`, el texto alternativo y el nombre en `assets.metadata`, el título en `chats`. Una columna `search_tsv` generada no puede cruzar tablas.
+
+Lo que se pierde es la tolerancia a typos de los trigramas. Los comodines que escriba el creator (`%`, `_`) se escapan: son letras. Si una cuenta llega a miles de imágenes, el camino es una columna almacenada en `assets` que se recalcula al escribir, no este ADR al revés.

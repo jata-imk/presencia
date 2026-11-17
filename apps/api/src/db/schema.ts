@@ -625,6 +625,13 @@ export const imageGenerations = pgTable(
     model: text("model").notNull(),
     // El prompt que se mandó, ya compuesto con el estilo por defecto.
     prompt: text("prompt").notNull(),
+    // F12: lo que pidió el creator, sin el estilo, el nicho ni el encuadre que
+    // `composeImagePrompt` le suma. Es lo que Biblioteca muestra, copia y
+    // busca: el compuesto trae frases iguales en todas las imágenes ("Sin
+    // texto, letras…") y buscar "texto" las encontraría todas. Null en las
+    // ediciones (lo suyo es `instruction`) y en filas anteriores a F12 que el
+    // backfill de la 0071 no pudo recortar.
+    description: text("description"),
     // Solo en ediciones: lo que pidió el usuario ("más cálida").
     instruction: text("instruction"),
     parentAssetId: uuid("parent_asset_id").references((): AnyPgColumn => assets.id, {
@@ -645,6 +652,9 @@ export const imageGenerations = pgTable(
   (t) => [
     index("image_generations_batch").on(t.batchId),
     index("image_generations_card").on(t.cardId),
+    // F12: el listado de Biblioteca trae, por asset, la generación que lo
+    // dibujó (prompt, instrucción, linaje).
+    index("image_generations_asset").on(t.assetId),
   ],
 );
 
@@ -684,24 +694,41 @@ export const cardVersions = pgTable(
   (t) => [uniqueIndex("card_versions_card_n").on(t.cardId, t.n)],
 );
 
-export const assets = pgTable("assets", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  chatId: uuid("chat_id").references(() => chats.id, { onDelete: "set null" }),
-  cardId: uuid("card_id").references(() => publicationCards.id, { onDelete: "set null" }),
-  // F10.6.1: el slide del carrusel donde nació (o al que se subió). Las
-  // versiones se filtran por slide; sin FK porque los slides viven en el
-  // jsonb de la card. Null = de antes de anotarlo: cuenta como de la portada.
-  slideId: uuid("slide_id"),
-  storageKey: text("storage_key").notNull(),
-  mimeType: text("mime_type").notNull(),
-  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
-  source: assetSource("source").notNull(),
-  metadata: jsonb("metadata").notNull().default({}),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+// Una imagen de Biblioteca (ADR-011). `chat_id` y `card_id` dicen dónde
+// NACIÓ, no dónde se usa: los dos son null si se subió directo a Biblioteca
+// (F12), y pasan a null si ese chat o esa card se borran; la imagen se queda.
+// Dónde se usa hoy se deriva de `content.assetIds` de las cards.
+export const assets = pgTable(
+  "assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    chatId: uuid("chat_id").references(() => chats.id, { onDelete: "set null" }),
+    cardId: uuid("card_id").references(() => publicationCards.id, { onDelete: "set null" }),
+    // F10.6.1: el slide del carrusel donde nació (o al que se subió). Las
+    // versiones se filtran por slide; sin FK porque los slides viven en el
+    // jsonb de la card. Null = de antes de anotarlo: cuenta como de la portada.
+    slideId: uuid("slide_id"),
+    storageKey: text("storage_key").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    source: assetSource("source").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // F12: el listado de Biblioteca, de lo más nuevo a lo más viejo, y su
+    // cursor `(created_at, id)`. Ascendente a propósito: Postgres lo recorre
+    // al revés para el `order by … desc`, y con `.desc()` drizzle emite
+    // `DESC NULLS LAST`, que NO coincide con el `desc` de la consulta (cuyo
+    // default es NULLS FIRST) y dejaría el índice sin usar para ordenar.
+    index("assets_library").on(t.userId, t.createdAt, t.id),
+    // El historial de versiones de una card (`listByCard`) filtraba sin índice.
+    index("assets_by_card").on(t.cardId),
+  ],
+);
 
 // F10.9: lo que el creator adjunta a un mensaje del chat (ADR-011, addendum
 // F10.9). NO es un asset: es de la conversación y muere con ella (`chat_id`
