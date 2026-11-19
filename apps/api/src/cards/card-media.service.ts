@@ -28,7 +28,7 @@ import {
   type PublicationCardDto,
 } from "@presencia/shared";
 import type { Tx } from "../db/db.service.js";
-import type { AssetMetadata } from "../assets/assets.repository.js";
+import type { AssetMetadata, AssetRow } from "../assets/assets.repository.js";
 import type { StoredAsset } from "../assets/assets.service.js";
 import { fitToAspect, matchesAspect, nearestAspect } from "../images/image-fit.js";
 import { AssetsService } from "../assets/assets.service.js";
@@ -217,7 +217,7 @@ export class CardMediaService {
           : null;
       const rootMeta = root.metadata as AssetMetadata;
       if (!aspect || matchesAspect(rootMeta.width, rootMeta.height, aspect)) {
-        return { card, root, aspect: null, reused: null };
+        return { card, root, aspect, needsCrop: false, reused: null };
       }
       // El más reciente en esa proporción (vienen del más viejo al más nuevo).
       const crops = await this.assets.findCrops(tx, root.id);
@@ -226,15 +226,15 @@ export class CardMediaService {
           const m = c.metadata as AssetMetadata;
           return matchesAspect(m.width, m.height, aspect);
         }) ?? null;
-      return { card, root, aspect, reused };
+      return { card, root, aspect, needsCrop: true, reused };
     });
-    const { card, root, aspect, reused } = plan;
+    const { card, root, aspect, needsCrop, reused } = plan;
     const targetSlide = slideId ?? slidesOf(card.content as CardContent)[0]?.id ?? FIRST_SLIDE_ID;
 
     // El recorte nuevo, si hace falta: bytes y storage fuera de la
     // transacción, como en setSlidesAspect. Nace en esta card.
     let cropped: StoredAsset | null = null;
-    if (aspect && !reused) {
+    if (aspect && needsCrop && !reused) {
       const bytes = await this.assets.readBytes(root);
       const data = await fitToAspect(bytes, aspect);
       if (data !== bytes) {
@@ -264,16 +264,34 @@ export class CardMediaService {
         if (!(await this.assets.findForUse(tx, root.id))) {
           throw new NotFoundException(GONE_FROM_LIBRARY);
         }
-        let placed: { id: string; cardId: string | null } = root;
+        let placed: AssetRow = root;
         if (reused) {
-          // El recorte reutilizado se pudo ir con un borrado de otra imagen
-          // que no es esta; entonces entra la original.
+          // Si el recorte reutilizado ya no está, se queda la original y la
+          // revisión de abajo dice que hay que volver a intentarlo: la
+          // original no está en la proporción del carrusel.
           placed = (await this.assets.findForUse(tx, reused.id)) ?? root;
         }
         if (cropped) placed = await this.assets.record(tx, cropped);
-        const current = await this.repo.findById(tx, cardId);
+        // Bloqueada: lo que se escribe sale de esta lectura, y un cambio del
+        // carrusel a la vez (proporción, slides) no se puede pisar.
+        const current = await this.repo.lockById(tx, cardId);
         if (!current) throw new NotFoundException("No encontramos esa publicación.");
         assertSlide(current.content as CardContent, slideId);
+        // El plan (recortar o no, y a qué) salió de la card de antes. Si
+        // mientras tanto se volvió carrusel o cambió de proporción, lo que se
+        // iba a poner ya no sirve.
+        const now = current.content as CardContent;
+        const nowAspect =
+          now.archetype !== "video_script" && now.slides
+            ? carouselAspect(now, current.network)
+            : null;
+        const placedMeta = placed.metadata as AssetMetadata;
+        if (
+          nowAspect !== aspect ||
+          (nowAspect && !matchesAspect(placedMeta.width, placedMeta.height, nowAspect))
+        ) {
+          throw new ConflictException("La publicación cambió. Vuelve a elegir la imagen.");
+        }
         const content = cardContentSchema.parse(
           placeImage(current.content as CardContent, placed.id, slideId),
         );
@@ -281,7 +299,10 @@ export class CardMediaService {
           imageJob: "clearUnlessRunning",
         });
         if (!updated) throw new ConflictException(NOT_EDITABLE_MESSAGE);
-        if (placed.cardId !== cardId) {
+        // Al historial si nació en otra card, o en otro slide de esta: la
+        // tira de un slide filtra por su slide, y sin el pick la imagen se
+        // perdería de la tira del slide al que entró al reemplazarla.
+        if (placed.cardId !== cardId || (placed.slideId ?? FIRST_SLIDE_ID) !== targetSlide) {
           await this.assets.notePick(tx, {
             userId,
             cardId,

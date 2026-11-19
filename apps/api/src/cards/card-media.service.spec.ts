@@ -414,6 +414,36 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     expect(versions.find((v) => v.assetId === placed)?.slideId).toBe(two.second);
   });
 
+  it("si el carrusel cambia de proporción mientras se recorta, no entra nada (409)", async () => {
+    const cuadrada = await libraryUpload(solidPng(60, 60, [3, 3, 3]));
+    const id = await createCard(VISUAL);
+    await media.addSlide(userA, id, {});
+    const before = await assetCount();
+    const real = assetsService.readBytes.bind(assetsService);
+    // Mientras se leen los bytes para recortar a 4:5, otra pestaña lo pasa a 1:1.
+    assetsService.readBytes = async (row) => {
+      assetsService.readBytes = real;
+      await media.setSlidesAspect(userA, id, "1:1");
+      return real(row);
+    };
+    await expect(media.useFromLibrary(userA, id, cuadrada)).rejects.toThrow(/cambió/);
+    expect(await assetCount()).toBe(before);
+  });
+
+  it("traer a un slide una imagen nacida en otro slide de la misma card la deja en su tira", async () => {
+    const id = await createCard(VISUAL);
+    await media.addSlide(userA, id, {});
+    const dto = await media.addSlide(userA, id, {});
+    const slides = dto.content.archetype === "visual_first" ? dto.content.slides! : [];
+    const [s1, , s3] = slides.map((s) => s.id) as [string, string, string];
+    const a = (await media.attachUpload(userA, id, PNG, undefined, s1)).content.assetIds[0]!;
+    await media.useFromLibrary(userA, id, a, s3);
+    await media.attachUpload(userA, id, solidPng(40, 50, [2, 2, 2]), undefined, s3);
+    const versions = await media.versions(userA, id);
+    const slidesOfA = versions.filter((v) => v.assetId === a).map((v) => v.slideId);
+    expect(slidesOfA.sort()).toEqual([s1, s3].sort());
+  });
+
   it("ajena, borrada, programada o guion de video: no entra", async () => {
     const cardId = await createCard(VISUAL);
     const ajena = await libraryUpload(PNG, userB);

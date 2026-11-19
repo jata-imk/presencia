@@ -162,7 +162,7 @@ export function LibraryPicker({
               type="button"
               aria-pressed={tab === value}
               onClick={() => setTab(value)}
-              className={`flex h-[30px] shrink-0 items-center rounded-[6px] px-3 font-display text-[13px] font-medium whitespace-nowrap transition-colors ${
+              className={`flex h-7.5 shrink-0 items-center rounded-sm px-3 font-display text-[13px] font-medium whitespace-nowrap transition-colors ${
                 tab === value ? "bg-card text-brand shadow-md" : "text-fg-secondary hover:text-fg"
               }`}
             >
@@ -196,7 +196,7 @@ export function LibraryPicker({
             aria-label="Cargando"
           >
             {Array.from({ length: 10 }, (_, i) => (
-              <span key={i} className="aspect-square animate-pulse rounded-[10px] bg-lib-tile" />
+              <span key={i} className="aspect-square animate-pulse rounded-md bg-lib-tile" />
             ))}
           </div>
         ) : items.length === 0 ? (
@@ -243,7 +243,7 @@ export function LibraryPicker({
                       setSelected(asset);
                       use(asset);
                     }}
-                    className={`relative flex aspect-square items-center justify-center rounded-[10px] transition-[padding,background-color] duration-150 ease-out ${
+                    className={`relative flex aspect-square items-center justify-center rounded-md transition-[padding,background-color] duration-150 ease-out ${
                       checked
                         ? "bg-tint-plum p-3.5 ring-2 ring-accent"
                         : "bg-lib-tile p-2 hover:ring-1 hover:ring-accent"
@@ -255,10 +255,10 @@ export function LibraryPicker({
                       loading="lazy"
                       width={asset.width}
                       height={asset.height}
-                      className="max-h-full max-w-full rounded-[5px] object-contain"
+                      className="max-h-full max-w-full rounded-sm object-contain"
                     />
                     {checked && (
-                      <span className="absolute top-1.5 left-1.5 flex size-[22px] items-center justify-center rounded-full bg-primary text-primary-fg">
+                      <span className="absolute top-1.5 left-1.5 flex size-5.5 items-center justify-center rounded-full bg-primary text-primary-fg">
                         <Check size={13} strokeWidth={3} aria-hidden />
                       </span>
                     )}
@@ -293,7 +293,7 @@ export function LibraryPicker({
 
       <div className="flex flex-wrap items-center gap-3 border-t border-line bg-app px-5 py-3.5 sm:px-6">
         <div className="flex min-w-0 flex-[1_1_200px] items-center">
-          {busy ? (
+          {busy && !using ? (
             <span className="text-xs text-fg-muted">
               Espera a que termine la imagen que se está generando
             </span>
@@ -320,7 +320,7 @@ export function LibraryPicker({
           <button
             type="button"
             onClick={onClose}
-            className="h-[38px] rounded-md border border-line bg-card px-4 font-display text-[13px] font-semibold text-brand hover:bg-secondary"
+            className="h-9.5 rounded-md border border-line bg-card px-4 font-display text-[13px] font-semibold text-brand hover:bg-secondary"
           >
             Cancelar
           </button>
@@ -328,7 +328,7 @@ export function LibraryPicker({
             type="button"
             onClick={() => use()}
             disabled={!selected || using || busy}
-            className="flex h-[38px] items-center gap-1.5 rounded-md bg-primary px-4 font-display text-[13px] font-semibold text-primary-fg hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-secondary disabled:text-fg-muted"
+            className="flex h-9.5 items-center gap-1.5 rounded-md bg-primary px-4 font-display text-[13px] font-semibold text-primary-fg hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-secondary disabled:text-fg-muted"
           >
             {using && <Loader2 size={14} className="animate-spin" aria-hidden />}
             {using ? "Usando…" : "Usar esta imagen"}

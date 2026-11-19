@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { and, asc, eq, gte, inArray, or, sql } from "drizzle-orm";
+import { FIRST_SLIDE_ID } from "@presencia/shared";
 import { assets, cardAssetPicks, imageGenerations } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
@@ -114,8 +115,9 @@ export class AssetsRepository {
    * Una traída vale por su pick: su `slideId` es el slide de ESTA card al que
    * entró (el de su asset es el de la card donde nació) y su fecha, la de
    * cuando entró, para que la tira la ponga donde el creator la trajo y no al
-   * principio. Una traída que además nació aquí (un recorte, que nace en la
-   * card) sale una sola vez, como nacida.
+   * principio. Una que nació aquí y se trajo a OTRO slide de esta card sale
+   * dos veces, una en cada slide (la tira de cada slide filtra por el suyo);
+   * en el mismo slide, una sola, como nacida.
    */
   async listByCard(tx: Tx, cardId: string): Promise<AssetWithOrigin[]> {
     const origin = {
@@ -139,11 +141,12 @@ export class AssetsRepository {
       .innerJoin(assets, eq(assets.id, cardAssetPicks.assetId))
       .leftJoin(imageGenerations, eq(imageGenerations.assetId, assets.id))
       .where(eq(cardAssetPicks.cardId, cardId));
-    const bornIds = new Set(born.map((r) => r.asset.id));
+    const slideOf = (id: string | null) => id ?? FIRST_SLIDE_ID;
+    const bornSlide = new Map(born.map((r) => [r.asset.id, slideOf(r.asset.slideId)]));
     const rows: AssetWithOrigin[] = [
       ...born,
       ...picked
-        .filter((r) => !bornIds.has(r.asset.id))
+        .filter((r) => bornSlide.get(r.asset.id) !== slideOf(r.pickSlideId))
         .map(({ pickSlideId, pickedAt, ...r }) => ({
           ...r,
           asset: { ...r.asset, slideId: pickSlideId, createdAt: pickedAt },
