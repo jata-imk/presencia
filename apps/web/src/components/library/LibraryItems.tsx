@@ -25,14 +25,18 @@ import {
 // de la ventana: con el sidebar abierto o el drawer de programar, el espacio
 // real es otro.
 //
-// En este PR una imagen se abre en el visor. El panel de detalle, la casilla
-// de selección y eliminar llegan en el siguiente.
+// Selección múltiple (PR 4): cada imagen tiene su casilla. Mientras hay
+// alguna marcada, tocar una imagen la marca en vez de abrirla (lore doc §3).
 
 export interface LibraryItemActions {
   onOpen: (asset: LibraryAssetDto) => void;
   onCopyPrompt: (asset: LibraryAssetDto) => void;
   onDownload: (asset: LibraryAssetDto) => void;
+  onToggleSelect: (asset: LibraryAssetDto) => void;
 }
+
+/** Lo marcado. Un `Set` nuevo en cada cambio: así `memo` ve que cambió. */
+export type LibrarySelection = ReadonlySet<string>;
 
 interface ItemsProps extends LibraryItemActions {
   groups: LibraryGroup[];
@@ -48,6 +52,7 @@ interface ItemsProps extends LibraryItemActions {
   match: CardMatch;
   timeZone: string;
   now: Date;
+  selection: LibrarySelection;
 }
 
 const DOT: Record<LibraryStatusKind, string> = {
@@ -113,13 +118,61 @@ function FittedImage({
 const ACTION_CLASS =
   "flex size-7 items-center justify-center rounded-md bg-lib-action text-brand shadow-md transition-colors hover:bg-card";
 
+/**
+ * La casilla de selección. Redonda en la cuadrícula (24 px), cuadrada en la
+ * lista (18 px). Marcada: fondo primario y palomita.
+ */
+function SelectBox({
+  asset,
+  selected,
+  shape,
+  className,
+  onToggle,
+}: {
+  asset: LibraryAssetDto;
+  selected: boolean;
+  shape: "round" | "square";
+  className: string;
+  onToggle: (asset: LibraryAssetDto) => void;
+}) {
+  const box = shape === "round" ? "size-6 rounded-full" : "size-[18px] rounded-[5px]";
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={selected}
+      aria-label={`Seleccionar ${assetName(asset)}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle(asset);
+      }}
+      className={`flex items-center justify-center border transition-colors ${box} ${
+        selected
+          ? "border-primary bg-primary text-primary-fg"
+          : "border-lib-select bg-lib-action text-transparent hover:border-accent"
+      } ${className}`}
+    >
+      <Check size={shape === "round" ? 14 : 12} strokeWidth={3} aria-hidden />
+    </button>
+  );
+}
+
 function Tile({
   asset,
   match,
+  selected,
+  selecting,
   onOpen,
   onCopyPrompt,
   onDownload,
-}: { asset: LibraryAssetDto; match: CardMatch } & LibraryItemActions) {
+  onToggleSelect,
+}: {
+  asset: LibraryAssetDto;
+  match: CardMatch;
+  selected: boolean;
+  /** Hay alguna marcada: todas muestran su casilla y tocar marca. */
+  selecting: boolean;
+} & LibraryItemActions) {
   const status = statusOf(asset, match);
   const name = assetName(asset);
   return (
@@ -127,11 +180,19 @@ function Tile({
       <div className="relative">
         <button
           type="button"
-          onClick={() => onOpen(asset)}
-          aria-label={`Abrir ${name}`}
-          className="relative block aspect-square w-full rounded-lg bg-lib-tile transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line-focus"
+          onClick={() => (selecting ? onToggleSelect(asset) : onOpen(asset))}
+          aria-label={
+            selecting ? `${selected ? "Quitar" : "Seleccionar"} ${name}` : `Abrir ${name}`
+          }
+          className={`relative block aspect-square w-full rounded-lg transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-line-focus ${
+            selected ? "bg-tint-plum ring-2 ring-accent" : "bg-lib-tile"
+          }`}
         >
-          <span className="absolute inset-2 flex items-center justify-center @lg:inset-3">
+          <span
+            className={`absolute flex items-center justify-center ${
+              selected ? "inset-4 @lg:inset-[22px]" : "inset-2 @lg:inset-3"
+            }`}
+          >
             <FittedImage asset={asset} alt={asset.alt ?? ""} radius="rounded-[6px]" />
           </span>
         </button>
@@ -143,7 +204,15 @@ function Tile({
         {/* Sin cursor (táctil) no hay hover: los botones se quedan sin
             recibir toques, para que un dedo en esa esquina abra la imagen y
             no descargue a ciegas. */}
-        <div className="pointer-events-none absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+        {/* Mientras se selecciona, las acciones de una sola imagen se apagan:
+            tocar es marcar. */}
+        <div
+          className={`pointer-events-none absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity ${
+            selecting
+              ? ""
+              : "group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+          }`}
+        >
           <Tooltip label="Abrir">
             <button
               type="button"
@@ -179,6 +248,19 @@ function Tile({
             </Tooltip>
           )}
         </div>
+        {/* La casilla: al pasar el cursor, en todas mientras hay selección, y
+            siempre en pantallas sin cursor (sin hover no habría cómo empezar). */}
+        <SelectBox
+          asset={asset}
+          selected={selected}
+          shape="round"
+          onToggle={onToggleSelect}
+          className={`absolute top-2 left-2 shadow-md ${
+            selecting
+              ? ""
+              : "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+          }`}
+        />
         {asset.state === "chosen" && (
           <span className="pointer-events-none absolute bottom-2 left-2 flex h-[22px] items-center gap-1 rounded-full bg-lib-chosen px-2 font-display text-xs font-semibold text-lib-chosen-fg">
             <Check size={12} aria-hidden />
@@ -221,8 +303,10 @@ export const LibraryGrid = memo(function LibraryGrid({
   groups,
   hasMore,
   match,
+  selection,
   ...actions
 }: Omit<ItemsProps, "timeZone" | "now">) {
+  const selecting = selection.size > 0;
   return (
     <>
       {groups.map((group, index) => (
@@ -230,7 +314,14 @@ export const LibraryGrid = memo(function LibraryGrid({
           <GroupHeading group={group} counted={!hasMore || index < groups.length - 1} />
           <ul className={GRID_CLASS}>
             {group.items.map((asset) => (
-              <Tile key={asset.id} asset={asset} match={match} {...actions} />
+              <Tile
+                key={asset.id}
+                asset={asset}
+                match={match}
+                selected={selection.has(asset.id)}
+                selecting={selecting}
+                {...actions}
+              />
             ))}
           </ul>
         </section>
@@ -241,6 +332,9 @@ export const LibraryGrid = memo(function LibraryGrid({
 
 // Las columnas de la lista. En angosto solo miniatura y nombre; lo demás se
 // resume en el segundo renglón del nombre.
+// La casilla va encima de la fila (un botón no puede ir dentro de otro), en
+// el hueco que le deja el padding izquierdo.
+const LIST_PAD = "pr-4 pl-12";
 const LIST_COLS =
   "grid grid-cols-[48px_minmax(0,1fr)] items-center gap-3 @2xl:grid-cols-[40px_minmax(0,1.4fr)_minmax(0,1.2fr)_150px_84px_56px] @4xl:grid-cols-[40px_minmax(0,2fr)_minmax(0,1.6fr)_170px_90px_60px]";
 
@@ -249,11 +343,18 @@ function Row({
   match,
   timeZone,
   now,
+  selected,
+  selecting,
   onOpen,
-}: { asset: LibraryAssetDto; match: CardMatch; timeZone: string; now: Date } & Pick<
-  LibraryItemActions,
-  "onOpen"
->) {
+  onToggleSelect,
+}: {
+  asset: LibraryAssetDto;
+  match: CardMatch;
+  timeZone: string;
+  now: Date;
+  selected: boolean;
+  selecting: boolean;
+} & Pick<LibraryItemActions, "onOpen" | "onToggleSelect">) {
   const status = statusOf(asset, match);
   const card = displayCard(asset, match);
   const network = networkLabel(asset, match);
@@ -261,11 +362,20 @@ function Row({
   const wide = [ORIGIN_LABELS[asset.origin], pickLabel(asset)].filter(Boolean).join(" · ");
   const narrow = [chatLabel(asset), card ? network : null, date].filter(Boolean).join(" · ");
   return (
-    <li className="border-t border-line">
+    <li className={`relative border-t border-line ${selected ? "bg-tint-plum" : ""}`}>
+      <SelectBox
+        asset={asset}
+        selected={selected}
+        shape="square"
+        onToggle={onToggleSelect}
+        className="absolute top-1/2 left-4 z-10 -translate-y-1/2"
+      />
       <button
         type="button"
-        onClick={() => onOpen(asset)}
-        className={`${LIST_COLS} min-h-[60px] w-full px-4 py-2 text-left transition-colors hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none`}
+        onClick={() => (selecting ? onToggleSelect(asset) : onOpen(asset))}
+        className={`${LIST_COLS} ${LIST_PAD} min-h-[60px] w-full py-2 text-left transition-colors focus-visible:outline-none ${
+          selected ? "" : "hover:bg-secondary focus-visible:bg-secondary"
+        }`}
       >
         <span className="relative block size-12 rounded-md bg-lib-tile @2xl:size-10">
           <span className="absolute inset-[3px] flex items-center justify-center">
@@ -310,13 +420,16 @@ export const LibraryList = memo(function LibraryList({
   match,
   timeZone,
   now,
+  selection,
   onOpen,
+  onToggleSelect,
 }: Omit<ItemsProps, "onCopyPrompt" | "onDownload">) {
+  const selecting = selection.size > 0;
   return (
     <div className="overflow-hidden rounded-lg border border-line bg-card">
       <div
         aria-hidden
-        className={`${LIST_COLS} hidden h-10 px-4 font-display text-xs font-semibold text-fg-secondary @2xl:grid`}
+        className={`${LIST_COLS} ${LIST_PAD} hidden h-10 font-display text-xs font-semibold text-fg-secondary @2xl:grid`}
       >
         <span />
         <span>Nombre</span>
@@ -345,7 +458,10 @@ export const LibraryList = memo(function LibraryList({
                 match={match}
                 timeZone={timeZone}
                 now={now}
+                selected={selection.has(asset.id)}
+                selecting={selecting}
                 onOpen={onOpen}
+                onToggleSelect={onToggleSelect}
               />
             ))}
           </ul>

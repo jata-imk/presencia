@@ -181,6 +181,10 @@ export class CardMediaService {
    * Elegir otra de las imágenes de la card: una versión anterior (otra
    * generación, una edición, una subida). Solo imágenes de ESTA card: un id de otra (o de otro usuario,
    * que por RLS no existe) se rechaza igual.
+   *
+   * F12: el asset se lee con `findForUse` (`for key share`) y no con un
+   * `find` suelto. Biblioteca puede estar eliminándolo en ese momento: sin el
+   * lock, la card se quedaba apuntando a un asset que ya no existe.
    */
   async selectImage(
     userId: string,
@@ -190,7 +194,7 @@ export class CardMediaService {
     slideId?: string,
   ): Promise<PublicationCardDto> {
     return this.dbService.runWithTenant(userId, async (tx) => {
-      const asset = await this.assets.find(tx, assetId);
+      const asset = await this.assets.findForUse(tx, assetId);
       if (!asset || asset.cardId !== cardId) {
         throw new NotFoundException("Esa imagen no es de esta publicación.");
       }
@@ -380,6 +384,8 @@ export class CardMediaService {
     // imagen (`croppedFrom`): volver a una proporción anterior regresa a la
     // original en vez de recortar un recorte.
     const replacement = new Map<string, string>();
+    // De qué original sale cada reemplazo: se vuelve a bloquear al final.
+    const rootOf = new Map<string, string>();
     // El recorte es versión del MISMO slide que la imagen que reemplaza.
     const slideOf = new Map(content.slides.flatMap((s) => (s.assetId ? [[s.assetId, s.id]] : [])));
     const newAssets: Awaited<ReturnType<AssetsService["storeImage"]>>[] = [];
@@ -401,7 +407,10 @@ export class CardMediaService {
       const cropped = await fitToAspect(bytes, aspectRatio);
       if (cropped === bytes) {
         // La original ya está en la proporción: vuelve ella, sin copia.
-        if (root.id !== assetId) replacement.set(assetId, root.id);
+        if (root.id !== assetId) {
+          replacement.set(assetId, root.id);
+          rootOf.set(assetId, root.id);
+        }
         continue;
       }
       const meta = root.metadata as AssetMetadata;
@@ -422,9 +431,23 @@ export class CardMediaService {
       });
       newAssets.push(stored);
       replacement.set(assetId, stored.id);
+      rootOf.set(assetId, root.id);
     }
 
     return this.dbService.runWithTenant(userId, async (tx: Tx) => {
+      // F12: cada original de la que sale un reemplazo, bloqueada contra un
+      // borrado de Biblioteca (ver selectImage). Si se eliminó mientras se
+      // recortaba, sus reemplazos no entran: ni ella vuelve, ni un recorte
+      // huérfano de una original que ya no existe. Antes que la card, en el
+      // mismo orden que el borrado (imagen, después card): al revés, los dos
+      // se podían esperar uno al otro.
+      const gone = new Set<string>();
+      for (const rootId of [...new Set(rootOf.values())].sort()) {
+        if (!(await this.assets.findForUse(tx, rootId))) gone.add(rootId);
+      }
+      for (const [assetId, rootId] of rootOf) {
+        if (gone.has(rootId)) replacement.delete(assetId);
+      }
       const current = await this.repo.lockById(tx, cardId);
       if (!current) throw new NotFoundException("No encontramos esa publicación.");
       // Otra vez con la card bloqueada: un "Generar" pudo arrancar mientras se
@@ -434,7 +457,11 @@ export class CardMediaService {
           "Hay una imagen generándose. Espera a que termine para recortar.",
         );
       }
-      for (const stored of newAssets) await this.assets.record(tx, stored);
+      for (const stored of newAssets) {
+        const croppedFrom = (stored.metadata as AssetMetadata | undefined)?.croppedFrom;
+        if (croppedFrom && gone.has(croppedFrom)) continue;
+        await this.assets.record(tx, stored);
+      }
       const now = current.content as CardContent;
       if (now.archetype === "video_script" || !now.slides) {
         throw new ConflictException("El carrusel cambió. Vuelve a intentarlo.");

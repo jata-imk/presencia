@@ -137,25 +137,33 @@ Biblioteca muestra solo la original y cuenta el uso del recorte como suyo.
 
 ### El panel de detalle
 
-Se abre a la derecha y empuja la cuadrícula (pantalla completa en móvil).
-Muestra:
+Se abre a la derecha y empuja la cuadrícula; en tablet va encima, con velo, y
+en móvil ocupa la pantalla con "Volver". Muestra:
 
 - La imagen, con **Descargar** y **Eliminar**.
-- **"Abrir en el chat"** y **"Ver card"**, si nació en uno.
+- **"Abrir en el chat"** y **"Ver card"**, si nació en uno. "Abrir en el chat"
+  lleva a la conversación; "Ver card" lleva al mismo chat con el panel de
+  publicación ya abierto en esa card, que es donde se edita.
 - Origen, y si está "Elegida para su card" o es una "Variante descartada".
 - **Prompt**, con "Copiar". Es lo que pediste tú, no la instrucción interna que
   arma Presencia con tu estilo y tu nicho. Si la imagen salió de editar otra,
   dice "Instrucción de edición".
 - **Texto alternativo.** Solo lectura aquí; se edita desde la card.
-- **Historial de versiones:** la original y sus ediciones, con la actual
-  marcada. Se puede saltar de una a otra.
+- **Historial de versiones:** la original y sus ediciones (también las
+  ediciones de una edición), con la actual marcada. Se puede saltar de una a
+  otra. No son todas las variantes de la card: las que salieron de otro
+  "Generar" son imágenes aparte, cada una con su historial.
 - Fecha, dimensiones, peso y formato.
 
 ### Selección múltiple
 
 Al marcar una imagen, todas muestran su casilla y aparece una barra flotante
 con **Descargar** y **Eliminar**. Mientras hay selección, tocar una imagen la
-marca en vez de abrirla.
+marca en vez de abrirla. Esc la quita, y también buscar o cambiar un filtro:
+eliminar algo que ya no está en pantalla sorprendería.
+
+"Descargar" baja cada imagen por separado, sin zip: el navegador pide permiso
+la primera vez que una página descarga varias, y con eso basta.
 
 ### Subir
 
@@ -281,12 +289,12 @@ tu Biblioteca y no podrás recuperarla."
 
 Lo que pasa depende de dónde esté puesta la imagen:
 
-| La imagen está en…                        | Qué pasa                                                                                                                                                       |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ninguna card                              | Se elimina                                                                                                                                                     |
-| Un borrador (o una publicación que falló) | Se elimina y esa card se queda sin imagen. La confirmación dice cuántos borradores la pierden                                                                  |
-| Una publicación **programada**            | **No se elimina.** "Esta imagen está en una publicación programada de Instagram. Cancela la programación para eliminarla."                                     |
-| Una publicación ya publicada              | Se elimina. La publicación en la red no cambia; dentro de Presencia (Calendario, Analíticas) su miniatura pasa al ícono de su formato. La confirmación lo dice |
+| La imagen está en…                        | Qué pasa                                                                                                                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ninguna card                              | Se elimina                                                                                                                                                                |
+| Un borrador (o una publicación que falló) | Se elimina y esa card se queda sin imagen. La confirmación dice cuántos borradores la pierden                                                                             |
+| Una publicación **programada**            | **No se elimina.** "Esta imagen está en una publicación programada de Instagram. Cancela la programación para eliminarla." El diálogo lo dice antes, sin ofrecer eliminar |
+| Una publicación ya publicada              | Se elimina. La publicación en la red no cambia; dentro de Presencia (Calendario, Analíticas) su miniatura pasa al ícono de su formato. La confirmación lo dice            |
 
 **Por qué se bloquea la programada.** El diseño original avisaba "la card se
 quedará sin imagen" y dejaba seguir. Eso sería mentira: al programar, la imagen
@@ -297,7 +305,12 @@ se publique (el aviso tendría que decir "igual va a salir"). Bloquear y decir
 qué hacer es lo único que no sorprende.
 
 En una selección múltiple, las bloqueadas se quedan y las demás se eliminan;
-el resultado dice cuáles y por qué.
+el diálogo avisa cuántas se quedan antes de confirmar, y el resultado dice
+cuántas se fueron y por qué se quedaron las otras.
+
+Tampoco se elimina una imagen que se está editando en ese momento: la edición
+la necesita hasta que termina. "Se está editando esta imagen. Espera a que
+termine para eliminarla."
 
 ---
 

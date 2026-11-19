@@ -109,6 +109,30 @@ export function placeImage<C extends CardContent>(
 }
 
 /**
+ * F12: quita estas imágenes de la card (se eliminaron de Biblioteca). En un
+ * carrusel el slide se queda en su lugar, con su prompt y sin imagen: el
+ * orden que armó el creator no cambia, y el slide se puede volver a llenar.
+ * Devuelve el mismo objeto si la card no tenía ninguna.
+ */
+export function removeImages<C extends CardContent>(content: C, assetIds: readonly string[]): C {
+  if (content.archetype === "video_script") return content;
+  const gone = new Set(assetIds);
+  if (!content.assetIds.some((id) => gone.has(id))) return content;
+  if (!content.slides) {
+    return { ...content, assetIds: content.assetIds.filter((id) => !gone.has(id)) };
+  }
+  return withSlides(
+    content,
+    content.slides.map((slide) => {
+      if (!slide.assetId || !gone.has(slide.assetId)) return slide;
+      const rest = { ...slide };
+      delete rest.assetId;
+      return rest;
+    }),
+  );
+}
+
+/**
  * Lo que es imagen en la card: `assetIds` y, si es carrusel, `slides`. Lo que
  * el texto no toca: editar, restaurar una versión o reescribir con IA lo
  * copian tal cual de la card viva.

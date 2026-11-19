@@ -1,31 +1,47 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import {
+  IMAGE_JOB_STALE_MS,
   LIBRARY_PAGE_SIZE,
   LIBRARY_SUMMARY_THUMBS,
   LIBRARY_WEEK_DAYS,
+  cardContentSchema,
+  removeImages,
+  type CardContent,
+  type LibraryAssetDetailDto,
   type LibraryAssetDto,
   type LibraryCardRef,
+  type LibraryDeleteBlock,
+  type LibraryDeleteResultDto,
   type LibraryPageDto,
   type LibraryQuery,
   type LibraryState,
   type LibrarySummaryDto,
+  type LibraryVersionDto,
 } from "@presencia/shared";
 import { AssetsService } from "../assets/assets.service.js";
 import { normalizeImage } from "../assets/image-normalize.js";
-import { DbService } from "../db/db.service.js";
+import {
+  CardsRepository,
+  EDITABLE_CARD_STATUSES,
+  type CardRow,
+} from "../cards/cards.repository.js";
+import { DbService, type Tx } from "../db/db.service.js";
 import {
   LibraryRepository,
   shortcutFilters,
   type LibraryCursor,
   type LibraryFilters,
   type LibraryRow,
+  type LineageRow,
 } from "./library.repository.js";
 
 // Biblioteca (F12, `presencia-biblioteca.md`): el listado de todas las
-// imágenes del creator y la subida directa, sin card. Lo que cambia una card
+// imágenes del creator, su detalle con el historial de versiones, la subida
+// directa sin card y eliminar. Lo que cambia una card por gusto del creator
 // (elegir una imagen, generar) sigue en CardMediaService e
-// ImageGenerationService; esto solo lee y sube.
+// ImageGenerationService; lo único que Biblioteca le hace a una card es
+// quitarle una imagen que se eliminó.
 
 /**
  * La fecha del cursor tiene que ser lo que Postgres escribe con `::text`
@@ -99,6 +115,18 @@ export function toLibraryDto(row: LibraryRow): LibraryAssetDto {
   };
 }
 
+export function toVersionDto(row: LineageRow): LibraryVersionDto {
+  const edit = row.gen_kind === "edit";
+  return {
+    assetId: row.id,
+    kind: edit ? "edit" : "original",
+    instruction: edit ? textOrNull(row.instruction) : null,
+    width: Number(row.metadata.width ?? 0),
+    height: Number(row.metadata.height ?? 0),
+    createdAt: row.created_iso,
+  };
+}
+
 function filtersFrom(query: LibraryQuery): LibraryFilters {
   return {
     ...(query.q ? { q: query.q } : {}),
@@ -116,6 +144,7 @@ export class LibraryService {
     @Inject(DbService) private readonly dbService: DbService,
     @Inject(LibraryRepository) private readonly repo: LibraryRepository,
     @Inject(AssetsService) private readonly assets: AssetsService,
+    @Inject(CardsRepository) private readonly cards: CardsRepository,
   ) {}
 
   async list(userId: string, query: LibraryQuery): Promise<LibraryPageDto> {
@@ -149,6 +178,97 @@ export class LibraryService {
       uploaded: { count: row.uploaded, assetIds: row.uploaded_ids },
       published: { count: row.published, assetIds: row.published_ids },
     };
+  }
+
+  /**
+   * El panel de detalle: la imagen y su historial de versiones. `null` si no
+   * existe, no es suya (RLS) o es un recorte.
+   */
+  async detail(userId: string, id: string): Promise<LibraryAssetDetailDto | null> {
+    return this.dbService.runWithTenant(userId, async (tx) => {
+      const row = await this.repo.findOne(tx, id);
+      if (!row) return null;
+      const versions = await this.repo.lineage(tx, id);
+      return { ...toLibraryDto(row), versions: versions.map(toVersionDto) };
+    });
+  }
+
+  /**
+   * Eliminar (lore doc §5, decisión 5 de F12). Cada imagen en su propia
+   * transacción: una bloqueada no detiene a las demás, y dos borrados
+   * múltiples a la vez no se esperan en orden cruzado.
+   *
+   * - En un borrador (o una que falló) se quita de la card; en un carrusel el
+   *   slide se queda sin imagen. El cambio avisa por SSE como cualquier otro.
+   * - En una publicada, la card no se toca: es el registro de lo que salió.
+   *   Su miniatura cae al ícono porque el archivo ya no responde.
+   * - En una programada no se elimina: sus bytes ya los tiene el proveedor y
+   *   el post saldría con ella de todos modos.
+   * - Con una edición en curso que parte de ella, tampoco: la edición la
+   *   necesita hasta que termina.
+   *
+   * Los recortes de carrusel se van con su original. Los archivos de R2 se
+   * borran después del commit, sin hacer fallar nada.
+   */
+  async remove(userId: string, ids: readonly string[]): Promise<LibraryDeleteResultDto> {
+    const result: LibraryDeleteResultDto = { deleted: [], blocked: [] };
+    for (const id of new Set(ids)) {
+      const outcome = await this.dbService.runWithTenant(userId, (tx) => this.removeOne(tx, id));
+      if (outcome.blocked) {
+        result.blocked.push(outcome.blocked);
+        continue;
+      }
+      result.deleted.push(id);
+      await this.assets.deleteObjects(outcome.storageKeys);
+    }
+    return result;
+  }
+
+  private async removeOne(
+    tx: Tx,
+    id: string,
+  ): Promise<
+    | { blocked: LibraryDeleteBlock; storageKeys?: never }
+    | { blocked?: never; storageKeys: string[] }
+  > {
+    // Primero la imagen, bloqueada: lo que se lea después ya incluye lo que
+    // un "elegir esta imagen" de otra pestaña alcanzó a escribir.
+    const rows = await this.assets.lockForDelete(tx, id);
+    const root = rows.find((row) => row.id === id);
+    // Ya no existe, no es suya o es un recorte: no hay nada que eliminar.
+    if (!root || (root.metadata as { croppedFrom?: string }).croppedFrom) {
+      return { storageKeys: [] };
+    }
+    const assetIds = rows.map((row) => row.id);
+
+    const staleBefore = new Date(Date.now() - IMAGE_JOB_STALE_MS);
+    if (await this.assets.isBeingEdited(tx, assetIds, staleBefore)) {
+      return { blocked: { id, reason: "editing" } };
+    }
+
+    // Después las cards, bloqueadas en orden de id y leídas ya bloqueadas.
+    const cards: CardRow[] = [];
+    for (const cardId of await this.repo.cardsUsing(tx, assetIds)) {
+      const card = await this.cards.lockById(tx, cardId);
+      if (card) cards.push(card);
+    }
+    const scheduled = cards.find((card) => card.status === "scheduled");
+    if (scheduled) return { blocked: { id, reason: "scheduled", network: scheduled.network } };
+
+    for (const card of cards) {
+      if (!EDITABLE_CARD_STATUSES.includes(card.status)) continue;
+      const content = card.content as CardContent;
+      const next = removeImages(content, assetIds);
+      if (next === content) continue;
+      const updated = await this.cards.updateContentIfEditable(
+        tx,
+        card.id,
+        cardContentSchema.parse(next),
+      );
+      if (!updated) throw new Error("La card bloqueada dejó de ser editable");
+    }
+    await this.assets.deleteRows(tx, assetIds);
+    return { storageKeys: rows.map((row) => row.storageKey) };
   }
 
   /**

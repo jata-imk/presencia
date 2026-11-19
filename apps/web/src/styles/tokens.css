@@ -398,6 +398,9 @@
   --lib-chosen-fg: #ffffff;
   --lib-drop-veil: color-mix(in srgb, var(--bg-app) 60%, transparent);
   --lib-drop-bg: color-mix(in srgb, var(--bg-card) 88%, transparent);
+  /* PR 4: el borde de la casilla de selección sin marcar. Va sobre la
+     imagen, igual en los dos temas. */
+  --lib-select-border: color-mix(in srgb, var(--color-plum-500) 35%, transparent);
 
   /* Configuración (F9.7, mock de Claude Design).
      Foreground de estado para TEXTO: --status-success/-warning/-error/-info
@@ -666,6 +669,7 @@
   --color-lib-chosen-fg: var(--lib-chosen-fg);
   --color-lib-veil: var(--lib-drop-veil);
   --color-lib-drop: var(--lib-drop-bg);
+  --color-lib-select: var(--lib-select-border);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);

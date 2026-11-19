@@ -107,6 +107,8 @@ async function createGeneration(
     prompt?: string;
     instruction?: string | null;
     parentAssetId?: string | null;
+    status?: "pending" | "succeeded";
+    createdAt?: Date;
   } = {},
 ): Promise<void> {
   await dbService.runWithTenant(owner, (tx) =>
@@ -122,8 +124,9 @@ async function createGeneration(
       instruction: input.instruction ?? null,
       parentAssetId: input.parentAssetId ?? null,
       aspectRatio: "4:5",
-      status: "succeeded",
-      assetId,
+      status: input.status ?? "succeeded",
+      assetId: input.status === "pending" ? null : assetId,
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
     }),
   );
 }
@@ -142,6 +145,7 @@ describe("LibraryService", { timeout: 30_000 }, () => {
     const { AssetsService } = await import("../assets/assets.service.js");
     const { LibraryRepository } = await import("./library.repository.js");
     const { LibraryService } = await import("./library.service.js");
+    const { CardsRepository } = await import("../cards/cards.repository.js");
 
     storageDir = await mkdtemp(path.join(tmpdir(), "presencia-library-"));
     dbService = new DbService();
@@ -149,6 +153,7 @@ describe("LibraryService", { timeout: 30_000 }, () => {
       dbService,
       new LibraryRepository(),
       new AssetsService(dbService, new AssetsRepository(), new LocalAssetStorage(storageDir)),
+      new CardsRepository(),
     );
 
     const [a, b] = await dbService.db
@@ -616,6 +621,304 @@ describe("LibraryService", { timeout: 30_000 }, () => {
     await expect(
       library.upload(userA, new TextEncoder().encode("no soy una imagen")),
     ).rejects.toBeInstanceOf(InvalidImageError);
+  });
+
+  // ── PR 4: detalle con historial de versiones ─────────────────────────
+
+  async function cardContent(owner: string, cardId: string): Promise<CardContent> {
+    return dbService.runWithTenant(owner, async (tx) => {
+      const [row] = await tx
+        .select({ content: publicationCards.content })
+        .from(publicationCards)
+        .where(eq(publicationCards.id, cardId));
+      if (!row) throw new Error("No está la card");
+      return row.content as CardContent;
+    });
+  }
+
+  async function assetExists(owner: string, id: string): Promise<boolean> {
+    return dbService.runWithTenant(owner, async (tx) => {
+      const rows = await tx.select({ id: assets.id }).from(assets).where(eq(assets.id, id));
+      return rows.length > 0;
+    });
+  }
+
+  const cropOf = (original: string) => ({ croppedFrom: original, width: 1080, height: 1080 });
+
+  it("el detalle trae la original y todas sus ediciones, desde cualquier versión", async () => {
+    const owner = await freshUser();
+    try {
+      const v1 = await createAsset(owner, { createdAt: at(1) });
+      await createGeneration(owner, v1, { description: "café en la barra" });
+      const v2 = await createAsset(owner, { createdAt: at(2) });
+      await createGeneration(owner, v2, {
+        kind: "edit",
+        instruction: "Más cálida",
+        parentAssetId: v1,
+      });
+      const v3 = await createAsset(owner, { createdAt: at(3) });
+      await createGeneration(owner, v3, {
+        kind: "edit",
+        instruction: "Sin taza",
+        parentAssetId: v2,
+      });
+      // Una rama: otra edición de la original.
+      const rama = await createAsset(owner, { createdAt: at(4) });
+      await createGeneration(owner, rama, {
+        kind: "edit",
+        instruction: "Blanco y negro",
+        parentAssetId: v1,
+      });
+      // Otra imagen cualquiera no entra.
+      await createAsset(owner, { createdAt: at(5) });
+
+      for (const desde of [v1, v2, v3, rama]) {
+        const detail = await library.detail(owner, desde);
+        expect(detail?.id).toBe(desde);
+        expect(detail?.versions.map((v) => v.assetId)).toEqual([v1, v2, v3, rama]);
+      }
+      const detail = await library.detail(owner, v3);
+      expect(detail?.versions.map((v) => [v.kind, v.instruction])).toEqual([
+        ["original", null],
+        ["edit", "Más cálida"],
+        ["edit", "Sin taza"],
+        ["edit", "Blanco y negro"],
+      ]);
+      expect(detail?.versions[0]).toMatchObject({ width: 1080, height: 1350 });
+    } finally {
+      await dropUser(owner);
+    }
+  });
+
+  it("el historial pasa por los recortes sin mostrarlos", async () => {
+    const owner = await freshUser();
+    try {
+      const original = await createAsset(owner, { createdAt: at(1) });
+      const recorte = await createAsset(owner, { createdAt: at(2), metadata: cropOf(original) });
+      // En un carrusel se edita la que se ve: el recorte.
+      const editada = await createAsset(owner, { createdAt: at(3) });
+      await createGeneration(owner, editada, {
+        kind: "edit",
+        instruction: "Más luz",
+        parentAssetId: recorte,
+      });
+
+      for (const desde of [original, editada]) {
+        const detail = await library.detail(owner, desde);
+        expect(detail?.versions.map((v) => v.assetId)).toEqual([original, editada]);
+      }
+      // Un recorte no tiene detalle propio.
+      expect(await library.detail(owner, recorte)).toBeNull();
+    } finally {
+      await dropUser(owner);
+    }
+  });
+
+  it("una sola imagen tiene historial de una; si se borró su padre, no se inventa la original", async () => {
+    const owner = await freshUser();
+    try {
+      const sola = await createAsset(owner, { source: "uploaded" });
+      expect((await library.detail(owner, sola))?.versions).toHaveLength(1);
+
+      const padre = await createAsset(owner, { createdAt: at(1) });
+      const hija = await createAsset(owner, { createdAt: at(2) });
+      await createGeneration(owner, hija, {
+        kind: "edit",
+        instruction: "Más fría",
+        parentAssetId: padre,
+      });
+      expect((await library.remove(owner, [padre])).deleted).toEqual([padre]);
+      const detail = await library.detail(owner, hija);
+      expect(detail?.versions).toEqual([
+        expect.objectContaining({ assetId: hija, kind: "edit", instruction: "Más fría" }),
+      ]);
+    } finally {
+      await dropUser(owner);
+    }
+  });
+
+  it("el detalle de otro usuario no existe", async () => {
+    const ajena = await createAsset(userB);
+    expect(await library.detail(userA, ajena)).toBeNull();
+    expect(await library.detail(userB, ajena)).not.toBeNull();
+  });
+
+  // ── PR 4: eliminar ────────────────────────────────────────────────────
+
+  it("elimina una imagen que no está en ninguna card, con su archivo", async () => {
+    const owner = await freshUser();
+    try {
+      const dto = await library.upload(owner, solidPng(32, 32, [51, 102, 170]), "borrar.png");
+      const file = path.join(storageDir, owner, `${dto.id}.png`);
+      expect(existsSync(file)).toBe(true);
+      expect(await library.remove(owner, [dto.id])).toEqual({ deleted: [dto.id], blocked: [] });
+      expect(await assetExists(owner, dto.id)).toBe(false);
+      expect(existsSync(file)).toBe(false);
+    } finally {
+      await dropUser(owner);
+    }
+  });
+
+  it("en un borrador se quita de la card; en una que falló también", async () => {
+    const owner = await freshUser();
+    try {
+      const imagen = await createAsset(owner);
+      const otra = await createAsset(owner);
+      const borrador = await createCard(owner, [imagen]);
+      const fallida = await createCard(owner, [imagen], "failed");
+      const intacta = await createCard(owner, [otra]);
+
+      expect((await library.remove(owner, [imagen])).deleted).toEqual([imagen]);
+      expect((await cardContent(owner, borrador)).assetIds).toEqual([]);
+      expect((await cardContent(owner, fallida)).assetIds).toEqual([]);
+      expect((await cardContent(owner, intacta)).assetIds).toEqual([otra]);
+      expect(await assetExists(owner, imagen)).toBe(false);
+    } finally {
+      await dropUser(owner);
+    }
+  });
+
+  it("en un carrusel el slide se queda sin imagen, y el recorte se va con su original", async () => {
+    const owner = await freshUser();
+    try {
+      const original = await createAsset(owner);
+      const recorte = await createAsset(owner, { metadata: cropOf(original) });
+      const otra = await createAsset(owner);
+      const [s1, s2] = [randomUUID(), randomUUID()];
+      const cardId = await createCard(owner, []);
+      await dbService.runWithTenant(owner, (tx) =>
+        tx
+          .update(publicationCards)
+          .set({
+            content: {
+              ...visual([recorte, otra]),
+              slides: [
+                { id: s1, imagePrompt: "portada", assetId: recorte },
+                { id: s2, assetId: otra },
+              ],
+            },
+          })
+          .where(eq(publicationCards.id, cardId)),
+      );
+
+      expect((await library.remove(owner, [original])).deleted).toEqual([original]);
+      const content = await cardContent(owner, cardId);
+      expect(content.assetIds).toEqual([otra]);
+      expect(content).toMatchObject({
+        slides: [
+          { id: s1, imagePrompt: "portada" },
+          { id: s2, assetId: otra },
+        ],
+      });
+      expect(await assetExists(owner, original)).toBe(false);
+      expect(await assetExists(owner, recorte)).toBe(false);
+    } finally {
+      await dropUser(owner);
+    }
+  });
+
+  it("en una publicada se elimina sin tocar la card", async () => {
+    const owner = await freshUser();
+    try {
+      const imagen = await createAsset(owner);
+      const publicada = await createCard(owner, [imagen], "published");
+      expect((await library.remove(owner, [imagen])).deleted).toEqual([imagen]);
+      expect((await cardContent(owner, publicada)).assetIds).toEqual([imagen]);
+      expect(await assetExists(owner, imagen)).toBe(false);
+    } finally {
+      await dropUser(owner);
+    }
+  });
+
+  it("en una programada no se elimina, y nada cambia", async () => {
+    const owner = await freshUser();
+    try {
+      const imagen = await createAsset(owner);
+      const borrador = await createCard(owner, [imagen]);
+      await createCard(owner, [imagen], "scheduled", "linkedin");
+      expect(await library.remove(owner, [imagen])).toEqual({
+        deleted: [],
+        blocked: [{ id: imagen, reason: "scheduled", network: "linkedin" }],
+      });
+      expect(await assetExists(owner, imagen)).toBe(true);
+      // El borrador tampoco la perdió: no se elimina a medias.
+      expect((await cardContent(owner, borrador)).assetIds).toEqual([imagen]);
+    } finally {
+      await dropUser(owner);
+    }
+  });
+
+  it("un recorte en una programada también bloquea a su original", async () => {
+    const owner = await freshUser();
+    try {
+      const original = await createAsset(owner);
+      const recorte = await createAsset(owner, { metadata: cropOf(original) });
+      await createCard(owner, [recorte], "scheduled");
+      const result = await library.remove(owner, [original]);
+      expect(result.blocked.map((b) => b.reason)).toEqual(["scheduled"]);
+      expect(await assetExists(owner, recorte)).toBe(true);
+    } finally {
+      await dropUser(owner);
+    }
+  });
+
+  it("con una edición en curso no se elimina; una que murió hace rato no bloquea", async () => {
+    const owner = await freshUser();
+    try {
+      const imagen = await createAsset(owner);
+      await createGeneration(owner, imagen, {
+        kind: "edit",
+        instruction: "Más cálida",
+        parentAssetId: imagen,
+        status: "pending",
+      });
+      expect((await library.remove(owner, [imagen])).blocked).toEqual([
+        { id: imagen, reason: "editing" },
+      ]);
+
+      const vieja = await createAsset(owner);
+      await createGeneration(owner, vieja, {
+        kind: "edit",
+        instruction: "Más fría",
+        parentAssetId: vieja,
+        status: "pending",
+        createdAt: new Date(Date.now() - 60 * 60_000),
+      });
+      expect((await library.remove(owner, [vieja])).deleted).toEqual([vieja]);
+    } finally {
+      await dropUser(owner);
+    }
+  });
+
+  it("varias a la vez: las bloqueadas se quedan y las demás se eliminan", async () => {
+    const owner = await freshUser();
+    try {
+      const a = await createAsset(owner);
+      const b = await createAsset(owner);
+      const c = await createAsset(owner);
+      await createCard(owner, [b], "scheduled", "facebook");
+      const result = await library.remove(owner, [a, b, c, a]);
+      expect(result.deleted).toEqual([a, c]);
+      expect(result.blocked).toEqual([{ id: b, reason: "scheduled", network: "facebook" }]);
+    } finally {
+      await dropUser(owner);
+    }
+  });
+
+  it("no elimina lo de otro usuario, ni un recorte suelto", async () => {
+    const ajena = await createAsset(userB);
+    await library.remove(userA, [ajena]);
+    expect(await assetExists(userB, ajena)).toBe(true);
+
+    const owner = await freshUser();
+    try {
+      const original = await createAsset(owner);
+      const recorte = await createAsset(owner, { metadata: cropOf(original) });
+      await library.remove(owner, [recorte]);
+      expect(await assetExists(owner, recorte)).toBe(true);
+    } finally {
+      await dropUser(owner);
+    }
   });
 });
 

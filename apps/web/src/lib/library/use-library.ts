@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LibraryAssetDto, LibrarySummaryDto } from "@presencia/shared";
+import type { LibraryAssetDetailDto, LibraryAssetDto, LibrarySummaryDto } from "@presencia/shared";
 import { ApiError } from "../api.js";
 import { UploadError } from "../attachments/upload.js";
-import { fetchLibraryPage, fetchLibrarySummary, uploadToLibrary } from "./library-api.js";
+import {
+  fetchLibraryAsset,
+  fetchLibraryPage,
+  fetchLibrarySummary,
+  uploadToLibrary,
+} from "./library-api.js";
 import { libraryFileProblem, type LibraryUpload } from "./library.js";
 
 // Los recursos de Biblioteca (F12), cada uno con su ciclo de vida (patrón de
@@ -169,6 +174,18 @@ export function useLibraryItems(search: string) {
     });
   }, []);
 
+  /**
+   * Quita de lo cargado las imágenes que se acaban de eliminar, sin volver a
+   * pedir nada (por lo mismo que `prepend`). El cursor sigue sirviendo: es por
+   * fecha e id, no por posición.
+   */
+  const remove = useCallback((ids: readonly string[]) => {
+    const gone = new Set(ids);
+    setLoaded(
+      (prev) => prev && { ...prev, items: prev.items.filter((item) => !gone.has(item.id)) },
+    );
+  }, []);
+
   return {
     items: loaded?.items ?? null,
     loadedAt: loaded?.loadedAt ?? null,
@@ -181,7 +198,37 @@ export function useLibraryItems(search: string) {
     loadMore,
     reload,
     prepend,
+    remove,
   };
+}
+
+/**
+ * El detalle de una imagen (con su historial de versiones). Mientras llega,
+ * `detail` es `null` y el panel pinta lo que ya trae el listado; `failed` si
+ * no se pudo (la imagen se eliminó en otra pestaña, o sin red).
+ */
+export function useLibraryAsset(id: string | null) {
+  const [state, setState] = useState<{
+    id: string;
+    detail: LibraryAssetDetailDto | null;
+    failed: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    const abort = new AbortController();
+    setState({ id, detail: null, failed: false });
+    fetchLibraryAsset(id, abort.signal)
+      .then((detail) => setState({ id, detail, failed: false }))
+      .catch(() => {
+        if (!abort.signal.aborted) setState({ id, detail: null, failed: true });
+      });
+    return () => abort.abort();
+  }, [id]);
+
+  // Lo de otra imagen (la anterior, mientras llega la nueva) no se muestra.
+  const current = state && state.id === id ? state : null;
+  return { detail: current?.detail ?? null, failed: current?.failed ?? false };
 }
 
 /** Cuántas subidas van a la vez: más no acelera y sí satura una conexión lenta. */

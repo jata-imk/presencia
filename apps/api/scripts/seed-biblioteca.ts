@@ -17,7 +17,9 @@ import { solidPng } from "../src/images/fake-image.provider.js";
 //
 // Sin card programada a propósito: una `scheduled` sembrada necesita
 // provider_ref para que el reconciliador no la marque fallida (ver
-// seedCalendar).
+// seedCalendar). Para probar que eliminar una imagen programada se bloquea
+// (F12 PR 4) sirven las de seedCalendar: sus cards visuales programadas
+// llevan imagen de verdad, y también aparecen en Biblioteca.
 
 type Tx = Parameters<Parameters<DbService["runWithTenant"]>[1]>[0];
 
