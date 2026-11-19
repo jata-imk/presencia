@@ -914,7 +914,7 @@ describe("LibraryService", { timeout: 30_000 }, () => {
     try {
       const original = await createAsset(owner);
       const recorte = await createAsset(owner, { metadata: cropOf(original) });
-      await library.remove(owner, [recorte]);
+      expect(await library.remove(owner, [recorte])).toEqual({ deleted: [], blocked: [] });
       expect(await assetExists(owner, recorte)).toBe(true);
     } finally {
       await dropUser(owner);

@@ -108,6 +108,9 @@ export class LibraryController {
     const result = await this.service.remove(user.id, [id]);
     const [blocked] = result.blocked;
     if (blocked) throw new ConflictException(blockedMessage(blocked));
+    // Ni eliminada ni bloqueada: era un recorte de carrusel, que no es una
+    // imagen de Biblioteca.
+    if (result.deleted.length === 0) throw new NotFoundException("No encontramos esa imagen.");
   }
 
   /**

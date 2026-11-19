@@ -212,15 +212,19 @@ export class LibraryService {
    */
   async remove(userId: string, ids: readonly string[]): Promise<LibraryDeleteResultDto> {
     const result: LibraryDeleteResultDto = { deleted: [], blocked: [] };
+    const storageKeys: string[] = [];
     for (const id of new Set(ids)) {
       const outcome = await this.dbService.runWithTenant(userId, (tx) => this.removeOne(tx, id));
-      if (outcome.blocked) {
-        result.blocked.push(outcome.blocked);
-        continue;
+      if (outcome.kind === "blocked") result.blocked.push(outcome.block);
+      if (outcome.kind === "deleted") {
+        result.deleted.push(id);
+        storageKeys.push(...outcome.storageKeys);
       }
-      result.deleted.push(id);
-      await this.assets.deleteObjects(outcome.storageKeys);
     }
+    // Los archivos, todos juntos y al final: cada imagen ya se fue de la base
+    // en su transacción, y esperar a R2 entre una y otra solo alargaba la
+    // respuesta (y el tiempo con locks de las que faltaban).
+    await this.assets.deleteObjects(storageKeys);
     return result;
   }
 
@@ -228,22 +232,24 @@ export class LibraryService {
     tx: Tx,
     id: string,
   ): Promise<
-    | { blocked: LibraryDeleteBlock; storageKeys?: never }
-    | { blocked?: never; storageKeys: string[] }
+    | { kind: "blocked"; block: LibraryDeleteBlock }
+    | { kind: "deleted"; storageKeys: string[] }
+    | { kind: "crop" }
   > {
     // Primero la imagen, bloqueada: lo que se lea después ya incluye lo que
     // un "elegir esta imagen" de otra pestaña alcanzó a escribir.
     const rows = await this.assets.lockForDelete(tx, id);
     const root = rows.find((row) => row.id === id);
-    // Ya no existe, no es suya o es un recorte: no hay nada que eliminar.
-    if (!root || (root.metadata as { croppedFrom?: string }).croppedFrom) {
-      return { storageKeys: [] };
-    }
+    // Ya no existe o no es suya: el resultado que se pidió ya es cierto.
+    if (!root) return { kind: "deleted", storageKeys: [] };
+    // Un recorte no es una imagen de Biblioteca: se va con su original, no
+    // solo. No se cuenta como eliminado (no lo está).
+    if ((root.metadata as { croppedFrom?: string }).croppedFrom) return { kind: "crop" };
     const assetIds = rows.map((row) => row.id);
 
     const staleBefore = new Date(Date.now() - IMAGE_JOB_STALE_MS);
     if (await this.assets.isBeingEdited(tx, assetIds, staleBefore)) {
-      return { blocked: { id, reason: "editing" } };
+      return { kind: "blocked", block: { id, reason: "editing" } };
     }
 
     // Después las cards, bloqueadas en orden de id y leídas ya bloqueadas.
@@ -253,7 +259,9 @@ export class LibraryService {
       if (card) cards.push(card);
     }
     const scheduled = cards.find((card) => card.status === "scheduled");
-    if (scheduled) return { blocked: { id, reason: "scheduled", network: scheduled.network } };
+    if (scheduled) {
+      return { kind: "blocked", block: { id, reason: "scheduled", network: scheduled.network } };
+    }
 
     for (const card of cards) {
       if (!EDITABLE_CARD_STATUSES.includes(card.status)) continue;
@@ -268,7 +276,7 @@ export class LibraryService {
       if (!updated) throw new Error("La card bloqueada dejó de ser editable");
     }
     await this.assets.deleteRows(tx, assetIds);
-    return { storageKeys: rows.map((row) => row.storageKey) };
+    return { kind: "deleted", storageKeys: rows.map((row) => row.storageKey) };
   }
 
   /**

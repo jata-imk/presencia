@@ -137,7 +137,7 @@ export function LibraryPage() {
   const { summary, error: summaryError, reload: reloadSummary } = useLibrarySummary();
   const list = useLibraryItems(search);
   const { reload: reloadItems, loadMore, prepend, remove } = list;
-  const { detail, failed: detailFailed } = useLibraryAsset(openId);
+  const { detail, versions, failed: detailFailed, reload: reloadDetail } = useLibraryAsset(openId);
 
   // Otra búsqueda u otros filtros: lo marcado puede ya no verse, y eliminar
   // algo que no está en pantalla sorprendería.
@@ -221,11 +221,15 @@ export function LibraryPage() {
 
   // Lo que muestra el panel: el detalle si ya llegó (es más fresco); si no,
   // lo que trae el listado. Una versión que no está cargada espera al detalle.
-  const opened = openId
-    ? detail?.id === openId
-      ? detail
-      : (items?.find((item) => item.id === openId) ?? null)
-    : null;
+  // Si el detalle no se pudo traer, no se cae al listado: lo más probable es
+  // que se haya eliminado en otra pestaña, y el panel no puede ofrecer
+  // acciones sobre algo que ya no existe.
+  const opened =
+    openId && !detailFailed
+      ? detail?.id === openId
+        ? detail
+        : (items?.find((item) => item.id === openId) ?? null)
+      : null;
   const selected = useMemo(
     () => (items ?? []).filter((item) => selection.has(item.id)),
     [items, selection],
@@ -246,6 +250,8 @@ export function LibraryPage() {
     }
     const gone = new Set(result.deleted);
     if (openId && gone.has(openId)) setOpenId(null);
+    // Se eliminó otra versión de la imagen abierta: su historial cambió.
+    else if (openId && versions?.some((version) => gone.has(version.assetId))) reloadDetail();
     // Las que no se pudieron quedan marcadas: siguen ahí, y así se ve cuáles.
     setSelection((current) => {
       const left = new Set([...current].filter((id) => !gone.has(id)));
@@ -432,7 +438,7 @@ export function LibraryPage() {
           />
           <LibraryDetail
             asset={opened}
-            versions={detail?.id === openId ? detail.versions : null}
+            versions={versions}
             failed={detailFailed}
             timeZone={timeZone}
             onClose={closeDetail}

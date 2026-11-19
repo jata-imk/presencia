@@ -434,7 +434,10 @@ export class CardMediaService {
       rootOf.set(assetId, root.id);
     }
 
-    return this.dbService.runWithTenant(userId, async (tx: Tx) => {
+    // Recortes que se subieron y no entran (su original se eliminó): sus
+    // bytes se borran después del commit, como los de un borrado.
+    const orphanKeys: string[] = [];
+    const dto = await this.dbService.runWithTenant(userId, async (tx: Tx) => {
       // F12: cada original de la que sale un reemplazo, bloqueada contra un
       // borrado de Biblioteca (ver selectImage). Si se eliminó mientras se
       // recortaba, sus reemplazos no entran: ni ella vuelve, ni un recorte
@@ -459,7 +462,10 @@ export class CardMediaService {
       }
       for (const stored of newAssets) {
         const croppedFrom = (stored.metadata as AssetMetadata | undefined)?.croppedFrom;
-        if (croppedFrom && gone.has(croppedFrom)) continue;
+        if (croppedFrom && gone.has(croppedFrom)) {
+          orphanKeys.push(stored.storageKey);
+          continue;
+        }
         await this.assets.record(tx, stored);
       }
       const now = current.content as CardContent;
@@ -480,6 +486,8 @@ export class CardMediaService {
       if (!updated) throw new ConflictException(NOT_EDITABLE_MESSAGE);
       return toDto(updated);
     });
+    await this.assets.deleteObjects(orphanKeys);
+    return dto;
   }
 
   /**

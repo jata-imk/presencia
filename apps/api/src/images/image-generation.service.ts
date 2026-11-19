@@ -371,6 +371,13 @@ export class ImageGenerationService {
     };
 
     const started = await this.dbService.runWithTenant(userId, async (tx) => {
+      // F12: la imagen que se ajusta, bloqueada contra un borrado de
+      // Biblioteca (`findForUse`, ver CardMediaService.selectImage). Antes que
+      // la card, en el mismo orden que el borrado. Si ya se eliminó, se dice
+      // eso y no un error de llave foránea.
+      if (spec.parentAssetId && !(await this.assets.findForUse(tx, spec.parentAssetId))) {
+        throw new NotFoundException("No encontramos la imagen que quieres ajustar.");
+      }
       const row = await this.cards.startImageJob(tx, cardId, job, spec.editedPrompt);
       if (!row) return null;
       await this.generations.insertMany(

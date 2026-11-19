@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LibraryAssetDetailDto, LibraryAssetDto, LibrarySummaryDto } from "@presencia/shared";
+import type {
+  LibraryAssetDetailDto,
+  LibraryAssetDto,
+  LibrarySummaryDto,
+  LibraryVersionDto,
+} from "@presencia/shared";
 import { ApiError } from "../api.js";
 import { UploadError } from "../attachments/upload.js";
 import {
@@ -206,6 +211,11 @@ export function useLibraryItems(search: string) {
  * El detalle de una imagen (con su historial de versiones). Mientras llega,
  * `detail` es `null` y el panel pinta lo que ya trae el listado; `failed` si
  * no se pudo (la imagen se eliminó en otra pestaña, o sin red).
+ *
+ * `versions` sobrevive al salto entre versiones de la misma imagen: el
+ * historial de la anterior es también el de la nueva, y sin esto la sección
+ * desaparecía y volvía con cada clic. `reload` lo vuelve a pedir (después de
+ * eliminar una de sus versiones).
  */
 export function useLibraryAsset(id: string | null) {
   const [state, setState] = useState<{
@@ -213,22 +223,33 @@ export function useLibraryAsset(id: string | null) {
     detail: LibraryAssetDetailDto | null;
     failed: boolean;
   } | null>(null);
+  const [lastVersions, setLastVersions] = useState<LibraryVersionDto[] | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!id) return;
     const abort = new AbortController();
     setState({ id, detail: null, failed: false });
     fetchLibraryAsset(id, abort.signal)
-      .then((detail) => setState({ id, detail, failed: false }))
+      .then((detail) => {
+        setState({ id, detail, failed: false });
+        setLastVersions(detail.versions);
+      })
       .catch(() => {
         if (!abort.signal.aborted) setState({ id, detail: null, failed: true });
       });
     return () => abort.abort();
-  }, [id]);
+  }, [id, attempt]);
+
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
 
   // Lo de otra imagen (la anterior, mientras llega la nueva) no se muestra.
   const current = state && state.id === id ? state : null;
-  return { detail: current?.detail ?? null, failed: current?.failed ?? false };
+  const detail = current?.detail ?? null;
+  const versions =
+    detail?.versions ??
+    (id && lastVersions?.some((version) => version.assetId === id) ? lastVersions : null);
+  return { detail, versions, failed: current?.failed ?? false, reload };
 }
 
 /** Cuántas subidas van a la vez: más no acelera y sí satura una conexión lenta. */

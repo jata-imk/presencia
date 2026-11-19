@@ -159,6 +159,8 @@ export interface LibraryDeleteResultDto {
   /** Las que se eliminaron (también las que ya no existían: el resultado es el mismo). */
   deleted: string[];
   /** Las que se quedaron, y por qué. */
+  // Un recorte de carrusel no sale en ninguna de las dos: no es una imagen de
+  // Biblioteca, se va con su original.
   blocked: LibraryDeleteBlock[];
 }
 
