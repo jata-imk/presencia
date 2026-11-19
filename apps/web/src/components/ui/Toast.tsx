@@ -21,7 +21,9 @@ export function ToastViewport() {
       // pueda excluir sus clicks de su propio "cerrar al clickear afuera":
       // apretar "Deshacer" no debe hacer desaparecer el panel.
       data-toast-viewport
-      className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-col gap-2"
+      // `--toast-lift`: una barra que vive abajo al centro (la de selección de
+      // Biblioteca) sube los toasts mientras está, para no taparlos.
+      className="fixed bottom-[calc(1rem+var(--toast-lift,0px))] left-1/2 z-50 flex -translate-x-1/2 flex-col gap-2 transition-[bottom]"
     >
       <AnimatePresence>
         {toasts.map((t) => (

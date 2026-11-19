@@ -9,8 +9,8 @@ import type {
 import type { Tx } from "../db/db.service.js";
 
 // El modelo de lectura de Biblioteca (F12): cada imagen con lo que se sabe de
-// ella en otras tablas. No escribe nada; las escrituras siguen en
-// AssetsRepository y CardsRepository. Sin filtro por user_id: el RLS de la
+// ella en otras tablas. No escribe nada; las escrituras (también eliminar)
+// siguen en AssetsRepository y CardsRepository. Sin filtro por user_id: el RLS de la
 // transacción es el filtro (ADR-003), también dentro de los CTE.
 //
 // Tres cosas que este SQL decide y no son obvias:
@@ -75,6 +75,17 @@ export interface LibraryRow extends Record<string, unknown> {
   born_network: SocialNetwork | null;
   born_status: CardStatus | null;
   usos: UsoRow[];
+}
+
+/** Una versión del historial de una imagen (ver `lineage`). */
+export interface LineageRow extends Record<string, unknown> {
+  id: string;
+  metadata: Record<string, unknown>;
+  gen_kind: "generate" | "edit" | null;
+  instruction: string | null;
+  created_iso: string;
+  /** `created_at::text`: ordena con microsegundos, no con el ISO en milisegundos. */
+  sort_at: string;
 }
 
 /** El total y, por atajo del bento, cuántas hay y los ids de las primeras. */
@@ -268,6 +279,88 @@ export class LibraryRepository {
       ${LIB}
       select * from lib where id = ${id}::uuid`);
     return result.rows[0];
+  }
+
+  /**
+   * El historial de versiones de una imagen: su original y todas las
+   * ediciones que salieron de ella o de otra edición (un árbol, aplanado de
+   * la más vieja a la más nueva). Sube por `parent_asset_id` hasta una imagen
+   * que no salió de editar otra (o cuyo padre se eliminó y quedó en null), y
+   * de ahí baja. Vacío si la imagen no existe.
+   *
+   * Los recortes no son versiones, pero sí son el camino: en un carrusel se
+   * edita la imagen que se ve, que puede ser un recorte. Al subir, un recorte
+   * salta a su original; al bajar, se pasa por los recortes para llegar a sus
+   * ediciones. Después se quitan de la lista.
+   */
+  async lineage(tx: Tx, id: string): Promise<LineageRow[]> {
+    const result = await tx.execute<LineageRow>(sql`
+      with recursive
+      arriba as (
+        select a.id, 0 as depth from assets a where a.id = ${id}::uuid
+        union all
+        select p.id, arriba.depth + 1
+        from arriba
+        join assets cur on cur.id = arriba.id
+        join assets p on p.id = coalesce(
+          ${uuidOrNull(sql`cur.metadata ->> 'croppedFrom'`)},
+          (select g.parent_asset_id from image_generations g
+           where g.asset_id = cur.id and g.kind = 'edit'
+           order by g.created_at desc limit 1)
+        )
+        -- Tope de seguridad: un ciclo no puede pasar (una edición o un
+        -- recorte siempre es un asset nuevo), pero si llegara, la consulta no
+        -- da vueltas para siempre.
+        where arriba.depth < 50
+      ),
+      raiz as (
+        select id from arriba order by depth desc limit 1
+      ),
+      abajo as (
+        select r.id, 0 as depth from raiz r
+        union all
+        select ch.id, abajo.depth + 1
+        from abajo
+        join assets ch on (
+          ch.metadata ->> 'croppedFrom' = abajo.id::text
+          or exists (
+            select 1 from image_generations g
+            where g.asset_id = ch.id and g.parent_asset_id = abajo.id and g.kind = 'edit'
+          )
+        )
+        where abajo.depth < 50
+      )
+      select distinct on (a.id)
+             a.id, a.metadata, g.kind as gen_kind, g.instruction,
+             to_char(a.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as created_iso,
+             a.created_at::text as sort_at
+      from abajo
+      join assets a on a.id = abajo.id
+      left join image_generations g on g.asset_id = a.id
+      where a.metadata ->> 'croppedFrom' is null
+      order by a.id, g.created_at desc nulls last`);
+    return result.rows.sort((x, y) =>
+      x.sort_at === y.sort_at ? x.id.localeCompare(y.id) : x.sort_at < y.sort_at ? -1 : 1,
+    );
+  }
+
+  /**
+   * Las cards que tienen puesta alguna de estas imágenes (en `assetIds`, que
+   * en un carrusel refleja sus slides). Solo ids: quien elimina las bloquea
+   * una por una y decide con lo que lee ya bloqueado.
+   */
+  async cardsUsing(tx: Tx, assetIds: readonly string[]): Promise<string[]> {
+    if (assetIds.length === 0) return [];
+    const wanted = sql`array[${sql.join(
+      assetIds.map((id) => sql`${id}`),
+      sql`, `,
+    )}]::text[]`;
+    const result = await tx.execute<{ id: string }>(sql`
+      select c.id from publication_cards c
+      where jsonb_typeof(c.content -> 'assetIds') = 'array'
+        and c.content -> 'assetIds' ?| ${wanted}
+      order by c.id`);
+    return result.rows.map((row) => row.id);
   }
 
   /**

@@ -109,6 +109,61 @@ export interface LibraryShortcutDto {
   assetIds: string[];
 }
 
+/**
+ * Una versión del historial del panel de detalle: la original y las
+ * ediciones que salieron de ella (o de otra edición), de la más vieja a la
+ * más nueva. Los recortes de carrusel no son versiones.
+ */
+export interface LibraryVersionDto {
+  assetId: string;
+  /**
+   * `original` si no salió de editar otra imagen. Una edición cuyo padre se
+   * eliminó queda como primera de la lista, pero sigue siendo `edit`: dice
+   * su instrucción y no se hace pasar por la original.
+   */
+  kind: "original" | "edit";
+  /** Solo en ediciones: lo que se pidió cambiar ("Más cálida"). */
+  instruction: string | null;
+  width: number;
+  height: number;
+  createdAt: string;
+}
+
+/** Una imagen con su historial de versiones (`GET /api/library/:id`). */
+export interface LibraryAssetDetailDto extends LibraryAssetDto {
+  /** Vacío o de una sola: el panel no muestra la sección. */
+  versions: LibraryVersionDto[];
+}
+
+/** Cuántas imágenes se pueden eliminar de una vez. */
+export const LIBRARY_DELETE_MAX = 100;
+
+export const libraryDeleteBodySchema = z.object({
+  ids: z.array(z.uuid()).min(1).max(LIBRARY_DELETE_MAX),
+});
+export type LibraryDeleteBody = z.infer<typeof libraryDeleteBodySchema>;
+
+/**
+ * Por qué una imagen no se eliminó:
+ *
+ * - `scheduled`: está en una publicación programada. Sus bytes ya se le
+ *   entregaron al proveedor y el post saldría con ella de todos modos (lore
+ *   doc §5): se cancela la programación primero.
+ * - `editing`: se está editando en este momento; la edición necesita la
+ *   original hasta que termina.
+ */
+export type LibraryDeleteBlock =
+  { id: string; reason: "scheduled"; network: SocialNetwork } | { id: string; reason: "editing" };
+
+export interface LibraryDeleteResultDto {
+  /** Las que se eliminaron (también las que ya no existían: el resultado es el mismo). */
+  deleted: string[];
+  /** Las que se quedaron, y por qué. */
+  // Un recorte de carrusel no sale en ninguna de las dos: no es una imagen de
+  // Biblioteca, se va con su original.
+  blocked: LibraryDeleteBlock[];
+}
+
 export interface LibrarySummaryDto {
   /** Todo lo que hay, sin filtros: 0 es el estado vacío. */
   total: number;

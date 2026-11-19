@@ -175,15 +175,16 @@ En oscuro se aclara y el ícono va oscuro, como el CTA primario.
 
 La pantalla va sobre `--bg-surface` (el `--content` del diseño), no sobre `--bg-app`: la celda es un tono apenas más plum que el fondo, y sobre `--bg-app` no se distinguiría.
 
-| Token              | Claro                     | Oscuro    | Utility              | Para qué                                                      |
-| ------------------ | ------------------------- | --------- | -------------------- | ------------------------------------------------------------- |
-| `--lib-tile-bg`    | `#F3EEF6`                 | `#231629` | `bg-lib-tile`        | El cuadro tenue donde la imagen va completa                   |
-| `--lib-action-bg`  | `--bg-card` al 94%        | se deriva | `bg-lib-action`      | Botones que flotan sobre la imagen (abrir, descargar, copiar) |
-| `--lib-tile-shade` | `--color-plum-950` al 30% | igual     | `from-lib-shade`     | Sombra arriba de la celda, para leer esos botones             |
-| `--lib-chosen-bg`  | `--color-plum-800`        | igual     | `bg-lib-chosen`      | Insignia "Elegida"                                            |
-| `--lib-chosen-fg`  | `#FFFFFF`                 | igual     | `text-lib-chosen-fg` | Su texto                                                      |
-| `--lib-drop-veil`  | `--bg-app` al 60%         | se deriva | `bg-lib-veil`        | Velo sobre la pantalla al arrastrar archivos                  |
-| `--lib-drop-bg`    | `--bg-card` al 88%        | se deriva | `bg-lib-drop`        | El recuadro punteado de "Suelta para subir"                   |
+| Token                 | Claro                     | Oscuro    | Utility              | Para qué                                                      |
+| --------------------- | ------------------------- | --------- | -------------------- | ------------------------------------------------------------- |
+| `--lib-tile-bg`       | `#F3EEF6`                 | `#231629` | `bg-lib-tile`        | El cuadro tenue donde la imagen va completa                   |
+| `--lib-action-bg`     | `--bg-card` al 94%        | se deriva | `bg-lib-action`      | Botones que flotan sobre la imagen (abrir, descargar, copiar) |
+| `--lib-tile-shade`    | `--color-plum-950` al 30% | igual     | `from-lib-shade`     | Sombra arriba de la celda, para leer esos botones             |
+| `--lib-chosen-bg`     | `--color-plum-800`        | igual     | `bg-lib-chosen`      | Insignia "Elegida"                                            |
+| `--lib-chosen-fg`     | `#FFFFFF`                 | igual     | `text-lib-chosen-fg` | Su texto                                                      |
+| `--lib-drop-veil`     | `--bg-app` al 60%         | se deriva | `bg-lib-veil`        | Velo sobre la pantalla al arrastrar archivos                  |
+| `--lib-drop-bg`       | `--bg-card` al 88%        | se deriva | `bg-lib-drop`        | El recuadro punteado de "Suelta para subir"                   |
+| `--lib-select-border` | `--color-plum-500` al 35% | igual     | `border-lib-select`  | Borde de la casilla de selección sin marcar (PR 4)            |
 
 Solo `--lib-tile-bg` tiene override en oscuro. Los tres que se derivan salen de `--bg-card` y `--bg-app`, que ya voltean. La insignia y la sombra van **sobre la imagen**, no sobre la interfaz, así que son iguales en los dos temas (mismo criterio que el visor).
 

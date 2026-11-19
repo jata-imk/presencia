@@ -101,6 +101,42 @@ export class AssetsService {
     return this.repo.findById(tx, id);
   }
 
+  /** Un asset que se va a poner en una card, bloqueado contra un borrado a la vez. */
+  findForUse(tx: Tx, id: string): Promise<AssetRow | undefined> {
+    return this.repo.findForUse(tx, id);
+  }
+
+  /** La imagen y sus recortes, bloqueados para eliminarlos (ver el repositorio). */
+  lockForDelete(tx: Tx, id: string): Promise<AssetRow[]> {
+    return this.repo.lockForDelete(tx, id);
+  }
+
+  /** Borra las filas. Los bytes se borran después del commit con `deleteObjects`. */
+  deleteRows(tx: Tx, ids: readonly string[]): Promise<void> {
+    return this.repo.deleteByIds(tx, ids);
+  }
+
+  isBeingEdited(tx: Tx, ids: readonly string[], staleBefore: Date): Promise<boolean> {
+    return this.repo.isBeingEdited(tx, ids, staleBefore);
+  }
+
+  /**
+   * Borra los bytes de assets cuyas filas ya no existen. Nunca lanza: se
+   * llama después del commit, cuando la imagen ya se fue de Biblioteca. Un
+   * archivo que no se pudo borrar queda como bytes sin fila, invisibles (la
+   * basura barata de arriba). Mismo trato que los adjuntos (F10.9).
+   */
+  async deleteObjects(storageKeys: readonly string[]): Promise<void> {
+    const results = await Promise.allSettled(storageKeys.map((key) => this.storage.delete(key)));
+    const reasons = results.flatMap((r) => (r.status === "rejected" ? [r.reason as unknown] : []));
+    if (reasons.length > 0) {
+      console.error(
+        `[biblioteca] No se pudieron borrar ${reasons.length} de ${storageKeys.length} archivos:`,
+        reasons,
+      );
+    }
+  }
+
   /** El segundo paso: la fila, en la transacción del llamador. */
   record(tx: Tx, stored: StoredAsset): Promise<AssetRow> {
     return this.repo.insert(tx, stored);

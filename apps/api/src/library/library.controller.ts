@@ -1,18 +1,30 @@
 import {
   BadRequestException,
+  Body,
+  ConflictException,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Inject,
+  NotFoundException,
+  Param,
   Post,
   Query,
   Req,
   UnsupportedMediaTypeException,
 } from "@nestjs/common";
 import type { Request } from "express";
+import { z } from "zod";
 import {
   ASSET_UPLOAD_MAX_BYTES,
+  NETWORK_LABELS,
+  libraryDeleteBodySchema,
   libraryQuerySchema,
+  type LibraryAssetDetailDto,
   type LibraryAssetDto,
+  type LibraryDeleteBlock,
+  type LibraryDeleteResultDto,
   type LibraryPageDto,
   type LibrarySummaryDto,
 } from "@presencia/shared";
@@ -22,9 +34,20 @@ import type { SessionUser } from "../auth/auth.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import { LibraryService } from "./library.service.js";
 
+const idSchema = z.uuid();
+
+/** Por qué no se eliminó, en las palabras que ve el creator (lore doc §5). */
+export function blockedMessage(block: LibraryDeleteBlock): string {
+  if (block.reason === "editing") {
+    return "Se está editando esta imagen. Espera a que termine para eliminarla.";
+  }
+  return `Esta imagen está en una publicación programada de ${NETWORK_LABELS[block.network]}. Cancela la programación para eliminarla.`;
+}
+
 /**
  * Biblioteca (F12). El archivo de cada imagen se sigue sirviendo por
- * `GET /api/assets/:id/content`; esto es el listado y la subida sin card.
+ * `GET /api/assets/:id/content`; esto es el listado, el detalle, la subida
+ * sin card y eliminar.
  */
 @Controller("library")
 export class LibraryController {
@@ -44,6 +67,50 @@ export class LibraryController {
   @Get("summary")
   summary(@CurrentUser() user: SessionUser): Promise<LibrarySummaryDto> {
     return this.service.summary(user.id);
+  }
+
+  /**
+   * "Eliminar" de varias (selección múltiple). Las bloqueadas se quedan y las
+   * demás se eliminan: el resultado dice cuáles y por qué. Es un POST y no un
+   * DELETE con body, que algunos proxies descartan.
+   */
+  @Post("delete")
+  @HttpCode(200)
+  removeMany(
+    @CurrentUser() user: SessionUser,
+    @Body() body: unknown,
+  ): Promise<LibraryDeleteResultDto> {
+    const parsed = libraryDeleteBodySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("Esa selección no es válida.");
+    return this.service.remove(user.id, parsed.data.ids);
+  }
+
+  /** Una imagen con su historial de versiones: el panel de detalle. */
+  @Get(":id")
+  async detail(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+  ): Promise<LibraryAssetDetailDto> {
+    const found = idSchema.safeParse(id).success ? await this.service.detail(user.id, id) : null;
+    if (!found) throw new NotFoundException("No encontramos esa imagen.");
+    return found;
+  }
+
+  /**
+   * "Eliminar" de una. Si no se puede (programada, editándose), 409 con el
+   * porqué y qué hacer. Una que ya no existe da 204 igual: el resultado que
+   * pidió el creator ya es cierto.
+   */
+  @Delete(":id")
+  @HttpCode(204)
+  async remove(@CurrentUser() user: SessionUser, @Param("id") id: string): Promise<void> {
+    if (!idSchema.safeParse(id).success) throw new NotFoundException("No encontramos esa imagen.");
+    const result = await this.service.remove(user.id, [id]);
+    const [blocked] = result.blocked;
+    if (blocked) throw new ConflictException(blockedMessage(blocked));
+    // Ni eliminada ni bloqueada: era un recorte de carrusel, que no es una
+    // imagen de Biblioteca.
+    if (result.deleted.length === 0) throw new NotFoundException("No encontramos esa imagen.");
   }
 
   /**

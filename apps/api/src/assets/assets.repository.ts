@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, or, sql } from "drizzle-orm";
 import { assets, imageGenerations } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
@@ -51,6 +51,58 @@ export class AssetsRepository {
   async findById(tx: Tx, id: string): Promise<AssetRow | undefined> {
     const [row] = await tx.select().from(assets).where(eq(assets.id, id));
     return row;
+  }
+
+  /**
+   * Un asset que se va a PONER en una card (F12): lo lee con `for key share`,
+   * el lock más débil que choca con eliminarlo. Si Biblioteca lo está
+   * eliminando, espera y no lo encuentra; si lo encuentra, el borrado espera
+   * a que la card ya lo tenga puesto y lo ve como uso. Sin esto, la card se
+   * podía quedar apuntando a un asset recién borrado.
+   */
+  async findForUse(tx: Tx, id: string): Promise<AssetRow | undefined> {
+    const [row] = await tx.select().from(assets).where(eq(assets.id, id)).for("key share");
+    return row;
+  }
+
+  /**
+   * Para eliminar (F12): la imagen y sus recortes de carrusel, bloqueados
+   * con `for update` ANTES de leer dónde se usan. Quien llama revisa que la
+   * pedida venga y no sea un recorte: un recorte se va con su original.
+   */
+  async lockForDelete(tx: Tx, id: string): Promise<AssetRow[]> {
+    return tx
+      .select()
+      .from(assets)
+      .where(or(eq(assets.id, id), sql`${assets.metadata} ->> 'croppedFrom' = ${id}`))
+      .orderBy(asc(assets.id))
+      .for("update");
+  }
+
+  async deleteByIds(tx: Tx, ids: readonly string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await tx.delete(assets).where(inArray(assets.id, [...ids]));
+  }
+
+  /**
+   * Si hay una edición en curso que parte de alguna de estas imágenes. Una
+   * `pending` más vieja que `staleBefore` es de un trabajo que murió sin
+   * liquidarse: no bloquea para siempre.
+   */
+  async isBeingEdited(tx: Tx, ids: readonly string[], staleBefore: Date): Promise<boolean> {
+    if (ids.length === 0) return false;
+    const [row] = await tx
+      .select({ id: imageGenerations.id })
+      .from(imageGenerations)
+      .where(
+        and(
+          inArray(imageGenerations.parentAssetId, [...ids]),
+          eq(imageGenerations.status, "pending"),
+          gte(imageGenerations.createdAt, staleBefore),
+        ),
+      )
+      .limit(1);
+    return Boolean(row);
   }
 
   /**

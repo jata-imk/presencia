@@ -2,13 +2,15 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { MemoryRouter } from "react-router";
 import { LibraryPage } from "./biblioteca.js";
 import {
+  LIBRARY_DETAIL_ROUTES,
   LIBRARY_PAGE,
   LIBRARY_SUMMARY,
   LIBRARY_SUMMARY_EMPTY,
 } from "../stories/fixtures/library.js";
 
 // La pantalla de Biblioteca entera (F12), con la API de ejemplo. Aquí se
-// puede buscar, filtrar, cambiar a lista y abrir una imagen; como la API de
+// puede buscar, filtrar, cambiar a lista, abrir el detalle de una imagen y
+// marcar varias (eliminar responde con el error de "Sin backend"); como la API de
 // ejemplo responde siempre lo mismo, filtrar no cambia lo que se ve. Los
 // estados sueltos (sin resultados, cargando, subidas, arrastre) viven en
 // "Biblioteca/Estados".
@@ -40,6 +42,7 @@ export const ConImagenes: Story = {
     api: {
       "/api/library": { body: LIBRARY_PAGE },
       "/api/library/summary": { body: LIBRARY_SUMMARY },
+      ...LIBRARY_DETAIL_ROUTES,
     },
   },
 };

@@ -1,8 +1,10 @@
 import type {
+  LibraryAssetDetailDto,
   LibraryAssetDto,
   LibraryCardRef,
   LibraryPageDto,
   LibrarySummaryDto,
+  LibraryVersionDto,
 } from "@presencia/shared";
 
 // Datos de ejemplo de Biblioteca (F12). Los ids son los de las imágenes de
@@ -139,3 +141,36 @@ export const LIBRARY_SUMMARY_EMPTY: LibrarySummaryDto = {
   uploaded: { count: 0, assetIds: [] },
   published: { count: 0, assetIds: [] },
 };
+
+const version = (
+  asset: LibraryAssetDto,
+  over: Partial<LibraryVersionDto> = {},
+): LibraryVersionDto => ({
+  assetId: asset.id,
+  kind: asset.instruction ? "edit" : "original",
+  instruction: asset.instruction,
+  width: asset.width,
+  height: asset.height,
+  createdAt: asset.createdAt,
+  ...over,
+});
+
+/**
+ * El detalle de cada imagen (`GET /api/library/:id`). La 1 es una edición de
+ * la 2: las dos comparten historial.
+ */
+export const LIBRARY_DETAILS: Record<string, LibraryAssetDetailDto> = Object.fromEntries(
+  LIBRARY_ASSETS.map((asset) => {
+    const [first, second] = LIBRARY_ASSETS;
+    const lineage =
+      first && second && (asset.id === first.id || asset.id === second.id)
+        ? [version(second), version(first)]
+        : [version(asset)];
+    return [asset.id, { ...asset, versions: lineage }];
+  }),
+);
+
+/** Las respuestas de ejemplo del detalle, por ruta, para `parameters.api`. */
+export const LIBRARY_DETAIL_ROUTES = Object.fromEntries(
+  Object.values(LIBRARY_DETAILS).map((detail) => [`/api/library/${detail.id}`, { body: detail }]),
+);

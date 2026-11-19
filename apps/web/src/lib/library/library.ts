@@ -5,8 +5,10 @@ import {
   type LibraryAssetDto,
   type LibraryCardRef,
   type LibraryCardStatus,
+  type LibraryDeleteResultDto,
   type LibraryOrigin,
   type LibraryQuery,
+  type LibraryVersionDto,
   type SocialNetwork,
   isAssetUploadMimeType,
 } from "@presencia/shared";
@@ -336,6 +338,185 @@ export function pickLabel(asset: LibraryAssetDto): string | null {
 /** "1 imagen", "3 imágenes". */
 export function plural(count: number, one: string, many: string): string {
   return `${String(count)} ${count === 1 ? one : many}`;
+}
+
+// ── Detalle ───────────────────────────────────────────────────────────────
+
+/** "JPEG", "PNG", "WEBP": la fila Formato del detalle. */
+export function formatLabel(mimeType: string): string {
+  const subtype = mimeType.split("/")[1] ?? mimeType;
+  return (subtype === "jpg" ? "jpeg" : subtype).toUpperCase();
+}
+
+/** "27 sep 2026, 10:42": la fila Fecha del detalle, siempre con año. */
+export function detailDate(iso: string, timeZone: string): string {
+  const parts = formatter("detail", "es-MX", timeZone, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  const month = part("month").replace(/\.$/, "");
+  return `${part("day")} ${month} ${part("year")}, ${part("hour")}:${part("minute")}`;
+}
+
+/** "v1 · Original", "v2 · Más cálida": debajo de cada miniatura del historial. */
+export function versionLabel(version: LibraryVersionDto, index: number): string {
+  const name =
+    version.kind === "original" ? "Original" : (version.instruction?.trim() ?? "") || "Edición";
+  return `v${String(index + 1)} · ${name}`;
+}
+
+// ── Eliminar ──────────────────────────────────────────────────────────────
+
+/**
+ * Qué pasa si se eliminan estas imágenes (lore doc §5), con lo que la web ya
+ * sabe de cada una (`uses`). La API vuelve a decidir con la base bloqueada:
+ * esto es para avisar antes, no para permitir.
+ */
+export interface DeletePlan {
+  /** Las que sí se pueden eliminar. */
+  deletable: LibraryAssetDto[];
+  /** Las que están en una publicación programada: se quedan. */
+  scheduled: LibraryAssetDto[];
+  /** Cuántos borradores (o publicaciones que fallaron) se quedan sin imagen. */
+  drafts: number;
+  /** Cuántas publicaciones ya publicadas tenían alguna. */
+  published: number;
+}
+
+export function deletePlan(assets: readonly LibraryAssetDto[]): DeletePlan {
+  const deletable: LibraryAssetDto[] = [];
+  const scheduled: LibraryAssetDto[] = [];
+  const drafts = new Set<string>();
+  const published = new Set<string>();
+  for (const asset of assets) {
+    if (asset.uses.some((card) => card.status === "scheduled")) {
+      scheduled.push(asset);
+      continue;
+    }
+    deletable.push(asset);
+    for (const card of asset.uses) {
+      if (statusKind(card.status) === "draft") drafts.add(card.id);
+      if (card.status === "published") published.add(card.id);
+    }
+  }
+  return { deletable, scheduled, drafts: drafts.size, published: published.size };
+}
+
+/** Por qué no se puede eliminar una que está programada, y qué hacer. */
+export function scheduledMessage(asset: LibraryAssetDto): string {
+  const card = asset.uses.find((use) => use.status === "scheduled");
+  const where = card ? ` de ${NETWORK_LABELS[card.network]}` : "";
+  return `Esta imagen está en una publicación programada${where}. Cancela la programación para eliminarla.`;
+}
+
+export type DeleteDialogCopy =
+  | {
+      kind: "confirm";
+      title: string;
+      description: string;
+      /** Los avisos, cada uno una frase; vacío si no hay nada que advertir. */
+      warnings: string[];
+      confirmLabel: string;
+    }
+  | { kind: "blocked"; title: string; description: string };
+
+/** Lo que dice el diálogo de eliminar, según el plan. */
+export function deleteDialogCopy(plan: DeletePlan): DeleteDialogCopy {
+  const { deletable, scheduled, drafts, published } = plan;
+  if (deletable.length === 0) {
+    const [only] = scheduled;
+    return scheduled.length === 1 && only
+      ? {
+          kind: "blocked",
+          title: "No se puede eliminar esta imagen",
+          description: scheduledMessage(only),
+        }
+      : {
+          kind: "blocked",
+          title: "No se pueden eliminar estas imágenes",
+          description: `Las ${String(scheduled.length)} están en publicaciones programadas. Cancela la programación para eliminarlas.`,
+        };
+  }
+
+  const one = deletable.length === 1 && deletable[0];
+  const warnings: string[] = [];
+  if (drafts > 0) {
+    warnings.push(
+      drafts === 1
+        ? "1 borrador se quedará sin imagen."
+        : `${String(drafts)} borradores se quedarán sin imagen.`,
+    );
+  }
+  if (published > 0) {
+    warnings.push(
+      published === 1
+        ? "La publicación en la red no cambia; en Presencia su miniatura pasa al ícono de su formato."
+        : "Las publicaciones en la red no cambian; en Presencia sus miniaturas pasan al ícono de su formato.",
+    );
+  }
+  if (scheduled.length > 0) {
+    warnings.push(
+      scheduled.length === 1
+        ? "1 está en una publicación programada y se queda: cancela la programación para eliminarla."
+        : `${String(scheduled.length)} están en publicaciones programadas y se quedan: cancela la programación para eliminarlas.`,
+    );
+  }
+  return one
+    ? {
+        kind: "confirm",
+        title: "¿Eliminar esta imagen?",
+        description: `Se eliminará “${assetName(one)}” de tu Biblioteca y no podrás recuperarla.`,
+        warnings,
+        confirmLabel: "Eliminar imagen",
+      }
+    : {
+        kind: "confirm",
+        title: `¿Eliminar ${String(deletable.length)} imágenes?`,
+        description: "Se eliminarán de tu Biblioteca y no podrás recuperarlas.",
+        warnings,
+        confirmLabel: `Eliminar ${String(deletable.length)}`,
+      };
+}
+
+/**
+ * El toast de cuando termina de eliminar varias. Las que la API no dejó ir
+ * pueden ser más de las que la web anticipó (otra pestaña programó una, o
+ * empezó a editarla), así que se dice cuántas y por qué.
+ */
+export function deleteResultToast(result: LibraryDeleteResultDto): {
+  title: string;
+  description?: string;
+} {
+  const deleted = result.deleted.length;
+  const title =
+    deleted === 0
+      ? "No se eliminó ninguna imagen"
+      : deleted === 1
+        ? "Imagen eliminada"
+        : `${String(deleted)} imágenes eliminadas`;
+  const blocked = result.blocked.length;
+  if (blocked === 0) return { title };
+  const editing = result.blocked.filter((block) => block.reason === "editing").length;
+  const why =
+    editing === 0
+      ? blocked === 1
+        ? "está en una publicación programada"
+        : "están en publicaciones programadas"
+      : editing === blocked
+        ? blocked === 1
+          ? "se está editando"
+          : "se están editando"
+        : "están programadas o editándose";
+  return {
+    title,
+    description: `${String(blocked)} ${blocked === 1 ? "se quedó" : "se quedaron"}: ${why}.`,
+  };
 }
 
 // ── Subir ─────────────────────────────────────────────────────────────────

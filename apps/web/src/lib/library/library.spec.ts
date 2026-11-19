@@ -5,7 +5,12 @@ import {
   activeShortcut,
   assetName,
   chatLabel,
+  deleteDialogCopy,
+  deletePlan,
+  deleteResultToast,
+  detailDate,
   displayCard,
+  formatLabel,
   groupByDate,
   libraryDropVerdict,
   libraryFileProblem,
@@ -16,6 +21,7 @@ import {
   statusKind,
   toQuery,
   uploadsTitle,
+  versionLabel,
   withFilter,
 } from "./library.js";
 
@@ -206,5 +212,128 @@ describe("subir", () => {
     expect(uploadsTitle([{ status: "done" }, { status: "error" }, { status: "done" }])).toBe(
       "3 archivos · 1 con error",
     );
+  });
+});
+
+describe("detalle", () => {
+  it("formato con el nombre de siempre, JPEG y no JPG", () => {
+    expect(formatLabel("image/jpeg")).toBe("JPEG");
+    expect(formatLabel("image/png")).toBe("PNG");
+    expect(formatLabel("image/webp")).toBe("WEBP");
+  });
+
+  it("la fecha completa, con año y hora de Mérida", () => {
+    expect(detailDate("2026-09-27T16:42:00.000Z", TZ)).toBe("27 sep 2026, 10:42");
+  });
+
+  it("cada versión dice su número y qué es", () => {
+    const base = { assetId: "a", width: 1, height: 1, createdAt: NOW.toISOString() };
+    expect(versionLabel({ ...base, kind: "original", instruction: null }, 0)).toBe("v1 · Original");
+    expect(versionLabel({ ...base, kind: "edit", instruction: "Más cálida" }, 1)).toBe(
+      "v2 · Más cálida",
+    );
+    expect(versionLabel({ ...base, kind: "edit", instruction: "  " }, 2)).toBe("v3 · Edición");
+  });
+});
+
+describe("eliminar", () => {
+  const draft = (id: string) => card({ id, status: "draft" });
+
+  it("una sin card: solo confirma, sin avisos", () => {
+    const copy = deleteDialogCopy(deletePlan([asset({ originalName: "cafe-luz.png" })]));
+    expect(copy).toEqual({
+      kind: "confirm",
+      title: "¿Eliminar esta imagen?",
+      description: "Se eliminará “cafe-luz.png” de tu Biblioteca y no podrás recuperarla.",
+      warnings: [],
+      confirmLabel: "Eliminar imagen",
+    });
+  });
+
+  it("cuenta los borradores que la pierden (una fallida también) y avisa de las publicadas", () => {
+    const plan = deletePlan([
+      asset({
+        id: "a",
+        uses: [
+          draft("c1"),
+          card({ id: "c2", status: "failed" }),
+          card({ id: "c3", status: "published" }),
+        ],
+      }),
+      asset({ id: "b", uses: [draft("c1")] }),
+    ]);
+    expect(plan.drafts).toBe(2);
+    expect(plan.published).toBe(1);
+    const copy = deleteDialogCopy(plan);
+    expect(copy.kind === "confirm" && copy.title).toBe("¿Eliminar 2 imágenes?");
+    expect(copy.kind === "confirm" && copy.warnings).toEqual([
+      "2 borradores se quedarán sin imagen.",
+      "La publicación en la red no cambia; en Presencia su miniatura pasa al ícono de su formato.",
+    ]);
+  });
+
+  it("una programada no se ofrece: dice en qué red y qué hacer", () => {
+    const copy = deleteDialogCopy(
+      deletePlan([asset({ uses: [card({ status: "scheduled", network: "linkedin" })] })]),
+    );
+    expect(copy).toEqual({
+      kind: "blocked",
+      title: "No se puede eliminar esta imagen",
+      description:
+        "Esta imagen está en una publicación programada de LinkedIn. Cancela la programación para eliminarla.",
+    });
+  });
+
+  it("en varias, las programadas se quedan y las demás se ofrecen", () => {
+    const plan = deletePlan([
+      asset({ id: "a" }),
+      asset({ id: "b", uses: [card({ status: "scheduled" })] }),
+      asset({ id: "c" }),
+    ]);
+    expect(plan.deletable.map((a) => a.id)).toEqual(["a", "c"]);
+    const copy = deleteDialogCopy(plan);
+    expect(copy.kind === "confirm" && copy.confirmLabel).toBe("Eliminar 2");
+    expect(copy.kind === "confirm" && copy.warnings).toEqual([
+      "1 está en una publicación programada y se queda: cancela la programación para eliminarla.",
+    ]);
+  });
+
+  it("si todas están programadas, ninguna se ofrece", () => {
+    const scheduled = [card({ status: "scheduled" })];
+    const copy = deleteDialogCopy(
+      deletePlan([asset({ id: "a", uses: scheduled }), asset({ id: "b", uses: scheduled })]),
+    );
+    expect(copy.kind).toBe("blocked");
+    expect(copy.title).toBe("No se pueden eliminar estas imágenes");
+  });
+
+  it("el toast dice cuántas se fueron y cuántas se quedaron, y por qué", () => {
+    expect(deleteResultToast({ deleted: ["a"], blocked: [] })).toEqual({
+      title: "Imagen eliminada",
+    });
+    expect(deleteResultToast({ deleted: ["a", "b"], blocked: [] })).toEqual({
+      title: "2 imágenes eliminadas",
+    });
+    expect(
+      deleteResultToast({
+        deleted: ["a"],
+        blocked: [{ id: "b", reason: "scheduled", network: "instagram" }],
+      }),
+    ).toEqual({
+      title: "Imagen eliminada",
+      description: "1 se quedó: está en una publicación programada.",
+    });
+    expect(
+      deleteResultToast({
+        deleted: [],
+        blocked: [
+          { id: "b", reason: "editing" },
+          { id: "c", reason: "editing" },
+        ],
+      }),
+    ).toEqual({
+      title: "No se eliminó ninguna imagen",
+      description: "2 se quedaron: se están editando.",
+    });
   });
 });

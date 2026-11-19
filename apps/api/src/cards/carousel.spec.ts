@@ -4,6 +4,7 @@ import {
   CARD_ARCHETYPE_TOOLS,
   FIRST_SLIDE_ID,
   placeImage,
+  removeImages,
   slidesOf,
   withSlides,
   type CardContent,
@@ -63,6 +64,32 @@ describe("carrusel", () => {
     // En una imagen suelta reemplaza la imagen; un slide ajeno no aplica.
     expect(placeImage(SINGLE, a).assetIds).toEqual([a]);
     expect(placeImage(SINGLE, a, randomUUID())).toEqual(SINGLE);
+  });
+
+  it("removeImages: el slide se queda con su prompt; la imagen suelta se queda sin imagen", () => {
+    const [s1, s2, s3, a, b, c] = [
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+    ];
+    const carousel = withSlides(SINGLE, [
+      { id: s1, assetId: a },
+      { id: s2, imagePrompt: "segunda", assetId: b },
+      { id: s3, assetId: c },
+    ]);
+    const without = removeImages(carousel, [b, randomUUID()]);
+    expect(without.assetIds).toEqual([a, c]);
+    expect(without).toMatchObject({
+      slides: [{ id: s1, assetId: a }, { id: s2, imagePrompt: "segunda" }, { id: s3 }],
+    });
+    expect(without.slides?.[1]).not.toHaveProperty("assetId");
+    // Sin ninguna de esas imágenes, la card no cambia (ni de objeto).
+    expect(removeImages(carousel, [randomUUID()])).toBe(carousel);
+    const single = { ...SINGLE, assetIds: [a] };
+    expect(removeImages(single, [a])).toMatchObject({ imagePrompt: "portada", assetIds: [] });
   });
 
   it("las tools reciben prompts, no `slides`: los ids y las imágenes son de la app", () => {

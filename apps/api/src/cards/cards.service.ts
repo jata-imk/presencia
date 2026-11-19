@@ -192,7 +192,13 @@ export class CardsService {
 
     const { card, accountProviderRef, previousProviderRef, isReschedule, previousScheduledAt } =
       await this.dbService.runWithTenant(userId, async (tx) => {
-        const existing = await this.repo.findById(tx, cardId);
+        // Bloqueada (F12): sin el lock, un borrado de Biblioteca o un "elegir
+        // otra versión" que llegara entre esta lectura y `markScheduling`
+        // cambiaba las imágenes de una card que de todos modos quedaba
+        // programada con las viejas, ya entregadas al proveedor. Con él, quien
+        // llegó primero termina y esta lectura ve su resultado: `sameList` de
+        // abajo lo rechaza.
+        const existing = await this.repo.lockById(tx, cardId);
         if (!existing) throw new NotFoundException("Esa publicación no existe.");
         if (!SCHEDULABLE_STATUSES.has(existing.status)) {
           throw new ConflictException(
