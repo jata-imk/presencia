@@ -101,8 +101,9 @@ export const generateCardImageBodySchema = z.object({
 export type GenerateCardImageBody = z.infer<typeof generateCardImageBodySchema>;
 
 /**
- * Elegir otra de las imágenes de la card (una variante, una versión
- * anterior). F10.6: en un carrusel va al slide `slideId` (o a la portada).
+ * Elegir otra de las imágenes del historial de la card (una variante, una
+ * versión anterior, una que trajo de Biblioteca). F10.6: en un carrusel va al
+ * slide `slideId` (o a la portada).
  */
 export const selectCardImageBodySchema = z.object({
   assetId: z.uuid(),
@@ -119,6 +120,16 @@ export const cardImageFromAttachmentBodySchema = z.object({
   slideId: z.uuid().optional(),
 });
 export type CardImageFromAttachmentBody = z.infer<typeof cardImageFromAttachmentBodySchema>;
+
+/**
+ * F12 PR5, "Usar de Biblioteca": cualquier imagen del creator pasa a ser la
+ * imagen de la card (o la de ese slide), por referencia, sin copia.
+ */
+export const cardImageFromLibraryBodySchema = z.object({
+  assetId: z.uuid(),
+  slideId: z.uuid().optional(),
+});
+export type CardImageFromLibraryBody = z.infer<typeof cardImageFromLibraryBodySchema>;
 
 /**
  * El último trabajo de imagen de la card, tal como lo ve el navegador.
@@ -236,8 +247,8 @@ export const IMAGE_EDIT_SUGGESTIONS = [
 
 /**
  * Una imagen de la card en su historial (todas las que tuvo: generadas,
- * editadas, subidas). Es lo que ve la tira de versiones y, en F12,
- * Biblioteca.
+ * editadas, subidas y, desde F12 PR5, las que trajo de Biblioteca). Es lo que
+ * ve la tira de versiones.
  */
 export interface CardImageVersionDto {
   assetId: string;
@@ -253,6 +264,8 @@ export interface CardImageVersionDto {
   /**
    * F10.6.1: el slide del carrusel donde nació. Null = de antes de anotarlo:
    * cuenta como de la portada. La tira de un slide muestra solo las suyas.
+   * Una traída de Biblioteca (F12 PR5) trae el slide de ESTA card al que
+   * entró, y `createdAt` es cuándo entró.
    */
   slideId: string | null;
   /**

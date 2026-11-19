@@ -38,6 +38,32 @@ export function useDebouncedValue<T>(value: T, ms: number): T {
   return settled;
 }
 
+/**
+ * El scroll infinito: al llegar al final de lo cargado pide la página
+ * siguiente. El centinela se observa contra la zona de scroll, con margen
+ * para pedirla antes de que se vea el hueco. Lo usan la pantalla y el modal
+ * "Elegir de Biblioteca".
+ */
+export function useLoadMore(canLoadMore: boolean, loadMore: () => void, items: unknown) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const target = sentinel.current;
+    if (!target || !canLoadMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) loadMore();
+      },
+      { root: scroller.current, rootMargin: "600px 0px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+    // `items`: tras cada página el centinela puede seguir a la vista (pantalla
+    // alta, página corta) y el observador no vuelve a avisar solo.
+  }, [canLoadMore, loadMore, items]);
+  return { scroller, sentinel };
+}
+
 export function useLibrarySummary() {
   const [summary, setSummary] = useState<LibrarySummaryDto | null>(null);
   const [error, setError] = useState<string | null>(null);

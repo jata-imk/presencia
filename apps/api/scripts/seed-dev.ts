@@ -504,7 +504,8 @@ function logVozViva(count: number): void {
 function logBiblioteca(sembrada: BibliotecaSembrada): void {
   console.log(
     `· Biblioteca: ${String(sembrada.imagenes)} imágenes en "Biblioteca: imágenes de ejemplo" ` +
-      "(elegida, variantes descartadas con su linaje, publicada y subidas sin card).",
+      "(elegida, variantes descartadas con su linaje, publicada, subidas sin card y dos " +
+      "borradores con imágenes traídas de Biblioteca).",
   );
 }
 

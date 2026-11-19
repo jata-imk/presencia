@@ -30,6 +30,8 @@ export interface RespuestaDeHistoria {
   status?: number;
   body: unknown;
   headers?: Record<string, string>;
+  /** F12 PR5: nunca responde, para ver el estado de carga. */
+  pending?: boolean;
 }
 
 let deLaHistoria: Record<string, RespuestaDeHistoria> = {};
@@ -53,6 +55,7 @@ export function installMockApi(): void {
       return real(input, init);
     }
     const propia = deLaHistoria[url.pathname];
+    if (propia?.pending) return new Promise<Response>(() => {});
     if (propia) {
       return Promise.resolve(
         Response.json(propia.body, { status: propia.status ?? 200, headers: propia.headers }),

@@ -328,6 +328,33 @@ export function assetName(asset: LibraryAssetDto): string {
   return asked.length > NAME_MAX ? `${asked.slice(0, NAME_MAX - 1).trimEnd()}…` : asked;
 }
 
+/** Una card a la que "Ver card" puede llevar: el handoff abre su chat. */
+export type ViewableCard = LibraryCardRef & { chatId: string };
+
+/**
+ * A dónde lleva "Ver card" en el detalle (F12 PR5): a la primera card donde
+ * la imagen está puesta y, si no está en ninguna, a la donde nació. Con
+ * "Usar de Biblioteca" pueden no ser la misma, y una subida suelta puesta en
+ * una card no nació en ninguna. Sin chat no hay a dónde llevar.
+ */
+export function viewCardTarget(asset: LibraryAssetDto): ViewableCard | null {
+  const cards = [...asset.uses, ...(asset.bornInCard ? [asset.bornInCard] : [])];
+  const found = cards.find((card) => card.chatId);
+  return found?.chatId ? { ...found, chatId: found.chatId } : null;
+}
+
+/**
+ * El chip de una imagen puesta: "Elegida para su card" si su único uso es la
+ * card donde nació (el caso de siempre); "En uso" si está en otra; "En 3
+ * cards" si está en varias. Nada si no está puesta.
+ */
+export function inUseLabel(asset: LibraryAssetDto): string | null {
+  const [first] = asset.uses;
+  if (asset.state !== "chosen" || !first) return null;
+  if (asset.uses.length > 1) return `En ${String(asset.uses.length)} cards`;
+  return asset.bornInCard?.id === first.id ? "Elegida para su card" : "En uso";
+}
+
 /** "Elegida" / "Descartada"; nada si nunca estuvo en una card. */
 export function pickLabel(asset: LibraryAssetDto): string | null {
   if (asset.state === "chosen") return "Elegida";

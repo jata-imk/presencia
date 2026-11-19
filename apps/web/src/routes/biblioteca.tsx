@@ -50,6 +50,7 @@ import {
   useLibraryItems,
   useLibrarySummary,
   useLibraryUploads,
+  useLoadMore,
 } from "../lib/library/use-library.js";
 import { usePublicationPanelStore } from "../stores/publication-panel-store.js";
 import { showToast } from "../stores/toast-store.js";
@@ -163,26 +164,9 @@ export function LibraryPage() {
     [items, timeZone, loadedAt],
   );
 
-  // Al llegar al final de lo cargado se pide la página siguiente. El
-  // centinela se observa contra la zona de scroll, con margen para pedirla
-  // antes de que se vea el hueco.
-  const scroller = useRef<HTMLDivElement>(null);
-  const sentinel = useRef<HTMLDivElement>(null);
+  // Al llegar al final de lo cargado se pide la página siguiente.
   const canLoadMore = list.hasMore && !list.stale && !list.moreFailed;
-  useEffect(() => {
-    const target = sentinel.current;
-    if (!target || !canLoadMore) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) loadMore();
-      },
-      { root: scroller.current, rootMargin: "600px 0px" },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-    // `items`: tras cada página el centinela puede seguir a la vista (pantalla
-    // alta, página corta) y el observador no vuelve a avisar solo.
-  }, [canLoadMore, loadMore, items]);
+  const { scroller, sentinel } = useLoadMore(canLoadMore, loadMore, items);
 
   function toggleShortcut(shortcut: LibraryShortcut) {
     setFilters(

@@ -28,10 +28,11 @@ import {
   STATUS_LABELS,
   assetName,
   detailDate,
-  displayCard,
+  inUseLabel,
   formatLabel,
   statusKind,
   versionLabel,
+  viewCardTarget,
 } from "../../lib/library/library.js";
 
 // El panel de detalle de Biblioteca (F12, Claude Design "Presencia -
@@ -95,6 +96,29 @@ function CardRow({ card }: { card: LibraryCardRef }) {
         </span>
       )}
     </span>
+  );
+}
+
+/** Una card donde se usa: abre esa card (el handoff del Calendario) si tiene chat. */
+function UseRow({
+  card,
+  onViewCard,
+}: {
+  card: LibraryCardRef;
+  onViewCard: LibraryDetailActions["onViewCard"];
+}) {
+  const chatId = card.chatId;
+  if (!chatId) return <CardRow card={card} />;
+  return (
+    <button
+      type="button"
+      onClick={() => onViewCard({ ...card, chatId })}
+      aria-label={`Ver la card de ${NETWORK_LABELS[card.network]}`}
+      className="-mx-1.5 flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-left transition-colors hover:bg-secondary"
+    >
+      <CardRow card={card} />
+      <ArrowUpRight size={14} className="shrink-0 text-accent" aria-hidden />
+    </button>
   );
 }
 
@@ -177,9 +201,12 @@ export function LibraryDetail({
   }, [openedId]);
 
   const name = asset ? assetName(asset) : "Imagen";
-  const card = asset ? displayCard(asset) : null;
-  const born = asset?.bornInCard ?? null;
-  const viewable = born?.chatId ? { ...born, chatId: born.chatId } : null;
+  // F12 PR5: una imagen puede estar en varias cards, o en una sin haber
+  // nacido en ninguna. "Ver card" va a donde se usa; si no, a donde nació.
+  const viewable = asset ? viewCardTarget(asset) : null;
+  const uses = asset?.uses ?? [];
+  const born = uses.length === 0 ? (asset?.bornInCard ?? null) : null;
+  const chip = asset ? inUseLabel(asset) : null;
   const asked = asset?.prompt ?? asset?.instruction ?? null;
 
   return (
@@ -255,22 +282,26 @@ export function LibraryDetail({
             />
           </div>
 
-          {asset.chat && (
+          {(asset.chat || viewable) && (
             <div className="grid grid-cols-2 gap-2">
-              <Link
-                to={`/chats/${asset.chat.id}`}
-                className={`flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 font-display text-sm font-semibold text-primary-fg transition-colors hover:bg-primary-hover ${
-                  viewable ? "" : "col-span-2"
-                }`}
-              >
-                <MessageSquare size={15} aria-hidden />
-                Abrir en el chat
-              </Link>
+              {asset.chat && (
+                <Link
+                  to={`/chats/${asset.chat.id}`}
+                  className={`flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-3 font-display text-sm font-semibold text-primary-fg transition-colors hover:bg-primary-hover ${
+                    viewable ? "" : "col-span-2"
+                  }`}
+                >
+                  <MessageSquare size={15} aria-hidden />
+                  Abrir en el chat
+                </Link>
+              )}
               {viewable && (
                 <button
                   type="button"
                   onClick={() => onViewCard(viewable)}
-                  className="flex h-10 items-center justify-center gap-2 rounded-md border border-line bg-card px-3 font-display text-sm font-semibold text-fg transition-colors hover:bg-secondary"
+                  className={`flex h-10 items-center justify-center gap-2 rounded-md border border-line bg-card px-3 font-display text-sm font-semibold text-fg transition-colors hover:bg-secondary ${
+                    asset.chat ? "" : "col-span-2"
+                  }`}
                 >
                   <LayoutTemplate size={15} aria-hidden />
                   Ver card
@@ -288,10 +319,10 @@ export function LibraryDetail({
               )}
               {ORIGIN_LABELS[asset.origin]}
             </Chip>
-            {asset.state === "chosen" && (
+            {chip && (
               <Chip className="bg-success-bg text-success-fg">
                 <Check size={12} aria-hidden />
-                Elegida para su card
+                {chip}
               </Chip>
             )}
             {asset.state === "discarded" && (
@@ -299,13 +330,29 @@ export function LibraryDetail({
             )}
           </div>
 
-          {(card || asset.chat) && (
+          {(uses.length > 0 || born || asset.chat) && (
             <dl className="grid grid-cols-[96px_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 text-sm">
-              {card && (
+              {uses.length > 0 && (
                 <>
-                  <dt className="text-fg-secondary">Card</dt>
+                  <dt className={`text-fg-secondary ${uses.length > 1 ? "self-start pt-1" : ""}`}>
+                    Se usa en
+                  </dt>
                   <dd className="min-w-0">
-                    <CardRow card={card} />
+                    <ul className="flex flex-col gap-1">
+                      {uses.map((use) => (
+                        <li key={use.id}>
+                          <UseRow card={use} onViewCard={onViewCard} />
+                        </li>
+                      ))}
+                    </ul>
+                  </dd>
+                </>
+              )}
+              {born && (
+                <>
+                  <dt className="text-fg-secondary">Nació en</dt>
+                  <dd className="min-w-0">
+                    <CardRow card={born} />
                   </dd>
                 </>
               )}

@@ -272,10 +272,13 @@ export class ImageGenerationService {
     if (!parentId) {
       throw new BadRequestException("Primero genera o sube una imagen para poder ajustarla.");
     }
+    // El padre sale del contenido de la card: que esté puesta basta, nazca
+    // donde haya nacido (F12 PR5: una traída de Biblioteca también se ajusta,
+    // y la edición nace en esta card con su padre en otra).
     const parent = await this.dbService.runWithTenant(userId, (tx) =>
       this.assets.find(tx, parentId),
     );
-    if (!parent || parent.cardId !== cardId) {
+    if (!parent) {
       throw new NotFoundException("No encontramos la imagen que quieres ajustar.");
     }
     const { width, height } = parent.metadata as AssetMetadata;

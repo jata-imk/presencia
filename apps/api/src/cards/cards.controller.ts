@@ -17,6 +17,7 @@ import {
   ASSET_UPLOAD_MAX_BYTES,
   cardIdParamSchema,
   cardImageFromAttachmentBodySchema,
+  cardImageFromLibraryBodySchema,
   cardVersionParamSchema,
   chatIdParamSchema,
   conflictsQuerySchema,
@@ -193,6 +194,23 @@ export class CardsController {
       parsed.data.attachmentId,
       parsed.data.slideId,
     );
+  }
+
+  /**
+   * F12 PR5, "Usar de Biblioteca": pone cualquier imagen del creator en la
+   * card (o en el slide), por referencia. En un carrusel con otra proporción
+   * entra recortada. Sin costo de cuota.
+   */
+  @Post("cards/:id/image/from-library")
+  imageFromLibrary(
+    @CurrentUser() user: SessionUser,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ): Promise<PublicationCardDto> {
+    const cardId = this.parseCardId(id);
+    const parsed = cardImageFromLibraryBodySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException("El id de la imagen no es válido.");
+    return this.media.useFromLibrary(user.id, cardId, parsed.data.assetId, parsed.data.slideId);
   }
 
   // ── F10.6: slides del carrusel ─────────────────────────────────────

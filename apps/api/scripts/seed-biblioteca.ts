@@ -2,7 +2,13 @@ import { eq, inArray, sql } from "drizzle-orm";
 import type { CardContent } from "@presencia/shared";
 import type { AssetStorage } from "../src/assets/asset-storage.js";
 import type { DbService } from "../src/db/db.service.js";
-import { assets, chats, imageGenerations, publicationCards } from "../src/db/schema.js";
+import {
+  assets,
+  cardAssetPicks,
+  chats,
+  imageGenerations,
+  publicationCards,
+} from "../src/db/schema.js";
 import { solidPng } from "../src/images/fake-image.provider.js";
 
 // F12 Biblioteca: imágenes con la variedad que la pantalla tiene que mostrar.
@@ -10,6 +16,11 @@ import { solidPng } from "../src/images/fake-image.provider.js";
 // eligieron (una es la original y otra una edición: el linaje de versiones),
 // una publicación de LinkedIn ya publicada, una imagen generada hace semanas
 // y dos subidas directo a Biblioteca, sin card ni chat. Tres proporciones.
+//
+// F12 PR5 ("Usar de Biblioteca"): un borrador de LinkedIn con la foto del
+// taller (subida suelta) puesta por pick, y en su tira también la acuarela,
+// que trajo antes y reemplazó; y otro borrador de Instagram con la imagen
+// elegida del café, que así se usa en dos cards ("Se usa en" del detalle).
 //
 // Se recrea en cada corrida, también con la cuenta ya existente: así lo que
 // se borre probando Biblioteca vuelve. Las imágenes sembradas llevan
@@ -253,5 +264,42 @@ export async function seedBiblioteca(
     })
     .where(eq(publicationCards.id, publicada.id));
 
-  return { imagenes: Object.keys(IMAGENES).length, cards: 2 };
+  // F12 PR5: imágenes que entraron a una card donde no nacieron.
+  const [taller, recicla] = await tx
+    .insert(publicationCards)
+    .values([
+      {
+        userId,
+        chatId: chat.id,
+        archetype: "text_first",
+        network: "linkedin",
+        status: "draft",
+        content: texto("Abrimos inscripciones al taller de fotografía de enero.", [
+          ids.fotoTaller!,
+        ]),
+      },
+      {
+        userId,
+        chatId: chat.id,
+        archetype: "visual_first",
+        network: "instagram",
+        status: "draft",
+        content: visual("Segunda taza del día, misma calma.", [ids.cafeSinGente!]),
+      },
+    ])
+    .returning({ id: publicationCards.id });
+  if (!taller || !recicla) throw new Error("No se pudieron crear las cards con imágenes traídas");
+  await tx.insert(cardAssetPicks).values([
+    // Primero trajo la acuarela y después la foto, que es la que quedó.
+    {
+      userId,
+      cardId: taller.id,
+      assetId: ids.acuarela!,
+      createdAt: new Date(Date.now() - 0.05 * DIA),
+    },
+    { userId, cardId: taller.id, assetId: ids.fotoTaller!, createdAt: new Date() },
+    { userId, cardId: recicla.id, assetId: ids.cafeSinGente!, createdAt: new Date() },
+  ]);
+
+  return { imagenes: Object.keys(IMAGENES).length, cards: 4 };
 }

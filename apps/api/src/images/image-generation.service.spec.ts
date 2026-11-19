@@ -576,6 +576,35 @@ describe("ImageGenerationService", { timeout: 30_000 }, () => {
     ],
   };
 
+  it("F12 PR5: ajustar una imagen traída de otra card la edita aquí, con su padre allá", async () => {
+    const service = make(fake());
+    const origen = await createCard();
+    const generated = await service.request(userId, origen, {
+      generator: 1,
+      prompt: VISUAL.imagePrompt!,
+      aspectRatio: "4:5",
+    });
+    await service.run({ userId, cardId: origen, batchId: generated.imageJob!.id });
+    const parentId = ((await card(origen)).content as CardContent).assetIds[0]!;
+    // Lo que deja "Usar de Biblioteca": la misma imagen puesta en otra card.
+    const cardId = await createCard({ ...VISUAL, assetIds: [parentId] });
+
+    const dto = await service.requestEdit(userId, cardId, {
+      instruction: "Hazla más cálida",
+      generator: 1,
+    });
+    const rows = await batchRows(dto.imageJob!.id);
+    expect(rows[0]).toMatchObject({ cardId, parentAssetId: parentId });
+    await service.run({ userId, cardId, batchId: dto.imageJob!.id });
+    const job = (await card(cardId)).imageJob as CardImageJob;
+    const [child] = await dbService.runWithTenant(userId, (tx) =>
+      tx.select().from(assets).where(eq(assets.id, job.assetIds[0]!)),
+    );
+    expect(child!.cardId).toBe(cardId);
+    // La card de origen no cambió.
+    expect(((await card(origen)).content as CardContent).assetIds).toEqual([parentId]);
+  });
+
   it("carrusel: un lote llena varios slides, una imagen cada uno (la portada también)", async () => {
     const service = make(fake());
     const cardId = await createCard(CAROUSEL);
