@@ -18,6 +18,9 @@ export const LIBRARY_WEEK_DAYS = 7;
 /** Cuántas miniaturas lleva cada atajo del bento. */
 export const LIBRARY_SUMMARY_THUMBS = 6;
 
+/** Lo más largo que se puede buscar. El buscador de la web corta ahí. */
+export const LIBRARY_SEARCH_MAX = 200;
+
 export const libraryOriginSchema = z.enum(["generated", "uploaded"]);
 export type LibraryOrigin = z.infer<typeof libraryOriginSchema>;
 
@@ -39,7 +42,7 @@ export type LibraryCardStatus = z.infer<typeof libraryCardStatusSchema>;
 
 export const libraryQuerySchema = z.object({
   /** Busca en lo que se pidió al generar, el texto alternativo, el nombre y el título del chat. */
-  q: z.string().trim().max(200).optional(),
+  q: z.string().trim().max(LIBRARY_SEARCH_MAX).optional(),
   origin: libraryOriginSchema.optional(),
   /** La red de alguna card donde se usa o, si no se usa, la de la card donde nació. */
   network: socialNetworkSchema.optional(),

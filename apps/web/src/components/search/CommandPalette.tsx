@@ -1,4 +1,4 @@
-import { Archive, FileText, Folder, MessageSquare, Search, Settings } from "lucide-react";
+import { Archive, BookOpen, FileText, Folder, MessageSquare, Search, Settings } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
@@ -12,9 +12,8 @@ import { useSidebarStore } from "../../stores/sidebar-store.js";
 // sección "Ir a" que se resuelve del lado del cliente: las rutas son
 // estáticas y no hay nada que buscar en el servidor.
 //
-// Los módulos deshabilitados (Calendario, Ritmo, Analíticas, Biblioteca)
-// NO aparecen: un resultado que no navega a ningún lado es peor que no
-// tener el resultado.
+// Un módulo deshabilitado (hoy, Analíticas) NO aparece: un resultado que no
+// navega a ningún lado es peor que no tener el resultado.
 
 interface Action {
   key: string;
@@ -130,6 +129,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
     const nav: Action[] = [
       { key: "go-chats", label: "Chats", icon: MessageSquare, run: go("/chats") },
       { key: "go-archivados", label: "Archivados", icon: Archive, run: go("/chats/archivados") },
+      { key: "go-biblioteca", label: "Biblioteca", icon: BookOpen, run: go("/biblioteca") },
       { key: "go-config", label: "Configuración", icon: Settings, run: go("/configuracion") },
     ];
     items.push(...nav.filter((n) => !q || n.label.toLowerCase().includes(q)));

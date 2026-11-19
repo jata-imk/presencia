@@ -2,6 +2,7 @@ import { MotionConfig } from "motion/react";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
 import { useThemeSync } from "./lib/use-theme.js";
 import { ArchivedChatsPage } from "./routes/archived-chats.js";
+import { LibraryPage } from "./routes/biblioteca.js";
 import { CalendarioPage } from "./routes/calendario.js";
 import { RitmoPage } from "./routes/ritmo.js";
 import { ChatPage } from "./routes/chat.js";
@@ -44,6 +45,10 @@ const router = createBrowserRouter([
       // ya la propaga con useMatches(). Ver ADR-018.
       { path: "/calendario", element: <CalendarioPage />, handle: { ownScroll: true } },
       { path: "/ritmo", element: <RitmoPage /> },
+      // ownScroll: Biblioteca deja fijos su encabezado y su barra de
+      // herramientas, y ancla el velo de arrastre y el panel de subida a lo
+      // que se ve.
+      { path: "/biblioteca", element: <LibraryPage />, handle: { ownScroll: true } },
       { path: "/onboarding", element: <OnboardingPage /> },
       {
         path: "/configuracion",
