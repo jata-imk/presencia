@@ -505,6 +505,13 @@
       "when": 1794624451945,
       "tag": "0071_biblioteca_listado",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1795061403637,
+      "tag": "0072_card_asset_picks",
+      "breakpoints": true
     }
   ]
 }

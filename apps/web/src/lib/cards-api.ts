@@ -147,6 +147,22 @@ export function cardImageFromAttachment(
   });
 }
 
+/**
+ * F12 PR5: "Usar de Biblioteca": cualquier imagen del creator queda como la de
+ * la card (o la del slide), por referencia. En un carrusel con otra proporción,
+ * el servidor la recorta.
+ */
+export function cardImageFromLibrary(
+  cardId: string,
+  assetId: string,
+  slideId?: string,
+): Promise<PublicationCardDto> {
+  return apiFetch<PublicationCardDto>(`/api/cards/${cardId}/image/from-library`, {
+    method: "POST",
+    body: slideId ? { assetId, slideId } : { assetId },
+  });
+}
+
 // ── F10.6: slides del carrusel ─────────────────────────────────────────
 
 export function addCardSlide(cardId: string, imagePrompt?: string): Promise<PublicationCardDto> {

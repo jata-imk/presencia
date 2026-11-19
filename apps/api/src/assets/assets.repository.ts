@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { and, asc, eq, gte, inArray, or, sql } from "drizzle-orm";
-import { assets, imageGenerations } from "../db/schema.js";
+import { FIRST_SLIDE_ID } from "@presencia/shared";
+import { assets, cardAssetPicks, imageGenerations } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 
 // Todo acceso a `assets` vive aquí. Sin filtro por user_id: el RLS de la
@@ -106,23 +107,100 @@ export class AssetsRepository {
   }
 
   /**
-   * Todas las imágenes de una card, de la más vieja a la más nueva, con su
-   * origen: el historial de versiones. El join es a la izquierda porque las
-   * subidas no tienen fila de generación.
+   * El historial de versiones de una card, de la más vieja a la más nueva,
+   * con su origen: las imágenes que nacieron en ella y las que trajo de
+   * Biblioteca (F12 PR5). El join a la generación es a la izquierda porque
+   * las subidas no tienen fila de generación.
+   *
+   * Una traída vale por su pick: su `slideId` es el slide de ESTA card al que
+   * entró (el de su asset es el de la card donde nació) y su fecha, la de
+   * cuando entró, para que la tira la ponga donde el creator la trajo y no al
+   * principio. Una que nació aquí y se trajo a OTRO slide de esta card sale
+   * dos veces, una en cada slide (la tira de cada slide filtra por el suyo);
+   * en el mismo slide, una sola, como nacida.
    */
   async listByCard(tx: Tx, cardId: string): Promise<AssetWithOrigin[]> {
-    const rows = await tx
-      .select({
-        asset: assets,
-        kind: imageGenerations.kind,
-        instruction: imageGenerations.instruction,
-        parentAssetId: imageGenerations.parentAssetId,
-      })
+    const origin = {
+      asset: assets,
+      kind: imageGenerations.kind,
+      instruction: imageGenerations.instruction,
+      parentAssetId: imageGenerations.parentAssetId,
+    };
+    const born = await tx
+      .select(origin)
       .from(assets)
       .leftJoin(imageGenerations, eq(imageGenerations.assetId, assets.id))
-      .where(eq(assets.cardId, cardId))
+      .where(eq(assets.cardId, cardId));
+    const picked = await tx
+      .select({
+        ...origin,
+        pickSlideId: cardAssetPicks.slideId,
+        pickedAt: cardAssetPicks.createdAt,
+      })
+      .from(cardAssetPicks)
+      .innerJoin(assets, eq(assets.id, cardAssetPicks.assetId))
+      .leftJoin(imageGenerations, eq(imageGenerations.assetId, assets.id))
+      .where(eq(cardAssetPicks.cardId, cardId));
+    const slideOf = (id: string | null) => id ?? FIRST_SLIDE_ID;
+    const bornSlide = new Map(born.map((r) => [r.asset.id, slideOf(r.asset.slideId)]));
+    const rows: AssetWithOrigin[] = [
+      ...born,
+      ...picked
+        .filter((r) => bornSlide.get(r.asset.id) !== slideOf(r.pickSlideId))
+        .map(({ pickSlideId, pickedAt, ...r }) => ({
+          ...r,
+          asset: { ...r.asset, slideId: pickSlideId, createdAt: pickedAt },
+        })),
+    ];
+    return rows.sort(
+      (a, b) =>
+        a.asset.createdAt.getTime() - b.asset.createdAt.getTime() ||
+        a.asset.id.localeCompare(b.asset.id),
+    );
+  }
+
+  /**
+   * Si la imagen está en el historial de la card (nació en ella o la trajo
+   * de Biblioteca): lo que se puede elegir desde su tira de versiones.
+   */
+  async inCardHistory(tx: Tx, cardId: string, asset: AssetRow): Promise<boolean> {
+    if (asset.cardId === cardId) return true;
+    const [row] = await tx
+      .select({ assetId: cardAssetPicks.assetId })
+      .from(cardAssetPicks)
+      .where(and(eq(cardAssetPicks.cardId, cardId), eq(cardAssetPicks.assetId, asset.id)));
+    return Boolean(row);
+  }
+
+  /**
+   * F12 PR5: anota que la card trajo esta imagen de Biblioteca, para que siga
+   * en su historial aunque la reemplace. Traerla otra vez solo cambia el slide
+   * y la fecha.
+   */
+  async notePick(
+    tx: Tx,
+    pick: { userId: string; cardId: string; assetId: string; slideId: string | null },
+  ): Promise<void> {
+    await tx
+      .insert(cardAssetPicks)
+      .values(pick)
+      .onConflictDoUpdate({
+        target: [cardAssetPicks.cardId, cardAssetPicks.assetId],
+        set: { slideId: pick.slideId, createdAt: sql`now()` },
+      });
+  }
+
+  /**
+   * Los recortes de carrusel de una imagen (`metadata.croppedFrom`), de
+   * cualquier card: "Usar de Biblioteca" reutiliza uno en la proporción que
+   * pide el carrusel en vez de recortar otra vez.
+   */
+  async findCrops(tx: Tx, rootId: string): Promise<AssetRow[]> {
+    return tx
+      .select()
+      .from(assets)
+      .where(sql`${assets.metadata} ->> 'croppedFrom' = ${rootId}`)
       .orderBy(asc(assets.createdAt));
-    return rows;
   }
 
   /** Cambia el texto alternativo sin tocar el resto de la metadata. */

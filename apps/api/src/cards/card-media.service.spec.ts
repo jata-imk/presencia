@@ -328,6 +328,148 @@ describe("CardMediaService.attachUpload", { timeout: 30_000 }, () => {
     );
   });
 
+  // ── F12 PR5: "Usar de Biblioteca" ──
+
+  /** Una imagen subida directo a Biblioteca: sin card ni chat. */
+  async function libraryUpload(data: Uint8Array = PNG, user = userA): Promise<string> {
+    const stored = await assetsService.storeImage({
+      userId: user,
+      cardId: null,
+      chatId: null,
+      data,
+      source: "uploaded",
+    });
+    await dbService.runWithTenant(user, (tx) => assetsService.record(tx, stored));
+    return stored.id;
+  }
+
+  async function assetCount(): Promise<number> {
+    return dbService.runWithTenant(userA, async (tx) => (await tx.select().from(assets)).length);
+  }
+
+  it("pone una imagen de otra card o de Biblioteca sin copiarla, y sigue en la tira al reemplazarla", async () => {
+    const origen = await createCard(VISUAL);
+    const deOtraCard = (await media.attachUpload(userA, origen, PNG)).content.assetIds[0]!;
+    const suelta = await libraryUpload(solidPng(30, 30, [4, 4, 4]));
+    const cardId = await createCard(VISUAL);
+    const before = await assetCount();
+
+    const dto = await media.useFromLibrary(userA, cardId, deOtraCard);
+    expect(dto.content.assetIds).toEqual([deOtraCard]);
+    expect(await assetCount()).toBe(before);
+    // Otra imagen después: la traída se queda en el historial, en la portada.
+    await media.useFromLibrary(userA, cardId, suelta);
+    await media.attachUpload(userA, cardId, solidPng(10, 10, [7, 7, 7]));
+    const versions = await media.versions(userA, cardId);
+    const traida = versions.find((v) => v.assetId === deOtraCard);
+    expect(traida?.slideId).toBe(FIRST_SLIDE_ID);
+    expect(versions.map((v) => v.assetId)).toEqual(expect.arrayContaining([deOtraCard, suelta]));
+    // Ordenada por cuándo entró, no por cuándo nació: después de su origen.
+    expect(versions.findIndex((v) => v.assetId === deOtraCard)).toBeLessThan(
+      versions.findIndex((v) => v.assetId === suelta),
+    );
+    // Y se puede volver a ella desde la tira.
+    const back = await media.selectImage(userA, cardId, deOtraCard);
+    expect(back.content.assetIds).toEqual([deOtraCard]);
+    // La card de origen no se enteró.
+    expect((await media.versions(userA, origen)).map((v) => v.assetId)).toEqual([deOtraCard]);
+  });
+
+  it("elegir desde la tira no acepta una imagen que nunca entró a la card", async () => {
+    const cardId = await createCard(VISUAL);
+    const suelta = await libraryUpload();
+    await expect(media.selectImage(userA, cardId, suelta)).rejects.toThrow(
+      /no es de esta publicación/,
+    );
+  });
+
+  it("en un carrusel con otra proporción entra recortada, y el recorte se reutiliza", async () => {
+    const cuadrada = await libraryUpload(solidPng(60, 60, [8, 8, 8]));
+    const carrusel = async () => {
+      const id = await createCard(VISUAL);
+      const dto = await media.addSlide(userA, id, {});
+      const slides = dto.content.archetype === "visual_first" ? dto.content.slides! : [];
+      return { id, second: slides[1]!.id };
+    };
+    const one = await carrusel();
+    const before = await assetCount();
+    const dto = await media.useFromLibrary(userA, one.id, cuadrada, one.second);
+    const placed = dto.content.assetIds[0]!;
+    expect(placed).not.toBe(cuadrada);
+    const meta = await dbService.runWithTenant(userA, async (tx) => {
+      const [row] = await tx.select().from(assets).where(eq(assets.id, placed));
+      return row!;
+    });
+    expect(meta.metadata).toMatchObject({ width: 48, height: 60, croppedFrom: cuadrada });
+    expect(meta.cardId).toBe(one.id);
+    expect(meta.slideId).toBe(one.second);
+    expect(await assetCount()).toBe(before + 1);
+
+    // Otro carrusel 4:5: el mismo recorte, sin archivo nuevo, anotado en su slide.
+    const two = await carrusel();
+    const again = await media.useFromLibrary(userA, two.id, cuadrada, two.second);
+    expect(again.content.assetIds).toEqual([placed]);
+    expect(await assetCount()).toBe(before + 1);
+    const versions = await media.versions(userA, two.id);
+    expect(versions.find((v) => v.assetId === placed)?.slideId).toBe(two.second);
+  });
+
+  it("si el carrusel cambia de proporción mientras se recorta, no entra nada (409)", async () => {
+    const cuadrada = await libraryUpload(solidPng(60, 60, [3, 3, 3]));
+    const id = await createCard(VISUAL);
+    await media.addSlide(userA, id, {});
+    const before = await assetCount();
+    const real = assetsService.readBytes.bind(assetsService);
+    // Mientras se leen los bytes para recortar a 4:5, otra pestaña lo pasa a 1:1.
+    assetsService.readBytes = async (row) => {
+      assetsService.readBytes = real;
+      await media.setSlidesAspect(userA, id, "1:1");
+      return real(row);
+    };
+    await expect(media.useFromLibrary(userA, id, cuadrada)).rejects.toThrow(/cambió/);
+    expect(await assetCount()).toBe(before);
+  });
+
+  it("traer a un slide una imagen nacida en otro slide de la misma card la deja en su tira", async () => {
+    const id = await createCard(VISUAL);
+    await media.addSlide(userA, id, {});
+    const dto = await media.addSlide(userA, id, {});
+    const slides = dto.content.archetype === "visual_first" ? dto.content.slides! : [];
+    const [s1, , s3] = slides.map((s) => s.id) as [string, string, string];
+    const a = (await media.attachUpload(userA, id, PNG, undefined, s1)).content.assetIds[0]!;
+    await media.useFromLibrary(userA, id, a, s3);
+    await media.attachUpload(userA, id, solidPng(40, 50, [2, 2, 2]), undefined, s3);
+    const versions = await media.versions(userA, id);
+    const slidesOfA = versions.filter((v) => v.assetId === a).map((v) => v.slideId);
+    expect(slidesOfA.sort()).toEqual([s1, s3].sort());
+  });
+
+  it("ajena, borrada, programada o guion de video: no entra", async () => {
+    const cardId = await createCard(VISUAL);
+    const ajena = await libraryUpload(PNG, userB);
+    await expect(media.useFromLibrary(userA, cardId, ajena)).rejects.toThrow(
+      /ya no está en tu Biblioteca/,
+    );
+    const suelta = await libraryUpload();
+    const programada = await createCard(VISUAL, "scheduled");
+    await expect(media.useFromLibrary(userA, programada, suelta)).rejects.toThrow(/programada/);
+    const video = await createCard(VIDEO);
+    await expect(media.useFromLibrary(userA, video, suelta)).rejects.toThrow(/guion de video/);
+    await expect(media.useFromLibrary(userA, cardId, suelta, randomUUID())).rejects.toThrow(
+      /slide/,
+    );
+  });
+
+  it("eliminar la imagen la quita también del historial de la card que la trajo", async () => {
+    const cardId = await createCard(VISUAL);
+    const suelta = await libraryUpload();
+    await media.useFromLibrary(userA, cardId, suelta);
+    await media.attachUpload(userA, cardId, solidPng(10, 10, [6, 6, 6]));
+    await dbService.runWithTenant(userA, (tx) => assetsService.deleteRows(tx, [suelta]));
+    const versions = await media.versions(userA, cardId);
+    expect(versions.map((v) => v.assetId)).not.toContain(suelta);
+  });
+
   // ── F10.6: slides del carrusel ──
 
   /** Los slides de la card tal como quedaron en la DB. */

@@ -9,6 +9,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   smallint,
   text,
   timestamp,
@@ -697,7 +698,10 @@ export const cardVersions = pgTable(
 // Una imagen de Biblioteca (ADR-011). `chat_id` y `card_id` dicen dónde
 // NACIÓ, no dónde se usa: los dos son null si se subió directo a Biblioteca
 // (F12), y pasan a null si ese chat o esa card se borran; la imagen se queda.
-// Dónde se usa hoy se deriva de `content.assetIds` de las cards.
+// Dónde se usa hoy se deriva de `content.assetIds` de las cards, y cualquier
+// card puede usar cualquier imagen del creator ("Usar de Biblioteca", F12
+// PR5), sin copiarla. El historial de una card son las que nacieron en ella
+// más las que trajo de Biblioteca (`card_asset_picks`).
 export const assets = pgTable(
   "assets",
   {
@@ -707,9 +711,11 @@ export const assets = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     chatId: uuid("chat_id").references(() => chats.id, { onDelete: "set null" }),
     cardId: uuid("card_id").references(() => publicationCards.id, { onDelete: "set null" }),
-    // F10.6.1: el slide del carrusel donde nació (o al que se subió). Las
-    // versiones se filtran por slide; sin FK porque los slides viven en el
-    // jsonb de la card. Null = de antes de anotarlo: cuenta como de la portada.
+    // F10.6.1: el slide del carrusel donde nació (o al que se subió), en SU
+    // card. Las versiones se filtran por slide; sin FK porque los slides viven
+    // en el jsonb de la card. Null = de antes de anotarlo: cuenta como de la
+    // portada. En una card a la que llegó de Biblioteca, el slide es el del
+    // pick (`card_asset_picks.slide_id`), no este.
     slideId: uuid("slide_id"),
     storageKey: text("storage_key").notNull(),
     mimeType: text("mime_type").notNull(),
@@ -727,6 +733,34 @@ export const assets = pgTable(
     index("assets_library").on(t.userId, t.createdAt, t.id),
     // El historial de versiones de una card (`listByCard`) filtraba sin índice.
     index("assets_by_card").on(t.cardId),
+  ],
+);
+
+// F12 PR5: las imágenes que una card trajo de Biblioteca ("Usar de
+// Biblioteca"), para que sigan en su historial de versiones después de
+// reemplazarlas. NO es un uso: dónde se usa una imagen sigue siendo
+// `content.assetIds`. Una fila por (card, imagen); traerla otra vez solo
+// actualiza el slide y la fecha. Borrar la imagen o la card se lleva la fila.
+export const cardAssetPicks = pgTable(
+  "card_asset_picks",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    cardId: uuid("card_id")
+      .notNull()
+      .references(() => publicationCards.id, { onDelete: "cascade" }),
+    assetId: uuid("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    // El slide de ESTA card al que entró (null: la portada, como `assets.slide_id`).
+    slideId: uuid("slide_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.cardId, t.assetId] }),
+    // El borrado de una imagen la busca por asset (cascade).
+    index("card_asset_picks_asset").on(t.assetId),
   ],
 );
 

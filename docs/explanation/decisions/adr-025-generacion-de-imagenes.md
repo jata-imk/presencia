@@ -260,3 +260,11 @@ Dos decisiones de Jose tomadas con el bake-off a la vista.
     - "Regenerar" siempre usa el principal, así que el principal no lleva etiqueta.
     - Es el mismo `Menu` con una línea secundaria en tokens, sin patrón visual nuevo.
   - **El fuerte es del generador pedido.** Si ese está caído y dibuja un respaldo de la cadena, la etiqueta no cambia. Es la misma regla de "el respaldo es invisible".
+
+## Addendum (F12 PR5, 2026-11-18) — la tira y la edición con imágenes de Biblioteca
+
+Con "Usar de Biblioteca" (ADR-011, addendum F12 PR5) una card puede mostrar una imagen que nació en otra card o en ninguna. Lo que cambia aquí:
+
+- **El historial de la card (`GET /cards/:id/images`)** son las imágenes que nacieron en ella más las que trajo (`card_asset_picks`). Una traída llega con el `slideId` del slide de ESTA card al que entró, no el de su asset (que es de la card donde nació: con `FIRST_SLIDE_ID` como id fijo de la portada, la de otra card se habría colado en la tira de la portada de esta), y con `createdAt` = cuándo entró, para que la tira la ponga donde el creator la trajo y no al principio. El DTO no cambia de forma. `versionsOfSlide` y `groupCrops` siguen igual: un recorte nacido aquí se agrupa con su original traída por `croppedFrom`.
+- **Elegir desde la tira** acepta cualquier imagen de ese historial. Antes exigía `asset.card_id = card`, que ya no dice "es de esta card".
+- **Ajustar con IA una imagen traída** funciona igual que con una propia: la referencia sale del contenido de la card (la que está puesta), así que estar puesta basta. La edición nace en esta card con `parent_asset_id` apuntando a la imagen de la otra: el linaje de Biblioteca la muestra como hija, y la card de origen no se entera. El lock de `findForUse` sobre el padre antes de la card se queda.

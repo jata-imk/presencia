@@ -12,6 +12,7 @@ import {
   displayCard,
   formatLabel,
   groupByDate,
+  inUseLabel,
   libraryDropVerdict,
   libraryFileProblem,
   networkLabel,
@@ -22,6 +23,7 @@ import {
   toQuery,
   uploadsTitle,
   versionLabel,
+  viewCardTarget,
   withFilter,
 } from "./library.js";
 
@@ -233,6 +235,28 @@ describe("detalle", () => {
       "v2 · Más cálida",
     );
     expect(versionLabel({ ...base, kind: "edit", instruction: "  " }, 2)).toBe("v3 · Edición");
+  });
+});
+
+describe("usos en varias cards (F12 PR5)", () => {
+  it("'Ver card' va a donde se usa; si no se usa, a donde nació", () => {
+    const otra = card({ id: "card-2", chatId: "chat-2", network: "linkedin" });
+    expect(viewCardTarget(asset({ uses: [otra], state: "chosen" }))?.id).toBe("card-2");
+    expect(viewCardTarget(asset())?.id).toBe("card-1");
+    // Una subida suelta puesta en una card también lleva a ella.
+    const suelta = asset({ chat: null, bornInCard: null, origin: "uploaded", uses: [otra] });
+    expect(viewCardTarget(suelta)?.chatId).toBe("chat-2");
+    // Sin chat no hay a dónde llevar.
+    expect(viewCardTarget(asset({ bornInCard: card({ chatId: null }) }))).toBeNull();
+  });
+
+  it("el chip dice dónde está puesta", () => {
+    expect(inUseLabel(asset({ uses: [card()], state: "chosen" }))).toBe("Elegida para su card");
+    expect(inUseLabel(asset({ uses: [card({ id: "card-2" })], state: "chosen" }))).toBe("En uso");
+    expect(inUseLabel(asset({ uses: [card(), card({ id: "card-2" })], state: "chosen" }))).toBe(
+      "En 2 cards",
+    );
+    expect(inUseLabel(asset())).toBeNull();
   });
 });
 

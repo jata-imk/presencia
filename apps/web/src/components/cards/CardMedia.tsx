@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type ComponentType } from "react";
 import {
   ArrowUp,
+  BookOpen,
   Brush,
   ChevronDown,
   Copy,
@@ -38,6 +39,7 @@ import { ImageViewer } from "../ui/ImageViewer.js";
 import { Menu, MENU_CONTENT_CLASS, MENU_ITEM_CLASS } from "../ui/Menu.js";
 import { Tooltip } from "../ui/Tooltip.js";
 import { ChatImagePicker, type ChatImageSource } from "./ChatImagePicker.js";
+import { LibraryPicker, type LibraryImageSource } from "./LibraryPicker.js";
 import { StyleChip } from "./StyleChip.js";
 
 // La imagen de una card y lo que se puede hacer con ella (F10). Presentación
@@ -101,6 +103,8 @@ export interface CardMediaActions {
   uploading: boolean;
   /** F10.9: "Usar una que adjuntaste". Ausente si la card no salió de un chat. */
   fromChat?: ChatImageSource;
+  /** F12 PR5: "Usar de Biblioteca", cualquier imagen del creator. */
+  fromLibrary?: LibraryImageSource;
   /** Ausente mientras no llega el precio: sin precio no se ofrece generar. */
   generation?: CardImageGeneration;
 }
@@ -435,6 +439,33 @@ export function FromChatButton({ media }: { media: CardMediaActions }) {
   );
 }
 
+/**
+ * F12 PR5: "Usar de Biblioteca", junto a "Subir" y "Usar una que adjuntaste":
+ * abre el buscador de Biblioteca. Nada si la card no lo ofrece.
+ */
+export function FromLibraryButton({ media }: { media: CardMediaActions }) {
+  const [open, setOpen] = useState(false);
+  if (!media.fromLibrary) return null;
+  return (
+    <>
+      <ActionButton
+        Icon={BookOpen}
+        label="Usar de Biblioteca"
+        onClick={() => setOpen(true)}
+        disabled={media.uploading || isBusy(media.generation)}
+      />
+      {open && (
+        <LibraryPicker
+          source={media.fromLibrary}
+          busy={media.uploading || isBusy(media.generation)}
+          onUploadOwn={media.upload}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
 /** Cómo se llama una versión en la tira: lo que se pidió, o de dónde salió. */
 function versionLabel(version: CardImageVersionDto, index: number): string {
   if (version.source === "uploaded") return "Subida por ti";
@@ -760,6 +791,7 @@ export function ImageActionStrip({
   const canRegenerate = generation && prompt && aspectRatio;
   const fileInput = useRef<HTMLInputElement>(null);
   const [picking, setPicking] = useState(false);
+  const [pickingLibrary, setPickingLibrary] = useState(false);
   const regenerate = (generator: number) => {
     if (!canRegenerate) return;
     void generation.generate({
@@ -862,12 +894,23 @@ export function ImageActionStrip({
                   Usar una que adjuntaste
                 </Menu.Item>
               )}
+              {media.fromLibrary && (
+                <Menu.Item
+                  className={MENU_ITEM_CLASS}
+                  disabled={busy}
+                  onClick={() => setPickingLibrary(true)}
+                >
+                  <BookOpen size={14} aria-hidden />
+                  Usar de Biblioteca
+                </Menu.Item>
+              )}
             </Menu.Content>
           </Menu>
         ) : (
           <>
             <UploadImageButton media={media} label="Subir otra" />
             <FromChatButton media={media} />
+            <FromLibraryButton media={media} />
           </>
         )}
       </div>
@@ -877,6 +920,14 @@ export function ImageActionStrip({
           busy={busy || media.uploading}
           onUploadOwn={media.upload}
           onClose={() => setPicking(false)}
+        />
+      )}
+      {pickingLibrary && media.fromLibrary && (
+        <LibraryPicker
+          source={media.fromLibrary}
+          busy={busy || media.uploading}
+          onUploadOwn={media.upload}
+          onClose={() => setPickingLibrary(false)}
         />
       )}
     </section>
@@ -1016,6 +1067,7 @@ function ImageComposer({
           <>
             <UploadImageButton media={media} label="Subir la mía" />
             <FromChatButton media={media} />
+            <FromLibraryButton media={media} />
           </>
         )}
       </div>
@@ -1079,6 +1131,7 @@ export function EmptyImageState({
             <div className="mt-1 flex flex-wrap justify-center gap-1.5">
               <UploadImageButton media={media} label="Subir imagen" primary />
               <FromChatButton media={media} />
+              <FromLibraryButton media={media} />
             </div>
           )}
         </>

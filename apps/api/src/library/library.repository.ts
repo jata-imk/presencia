@@ -18,7 +18,8 @@ import type { Tx } from "../db/db.service.js";
 // - **Dónde se usa una imagen se deriva**, no se guarda: está puesta en una
 //   card si su id aparece en `content.assetIds` (los slides de un carrusel se
 //   reflejan ahí en cada escritura, ver `withSlides`). `assets.card_id` solo
-//   dice dónde nació.
+//   dice dónde nació, y `card_asset_picks` (F12 PR5) es el historial de una
+//   card que la trajo: tampoco es uso.
 // - **Los recortes no son imágenes de Biblioteca.** Lo que entra a un carrusel
 //   con otra proporción es una copia recortada (`metadata.croppedFrom`): es la
 //   misma imagen, así que se oculta y su uso cuenta como uso de la original.

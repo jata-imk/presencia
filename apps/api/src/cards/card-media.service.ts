@@ -28,7 +28,8 @@ import {
   type PublicationCardDto,
 } from "@presencia/shared";
 import type { Tx } from "../db/db.service.js";
-import type { AssetMetadata } from "../assets/assets.repository.js";
+import type { AssetMetadata, AssetRow } from "../assets/assets.repository.js";
+import type { StoredAsset } from "../assets/assets.service.js";
 import { fitToAspect, matchesAspect, nearestAspect } from "../images/image-fit.js";
 import { AssetsService } from "../assets/assets.service.js";
 import { AttachmentsService } from "../attachments/attachments.service.js";
@@ -46,6 +47,8 @@ import { toDto } from "./cards.service.js";
 function acceptsImage(content: CardContent): boolean {
   return content.archetype === "visual_first" || content.archetype === "text_first";
 }
+
+const GONE_FROM_LIBRARY = "Esa imagen ya no está en tu Biblioteca.";
 
 export const NOT_EDITABLE_MESSAGE =
   "Esta publicación ya está programada o publicada. Cancela la programación para cambiar la imagen.";
@@ -178,9 +181,151 @@ export class CardMediaService {
   }
 
   /**
-   * Elegir otra de las imágenes de la card: una versión anterior (otra
-   * generación, una edición, una subida). Solo imágenes de ESTA card: un id de otra (o de otro usuario,
-   * que por RLS no existe) se rechaza igual.
+   * F12 PR5, "Usar de Biblioteca": pone en la card (o en un slide) cualquier
+   * imagen del creator, nazca donde haya nacido, por referencia: la misma
+   * fila, sin copia (lore doc de Biblioteca §6). Queda anotada en el
+   * historial de la card (`notePick`) para que siga en su tira aunque se
+   * reemplace.
+   *
+   * La excepción es el carrusel con otra proporción: ahí entra un recorte al
+   * centro, como todo lo que entra a un carrusel. Si la imagen ya tiene un
+   * recorte en esa proporción (de cualquier card), se reutiliza en vez de
+   * recortar otra vez.
+   */
+  async useFromLibrary(
+    userId: string,
+    cardId: string,
+    assetId: string,
+    slideId?: string,
+  ): Promise<PublicationCardDto> {
+    const plan = await this.dbService.runWithTenant(userId, async (tx) => {
+      const card = await this.repo.findById(tx, cardId);
+      if (!card) throw new NotFoundException("No encontramos esa publicación.");
+      this.assertCanChangeImage(card);
+      assertSlide(card.content as CardContent, slideId);
+      const picked = await this.assets.find(tx, assetId);
+      if (!picked) throw new NotFoundException(GONE_FROM_LIBRARY);
+      // Biblioteca no ofrece recortes; si llega uno, se trabaja con su
+      // original, que es la que el creator ve allá.
+      const rootId = (picked.metadata as AssetMetadata).croppedFrom;
+      const root = rootId ? await this.assets.find(tx, rootId) : picked;
+      if (!root) throw new NotFoundException(GONE_FROM_LIBRARY);
+      const content = card.content as CardContent;
+      const aspect =
+        content.archetype !== "video_script" && content.slides
+          ? carouselAspect(content, card.network)
+          : null;
+      const rootMeta = root.metadata as AssetMetadata;
+      if (!aspect || matchesAspect(rootMeta.width, rootMeta.height, aspect)) {
+        return { card, root, aspect, needsCrop: false, reused: null };
+      }
+      // El más reciente en esa proporción (vienen del más viejo al más nuevo).
+      const crops = await this.assets.findCrops(tx, root.id);
+      const reused =
+        crops.reverse().find((c) => {
+          const m = c.metadata as AssetMetadata;
+          return matchesAspect(m.width, m.height, aspect);
+        }) ?? null;
+      return { card, root, aspect, needsCrop: true, reused };
+    });
+    const { card, root, aspect, needsCrop, reused } = plan;
+    const targetSlide = slideId ?? slidesOf(card.content as CardContent)[0]?.id ?? FIRST_SLIDE_ID;
+
+    // El recorte nuevo, si hace falta: bytes y storage fuera de la
+    // transacción, como en setSlidesAspect. Nace en esta card.
+    let cropped: StoredAsset | null = null;
+    if (aspect && needsCrop && !reused) {
+      const bytes = await this.assets.readBytes(root);
+      const data = await fitToAspect(bytes, aspect);
+      if (data !== bytes) {
+        const meta = root.metadata as AssetMetadata;
+        cropped = await this.assets.storeImage({
+          userId,
+          cardId,
+          chatId: card.chatId,
+          data,
+          source: root.source,
+          metadata: {
+            ...(meta.alt ? { alt: meta.alt } : {}),
+            ...(meta.originalName ? { originalName: meta.originalName } : {}),
+            croppedFrom: root.id,
+          },
+          slideId: targetSlide,
+        });
+      }
+    }
+
+    try {
+      return await this.dbService.runWithTenant(userId, async (tx: Tx) => {
+        // La imagen (y el recorte que se reutiliza) bloqueada contra un
+        // borrado de Biblioteca ANTES que la card: el mismo orden que el
+        // borrado (ver selectImage). Si se eliminó mientras se recortaba, no
+        // entra nada.
+        if (!(await this.assets.findForUse(tx, root.id))) {
+          throw new NotFoundException(GONE_FROM_LIBRARY);
+        }
+        let placed: AssetRow = root;
+        if (reused) {
+          // Si el recorte reutilizado ya no está, se queda la original y la
+          // revisión de abajo dice que hay que volver a intentarlo: la
+          // original no está en la proporción del carrusel.
+          placed = (await this.assets.findForUse(tx, reused.id)) ?? root;
+        }
+        if (cropped) placed = await this.assets.record(tx, cropped);
+        // Bloqueada: lo que se escribe sale de esta lectura, y un cambio del
+        // carrusel a la vez (proporción, slides) no se puede pisar.
+        const current = await this.repo.lockById(tx, cardId);
+        if (!current) throw new NotFoundException("No encontramos esa publicación.");
+        assertSlide(current.content as CardContent, slideId);
+        // El plan (recortar o no, y a qué) salió de la card de antes. Si
+        // mientras tanto se volvió carrusel o cambió de proporción, lo que se
+        // iba a poner ya no sirve.
+        const now = current.content as CardContent;
+        const nowAspect =
+          now.archetype !== "video_script" && now.slides
+            ? carouselAspect(now, current.network)
+            : null;
+        const placedMeta = placed.metadata as AssetMetadata;
+        if (
+          nowAspect !== aspect ||
+          (nowAspect && !matchesAspect(placedMeta.width, placedMeta.height, nowAspect))
+        ) {
+          throw new ConflictException("La publicación cambió. Vuelve a elegir la imagen.");
+        }
+        const content = cardContentSchema.parse(
+          placeImage(current.content as CardContent, placed.id, slideId),
+        );
+        const updated = await this.repo.updateContentIfEditable(tx, cardId, content, {
+          imageJob: "clearUnlessRunning",
+        });
+        if (!updated) throw new ConflictException(NOT_EDITABLE_MESSAGE);
+        // Al historial si nació en otra card, o en otro slide de esta: la
+        // tira de un slide filtra por su slide, y sin el pick la imagen se
+        // perdería de la tira del slide al que entró al reemplazarla.
+        if (placed.cardId !== cardId || (placed.slideId ?? FIRST_SLIDE_ID) !== targetSlide) {
+          await this.assets.notePick(tx, {
+            userId,
+            cardId,
+            assetId: placed.id,
+            slideId: targetSlide,
+          });
+        }
+        return toDto(updated);
+      });
+    } catch (error) {
+      // El recorte que se subió y no entró: sus bytes se van, como los de un
+      // borrado (después de la transacción, que ya hizo rollback).
+      if (cropped) await this.assets.deleteObjects([cropped.storageKey]);
+      throw error;
+    }
+  }
+
+  /**
+   * Elegir otra imagen del historial de la card: una versión anterior (otra
+   * generación, una edición, una subida) o una que trajo de Biblioteca (F12
+   * PR5). Una imagen que nunca estuvo en esta card se rechaza: entra por
+   * `useFromLibrary`, que es el que la recorta si es un carrusel. Una de otro
+   * usuario, por RLS, no existe.
    *
    * F12: el asset se lee con `findForUse` (`for key share`) y no con un
    * `find` suelto. Biblioteca puede estar eliminándolo en ese momento: sin el
@@ -195,7 +340,7 @@ export class CardMediaService {
   ): Promise<PublicationCardDto> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       const asset = await this.assets.findForUse(tx, assetId);
-      if (!asset || asset.cardId !== cardId) {
+      if (!asset || !(await this.assets.inCardHistory(tx, cardId, asset))) {
         throw new NotFoundException("Esa imagen no es de esta publicación.");
       }
       const current = await this.repo.findById(tx, cardId);
@@ -213,8 +358,9 @@ export class CardMediaService {
   }
 
   /**
-   * Todas las imágenes que tuvo la card, de la más vieja a la más nueva, con
-   * cómo nació cada una: la tira de versiones. Se puede pedir en cualquier
+   * Todas las imágenes que tuvo la card (las que nacieron en ella y las que
+   * trajo de Biblioteca), de la más vieja a la más nueva, con cómo nació cada
+   * una: la tira de versiones. Se puede pedir en cualquier
    * estado de la card (una programada también muestra su historial); lo que
    * no deja es elegir otra.
    */
@@ -386,6 +532,8 @@ export class CardMediaService {
     const replacement = new Map<string, string>();
     // De qué original sale cada reemplazo: se vuelve a bloquear al final.
     const rootOf = new Map<string, string>();
+    // Originales de otra card que regresan, con el slide al que regresan.
+    const foreignBack = new Map<string, string | null>();
     // El recorte es versión del MISMO slide que la imagen que reemplaza.
     const slideOf = new Map(content.slides.flatMap((s) => (s.assetId ? [[s.assetId, s.id]] : [])));
     const newAssets: Awaited<ReturnType<AssetsService["storeImage"]>>[] = [];
@@ -410,6 +558,9 @@ export class CardMediaService {
         if (root.id !== assetId) {
           replacement.set(assetId, root.id);
           rootOf.set(assetId, root.id);
+          // Una original traída de Biblioteca que regresa: al historial, como
+          // todo lo que la card muestra (F12 PR5).
+          if (root.cardId !== cardId) foreignBack.set(root.id, slideOf.get(assetId) ?? null);
         }
         continue;
       }
@@ -484,6 +635,11 @@ export class CardMediaService {
       });
       const updated = await this.repo.updateContentIfEditable(tx, cardId, next);
       if (!updated) throw new ConflictException(NOT_EDITABLE_MESSAGE);
+      const shown = new Set(slides.flatMap((s) => (s.assetId ? [s.assetId] : [])));
+      for (const [id, slide] of foreignBack) {
+        if (shown.has(id))
+          await this.assets.notePick(tx, { userId, cardId, assetId: id, slideId: slide });
+      }
       return toDto(updated);
     });
     await this.assets.deleteObjects(orphanKeys);

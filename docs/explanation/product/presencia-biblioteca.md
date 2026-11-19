@@ -48,8 +48,9 @@ Una imagen puede no tener ninguna de las dos: la subiste directo a Biblioteca,
 o la generaste suelta (sección 4).
 
 **Si eliminas el chat donde nació, la imagen se queda.** Pierde ese dato: el
-panel dice "Sin chat de origen", "Abrir en el chat" y "Ver card" desaparecen,
-y ya no se encuentra buscando el título de ese chat. Eliminar un chat nunca
+panel dice "Sin chat de origen", "Abrir en el chat" desaparece (y "Ver card",
+si tampoco se usa en ninguna card), y ya no se encuentra buscando el título de
+ese chat. Eliminar un chat nunca
 elimina imágenes; eso se hace aquí.
 
 ---
@@ -141,10 +142,17 @@ Se abre a la derecha y empuja la cuadrícula; en tablet va encima, con velo, y
 en móvil ocupa la pantalla con "Volver". Muestra:
 
 - La imagen, con **Descargar** y **Eliminar**.
-- **"Abrir en el chat"** y **"Ver card"**, si nació en uno. "Abrir en el chat"
-  lleva a la conversación; "Ver card" lleva al mismo chat con el panel de
-  publicación ya abierto en esa card, que es donde se edita.
-- Origen, y si está "Elegida para su card" o es una "Variante descartada".
+- **"Abrir en el chat"**, si nació en uno: lleva a esa conversación.
+- **"Ver card"** lleva al chat de la card con su panel de publicación ya
+  abierto, que es donde se edita: la primera card donde la imagen está puesta
+  y, si no está en ninguna, la card donde nació. Una imagen subida directo a
+  Biblioteca y puesta después en una card también lo tiene.
+- **"Se usa en":** cada card que la tiene puesta, con su red y su estado; cada
+  una abre su card. Una imagen puede estar en varias (sección "Elegir de
+  Biblioteca"). Si no se usa en ninguna, dice en cuál nació.
+- Origen, y si está "Elegida para su card" (su único uso es la card donde
+  nació), "En uso" (está en otra card), "En 3 cards", o es una "Variante
+  descartada".
 - **Prompt**, con "Copiar". Es lo que pediste tú, no la instrucción interna que
   arma Presencia con tu estilo y tu nicho. Si la imagen salió de editar otra,
   dice "Instrucción de edición".
@@ -186,12 +194,22 @@ antes de que sueltes.
 ### "Elegir de Biblioteca"
 
 El mismo buscador, en un modal, con tres pestañas (Todas, Generadas con IA,
-Subidas por ti). Se abre desde la imagen de una card con "Usar de Biblioteca".
-Si no encuentras lo que buscas, "Subir desde tu equipo" está ahí mismo.
+Subidas por ti), sin los filtros de red y estado: aquí se busca una imagen, no
+se administra la Biblioteca. Se abre desde la imagen de una card (o de un
+slide del carrusel) con "Usar de Biblioteca", junto a "Subir" y "Usar una que
+adjuntaste". Si no encuentras lo que buscas, "Subir desde tu equipo" está ahí
+mismo: es la misma subida de la card, así que esa imagen nace en ella.
 
-Cualquier imagen tuya sirve para cualquier card, sin importar dónde nació. En
-un carrusel con otra proporción, Presencia la recorta al entrar, como hace con
-todo lo que entra a un carrusel.
+Cualquier imagen tuya sirve para cualquier card, sin importar dónde nació, y
+entra por referencia: es la misma imagen, no una copia. En un carrusel con
+otra proporción, Presencia la recorta al entrar, como hace con todo lo que
+entra a un carrusel; si esa imagen ya tiene un recorte en esa proporción (de
+otro carrusel), se reutiliza en vez de recortarla otra vez.
+
+La imagen que traes se queda en el historial de versiones de la card aunque
+después generes o elijas otra: puedes volver a ella con un clic, igual que a
+cualquier versión. Y se puede ajustar con IA ahí mismo; la edición nace en
+esa card.
 
 ---
 
@@ -382,7 +400,7 @@ asistente puede proponer imágenes sueltas (sección 4).
 
 **Con las cards:** "Usar de Biblioteca" pone cualquier imagen tuya en
 cualquier card. El historial de versiones de una card incluye la imagen que
-trajiste de fuera.
+trajiste de fuera, también después de reemplazarla.
 
 **Con Calendario:** el filtro "Estado de la card" y el atajo "Listas para
 publicar" leen el mismo estado que el Calendario.

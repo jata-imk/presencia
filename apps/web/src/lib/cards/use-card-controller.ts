@@ -4,6 +4,7 @@ import {
   FIRST_SLIDE_ID,
   IMAGE_ASPECT_OPTIONS,
   IMAGE_JOB_STALE_MS,
+  NETWORK_LABELS,
   NETWORK_MAX_IMAGES,
   type CardImageJob,
   type CardImageVersionDto,
@@ -32,6 +33,7 @@ import {
   updateCardSlide,
   uploadCardImage,
   cardImageFromAttachment,
+  cardImageFromLibrary,
 } from "../cards-api.js";
 import { cuotaAgotadaDe } from "../cuota-agotada.js";
 import { useImagesConfig } from "../use-images-config.js";
@@ -270,6 +272,37 @@ export function useCardController(
     }
   }
 
+  // F12 PR5: "Usar de Biblioteca". Mismo "subiendo" que la subida: si entra a
+  // un carrusel con otra proporción, el servidor la recorta.
+  async function handleFromLibrary(id: string, assetId: string, slideId?: string) {
+    setUploading(true);
+    try {
+      applyCards(await cardImageFromLibrary(id, assetId, slideId));
+      return true;
+    } catch (err) {
+      failToast("No se pudo usar esa imagen", err);
+      return false;
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  /** F12 PR5: de dónde trae la card una imagen de Biblioteca, y para qué. */
+  function fromLibraryOf(
+    target: PublicationCardDto,
+    slide?: { id: string; position: number },
+    aspect?: ImageAspectRatio,
+  ): CardMediaActions["fromLibrary"] {
+    const network = NETWORK_LABELS[target.network];
+    return {
+      subtitle: slide
+        ? `Para el slide ${String(slide.position)} de tu carrusel de ${network}`
+        : `Para la imagen de tu card de ${network}`,
+      use: (assetId) => handleFromLibrary(target.id, assetId, slide?.id),
+      note: aspect ? `Se recorta a ${aspect} si hace falta` : undefined,
+    };
+  }
+
   /** Un cambio de estructura del carrusel: uno a la vez, y la card nueva al store. */
   async function changeSlides(
     title: string,
@@ -317,6 +350,11 @@ export function useCardController(
             undefined,
             card.content.slides ? carouselAspect(card.content, card.network) : undefined,
           ),
+          fromLibrary: fromLibraryOf(
+            card,
+            undefined,
+            card.content.slides ? carouselAspect(card.content, card.network) : undefined,
+          ),
           generation: imagesConfig
             ? {
                 generate: (input: GenerateInput) => handleGenerate(card.id, input),
@@ -357,6 +395,11 @@ export function useCardController(
       upload: (file) => void handleUpload(card.id, file, slide.id),
       uploading,
       fromChat: fromChatOf(card, slide.id, aspect),
+      fromLibrary: fromLibraryOf(
+        card,
+        { id: slide.id, position: (slides?.findIndex((s) => s.id === slide.id) ?? 0) + 1 },
+        aspect,
+      ),
       generation:
         base && imagesConfig
           ? {

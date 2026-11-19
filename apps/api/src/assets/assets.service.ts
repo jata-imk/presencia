@@ -83,9 +83,30 @@ export class AssetsService {
     return this.storage.get(row.storageKey);
   }
 
-  /** El historial de imágenes de una card, en la transacción del llamador. */
+  /**
+   * El historial de imágenes de una card (las que nacieron en ella y las que
+   * trajo de Biblioteca), en la transacción del llamador.
+   */
   listByCard(tx: Tx, cardId: string): Promise<AssetWithOrigin[]> {
     return this.repo.listByCard(tx, cardId);
+  }
+
+  /** Si la imagen está en el historial de la card (ver el repositorio). */
+  inCardHistory(tx: Tx, cardId: string, asset: AssetRow): Promise<boolean> {
+    return this.repo.inCardHistory(tx, cardId, asset);
+  }
+
+  /** Anota que la card trajo esta imagen de Biblioteca (ver el repositorio). */
+  notePick(
+    tx: Tx,
+    pick: { userId: string; cardId: string; assetId: string; slideId: string | null },
+  ): Promise<void> {
+    return this.repo.notePick(tx, pick);
+  }
+
+  /** Los recortes de carrusel de una imagen, de cualquier card. */
+  findCrops(tx: Tx, rootId: string): Promise<AssetRow[]> {
+    return this.repo.findCrops(tx, rootId);
   }
 
   /** Texto alternativo: `null` si el asset no existe o no es suyo (RLS). */

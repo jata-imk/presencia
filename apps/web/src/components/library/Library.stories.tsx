@@ -298,6 +298,54 @@ export const DetalleSinChat: Story = {
   ),
 };
 
+// F12 PR5: con "Usar de Biblioteca" una imagen puede estar en varias cards, o
+// en una sin haber nacido en ninguna.
+const usadaEnVarias = {
+  ...detail(1),
+  state: "chosen" as const,
+  uses: [
+    detail(1).bornInCard!,
+    { id: "card-otra-1", chatId: "chat-2", network: "facebook" as const, status: "draft" as const },
+    {
+      id: "card-otra-2",
+      chatId: "chat-3",
+      network: "linkedin" as const,
+      status: "published" as const,
+    },
+  ],
+};
+
+export const DetalleEnVariasCards: Story = {
+  name: "Detalle · en varias cards (Usar de Biblioteca)",
+  render: () => (
+    <DetailFrame>
+      <LibraryDetail {...DETAIL_ACTIONS} asset={usadaEnVarias} versions={usadaEnVarias.versions} />
+    </DetailFrame>
+  ),
+};
+
+const sueltaEnUso = {
+  ...detail(4),
+  state: "chosen" as const,
+  uses: [
+    {
+      id: "card-otra-3",
+      chatId: "chat-2",
+      network: "instagram" as const,
+      status: "draft" as const,
+    },
+  ],
+};
+
+export const DetalleSueltaEnUso: Story = {
+  name: "Detalle · subida a Biblioteca, puesta en una card",
+  render: () => (
+    <DetailFrame>
+      <LibraryDetail {...DETAIL_ACTIONS} asset={sueltaEnUso} versions={sueltaEnUso.versions} />
+    </DetailFrame>
+  ),
+};
+
 export const DetalleCargando: Story = {
   name: "Detalle · cargando una versión",
   render: () => (

@@ -4,7 +4,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   aiRunSteps,
   aiUsageEvents,
+  assets,
   brandVoices,
+  cardAssetPicks,
   channelLinks,
   chatSummaries,
   chats,
@@ -1289,6 +1291,65 @@ describe("RLS tenant_isolation", () => {
             title: "x",
             detail: "x",
           }),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(String((error as Error).cause)).toMatch(/row-level security/);
+    });
+  });
+
+  // F12 PR5: las imágenes que una card trajo de Biblioteca.
+  describe("card_asset_picks", () => {
+    let cardId: string;
+    let assetId: string;
+
+    beforeAll(async () => {
+      [cardId, assetId] = await dbService.runWithTenant(userA, async (tx) => {
+        const [card] = await tx
+          .insert(publicationCards)
+          .values({
+            userId: userA,
+            chatId: chatA,
+            archetype: "text_first",
+            network: "linkedin",
+            content: { archetype: "text_first", body: "hola", hashtags: [], assetIds: [] },
+          })
+          .returning({ id: publicationCards.id });
+        const [asset] = await tx
+          .insert(assets)
+          .values({
+            userId: userA,
+            storageKey: `${userA}/assets/x.png`,
+            mimeType: "image/png",
+            sizeBytes: 1,
+            source: "uploaded",
+            metadata: { width: 1, height: 1 },
+          })
+          .returning({ id: assets.id });
+        await tx
+          .insert(cardAssetPicks)
+          .values({ userId: userA, cardId: card!.id, assetId: asset!.id });
+        return [card!.id, asset!.id];
+      });
+    }, 15_000);
+
+    it("el dueño ve sus picks; otro tenant no", { timeout: 15_000 }, async () => {
+      const mios = await dbService.runWithTenant(userA, (tx) =>
+        tx.select().from(cardAssetPicks).where(eq(cardAssetPicks.cardId, cardId)),
+      );
+      const ajenos = await dbService.runWithTenant(userB, (tx) =>
+        tx.select().from(cardAssetPicks).where(eq(cardAssetPicks.cardId, cardId)),
+      );
+      expect(mios.map((r) => r.assetId)).toEqual([assetId]);
+      expect(ajenos).toHaveLength(0);
+    });
+
+    it("otro tenant no puede insertar a nombre del dueño", { timeout: 15_000 }, async () => {
+      const error: unknown = await dbService
+        .runWithTenant(userB, (tx) =>
+          tx.insert(cardAssetPicks).values({ userId: userA, cardId, assetId }),
         )
         .then(
           () => null,
