@@ -38,13 +38,16 @@ import { useTelegramLinkStore } from "../../stores/telegram-link-store.js";
 // en vez de omitirse: el mockup ya los diseñó, y fingir que Presencia solo
 // tiene Chats sería más falso que mostrarlos apagados (AGENTS.md #6 — esto
 // no es infra de más, es la nav quedando honesta sobre qué existe).
-const MODULES = [
+//
+// Desde F12 los cinco existen; la rama de "Pronto" se queda para el próximo
+// módulo (el tipo `to: string | null` la mantiene viva).
+const MODULES: readonly { icon: typeof MessageSquare; label: string; to: string | null }[] = [
   { icon: MessageSquare, label: "Chats", to: "/chats" },
   { icon: Calendar, label: "Calendario", to: "/calendario" },
   { icon: Activity, label: "Ritmo", to: "/ritmo" },
-  { icon: BarChart2, label: "Analíticas", to: null },
+  { icon: BarChart2, label: "Analíticas", to: "/analiticas" },
   { icon: BookOpen, label: "Biblioteca", to: "/biblioteca" },
-] as const;
+];
 
 // "Hasta 5 carpetas visibles + link Ver todas" (overview §5).
 const FOLDERS_PREVIEW = 5;

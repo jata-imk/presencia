@@ -20,7 +20,8 @@ import {
   type TrendsDto,
 } from "@presencia/shared";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
-import { avisoDeUltimaBusqueda, botonDeRefresco, haceCuanto } from "../../lib/ritmo/tendencias.js";
+import { haceCuanto } from "../../lib/relative-time.js";
+import { avisoDeUltimaBusqueda, botonDeRefresco } from "../../lib/ritmo/tendencias.js";
 import { RachaTile } from "./CadenciaHeatmap.js";
 
 export function Bloque({ children }: { children: ReactNode }) {

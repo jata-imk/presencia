@@ -6,23 +6,8 @@ import {
 } from "@presencia/shared";
 
 // Lo que la sección de tendencias de Ritmo dice alrededor de sus tarjetas:
-// cuándo se generaron y qué hace el botón. Puro para poder probarlo sin
-// montar la pantalla.
-
-const MS_POR_MINUTO = 60 * 1000;
-const MS_POR_HORA = 60 * MS_POR_MINUTO;
-const MS_POR_DIA = 24 * MS_POR_HORA;
-
-const relativo = new Intl.RelativeTimeFormat("es-MX", { numeric: "auto" });
-
-/** "hace 3 días", "ayer", "hace 5 horas", "hace un momento". */
-export function haceCuanto(iso: string, ahora: Date = new Date()): string {
-  const ms = ahora.getTime() - new Date(iso).getTime();
-  if (ms < MS_POR_MINUTO) return "hace un momento";
-  if (ms < MS_POR_HORA) return relativo.format(-Math.floor(ms / MS_POR_MINUTO), "minute");
-  if (ms < MS_POR_DIA) return relativo.format(-Math.floor(ms / MS_POR_HORA), "hour");
-  return relativo.format(-Math.floor(ms / MS_POR_DIA), "day");
-}
+// qué hace el botón y qué decir si la última búsqueda falló. Puro para poder
+// probarlo sin montar la pantalla. "Hace cuánto" se fue a lib/relative-time.ts.
 
 const porcentaje = new Intl.NumberFormat("es-MX", { maximumFractionDigits: 1 });
 

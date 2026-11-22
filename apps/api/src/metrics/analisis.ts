@@ -360,10 +360,12 @@ export function analizarPeriodo<P extends PublicacionMedible>(
     };
   });
 
-  const redesDelPeriodo = [...new Set(posts.map((post) => post.publicacion.network))].sort();
-  const redes = redesDelPeriodo.map((network) =>
-    redAnalizada(network, posts, entrada, contextos.get(network) ?? contextoVacio(network)),
-  );
+  const redesDelPeriodo = [...new Set(posts.map((post) => post.publicacion.network))];
+  const redes = redesDelPeriodo
+    .map((network) =>
+      redAnalizada(network, posts, entrada, contextos.get(network) ?? contextoVacio(network)),
+    )
+    .sort(porRelevancia);
 
   // Lo que la ingesta sigue midiendo: lo de 30 días o menos. Algo más viejo
   // ya no se mide (frescura.ts), y su última medición vieja no significa que
@@ -494,6 +496,23 @@ function redAnalizada<P extends PublicacionMedible>(
     interacciones: sumaONull(posts.map((post) => post.interacciones)),
     tendencia: tendenciaDe(posts, contexto, entrada.ahora, entrada.periodoDias),
   };
+}
+
+/**
+ * El orden de las redes en todo Analíticas: primero donde más publicaste, y al
+ * final las que no reportan (no hay número que leer). Lo pone el motor y no la
+ * pantalla porque la lista de engagement del resumen y la lente "Por red" son
+ * la misma lista: ordenadas en dos lugares, se desincronizan. Empate: por
+ * nombre, para que no dependa del orden de lectura.
+ */
+function porRelevancia(a: RedAnalizada, b: RedAnalizada): number {
+  const noReportaA = a.contexto.muestra === "no_reporta" ? 1 : 0;
+  const noReportaB = b.contexto.muestra === "no_reporta" ? 1 : 0;
+  return (
+    noReportaA - noReportaB ||
+    b.publicaciones - a.publicaciones ||
+    a.network.localeCompare(b.network)
+  );
 }
 
 /** El engagement de hoy por tramos iguales del periodo, del más viejo al más nuevo. */

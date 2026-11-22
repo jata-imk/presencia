@@ -254,6 +254,21 @@ describe("kpisDe", () => {
     });
   });
 
+  it("ordena las redes por publicaciones, con las que no reportan al final", () => {
+    const entrada = entradaCon([
+      // LinkedIn es la que más publicó, pero no trae un solo número.
+      ...serie("linkedin", 5, () => null, 2, null),
+      ...serie("facebook", 2, () => 4),
+      ...serie("instagram", 3, () => 10),
+      ...serie("tiktok", 2, () => 6, 2, null),
+    ]);
+    const analisis = analizarPeriodo(entrada);
+    const orden = ["instagram", "facebook", "tiktok", "linkedin"];
+    expect(analisis.redes.map((r) => r.network)).toEqual(orden);
+    // La lista del resumen es la misma lista, en el mismo orden.
+    expect(kpisDe(analisis, entrada, null).engagement.map((e) => e.network)).toEqual(orden);
+  });
+
   it("el filtro de red es una rebanada del mismo análisis", () => {
     const entrada = entradaCon([
       ...serie("instagram", 3, () => 10),

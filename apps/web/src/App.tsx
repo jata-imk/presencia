@@ -1,6 +1,7 @@
 import { MotionConfig } from "motion/react";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
 import { useThemeSync } from "./lib/use-theme.js";
+import { AnaliticasPage } from "./routes/analiticas.js";
 import { ArchivedChatsPage } from "./routes/archived-chats.js";
 import { LibraryPage } from "./routes/biblioteca.js";
 import { CalendarioPage } from "./routes/calendario.js";
@@ -49,6 +50,9 @@ const router = createBrowserRouter([
       // herramientas, y ancla el velo de arrastre y el panel de subida a lo
       // que se ve.
       { path: "/biblioteca", element: <LibraryPage />, handle: { ownScroll: true } },
+      // ownScroll: el panel de detalle de Analíticas se ancla a lo que se ve,
+      // no al final de una página larga (mismo patrón que Biblioteca).
+      { path: "/analiticas", element: <AnaliticasPage />, handle: { ownScroll: true } },
       { path: "/onboarding", element: <OnboardingPage /> },
       {
         path: "/configuracion",

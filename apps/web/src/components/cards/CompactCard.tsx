@@ -178,7 +178,12 @@ function networkOfInput(input: unknown): SocialNetwork | null {
   return parsed.success ? parsed.data : null;
 }
 
-function Thumb({
+/**
+ * La miniatura de una publicación: su imagen, o el ícono del formato si no
+ * tiene o si se borró de Biblioteca (`onError`). Analíticas la reusa en su
+ * tabla, igual que el Calendario.
+ */
+export function Thumb({
   kind,
   assetId,
   images,

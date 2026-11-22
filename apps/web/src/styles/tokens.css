@@ -402,6 +402,18 @@
      imagen, igual en los dos temas. */
   --lib-select-border: color-mix(in srgb, var(--color-plum-500) 35%, transparent);
 
+  /* Analíticas (F12, Claude Design "Presencia Analytics Overview").
+     Solo lo que no tiene ya un token semántico: los cambios "vs periodo
+     anterior" usan success/warning y "Métricas en camino" usa info. Las
+     barras de la tendencia: el tramo más alto en rosa, los demás en orquídea
+     y un tramo sin publicaciones como un muñón gris (no un cero). La tarjeta
+     de una red que no reporta va degradada: fondo hundido y borde punteado. */
+  --ana-barra: var(--color-pink-orchid);
+  --ana-barra-pico: var(--color-blush-pop);
+  --ana-barra-vacia: var(--border-default);
+  --ana-degradada-bg: var(--cal-day-out-bg);
+  --ana-degradada-border: var(--color-plum-200);
+
   /* Configuración (F9.7, mock de Claude Design).
      Foreground de estado para TEXTO: --status-success/-warning/-error/-info
      son colores de relleno y de ícono, y como texto chico sobre blanco no
@@ -554,6 +566,11 @@
   /* Biblioteca: solo la celda; lo demás se deriva de tokens que ya voltean. */
   --lib-tile-bg: #231629;
 
+  /* Analíticas: las barras se quedan (orquídea y rosa leen sobre el plum
+     oscuro); la tarjeta degradada se hunde con el mismo valor que el día de
+     otro mes del Calendario, y su borde baja a un plum medio. */
+  --ana-degradada-border: var(--color-plum-700);
+
   --status-success-fg: #7fd6a4;
   --status-warning-fg: #fcd34d;
   --status-error-fg: #fca5a5;
@@ -670,6 +687,12 @@
   --color-lib-veil: var(--lib-drop-veil);
   --color-lib-drop: var(--lib-drop-bg);
   --color-lib-select: var(--lib-select-border);
+
+  --color-ana-barra: var(--ana-barra);
+  --color-ana-barra-pico: var(--ana-barra-pico);
+  --color-ana-barra-vacia: var(--ana-barra-vacia);
+  --color-ana-degradada: var(--ana-degradada-bg);
+  --color-ana-degradada-border: var(--ana-degradada-border);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);
