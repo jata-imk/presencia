@@ -108,6 +108,15 @@ publicación **en sus primeras 24 horas**: si no, una publicación de hace seis
 semanas siempre le ganaría a una de ayer, solo por haber tenido más tiempo. Un
 tooltip lo explica.
 
+Por eso las dos ventanas del cambio van corridas un día: "los últimos 7 días"
+de la comparación terminan ayer a esta hora, y lo que salió hoy aparece en el
+total pero todavía no en el cambio. Con menos de 5 publicaciones medidas en
+cualquiera de las dos ventanas, el cambio no se muestra ("Sin periodo anterior
+para comparar"): con dos publicaciones por semana, "+300%" es ruido. El
+engagement cambia en puntos ("+0.4 pts") o en interacciones por publicación
+("+9"); el alcance y las interacciones, en porcentaje; las publicaciones, en
+unidades ("+4").
+
 ### Tus mejores publicaciones
 
 Las cinco que más rindieron **sobre tu promedio en su red**. Un TikTok con
@@ -174,26 +183,35 @@ que se midió.
 
 ### Qué reporta cada red
 
-| Red                        | Qué da                                                                |
-| -------------------------- | --------------------------------------------------------------------- |
-| Instagram, Facebook        | Alcance, impresiones, me gusta, comentarios, compartidas              |
-| TikTok, YouTube            | Me gusta, comentarios, compartidas; reportan vistas en vez de alcance |
-| Threads                    | Lo que reporte de las cinco                                           |
-| LinkedIn (perfil personal) | **Nada.** LinkedIn solo comparte estadísticas de páginas de empresa   |
-| X                          | **Nada** por ahora                                                    |
+| Red                        | Qué da                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| Instagram, Facebook        | Alcance, impresiones, me gusta, comentarios, compartidas                           |
+| TikTok, YouTube            | Me gusta, comentarios, compartidas; dicen dar vistas en vez de alcance (ver abajo) |
+| Threads                    | Lo que reporte de las cinco                                                        |
+| LinkedIn (perfil personal) | **Nada.** LinkedIn solo comparte estadísticas de páginas de empresa                |
+| X                          | **Nada** por ahora                                                                 |
+
+**Las vistas, todavía sin confirmar.** Al construir el motor (F12, noviembre de 2026) no había una sola publicación medida de TikTok ni de YouTube, y no se
+supo en qué campo llegan las vistas. Hasta ver la primera, el alcance de esas
+redes dice "No disponible" y su detalle muestra las impresiones tal como
+llegan; no se presenta nada como "vistas" sin haberlo comprobado (addendum F12
+de ADR-022).
 
 ### Los cuatro estados de una publicación
 
 | Estado             | Cuándo                                                                                                      | Qué se ve                                                           |
 | ------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Medida             | Tiene números                                                                                               | Sus métricas                                                        |
+| Medida             | Tiene al menos un número, de cualquiera de las cinco métricas                                               | Sus métricas                                                        |
 | Métricas en camino | Salió hace poco y la red aún no reporta                                                                     | "Métricas en camino. Instagram suele tardar unas horas en reportar" |
 | No reporta         | La red contestó sin números                                                                                 | "No disponible", con el motivo de esa red                           |
 | Sin medición       | Presencia no pudo seguirla (se publicó por un proveedor que no devuelve el identificador de la publicación) | "Sin medición para esta publicación"                                |
 
 Son estados distintos del mundo, no grados del mismo vacío. Decirle "sigue
 publicando para ver tus números" a alguien con perfil personal de LinkedIn
-sería prometerle algo que nunca va a llegar.
+sería prometerle algo que nunca va a llegar. Por eso, en una red que no
+reporta, una publicación de hace dos horas ya dice "No disponible" y no
+"Métricas en camino". Pasadas las 24 horas, una que la red contestó vacía es
+"No reporta", y una que nunca se pudo medir es "Sin medición".
 
 ### Qué ventana mira cada cosa
 
@@ -204,7 +222,7 @@ muestra, y las secciones aparecerían y desaparecerían al cambiar el selector.
 | Qué                                                          | Ventana                                                                                                        |
 | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | Resumen, lentes, tabla                                       | Las publicaciones del periodo elegido                                                                          |
-| Cambio "vs periodo anterior"                                 | El periodo elegido contra el anterior del mismo largo                                                          |
+| Cambio "vs periodo anterior"                                 | El periodo elegido contra el anterior del mismo largo, las dos ventanas corridas 24 horas                      |
 | "Tu promedio en esa red" (mejores, rendimiento, "Mejor en…") | El periodo elegido o los últimos 30 días, lo que sea más largo. Con 30 días es el mismo promedio que usa Ritmo |
 | Hallazgos                                                    | Siempre los últimos 90 días, sin importar el selector. La sección lo dice: "En tus últimos 90 días"            |
 
@@ -234,7 +252,7 @@ Todo se compara a las 24 horas de publicado, para que la edad no decida.
 | Tipo                  | Ejemplo                                                                                                           | Acción                            |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | **Formato**           | Carrusel contra imagen suelta; video contra texto                                                                 | "Crear en Chat"                   |
-| **Día de la semana**  | Martes y jueves contra el resto                                                                                   | "Ver en Ritmo"                    |
+| **Día de la semana**  | En Instagram, martes y jueves contra el resto (siempre dentro de una red)                                         | "Ver en Ritmo"                    |
 | **Rasgo de tu texto** | Con y sin emojis, con y sin hashtags, corto contra largo, abre con pregunta o no, con y sin signos de exclamación | "Agregar a «Así escribes»" / "No" |
 
 Los rasgos se leen del texto que se publicó, no del borrador.

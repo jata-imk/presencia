@@ -4,6 +4,8 @@ import { MetricsEngineService, SEMANAS_CADENCIA } from "./metrics-engine.service
 import type {
   FilaComparable,
   FilaPublicacion,
+  FilaPublicacionAnalizable,
+  FilaUltimosNumeros,
   MetricsReadRepository,
 } from "./metrics.read.repository.js";
 
@@ -21,10 +23,11 @@ function repoFalso(
   comparables: FilaComparable[],
   publicaciones: FilaPublicacion[] = [],
 ): MetricsReadRepository {
+  // Solo lo que Ritmo lee; las lecturas de Analíticas tienen su repo falso abajo.
   return {
     postsComparables: () => Promise.resolve(comparables),
     publicacionesPublicadas: () => Promise.resolve(publicaciones),
-  };
+  } as unknown as MetricsReadRepository;
 }
 
 function comparable(campos: Partial<FilaComparable> = {}): FilaComparable {
@@ -138,5 +141,136 @@ describe("MetricsEngineService.cadencia", () => {
     const resultado = await motor.cadencia(TX, { timezone: MERIDA, ahora: AHORA });
     expect(resultado.rachaActual).toBe(0);
     expect(resultado.mejorRacha).toBe(3);
+  });
+});
+
+// ── Analíticas (F12) ─────────────────────────────────────────────────
+
+function repoAnaliticas(datos: {
+  comparables?: FilaComparable[];
+  analizables?: FilaPublicacionAnalizable[];
+  ultimos?: FilaUltimosNumeros[];
+  hayPublicadas?: boolean;
+}): MetricsReadRepository {
+  return {
+    postsComparables: () => Promise.resolve(datos.comparables ?? []),
+    publicacionesPublicadas: () => Promise.resolve([]),
+    publicacionesAnalizables: () => Promise.resolve(datos.analizables ?? []),
+    publicacionYHermanas: () => Promise.resolve(datos.analizables ?? []),
+    ultimosNumeros: () => Promise.resolve(datos.ultimos ?? []),
+    hayPublicadas: () => Promise.resolve(datos.hayPublicadas ?? false),
+  } as unknown as MetricsReadRepository;
+}
+
+function analizable(campos: Partial<FilaPublicacionAnalizable> = {}): FilaPublicacionAnalizable {
+  return {
+    cardId: `card-${Math.random()}`,
+    network: "facebook",
+    archetype: "text_first",
+    content: null,
+    groupId: null,
+    chatId: null,
+    carpeta: null,
+    postUrl: null,
+    platformPostId: `p-${Math.random()}`,
+    publishedAt: new Date("2026-09-15T19:00:00.000Z"),
+    ...campos,
+  };
+}
+
+describe("MetricsEngineService.analizar: los mismos números que Ritmo a 30 días", () => {
+  const ctx = { timezone: MERIDA, ahora: AHORA };
+  const doce = (campos: (i: number) => Partial<FilaComparable>) =>
+    Array.from({ length: 12 }, (_, i) =>
+      comparable({
+        publishedAt: new Date(Date.parse("2026-09-01T01:00:00.000Z") + i * 86_400_000),
+        ...campos(i),
+      }),
+    );
+
+  it.each([
+    ["cold", [] as FilaComparable[]],
+    ["no_reporta", doce(() => ({ likes: null }))],
+    ["poca", doce(() => ({ likes: 10 })).slice(0, 6)],
+    ["full con tasa", doce((i) => ({ likes: 10 + i, reach: 200 + 10 * i }))],
+    [
+      "full con interacciones (un reach en 0)",
+      doce((i) => ({ likes: 10 + i, reach: i === 3 ? 0 : 500 })),
+    ],
+  ])("%s: misma base y misma muestra", async (_caso, comparables) => {
+    const motor = new MetricsEngineService(repoAnaliticas({ comparables }));
+    const ritmo = await motor.horariosDe(TX, "facebook", ctx);
+    const { analisis } = await motor.analizar(TX, 30, ctx);
+    const contexto = analisis.contextos.get("facebook");
+
+    expect(contexto?.nReferencia ?? 0).toBe(ritmo.nTotal);
+    if (ritmo.modo === "cold") expect(contexto).toBeUndefined();
+    else expect(contexto?.base).toBe(ritmo.base);
+    if (ritmo.modo === "no_reporta") expect(contexto?.muestra).toBe("no_reporta");
+  });
+
+  it("el promedio de la red es la media de los mismos valores que usa Ritmo", async () => {
+    const comparables = doce((i) => ({ likes: 10 + i, reach: 100 }));
+    const motor = new MetricsEngineService(repoAnaliticas({ comparables }));
+    const { analisis } = await motor.analizar(TX, 30, ctx);
+    // likes 10…21 sobre 100: la media es 0.155.
+    expect(analisis.contextos.get("facebook")?.promedio).toBeCloseTo(0.155);
+  });
+});
+
+describe("MetricsEngineService.analizar", () => {
+  const ctx = { timezone: MERIDA, ahora: AHORA };
+
+  it("sin nada en el periodo pregunta si alguna vez publicó (Cero absoluto)", async () => {
+    const nunca = new MetricsEngineService(repoAnaliticas({ hayPublicadas: false }));
+    expect((await nunca.analizar(TX, 7, ctx)).hayPublicaciones).toBe(false);
+    const antes = new MetricsEngineService(repoAnaliticas({ hayPublicadas: true }));
+    expect((await antes.analizar(TX, 7, ctx)).hayPublicaciones).toBe(true);
+  });
+
+  it("junta la card con sus últimos números por red y por id del post", async () => {
+    const card = analizable({ platformPostId: "fb-1" });
+    const motor = new MetricsEngineService(
+      repoAnaliticas({
+        analizables: [card],
+        ultimos: [
+          {
+            network: "facebook",
+            platformPostId: "fb-1",
+            reach: 300,
+            impressions: 500,
+            likes: 12,
+            comments: 3,
+            shares: null,
+            medidoEn: new Date("2026-09-20T18:00:00.000Z"),
+            snapshots: 20,
+          },
+        ],
+      }),
+    );
+    const { analisis, kpis } = await motor.analizar(TX, 30, ctx);
+    expect(analisis.posts[0]).toMatchObject({ estado: "medida", interacciones: 15 });
+    expect(kpis(null).alcance).toMatchObject({ total: 300, redes: ["facebook"] });
+    expect(analisis.ultimaMedicion).toEqual(new Date("2026-09-20T18:00:00.000Z"));
+  });
+});
+
+describe("MetricsEngineService.detalle", () => {
+  const ctx = { timezone: MERIDA, ahora: AHORA };
+
+  it("devuelve null si la card no está entre las publicadas", async () => {
+    const motor = new MetricsEngineService(repoAnaliticas({ analizables: [analizable()] }));
+    expect(await motor.detalle(TX, "otra", 30, ctx)).toBeNull();
+  });
+
+  it("separa la publicación de sus hermanas del mismo concepto", async () => {
+    const propia = analizable({ cardId: "a", groupId: "g" });
+    const hermana = analizable({ cardId: "b", groupId: "g", network: "instagram" });
+    const motor = new MetricsEngineService(repoAnaliticas({ analizables: [propia, hermana] }));
+    const detalle = await motor.detalle(TX, "a", 30, ctx);
+    expect(detalle?.post.publicacion.cardId).toBe("a");
+    expect(detalle?.hermanas.map((h) => h.publicacion.network)).toEqual(["instagram"]);
+    // Sin snapshots y con más de 24 h: Presencia no la pudo seguir.
+    expect(detalle?.post.estado).toBe("sin_medicion");
   });
 });

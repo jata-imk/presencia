@@ -113,7 +113,7 @@ function instanteLocal(dia: string, hora: number, minuto: number, timezone: stri
 }
 
 /** Congruencial lineal: alcanza para variar los números y es reproducible. */
-function generador(semilla: number): () => number {
+export function generador(semilla: number): () => number {
   let estado = semilla % 2147483647;
   if (estado <= 0) estado += 2147483646;
   return () => (estado = (estado * 16807) % 2147483647) / 2147483647;
@@ -201,7 +201,10 @@ function elegirRed(sorteo: number): (typeof REDES)[number] {
  * Las series son **acumulativas**, como las reales: cada fila es el total del
  * post hasta ese momento, no el delta.
  */
-function snapshotsDe(post: PostSembrado, ahora: Date): { bucket: Date; edadHoras: number }[] {
+export function snapshotsDe(
+  post: { publishedAt: Date },
+  ahora: Date,
+): { bucket: Date; edadHoras: number }[] {
   const salida: { bucket: Date; edadHoras: number }[] = [];
   const vistos = new Set<number>();
   for (let t = post.publishedAt.getTime(); t <= ahora.getTime(); t += HORA) {
@@ -215,7 +218,7 @@ function snapshotsDe(post: PostSembrado, ahora: Date): { bucket: Date; edadHoras
 }
 
 /** Curva de saturación: casi todo pasa en las primeras horas. */
-function acumuladoEn(edadHoras: number): number {
+export function acumuladoEn(edadHoras: number): number {
   return 1 - Math.exp(-edadHoras / 8);
 }
 

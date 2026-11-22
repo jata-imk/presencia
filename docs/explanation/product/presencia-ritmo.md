@@ -605,19 +605,23 @@ shares, interacciones totales), filtrable por fecha y cuenta,
 con histórico. Cubre Facebook, Instagram, Threads, LinkedIn
 Pages, TikTok, YouTube y Pinterest.
 
-**Lo importante de entender:** PostFast da la **materia prima**
-(engagement por post), NO da "tus mejores horarios" ya
-masticados. El cálculo lo hace **Ritmo**, agregando los posts
-del usuario por hora-del-día y día-de-semana. El "+18%" =
-engagement promedio a esa hora vs el promedio general del
-usuario.
+**Lo importante de entender:** el proveedor da la **materia
+prima** (engagement por post), NO da "tus mejores horarios" ya
+masticados. _(Desde F8.7 esa materia prima la guarda Presencia
+en su propia tabla, de cualquier proveedor: ADR-021.)_ El
+cálculo no lo hace Ritmo sino el motor de métricas compartido
+con Analíticas (ADR-022), agregando los posts del usuario por
+hora del día y día de la semana. El "+18%" = engagement
+promedio a esa hora vs el promedio del usuario **en esa misma
+red**, el mismo promedio que Analíticas llama "tu promedio en
+esa red".
 
 ### El problema de la significancia estadística
 
 El "+18%" es honesto **solo con suficientes posts**. Con 5
 posts, decir "+18% a las 18:00" es ruido disfrazado de señal.
 El concepto técnico se llama **significancia estadística**:
-necesitás un N suficiente para que el patrón no sea pura
+necesitas un N suficiente para que el patrón no sea pura
 casualidad (como sacar tres águilas seguidas y decir que la
 moneda está cargada).
 

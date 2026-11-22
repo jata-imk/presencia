@@ -124,6 +124,37 @@ export function valorDe(post: PostComparable, base: BaseDeCalculo): number | nul
   return interacciones / post.reach;
 }
 
+/** Un post con el valor con el que entra a los promedios de su red. */
+export interface PostConValor<P extends PostComparable = PostComparable> {
+  post: P;
+  valor: number;
+}
+
+/**
+ * La base de una red y los valores que entran a su promedio.
+ *
+ * Es el paso que Ritmo y Analíticas comparten literalmente (addendum F12 de
+ * ADR-022): con la misma ventana, los dos ven la misma base, la misma muestra
+ * y —con `promedioDe`— el mismo promedio. Si cada uno filtrara por su cuenta,
+ * bastaría con que uno olvidara un `null` para que "tu promedio en Instagram"
+ * fuera un número distinto en cada pantalla.
+ */
+export function valoresDeRed<P extends PostComparable>(
+  posts: readonly P[],
+): { base: BaseDeCalculo; valores: PostConValor<P>[] } {
+  const base = baseDeRed(posts);
+  const valores = posts.flatMap((post) => {
+    const valor = valorDe(post, base);
+    return valor === null ? [] : [{ post, valor }];
+  });
+  return { base, valores };
+}
+
+/** El promedio de una red: la media simple de sus valores por post. */
+export function promedioDe(valores: readonly number[]): number {
+  return media(valores);
+}
+
 /** Un post ya ubicado en el calendario local del usuario. */
 export interface PostUbicado {
   /** 0 = lunes, 6 = domingo. En la zona horaria del usuario, no en UTC. */
@@ -193,7 +224,7 @@ export function calcularHorarios(
   if (nTotal === 0) return vacio("cold");
   if (nTotal < N_MINIMO_RED) return vacio("poca");
 
-  const promedioGeneral = media(posts.map((post) => post.valor));
+  const promedioGeneral = promedioDe(posts.map((post) => post.valor));
   // Un promedio general de 0 significa que nadie interactuó con nada. No es un
   // error, pero dividir entre él daría infinito: no hay "+%" contra la nada.
   if (promedioGeneral <= 0) return vacio("poca");

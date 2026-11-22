@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
+import { AnaliticasModule } from "./analiticas/analiticas.module.js";
 import { AuthGuard } from "./auth/auth.guard.js";
 import { BrandVoiceModule } from "./brand-voice/brand-voice.module.js";
 import { ChannelsModule } from "./channels/channels.module.js";
@@ -29,6 +30,7 @@ import { SearchModule } from "./search/search.module.js";
     FoldersModule,
     SearchModule,
     RitmoModule,
+    AnaliticasModule,
     LibraryModule,
     RealtimeModule,
     // F11: el canal Telegram. Solo aquí, nunca en el worker: el bot atiende en el

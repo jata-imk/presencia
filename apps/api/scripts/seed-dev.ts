@@ -36,6 +36,7 @@ import {
   users,
 } from "../src/db/schema.js";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
+import { seedAnaliticas } from "./seed-analiticas.js";
 import { seedBiblioteca, type BibliotecaSembrada } from "./seed-biblioteca.js";
 import { seedTurnStates } from "./seed-estados.js";
 import { seedRitmo } from "./seed-ritmo.js";
@@ -96,6 +97,10 @@ async function seed(): Promise<void> {
       await dbService.runWithTenant(yaExiste.id, (tx) =>
         seedBiblioteca(tx, yaExiste.id, buildAssetStorage()),
       ),
+    );
+    // F12: Analíticas se ancla a "ahora"; sembrarla otra vez la mantiene fresca.
+    logAnaliticas(
+      await dbService.runWithTenant(yaExiste.id, (tx) => seedAnaliticas(tx, yaExiste.id)),
     );
     printCredentials();
     return;
@@ -190,12 +195,14 @@ async function seed(): Promise<void> {
     const estados = await seedTurnStates(tx, user.id);
     const vozViva = await seedVozViva(tx, user.id);
     const biblioteca = await seedBiblioteca(tx, user.id, buildAssetStorage());
+    const analiticas = await seedAnaliticas(tx, user.id);
 
-    return { rows, ritmo, estados, vozViva, biblioteca };
+    return { rows, ritmo, estados, vozViva, biblioteca, analiticas };
   });
   logTurnStates(creados.estados);
   logVozViva(creados.vozViva);
   logBiblioteca(creados.biblioteca);
+  logAnaliticas(creados.analiticas);
 
   console.log(
     `· Usuario creado con ${String(creados.rows.length)} chats, 1 carpeta y 1 voz de marca.`,
@@ -506,6 +513,14 @@ function logBiblioteca(sembrada: BibliotecaSembrada): void {
     `· Biblioteca: ${String(sembrada.imagenes)} imágenes en "Biblioteca: imágenes de ejemplo" ` +
       "(elegida, variantes descartadas con su linaje, publicada, subidas sin card y dos " +
       "borradores con imágenes traídas de Biblioteca).",
+  );
+}
+
+function logAnaliticas(sembrada: { publicaciones: number; snapshots: number }): void {
+  console.log(
+    `· Analíticas: ${String(sembrada.publicaciones)} publicaciones (${String(sembrada.snapshots)} ` +
+      'mediciones) en "Analíticas: publicaciones de ejemplo": periodo anterior, TikTok sin ' +
+      "alcance, tres conceptos multi-red, una en camino y una sin medición.",
   );
 }
 

@@ -1,3 +1,4 @@
+export * from "./analiticas.js";
 export * from "./assets.js";
 export * from "./attachments.js";
 export * from "./brand-voice.js";
