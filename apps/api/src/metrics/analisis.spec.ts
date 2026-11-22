@@ -6,6 +6,7 @@ import {
   contextosDeRed,
   contextoVacio,
   desdeComparables,
+  desdePublicaciones,
   kpisDe,
   numerosDe,
   type EntradaAnalisis,
@@ -198,6 +199,36 @@ describe("contextosDeRed y lift", () => {
   });
 });
 
+describe("redes sin punto de 24 h y redes con puntos vacíos", () => {
+  it("una red nueva toma la base de sus últimos números, no `interacciones` fija", () => {
+    // Tres publicaciones de Instagram de las últimas 20 horas, todas con alcance.
+    const filas = [5, 12, 20].map((horas) => ({
+      pub: publicacion({ haceHoras: horas }),
+      likes: 40,
+    }));
+    const red = analizarPeriodo(entradaCon(filas)).redes[0];
+    expect(red?.engagement).toMatchObject({ muestra: "sin_datos", base: "tasa" });
+    // 40 / 1000: una tasa, no "40".
+    expect(red?.engagement.valor).toBeCloseTo(0.04);
+  });
+
+  it("si los puntos de 24 h vinieron vacíos pero los de después no, el número de hoy se ve", () => {
+    // La red quedó `no_reporta` por sus puntos de 24 h (un proveedor que falló
+    // un rato), pero las mediciones posteriores sí trajeron likes.
+    const filas = serie("facebook", 3, () => 12);
+    const entrada = entradaCon(filas);
+    const vacios: EntradaAnalisis<PublicacionMedible> = {
+      ...entrada,
+      comparables: entrada.comparables.map((post) => ({ ...post, likes: null, reach: null })),
+    };
+    const analisis = analizarPeriodo(vacios);
+    expect(analisis.contextos.get("facebook")?.muestra).toBe("no_reporta");
+    expect(analisis.posts.every((post) => post.estado === "medida")).toBe(true);
+    expect(analisis.redes[0]?.engagement.valor).toBe(12);
+    expect(analisis.redes[0]?.tendencia.some((v) => v !== null)).toBe(true);
+  });
+});
+
 describe("kpisDe", () => {
   it("el alcance suma solo las redes que lo reportan, y dice cuáles", () => {
     const entrada = entradaCon([
@@ -352,6 +383,12 @@ describe("analizarPeriodo", () => {
       comparables: [],
     };
     expect(analizarPeriodo(entrada).ultimaMedicion).toEqual(new Date(AHORA.getTime() - 5 * HORA));
+  });
+
+  it("lee publicaciones del periodo y el anterior, nunca menos de 30 días", () => {
+    // 7 días: 14 no alcanzan para "Medido hace" (la ingesta mide hasta 30).
+    expect(desdePublicaciones(AHORA, 7)).toEqual(new Date(AHORA.getTime() - 30 * DIA));
+    expect(desdePublicaciones(AHORA, 90)).toEqual(new Date(AHORA.getTime() - 180 * DIA));
   });
 
   it("lee comparables desde la ventana más vieja que necesita", () => {

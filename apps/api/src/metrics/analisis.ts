@@ -21,6 +21,7 @@ import type { EstadoPublicacion, MuestraDeRed, SocialNetwork } from "@presencia/
 import {
   EDAD_REFERENCIA_HORAS,
   N_MINIMO_GRUPO,
+  baseDeRed,
   N_MINIMO_RED,
   interaccionesDe,
   promedioDe,
@@ -157,9 +158,15 @@ export function ventanaReferenciaDias(periodoDias: number): number {
   return Math.max(periodoDias, VENTANA_REFERENCIA_MINIMA_DIAS);
 }
 
-/** Desde dónde hay que leer publicaciones: el periodo y el anterior. */
+/**
+ * Desde dónde hay que leer publicaciones: el periodo y el anterior, y nunca
+ * menos de 30 días, que es lo que la ingesta sigue midiendo. Sin ese piso, con
+ * 7 días "Medido hace…" no vería una publicación de hace 20 que se midió hace
+ * una hora.
+ */
 export function desdePublicaciones(ahora: Date, periodoDias: number): Date {
-  return new Date(ahora.getTime() - 2 * periodoDias * DIA);
+  const dias = Math.max(2 * periodoDias, VENTANA_REFERENCIA_MINIMA_DIAS);
+  return new Date(ahora.getTime() - dias * DIA);
 }
 
 /**
@@ -223,9 +230,25 @@ export function contextosDeRed(
   return contextos;
 }
 
-/** El contexto de una red sin nada en la ventana. */
-export function contextoVacio(network: SocialNetwork): ContextoDeRed {
-  return { network, base: "interacciones", muestra: "sin_datos", nReferencia: 0, promedio: null };
+/**
+ * El contexto de una red sin nada en la ventana de referencia.
+ *
+ * Sin promedio, pero con base: la de los últimos números que sí hay (sus
+ * publicaciones todavía no cumplen 24 h). Con `interacciones` fija, una cuenta
+ * nueva de Instagram mostraría "45" hoy y "4.2%" mañana, sin que nada haya
+ * cambiado más que la unidad.
+ */
+export function contextoVacio(
+  network: SocialNetwork,
+  conNumeros: readonly PostComparable[] = [],
+): ContextoDeRed {
+  return {
+    network,
+    base: baseDeRed(conNumeros),
+    muestra: "sin_datos",
+    nReferencia: 0,
+    promedio: null,
+  };
 }
 
 function tieneNumero(ultimos: UltimosNumeros): boolean {
@@ -306,6 +329,21 @@ export function analizarPeriodo<P extends PublicacionMedible>(
     .filter((p) => p.publishedAt.getTime() >= desdePeriodo && p.publishedAt <= ahora)
     .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
 
+  // Las redes del periodo que todavía no tienen nada con 24 h: su base sale
+  // de los últimos números (ver `contextoVacio`).
+  const ultimosDe = (publicacion: P) =>
+    publicacion.platformPostId
+      ? entrada.ultimos.get(clave(publicacion.network, publicacion.platformPostId))
+      : undefined;
+  for (const network of new Set(delPeriodo.map((p) => p.network))) {
+    if (contextos.has(network)) continue;
+    const conNumeros = delPeriodo.flatMap((publicacion) => {
+      const numeros = publicacion.network === network ? ultimosDe(publicacion) : undefined;
+      return numeros ? [comoComparable(publicacion, numeros)] : [];
+    });
+    contextos.set(network, contextoVacio(network, conNumeros));
+  }
+
   const posts: PostAnalizado<P>[] = delPeriodo.map((publicacion) => {
     const llave = publicacion.platformPostId
       ? clave(publicacion.network, publicacion.platformPostId)
@@ -314,7 +352,7 @@ export function analizarPeriodo<P extends PublicacionMedible>(
       publicacion,
       ...numerosDe(
         publicacion,
-        llave ? entrada.ultimos.get(llave) : undefined,
+        ultimosDe(publicacion),
         llave ? comparablePorClave.get(llave) : undefined,
         contextos.get(publicacion.network) ?? contextoVacio(publicacion.network),
         ahora,
@@ -422,12 +460,15 @@ function engagementDe<P extends PublicacionMedible>(
     const valor = valorDe(comoComparable(post.publicacion, post.ultimos), contexto.base);
     return valor === null ? [] : [valor];
   });
-  const reporta = contexto.muestra !== "no_reporta";
+  // Sin compuerta por `muestra`: si la red no reporta, `valorDe` ya da null en
+  // cada publicación. Y si sus puntos de 24 h vinieron vacíos pero los de
+  // después no (un proveedor que falló un rato), el número de hoy existe y la
+  // tabla ya lo muestra como "medida": callarlo aquí contradiría a la tabla.
   return {
     network: contexto.network,
     base: contexto.base,
     muestra: contexto.muestra,
-    valor: reporta && valores.length > 0 ? promedioDe(valores) : null,
+    valor: valores.length > 0 ? promedioDe(valores) : null,
     cambio: cambioDeEngagement(entrada.comparables, contexto, entrada.ahora, entrada.periodoDias),
   };
 }
@@ -466,17 +507,15 @@ function tendenciaDe<P extends PublicacionMedible>(
   const ancho = (periodoDias * DIA) / tramos;
   const inicio = ahora.getTime() - periodoDias * DIA;
   const valores: number[][] = Array.from({ length: tramos }, () => []);
-  if (contexto.muestra !== "no_reporta") {
-    for (const post of posts) {
-      if (!post.ultimos) continue;
-      const valor = valorDe(comoComparable(post.publicacion, post.ultimos), contexto.base);
-      if (valor === null) continue;
-      const indice = Math.min(
-        tramos - 1,
-        Math.floor((post.publicacion.publishedAt.getTime() - inicio) / ancho),
-      );
-      valores[indice]?.push(valor);
-    }
+  for (const post of posts) {
+    if (!post.ultimos) continue;
+    const valor = valorDe(comoComparable(post.publicacion, post.ultimos), contexto.base);
+    if (valor === null) continue;
+    const indice = Math.min(
+      tramos - 1,
+      Math.floor((post.publicacion.publishedAt.getTime() - inicio) / ancho),
+    );
+    valores[indice]?.push(valor);
   }
   return valores.map((tramo) => (tramo.length === 0 ? null : promedioDe(tramo)));
 }

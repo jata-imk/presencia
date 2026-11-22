@@ -59,6 +59,8 @@ Las reglas nuevas, que son parte de la decisión:
    - Hay una diferencia deliberada. Ritmo también cae a `poca` cuando ninguna franja llega a 5, porque su "+%" es por franja. Analíticas solo necesita el promedio de la red (`muestra = suficiente` con N ≥ 10).
    - Los hallazgos (PR 8) miran 90 días.
 5. **El engagement mostrado es el nivel de hoy:** el promedio por publicación de `valorDe(últimos números)`, con la base de la red. Su cambio sale de los puntos de 24 h (regla 2).
+   - Una red que todavía no tiene nada con 24 h (cuenta nueva) toma la base de sus últimos números. Con `interacciones` fija, mostraría "45" hoy y "4.2%" mañana, sin que nada cambiara más que la unidad.
+   - El nivel no se calla por la `muestra`. Si los puntos de 24 h vinieron vacíos pero las mediciones posteriores traen números (un proveedor que falló un rato), el número de hoy existe y la tabla ya muestra esas publicaciones como `medida`.
 6. **El lift es `valorDe(punto de 24 h) / promedio − 1`**, en porcentaje entero, solo con `muestra = suficiente`. Una publicación sin punto de 24 h (menos de 18 h de vida, o un hueco de ingesta) no tiene lift.
 7. **El estado de una publicación se decide en este orden:**
 
@@ -71,7 +73,8 @@ Las reglas nuevas, que son parte de la decisión:
    | `en_camino`                   | Ninguno de los anteriores                                                                   |
 
 8. **La tendencia de "Por red" se arma por tramos iguales del periodo:** 7 de 1 día, 5 de 6 días o 9 de 10 días. No se usan semanas de calendario, porque una semana partida en la orilla dibujaría una caída que no pasó.
-9. **`ultimaMedicion`** mira solo publicaciones de 30 días o menos, que son las que la ingesta sigue midiendo (`frescura.ts`).
+9. **`ultimaMedicion`** mira solo publicaciones de 30 días o menos, que son las que la ingesta sigue midiendo (`frescura.ts`). Por eso las publicaciones se leen desde `max(2P, 30)` días, aunque el periodo sea de 7.
+10. **Los últimos números se piden por los ids de las cards leídas**, no por `post_metrics.published_at`, que puede venir nulo en filas de backfill.
 
 **Vistas de TikTok y YouTube.** No hay columna `views`, y `impressions` no se presenta como "vistas". El 2026-11-21 no había una sola fila de TikTok ni de YouTube en dev ni en prod, y ningún adapter lee `views` ni `plays`. Una red sin `reach` sale con alcance "No disponible", y sus impresiones crudas solo se ven en el detalle. Se revisa con la primera fila real: Upload-Post manda `primary_impressions_field` dentro de `raw`.
 

@@ -263,7 +263,7 @@ describe("MetricsReadRepository.ultimosNumeros", () => {
       );
 
       const [numeros] = await dbService.runWithTenant(userA, (tx) =>
-        repo.ultimosNumeros(tx, { platformPostIds: [postId] }),
+        repo.ultimosNumeros(tx, [postId]),
       );
       expect(numeros).toMatchObject({
         network: "instagram",
@@ -276,16 +276,6 @@ describe("MetricsReadRepository.ultimosNumeros", () => {
         snapshots: 3,
       });
       expect(numeros?.medidoEn?.getTime()).toBe(medicion(24).getTime());
-
-      // Por fecha de publicación: entra con `desde` antes, no con `desde` después.
-      const conDesde = await dbService.runWithTenant(userA, (tx) =>
-        repo.ultimosNumeros(tx, { desde: new Date(publishedAt.getTime() - HORA) }),
-      );
-      expect(conDesde.some((f) => f.platformPostId === postId)).toBe(true);
-      const despues = await dbService.runWithTenant(userA, (tx) =>
-        repo.ultimosNumeros(tx, { desde: new Date(publishedAt.getTime() + HORA) }),
-      );
-      expect(despues.some((f) => f.platformPostId === postId)).toBe(false);
     },
   );
 });

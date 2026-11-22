@@ -86,7 +86,14 @@ export class MetricsReadRepository {
    * de "publicaste y la red no dice nada" (ADR-009). Filtrarlos acá volvería
    * esos dos casos indistinguibles.
    */
-  async postsComparables(tx: Tx, desde: Date, hasta: Date): Promise<FilaComparable[]> {
+  async postsComparables(
+    tx: Tx,
+    desde: Date,
+    hasta: Date,
+    /** Solo estos posts (el detalle de Analíticas); sin él, todos los del rango. */
+    platformPostIds?: readonly string[],
+  ): Promise<FilaComparable[]> {
+    if (platformPostIds?.length === 0) return [];
     const distancia = sql`abs(extract(epoch from (${postMetrics.capturedAt} - (${postMetrics.publishedAt} + make_interval(hours => ${EDAD_REFERENCIA_HORAS})))))`;
     const filas = await tx
       .select({
@@ -113,6 +120,7 @@ export class MetricsReadRepository {
             new Date(hasta.getTime() - EDAD_REFERENCIA_HORAS * 3600_000),
           ),
           sql`${distancia} <= ${TOLERANCIA_HORAS * 3600}`,
+          platformPostIds ? inArray(postMetrics.platformPostId, [...platformPostIds]) : undefined,
         ),
       )
       // El desempate no es cosmético. Dos mediciones a la misma distancia (a
@@ -233,14 +241,12 @@ export class MetricsReadRepository {
    * (addendum F12 de ADR-022). `medidoEn` es la medición más reciente, traiga
    * números o no: es "Medido hace 3 horas".
    *
-   * Filtra por los posts que se piden (`platformPostIds`) o por fecha de
-   * publicación (`desde`), nunca por todo el historial.
+   * Filtra por los ids de las cards que ya se leyeron, no por
+   * `post_metrics.published_at`: esa columna puede venir nula en filas de
+   * backfill, y filtrar por ella dejaría a su card sin números.
    */
-  async ultimosNumeros(
-    tx: Tx,
-    filtro: { desde: Date } | { platformPostIds: readonly string[] },
-  ): Promise<FilaUltimosNumeros[]> {
-    if ("platformPostIds" in filtro && filtro.platformPostIds.length === 0) return [];
+  async ultimosNumeros(tx: Tx, platformPostIds: readonly string[]): Promise<FilaUltimosNumeros[]> {
+    if (platformPostIds.length === 0) return [];
     const numero = (valor: unknown) => (valor === null ? null : Number(valor));
     const ultimo = (columna: AnyPgColumn) =>
       sql<
@@ -261,11 +267,7 @@ export class MetricsReadRepository {
         snapshots: sql<number>`count(*)::int`.mapWith(Number),
       })
       .from(postMetrics)
-      .where(
-        "desde" in filtro
-          ? gte(postMetrics.publishedAt, filtro.desde)
-          : inArray(postMetrics.platformPostId, [...filtro.platformPostIds]),
-      )
+      .where(inArray(postMetrics.platformPostId, [...platformPostIds]))
       .groupBy(postMetrics.network, postMetrics.platformPostId);
   }
 

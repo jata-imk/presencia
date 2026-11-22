@@ -147,7 +147,12 @@ export class AnaliticasService {
       cuentas.set(cuenta.network, { nombre: cuenta.displayName, reconectar: true });
     }
     for (const cuenta of activas) {
-      cuentas.set(cuenta.network, { nombre: cuenta.displayName, reconectar: false });
+      // `listAccounts` también trae las que están en `error`: conectadas de
+      // nombre, pero sin medir, y la salida es la misma (Reconectar).
+      cuentas.set(cuenta.network, {
+        nombre: cuenta.displayName,
+        reconectar: cuenta.status !== "active",
+      });
     }
     return cuentas;
   }

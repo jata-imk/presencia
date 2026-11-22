@@ -200,7 +200,7 @@ export class MetricsEngineService {
     // transacción, que no corre dos queries a la vez (pg las encola y avisa
     // que en su versión 9 dejará de hacerlo).
     const publicaciones = await this.lecturas.publicacionesAnalizables(tx, desde, ahora);
-    const ultimos = await this.lecturas.ultimosNumeros(tx, { desde });
+    const ultimos = await this.lecturas.ultimosNumeros(tx, idsDe(publicaciones));
     const comparables = await this.lecturas.postsComparables(
       tx,
       desdeComparables(ahora, periodoDias),
@@ -238,11 +238,11 @@ export class MetricsEngineService {
     const desdeReferencia = new Date(
       ahora.getTime() - ventanaReferenciaDias(periodoDias) * MS_POR_DIA,
     );
-    const ids = familia.flatMap((fila) => (fila.platformPostId ? [fila.platformPostId] : []));
+    const ids = idsDe(familia);
     const tiempos = familia.map((fila) => fila.publishedAt.getTime());
     const masVieja = Math.min(...tiempos);
     const referencia = await this.lecturas.postsComparables(tx, desdeReferencia, ahora);
-    const ultimos = await this.lecturas.ultimosNumeros(tx, { platformPostIds: ids });
+    const ultimos = await this.lecturas.ultimosNumeros(tx, ids);
     // Los puntos de 24 h de la familia, si alguna quedó fuera de la ventana.
     const propios =
       masVieja < desdeReferencia.getTime()
@@ -250,6 +250,9 @@ export class MetricsEngineService {
             tx,
             new Date(masVieja),
             new Date(Math.max(...tiempos) + EDAD_REFERENCIA_HORAS * 3600_000),
+            // Solo la familia: sin esto, una hermana de hace seis meses leía
+            // seis meses de mediciones de toda la cuenta.
+            ids,
           )
         : [];
 
@@ -326,14 +329,6 @@ export class MetricsEngineService {
   }
 }
 
-/**
- * Días consecutivos publicando, contando hacia atrás.
- *
- * Si hoy todavía no hay nada, la racha se mide desde ayer y sigue viva: el día
- * no terminó y el usuario aún puede publicar. Cortarla a las 00:01 sería
- * castigarlo por no haber publicado a medianoche, que es exactamente el tipo
- * de contador que la gente aprende a odiar.
- */
 function porClave(filas: readonly FilaUltimosNumeros[]): Map<string, UltimosNumeros> {
   return new Map(
     filas.map(({ network, platformPostId, ...numeros }) => [
@@ -343,6 +338,18 @@ function porClave(filas: readonly FilaUltimosNumeros[]): Map<string, UltimosNume
   );
 }
 
+function idsDe(filas: readonly { platformPostId: string | null }[]): string[] {
+  return filas.flatMap((fila) => (fila.platformPostId ? [fila.platformPostId] : []));
+}
+
+/**
+ * Días consecutivos publicando, contando hacia atrás.
+ *
+ * Si hoy todavía no hay nada, la racha se mide desde ayer y sigue viva: el día
+ * no terminó y el usuario aún puede publicar. Cortarla a las 00:01 sería
+ * castigarlo por no haber publicado a medianoche, que es exactamente el tipo
+ * de contador que la gente aprende a odiar.
+ */
 function rachaActual(dias: readonly DiaDeCadencia[]): number {
   let indice = dias.length - 1;
   if (dias[indice]?.total === 0) indice -= 1;
