@@ -75,6 +75,7 @@ Las reglas nuevas, que son parte de la decisión:
 8. **La tendencia de "Por red" se arma por tramos iguales del periodo:** 7 de 1 día, 5 de 6 días o 9 de 10 días. No se usan semanas de calendario, porque una semana partida en la orilla dibujaría una caída que no pasó.
 9. **`ultimaMedicion`** mira solo publicaciones de 30 días o menos, que son las que la ingesta sigue midiendo (`frescura.ts`). Por eso las publicaciones se leen desde `max(2P, 30)` días, aunque el periodo sea de 7.
 10. **Los últimos números se piden por los ids de las cards leídas**, no por `post_metrics.published_at`, que puede venir nulo en filas de backfill.
+11. **El orden de las redes lo pone el motor** (`porRelevancia`, PR 7): primero donde hay más publicaciones, al final las que no reportan, y si empatan, por nombre. La lista de engagement del resumen y la lente "Por red" son la misma lista; si cada pantalla la ordenara por su cuenta, se desincronizarían.
 
 **Vistas de TikTok y YouTube.** No hay columna `views`, y `impressions` no se presenta como "vistas". El 2026-11-21 no había una sola fila de TikTok ni de YouTube en dev ni en prod, y ningún adapter lee `views` ni `plays`. Una red sin `reach` sale con alcance "No disponible", y sus impresiones crudas solo se ven en el detalle. Se revisa con la primera fila real: Upload-Post manda `primary_impressions_field` dentro de `raw`.
 

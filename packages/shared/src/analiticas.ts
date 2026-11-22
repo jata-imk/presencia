@@ -97,7 +97,11 @@ export interface AnaliticasResumenDto {
     total: number | null;
     cambioPct: number | null;
   };
-  /** Una entrada por red; con `red` elegida, solo esa. Nunca un número global. */
+  /**
+   * Una entrada por red; con `red` elegida, solo esa. Nunca un número global.
+   * En el orden de `AnaliticasRedesDto.redes`: más publicaciones primero, y al
+   * final las que no reportan.
+   */
   engagement: AnaliticasEngagementDto[];
   /** La medición más reciente de lo que la ingesta sigue midiendo (≤ 30 días). */
   ultimaMedicion: string | null;
@@ -132,6 +136,7 @@ export interface AnaliticasRedDto {
 export interface AnaliticasRedesDto {
   periodoDias: PeriodoAnaliticas;
   ventanaReferenciaDias: number;
+  /** Las redes con publicaciones en el periodo: más publicaciones primero, las que no reportan al final. */
   redes: AnaliticasRedDto[];
 }
 

@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import type { BrandVoiceExampleDto, QuotaStatusDto } from "@presencia/shared";
 import { ApiError, apiFetch } from "../../lib/api.js";
 import { cuotaAgotadaDe } from "../../lib/cuota-agotada.js";
-import { haceCuanto } from "../../lib/ritmo/tendencias.js";
+import { haceCuanto } from "../../lib/relative-time.js";
 import { QuotaExhaustedModal } from "../QuotaExhaustedModal.js";
 
 // "Ver ejemplo de tu voz" (F9.7), en línea desde F12.5 (Claude Design "Voz de

@@ -81,8 +81,14 @@ estadísticas"** y cae directo en ese detalle.
 ### La barra de control
 
 - **Periodo:** 7, 30 (por defecto) o 90 días.
-- **Red:** todas, o una.
-- Si los datos llevan rato sin actualizarse: "Actualizado hace 6 horas".
+- **Red:** todas, o una. La lista ofrece las redes donde publicaste en el
+  periodo.
+- Si la última medición tiene **6 horas o más**: "Actualizado hace 7 horas"
+  (o "ayer", "hace 2 días"). La ingesta mide una vez al día lo que ya tiene
+  más de dos días, así que con poca actividad la nota sale seguido. Siempre es
+  cierta: es una nota, no una alarma.
+- Periodo, red y lente viven en la URL: al volver del chat de origen con
+  "atrás", la pantalla queda como estaba.
 
 ### El resumen del periodo
 
@@ -99,8 +105,12 @@ largo.
 **Por qué el cuarto número no es uno solo.** Una "tasa de engagement" que mezcle
 Instagram con TikTok promedia tasas con conteos: da un número que parece dato y
 no tiene unidad. El diseño original lo mostraba como "4.4%"; en su lugar la
-celda lista cada red con su número. Al elegir una red, vuelve a ser un solo
-número.
+celda lista cada red con su número y su cambio. Al elegir una red, vuelve a
+ser un solo número.
+
+La lista va primero con las redes donde más publicaste, y al final las que no
+reportan. Caben 4; con más, "y 2 redes más" lleva a la lente Por red. El orden
+lo pone el motor, y es el mismo de la lente: las dos son la misma lista.
 
 **Cómo se compara con el periodo anterior.** El total que ves es el de hoy (lo
 mismo que ves en la red). Pero el cambio "vs periodo anterior" compara cada
@@ -144,9 +154,17 @@ Tres formas de ver las mismas publicaciones:
 - **Por red.** Una tarjeta por red: su engagement, cuántas publicaciones,
   alcance (o lo que reporte), interacciones y unas barras con la evolución del
   periodo. Una red que no reporta lo dice ahí mismo, con cuántas publicaciones
-  tuvo.
+  tuvo. Con una red elegida arriba, la lente muestra solo esa.
+  - Las barras son tramos iguales del periodo (7 de un día, 5 de seis o 9 de
+    diez), no semanas de calendario. Solo se rotulan los extremos: la fecha del
+    primer tramo y "Hoy". Cada barra dice su rango y su valor al pasar el mouse
+    ("28 oct – 3 nov · 5.6%"). El tramo más alto va en rosa, y uno sin
+    publicaciones medidas es un muñón gris, no un cero.
 - **Por publicación.** Una tabla: miniatura, red y título, fecha, alcance,
-  interacciones y rendimiento. Se ordena por cualquier columna.
+  interacciones y **"Sobre tu promedio"** (el rendimiento; el diseño la
+  llamaba "Engagement"). Se ordena por cualquier columna, y lo que no tiene
+  número va siempre al final. Una publicación de menos de 24 horas dice "hace
+  2 horas" en vez de su fecha. En móvil cada fila es una tarjeta.
 - **Por concepto.** La misma idea publicada en varias redes, lado a lado. "Mejor
   en TikTok" sale de dónde rindió más **sobre tu promedio de esa red**, no del
   número más grande. Solo incluye lo que se adaptó a más de una red dentro de
@@ -327,8 +345,8 @@ conectados.
 
 ### Datos desactualizados
 
-Si la última medición tiene horas: "Actualizado hace 6 horas" en la barra de
-control. Lo demás se ve igual; es una nota, no una alarma.
+Si la última medición tiene 6 horas o más: "Actualizado hace 7 horas" en la
+barra de control. Lo demás se ve igual; es una nota, no una alarma.
 
 ### Cargando
 
