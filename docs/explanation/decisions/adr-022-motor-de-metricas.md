@@ -30,3 +30,59 @@ El umbral de 5 no es nuevo: es el mismo que se fijó para los hallazgos de Anal�
 **Lo que esta decisión NO cubre:** de dónde salen los números (ADR-009, ADR-021), cómo se presentan, ni el cold-start — con qué se llena la pantalla cuando el motor devuelve `cold` o `poca`. Esa heurística genérica por vertical es contenido, no cálculo, y vive en su propio lugar. Tampoco el backfill del historial previo, que cambiaría cuán seguido el motor puede contestar `full` sin cambiar nada de la fórmula.
 
 **Contexto:** F9, 2026-09-20. Sale de una decisión de producto tomada dos días antes: Analíticas muestra la evidencia, Ritmo muestra la decisión, y las dos hablan del mismo número. El motor nace sin pantalla y con su consumidor a un PR de distancia, que es la única ventana en la que esta frontera se puede trazar gratis. Los cuatro modos que devuelve (`cold`, `poca`, `full`, `no_reporta`) son estados distintos del mundo y no grados de un mismo vacío: `no_reporta` —LinkedIn personal, X— es un hecho sobre la red, y decirle ahí al usuario "seguí publicando para desbloquear tus horarios" sería prometerle algo que nunca va a llegar.
+
+## Addendum (2026-11-21, F12) — Analíticas: un solo análisis, totales de hoy y cambios a 24 h
+
+**Decisión:** Analíticas llega como segundo consumidor y el motor suma **una sola operación**, `MetricsEngineService.analizar()`. Hace tres lecturas, sin importar el periodo: las cards publicadas, el último número de cada métrica y los puntos de 24 h. De su resultado salen los cuatro endpoints de `apps/api/src/analiticas/` (`resumen`, `redes`, `publicaciones` y `publicaciones/:cardId`); ninguno calcula por su cuenta. La aritmética vive pura en `metrics/analisis.ts`, al lado de `engagement.ts`. El detalle de una publicación usa `detalle()`, que reutiliza las mismas lecturas y la misma ventana de referencia, así que su "sobre tu promedio" es el mismo número que el de la tabla.
+
+Las unidades que el cuerpo del ADR difirió ("infra sin consumidor") se construyen ahora porque ya hay pantalla que las valida. Lo hacen como rebanadas del mismo análisis, no como agregaciones paralelas:
+
+- **por publicación:** estado, últimos números y lift;
+- **por red:** contexto, totales, engagement y tendencia;
+- **por concepto:** `groupId` viaja en cada publicación, así que la lente del PR 8 no necesita otra lectura.
+
+Las reglas nuevas, que son parte de la decisión:
+
+1. **Los totales son lo que ves hoy: el último número que la red dio de cada métrica, columna por columna** (`ultimosNumeros`, `array_agg … filter (where col is not null)`). Se toma por columna y no "el último snapshot" porque un bucket nuevo con `null` en comentarios no borra el número que la red dio antes. Es la regla del `coalesce` de la ingesta, llevada a lo largo de la serie. "Medido hace" es el `captured_at` más reciente, traiga números o no.
+2. **Los cambios "vs periodo anterior" se miden solo a 24 h, con las dos ventanas corridas 24 h**: `[ahora − P − 24 h, ahora − 24 h]` contra `[ahora − 2P − 24 h, ahora − P − 24 h]`.
+   - Así todo lo que entra ya cumplió la edad de referencia, y una publicación de ayer no tira el número hacia abajo por no haber terminado de acumular.
+   - Un cambio se calla (`null`, "Sin periodo anterior para comparar") si alguna de las dos ventanas tiene menos de 5 publicaciones con ese número. Es el mismo N del grupo.
+   - Alcance e interacciones se expresan como porcentaje de la suma.
+   - El engagement se expresa como diferencia absoluta en su unidad: puntos con `tasa`, interacciones por publicación con `interacciones`.
+   - Publicaciones es un conteo: compara el periodo contra el anterior sin 24 h, y da `null` si el anterior no tuvo ninguna.
+3. **Sin tasa cruzada entre redes.**
+   - Con "Todas las redes", el engagement es una lista por red, nunca un número.
+   - Las interacciones sí se suman entre redes, porque son conteos de lo mismo.
+   - El alcance suma solo las redes que reportaron `reach` en el periodo, y la respuesta dice cuáles. El diseño mezclaba las vistas de TikTok en ese número; se decidió con Jose que no.
+4. **La ventana de referencia ("tu promedio en esa red") es `max(P, 30)` días, terminando hoy.** Ahí se cuentan los umbrales (N ≥ 10 en la red para publicar un lift).
+   - Con 30 días es la ventana de Ritmo, y la base, la muestra y el promedio coinciden **por construcción**: los dos llaman `valoresDeRed` + `promedioDe` de `engagement.ts`, extraídos en este PR de lo que antes hacían juntos `horariosCon` y `calcularHorarios`.
+   - Hay una diferencia deliberada. Ritmo también cae a `poca` cuando ninguna franja llega a 5, porque su "+%" es por franja. Analíticas solo necesita el promedio de la red (`muestra = suficiente` con N ≥ 10).
+   - Los hallazgos (PR 8) miran 90 días.
+5. **El engagement mostrado es el nivel de hoy:** el promedio por publicación de `valorDe(últimos números)`, con la base de la red. Su cambio sale de los puntos de 24 h (regla 2).
+6. **El lift es `valorDe(punto de 24 h) / promedio − 1`**, en porcentaje entero, solo con `muestra = suficiente`. Una publicación sin punto de 24 h (menos de 18 h de vida, o un hueco de ingesta) no tiene lift.
+7. **El estado de una publicación se decide en este orden:**
+
+   | Estado                        | Cuándo                                                                                      |
+   | ----------------------------- | ------------------------------------------------------------------------------------------- |
+   | `sin_medicion`                | No tiene `platform_post_id`                                                                 |
+   | `medida`                      | Tiene un número de cualquiera de las cinco métricas                                         |
+   | `no_reporta`                  | Su red no reporta. Pasa aunque tenga dos horas: un LinkedIn personal nunca está "en camino" |
+   | `no_reporta` / `sin_medicion` | Cumplió 24 h: `no_reporta` si se midió y vino vacía, `sin_medicion` si nunca se midió       |
+   | `en_camino`                   | Ninguno de los anteriores                                                                   |
+
+8. **La tendencia de "Por red" se arma por tramos iguales del periodo:** 7 de 1 día, 5 de 6 días o 9 de 10 días. No se usan semanas de calendario, porque una semana partida en la orilla dibujaría una caída que no pasó.
+9. **`ultimaMedicion`** mira solo publicaciones de 30 días o menos, que son las que la ingesta sigue midiendo (`frescura.ts`).
+
+**Vistas de TikTok y YouTube.** No hay columna `views`, y `impressions` no se presenta como "vistas". El 2026-11-21 no había una sola fila de TikTok ni de YouTube en dev ni en prod, y ningún adapter lee `views` ni `plays`. Una red sin `reach` sale con alcance "No disponible", y sus impresiones crudas solo se ven en el detalle. Se revisa con la primera fila real: Upload-Post manda `primary_impressions_field` dentro de `raw`.
+
+**Un bug de Ritmo que salió aquí.** `postsComparables` ordenaba solo por la distancia a las 24 h. Con buckets de 6 h son comunes dos mediciones a la misma distancia (a las 21 h y a las 27 h). Sin desempate ganaba la que Postgres devolviera primero, y eso depende del plan: la misma publicación salía con +56% en la tabla y +55% en su detalle. Ahora gana la posterior, que es la que ya cumplió la edad.
+
+**Descartado:**
+
+- **Un endpoint por sección con su propia query.** Cada uno armaría su versión del periodo y del promedio, que es justo la divergencia que este ADR existe para evitar.
+- **Delta sobre los totales de hoy.** Una publicación de hace seis semanas siempre le ganaría a una de ayer (el argumento de la regla 3 del cuerpo).
+- **Delta con las ventanas sin correr.** Las publicaciones de menos de 24 h saldrían del periodo actual y no del anterior, así que el cambio sesgaría siempre hacia abajo justo en el periodo de 7 días.
+- **Mostrar el motivo crudo de `raw`.** Viene del proveedor, a veces en inglés. La pantalla escribe el porqué a partir del estado y la red.
+- **Índices nuevos.** Con ~4 mil filas en dev las dos lecturas nuevas corren en milisegundos con seq scan, y a escala el índice único de `post_metrics` ya empieza por `user_id`. Sin migración.
+
+**Contexto:** F12 PR 6, 2026-11-21. El diseño "Presencia Analytics Overview" se leyó completo. Además de las vistas, se desviaba del lore doc en otro punto: el hallazgo de día de la semana iba sin red y en presente. Manda el lore doc, y queda para el PR 8.

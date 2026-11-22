@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import { and, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
-import type { SocialNetwork } from "@presencia/shared";
-import { postMetrics, publicationCards } from "../db/schema.js";
+import { and, desc, eq, gte, inArray, isNotNull, lte, or, sql, type SQL } from "drizzle-orm";
+import type { PublicationArchetype, SocialNetwork } from "@presencia/shared";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { chats, folders, postMetrics, publicationCards } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
 import { EDAD_REFERENCIA_HORAS, TOLERANCIA_HORAS } from "./engagement.js";
 
@@ -25,6 +26,34 @@ export interface FilaComparable {
   likes: number | null;
   comments: number | null;
   shares: number | null;
+}
+
+/** Una publicación de Analíticas: la card publicada con lo que su fila pinta. */
+export interface FilaPublicacionAnalizable {
+  cardId: string;
+  network: SocialNetwork;
+  archetype: PublicationArchetype;
+  /** `CardContent` sin validar: el servicio lo lee para texto y miniatura. */
+  content: unknown;
+  groupId: string | null;
+  chatId: string | null;
+  carpeta: { nombre: string; icono: string | null } | null;
+  postUrl: string | null;
+  platformPostId: string | null;
+  publishedAt: Date;
+}
+
+/** El último número de cada métrica de un post (ver `ultimosNumeros`). */
+export interface FilaUltimosNumeros {
+  network: SocialNetwork;
+  platformPostId: string;
+  reach: number | null;
+  impressions: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  medidoEn: Date | null;
+  snapshots: number;
 }
 
 /** Una publicación contada para el heatmap de cadencia. */
@@ -86,7 +115,13 @@ export class MetricsReadRepository {
           sql`${distancia} <= ${TOLERANCIA_HORAS * 3600}`,
         ),
       )
-      .orderBy(distancia);
+      // El desempate no es cosmético. Dos mediciones a la misma distancia (a
+      // las 21 h y a las 27 h) son comunes con buckets de 6 h, y sin segundo
+      // criterio ganaba la que Postgres devolviera primero, que depende del
+      // plan: la misma publicación salía con un "+%" distinto según el rango
+      // pedido (la tabla de Analíticas decía +56% y su detalle +55%). Gana la
+      // posterior, la que ya cumplió la edad (mismo criterio que el piso).
+      .orderBy(distancia, desc(postMetrics.capturedAt));
 
     // El "uno por post" se resuelve acá y no con `distinct on` porque este
     // repositorio se lee dentro de un request y la ventana es de 30 días: son
@@ -103,6 +138,135 @@ export class MetricsReadRepository {
       elegidos.set(clave, { ...fila, publishedAt: fila.publishedAt });
     }
     return [...elegidos.values()];
+  }
+
+  /**
+   * Las cards publicadas en un rango, con lo que Analíticas pinta de cada una.
+   *
+   * Sale de `publication_cards` por la misma razón que la cadencia: "publiqué"
+   * no depende de que la red conteste. La carpeta viene del chat de origen;
+   * un chat borrado deja la card huérfana (`chat_id` null) y sin carpeta.
+   */
+  async publicacionesAnalizables(
+    tx: Tx,
+    desde: Date,
+    hasta: Date,
+  ): Promise<FilaPublicacionAnalizable[]> {
+    return this.leerAnalizables(
+      tx,
+      and(gte(publicationCards.publishedAt, desde), lte(publicationCards.publishedAt, hasta)),
+    );
+  }
+
+  /**
+   * Una card publicada y sus hermanas publicadas del mismo concepto
+   * (`group_id`): el panel de detalle, que puede abrir una publicación más
+   * vieja que el periodo elegido.
+   */
+  async publicacionYHermanas(tx: Tx, cardId: string): Promise<FilaPublicacionAnalizable[]> {
+    return this.leerAnalizables(
+      tx,
+      or(
+        eq(publicationCards.id, cardId),
+        sql`${publicationCards.groupId} = (select group_id from publication_cards where id = ${cardId})`,
+      ),
+    );
+  }
+
+  private async leerAnalizables(
+    tx: Tx,
+    filtro: SQL | undefined,
+  ): Promise<FilaPublicacionAnalizable[]> {
+    const filas = await tx
+      .select({
+        cardId: publicationCards.id,
+        network: publicationCards.network,
+        archetype: publicationCards.archetype,
+        content: publicationCards.content,
+        groupId: publicationCards.groupId,
+        chatId: publicationCards.chatId,
+        carpetaNombre: folders.name,
+        carpetaIcono: folders.icon,
+        postUrl: publicationCards.postUrl,
+        platformPostId: publicationCards.platformPostId,
+        publishedAt: publicationCards.publishedAt,
+      })
+      .from(publicationCards)
+      .leftJoin(chats, eq(chats.id, publicationCards.chatId))
+      .leftJoin(folders, eq(folders.id, chats.folderId))
+      .where(
+        and(
+          eq(publicationCards.status, "published"),
+          isNotNull(publicationCards.publishedAt),
+          filtro,
+        ),
+      );
+    return filas.flatMap(({ carpetaNombre, carpetaIcono, publishedAt, ...fila }) =>
+      publishedAt
+        ? [
+            {
+              ...fila,
+              publishedAt,
+              carpeta: carpetaNombre ? { nombre: carpetaNombre, icono: carpetaIcono } : null,
+            },
+          ]
+        : [],
+    );
+  }
+
+  /** ¿Publicó algo alguna vez? Distingue "Cero absoluto" de "nada en el periodo". */
+  async hayPublicadas(tx: Tx): Promise<boolean> {
+    const [fila] = await tx
+      .select({ id: publicationCards.id })
+      .from(publicationCards)
+      .where(eq(publicationCards.status, "published"))
+      .limit(1);
+    return fila !== undefined;
+  }
+
+  /**
+   * El último número que la red dio de cada métrica, columna por columna: lo
+   * que Analíticas muestra como total ("lo que ves hoy").
+   *
+   * Por columna y no "el último snapshot": un bucket nuevo puede traer `null`
+   * en una métrica que la red sí dio antes, y ese `null` no borra el número
+   * (addendum F12 de ADR-022). `medidoEn` es la medición más reciente, traiga
+   * números o no: es "Medido hace 3 horas".
+   *
+   * Filtra por los posts que se piden (`platformPostIds`) o por fecha de
+   * publicación (`desde`), nunca por todo el historial.
+   */
+  async ultimosNumeros(
+    tx: Tx,
+    filtro: { desde: Date } | { platformPostIds: readonly string[] },
+  ): Promise<FilaUltimosNumeros[]> {
+    if ("platformPostIds" in filtro && filtro.platformPostIds.length === 0) return [];
+    const numero = (valor: unknown) => (valor === null ? null : Number(valor));
+    const ultimo = (columna: AnyPgColumn) =>
+      sql<
+        number | null
+      >`(array_agg(${columna} order by ${postMetrics.snapshotAt} desc) filter (where ${columna} is not null))[1]`.mapWith(
+        numero,
+      );
+    return tx
+      .select({
+        network: postMetrics.network,
+        platformPostId: postMetrics.platformPostId,
+        reach: ultimo(postMetrics.reach),
+        impressions: ultimo(postMetrics.impressions),
+        likes: ultimo(postMetrics.likes),
+        comments: ultimo(postMetrics.comments),
+        shares: ultimo(postMetrics.shares),
+        medidoEn: sql<Date | null>`max(${postMetrics.capturedAt})`.mapWith(postMetrics.capturedAt),
+        snapshots: sql<number>`count(*)::int`.mapWith(Number),
+      })
+      .from(postMetrics)
+      .where(
+        "desde" in filtro
+          ? gte(postMetrics.publishedAt, filtro.desde)
+          : inArray(postMetrics.platformPostId, [...filtro.platformPostIds]),
+      )
+      .groupBy(postMetrics.network, postMetrics.platformPostId);
   }
 
   /**
