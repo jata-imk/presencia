@@ -60,6 +60,9 @@ describe("textoCambio", () => {
   it("publicaciones: en unidades", () => {
     expect(textoCambio("unidades", 4)).toEqual({ texto: "+4", direccion: "sube" });
   });
+  it("un cambio de mil puntos o más no se rompe con el separador de miles", () => {
+    expect(cambioDeEngagement("tasa", 10.5)).toEqual({ texto: "+1,050 pts", direccion: "sube" });
+  });
   it("lo que se redondea a cero no tiene dirección", () => {
     expect(cambioDeEngagement("tasa", 0.0002)).toEqual({ texto: "0 pts", direccion: "igual" });
     expect(textoLift(0)).toEqual({ texto: "0%", direccion: "igual" });

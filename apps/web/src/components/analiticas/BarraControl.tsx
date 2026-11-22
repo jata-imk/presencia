@@ -43,15 +43,16 @@ export function BarraControl({
         Analíticas
       </h1>
       <div className="flex flex-wrap items-center gap-3">
-        <div role="tablist" aria-label="Periodo" className={`inline-flex gap-0.5 p-[3px] ${PILL}`}>
+        {/* Un grupo de botones y no un tablist: el periodo filtra toda la
+            pantalla, no cambia entre paneles. */}
+        <div role="group" aria-label="Periodo" className={`inline-flex gap-0.5 p-[3px] ${PILL}`}>
           {PERIODOS_ANALITICAS.map((dias) => {
             const activo = dias === periodo;
             return (
               <button
                 key={dias}
                 type="button"
-                role="tab"
-                aria-selected={activo}
+                aria-pressed={activo}
                 onClick={() => onPeriodo(dias)}
                 className={`rounded-full px-3.5 py-1.5 font-display text-[13px] transition-colors ${
                   activo

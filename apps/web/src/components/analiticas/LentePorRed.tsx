@@ -1,6 +1,11 @@
 import { Link } from "react-router";
 import { Info, KeyRound } from "lucide-react";
-import type { AnaliticasRedDto, PeriodoAnaliticas } from "@presencia/shared";
+import {
+  NETWORK_LABELS,
+  type AnaliticasRedDto,
+  type PeriodoAnaliticas,
+  type SocialNetwork,
+} from "@presencia/shared";
 import { NETWORK_META } from "../cards/NetworkLogos.js";
 import { motivoNoReporta, numero, textoEngagement } from "../../lib/analiticas/formato.js";
 import { Tendencia } from "./Tendencia.js";
@@ -22,11 +27,14 @@ export const COLUMNAS_RED =
 
 export function LentePorRed({
   redes,
+  red,
   periodo,
   ahora,
   timeZone,
 }: {
   redes: AnaliticasRedDto[];
+  /** La red elegida arriba, o `null` con "Todas las redes": cambia el vacío. */
+  red: SocialNetwork | null;
   periodo: PeriodoAnaliticas;
   ahora: Date;
   timeZone: string;
@@ -34,16 +42,18 @@ export function LentePorRed({
   if (redes.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-line px-5 py-8 text-center text-[13px] text-fg-secondary">
-        No publicaste en esta red en el periodo.
+        {red
+          ? `No publicaste en ${NETWORK_LABELS[red]} en el periodo.`
+          : "No publicaste en el periodo."}
       </p>
     );
   }
   return (
     <div className="flex flex-col gap-3">
-      {redes.map((red) => (
+      {redes.map((entrada) => (
         <TarjetaRed
-          key={red.network}
-          red={red}
+          key={entrada.network}
+          red={entrada}
           periodo={periodo}
           ahora={ahora}
           timeZone={timeZone}
@@ -166,8 +176,10 @@ export function TarjetaRed({
             {engagement.numero}
           </p>
         ) : (
-          // Tiene publicaciones pero ninguna trae número todavía.
-          <p className="font-display text-[15px] font-medium text-fg-muted">Métricas en camino</p>
+          // Tiene publicaciones pero ninguna trae número. Puede ser que
+          // vengan en camino o que nunca se puedan medir (sin id del post):
+          // la tarjeta no lo sabe, así que no promete; la tabla dice cuál.
+          <p className="font-display text-[15px] font-medium text-fg-muted">Sin números</p>
         )}
         <p className="mt-1 text-[11px] tracking-[0.04em] text-fg-muted uppercase">
           {red.engagement.base === "tasa" ? "Engagement" : "Int. por publicación"}
@@ -190,9 +202,11 @@ export function TarjetaRed({
             />
           </>
         ) : (
-          // Sin ningún número todavía, "No disponible" mentiría: llegan.
+          // "No disponible" en alcance e interacciones diría que la red no
+          // los da, y sí los da.
           <p className="self-center text-xs text-fg-muted">
-            {meta.label} suele tardar unas horas en reportar
+            Ninguna publicación del periodo trae números. En «Por publicación» ves el estado de cada
+            una.
           </p>
         )}
       </div>

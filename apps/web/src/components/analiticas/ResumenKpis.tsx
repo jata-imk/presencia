@@ -189,9 +189,12 @@ function motivoDeAlcance(
 ): string | null {
   if (!entrada) return null;
   if (entrada.muestra === "no_reporta") return motivoNoReporta(red);
-  // Con números pero sin alcance: es una red que no lo da (TikTok). Sin
-  // números todavía (todo en camino) no hay de dónde decir por qué.
-  return entrada.muestra === "sin_datos" ? null : motivoSinAlcance(red);
+  // La base dice si la red da alcance: el motor calcula en interacciones
+  // justo cuando no lo da (TikTok). Con base `tasa` la red sí lo da, y un
+  // total vacío es un periodo sin números todavía: ahí no hay porqué que
+  // decir. La `muestra` no sirve para esto: mira la ventana de referencia,
+  // no el periodo.
+  return entrada.base === "interacciones" ? motivoSinAlcance(red) : null;
 }
 
 /** Con una red elegida: vuelve a ser un solo número (diseño 5b). */

@@ -159,7 +159,7 @@ export const RED_RECONECTAR: AnaliticasRedDto = {
   ...RED_INSTAGRAM,
   cuenta: { nombre: "@jose.productivo", reconectar: true },
 };
-/** Publicó hace poco y nada trae número todavía. */
+/** Publicó y nada trae número (en camino o sin medición: la tarjeta no promete). */
 export const RED_EN_CAMINO: AnaliticasRedDto = {
   ...RED_FACEBOOK,
   engagement: { ...ENG_FACEBOOK, muestra: "sin_datos", valor: null, cambio: null },

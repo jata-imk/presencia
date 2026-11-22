@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { socialNetworkSchema, type PeriodoAnaliticas, type SocialNetwork } from "@presencia/shared";
 import { BarraControl } from "../components/analiticas/BarraControl.js";
@@ -89,6 +89,16 @@ export function AnaliticasPage() {
     [redes.datos, red],
   );
 
+  // "y N redes más": la lente Por red suele ser ya la activa, así que cambiar
+  // de lente solo no movía nada y el botón parecía roto. Se lleva al usuario
+  // hasta ella.
+  const lentes = useRef<HTMLElement>(null);
+  function verPorRed() {
+    cambiar("lente", null);
+    lentes.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    lentes.current?.querySelector<HTMLElement>("#lente-panel")?.focus({ preventScroll: true });
+  }
+
   function reintentarTodo() {
     resumen.reintentar();
     redes.reintentar();
@@ -118,9 +128,13 @@ export function AnaliticasPage() {
               <CeroAbsoluto />
             ) : (
               <>
-                <ResumenKpis resumen={resumen.datos} onVerPorRed={() => cambiar("lente", null)} />
+                <ResumenKpis resumen={resumen.datos} onVerPorRed={verPorRed} />
 
-                <section className="flex flex-col gap-4" aria-label="Lentes">
+                <section
+                  ref={lentes}
+                  className="flex scroll-mt-4 flex-col gap-4"
+                  aria-label="Lentes"
+                >
                   <div
                     role="tablist"
                     aria-label="Lente"
@@ -131,9 +145,11 @@ export function AnaliticasPage() {
                       return (
                         <button
                           key={id}
+                          id={`lente-${id}`}
                           type="button"
                           role="tab"
                           aria-selected={activa}
+                          aria-controls="lente-panel"
                           onClick={() => cambiar("lente", id === "red" ? null : id)}
                           className={`rounded-full px-4 py-[7px] font-display text-[13px] transition-colors @lg:px-[18px] ${
                             activa
@@ -147,7 +163,13 @@ export function AnaliticasPage() {
                     })}
                   </div>
 
-                  <div role="tabpanel">
+                  <div
+                    id="lente-panel"
+                    role="tabpanel"
+                    aria-labelledby={`lente-${lente}`}
+                    tabIndex={-1}
+                    className="outline-none"
+                  >
                     {lente === "red" ? (
                       redes.error ? (
                         <AnaliticasError compacto onReintentar={redes.reintentar} />
@@ -156,6 +178,7 @@ export function AnaliticasPage() {
                       ) : (
                         <LentePorRed
                           redes={redesVisibles}
+                          red={red}
                           periodo={periodo}
                           ahora={ahora}
                           timeZone={timeZone}

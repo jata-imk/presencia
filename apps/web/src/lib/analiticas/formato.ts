@@ -64,10 +64,10 @@ export function textoCambio(
   tipo: "pts" | "interacciones" | "pct" | "unidades",
   cambio: number,
 ): Cambio {
+  // Se redondea con aritmética, no reinterpretando el texto formateado: con
+  // separador de miles ("1,000") `Number()` daba NaN.
   const magnitud =
-    tipo === "pts"
-      ? Number(unDecimal.format(Math.abs(cambio) * 100))
-      : Math.round(Math.abs(cambio));
+    tipo === "pts" ? Math.round(Math.abs(cambio) * 1000) / 10 : Math.round(Math.abs(cambio));
   const direccion: Direccion = magnitud === 0 ? "igual" : cambio > 0 ? "sube" : "baja";
   const signo = direccion === "sube" ? "+" : direccion === "baja" ? MENOS : "";
   const cuerpo =
