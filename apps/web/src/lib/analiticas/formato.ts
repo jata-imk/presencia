@@ -1,6 +1,10 @@
 import {
   NETWORK_LABELS,
+  type AnaliticasHallazgoDto,
   type BaseDeCalculoDto,
+  type DiaDeLaSemana,
+  type FormatoPublicado,
+  type HallazgoFormatoDto,
   type EstadoPublicacion,
   type MuestraDeRed,
   type PeriodoAnaliticas,
@@ -281,4 +285,131 @@ export function avisarActualizacion(ultimaMedicion: string | null, ahora: Date):
   if (!ultimaMedicion) return false;
   const horas = (ahora.getTime() - new Date(ultimaMedicion).getTime()) / (60 * 60 * 1000);
   return horas >= HORAS_PARA_AVISAR_ACTUALIZACION;
+}
+
+// ---------------------------------------------------------------------------
+// Hallazgos (PR 8b, lore doc §5)
+//
+// El motor decide QUÉ se vio (grupo ganador, perdedor, diferencia, base); aquí
+// solo se dice. En pasado, con su red y su base, y sin causa: "tuvieron", nunca
+// "funcionan mejor".
+
+/** Cómo se nombra cada formato publicado según dónde cae en la frase. */
+export const NOMBRE_FORMATO: Record<
+  FormatoPublicado,
+  {
+    /** "tus carruseles": como sujeto y como término de comparación. */
+    plural: string;
+    /** "8 carruseles" / "1 carrusel": la base entre paréntesis. */
+    conteo: (n: number) => string;
+    /** "un carrusel": lo que la propuesta pide hacer. */
+    propuesta: string;
+  }
+> = {
+  carrusel: {
+    plural: "tus carruseles",
+    conteo: (n) => `${String(n)} ${n === 1 ? "carrusel" : "carruseles"}`,
+    propuesta: "un carrusel",
+  },
+  imagen: {
+    plural: "tus publicaciones con una imagen",
+    conteo: (n) => `${String(n)} con una imagen`,
+    propuesta: "una publicación con imagen",
+  },
+  video: {
+    plural: "tus videos",
+    conteo: (n) => `${String(n)} ${n === 1 ? "video" : "videos"}`,
+    propuesta: "un video",
+  },
+  texto: {
+    plural: "tus publicaciones de solo texto",
+    conteo: (n) => `${String(n)} de solo texto`,
+    propuesta: "una publicación de solo texto",
+  },
+};
+
+const DIAS: Record<DiaDeLaSemana, string> = {
+  0: "lunes",
+  1: "martes",
+  2: "miércoles",
+  3: "jueves",
+  4: "viernes",
+  5: "sábado",
+  6: "domingo",
+};
+
+/**
+ * "31% más" o, desde el doble, "2.4 veces más" (lore doc §5). `diferenciaPct`
+ * es cuánto MÁS rindió el ganador, así que el múltiplo es 1 + pct/100.
+ */
+export function textoDiferencia(diferenciaPct: number): string {
+  const veces = 1 + diferenciaPct / 100;
+  if (veces >= 2) return `${unDecimal.format(Math.round(veces * 10) / 10)} veces más`;
+  return `${entero.format(Math.round(diferenciaPct))}% más`;
+}
+
+/** La frase de un hallazgo en tres partes: la del medio va en `strong`. */
+export interface FraseDeHallazgo {
+  antes: string;
+  numero: string;
+  despues: string;
+}
+
+export function fraseDeHallazgo(hallazgo: AnaliticasHallazgoDto): FraseDeHallazgo {
+  const red = NETWORK_LABELS[hallazgo.network];
+  const numero = `${textoDiferencia(hallazgo.diferenciaPct)} interacción`;
+  if (hallazgo.tipo === "formato") {
+    return {
+      antes: `En ${red}, ${NOMBRE_FORMATO[hallazgo.ganador].plural} tuvieron `,
+      numero,
+      despues: ` que ${NOMBRE_FORMATO[hallazgo.perdedor].plural}.`,
+    };
+  }
+  const { ganador } = hallazgo;
+  if (ganador === "fin_de_semana") {
+    return {
+      antes: `En ${red}, lo que publicaste en fin de semana tuvo `,
+      numero,
+      despues: " que lo de entre semana.",
+    };
+  }
+  if (ganador === "entre_semana") {
+    return {
+      antes: `En ${red}, lo que publicaste entre semana tuvo `,
+      numero,
+      despues: " que lo del fin de semana.",
+    };
+  }
+  return {
+    antes: `En ${red}, lo que publicaste en ${DIAS[ganador.dia]} tuvo `,
+    numero,
+    despues: " que el resto de la semana.",
+  };
+}
+
+/** "Basado en 18 publicaciones de Instagram (8 carruseles, 10 de solo texto)". */
+export function baseDeHallazgo(hallazgo: AnaliticasHallazgoDto): string {
+  const total = hallazgo.nGanador + hallazgo.nPerdedor;
+  const inicio = `Basado en ${String(total)} publicaciones de ${NETWORK_LABELS[hallazgo.network]}`;
+  if (hallazgo.tipo === "formato") {
+    const ganador = NOMBRE_FORMATO[hallazgo.ganador].conteo(hallazgo.nGanador);
+    const perdedor = NOMBRE_FORMATO[hallazgo.perdedor].conteo(hallazgo.nPerdedor);
+    return `${inicio} (${ganador}, ${perdedor})`;
+  }
+  const { ganador } = hallazgo;
+  const [nombreGanador, nombrePerdedor] =
+    ganador === "fin_de_semana"
+      ? ["en fin de semana", "entre semana"]
+      : ganador === "entre_semana"
+        ? ["entre semana", "en fin de semana"]
+        : [`en ${DIAS[ganador.dia]}`, "el resto de la semana"];
+  return `${inicio} (${String(hallazgo.nGanador)} ${nombreGanador}, ${String(hallazgo.nPerdedor)} ${nombrePerdedor})`;
+}
+
+/**
+ * Lo que "Crear en Chat" deja escrito en la caja de un chat nuevo, sin
+ * mandarlo: el tema lo pone el creator, por eso termina en "sobre ".
+ */
+export function propuestaDeHallazgo(hallazgo: HallazgoFormatoDto): string {
+  return `Quiero hacer ${NOMBRE_FORMATO[hallazgo.ganador].propuesta} para ${NETWORK_LABELS[hallazgo.network]} sobre `;
 }

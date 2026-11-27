@@ -3,13 +3,26 @@ import { useNavigate, useSearchParams } from "react-router";
 import {
   socialNetworkSchema,
   type AnaliticasPublicacionDetalleDto,
+  type HallazgoFormatoDto,
+  type MuestraDeRed,
   type PeriodoAnaliticas,
   type SocialNetwork,
 } from "@presencia/shared";
 import { BarraControl } from "../components/analiticas/BarraControl.js";
 import { DetallePublicacion } from "../components/analiticas/DetallePublicacion.js";
+import {
+  Hallazgos,
+  HallazgosSkeleton,
+  SeccionHallazgos,
+} from "../components/analiticas/Hallazgos.js";
+import { LentePorConcepto } from "../components/analiticas/LentePorConcepto.js";
 import { LentePorPublicacion } from "../components/analiticas/LentePorPublicacion.js";
 import { LentePorRed } from "../components/analiticas/LentePorRed.js";
+import {
+  MejoresPublicaciones,
+  MejoresSkeleton,
+  SeccionMejores,
+} from "../components/analiticas/MejoresPublicaciones.js";
 import { ResumenKpis } from "../components/analiticas/ResumenKpis.js";
 import {
   AnaliticasError,
@@ -18,11 +31,13 @@ import {
   LenteSkeleton,
 } from "../components/analiticas/AnaliticasStates.js";
 import { textoAdaptar } from "../lib/adaptar.js";
+import { propuestaDeHallazgo } from "../lib/analiticas/formato.js";
 import { useTimezone } from "../lib/calendar/use-timezone.js";
 import { useMediaQuery } from "../lib/use-media-query.js";
 import { usePublicationPanelStore } from "../stores/publication-panel-store.js";
 import {
   useAnaliticasDetalle,
+  useAnaliticasHallazgos,
   useAnaliticasPublicaciones,
   useAnaliticasRedes,
   useAnaliticasResumen,
@@ -33,9 +48,9 @@ import {
 // copy de los estados, de lib/analiticas/formato.ts.
 //
 // Una vista y no tabs por sección (lore doc §7): arriba lo que se lee de un
-// vistazo, abajo las lentes para escarbar. Las lentes sí son tabs: muestran
-// lo mismo cortado distinto. "Por concepto", "Tus mejores publicaciones" y
-// "Hallazgos" llegan con el PR 8.
+// vistazo (el resumen, "Tus mejores publicaciones" y "Hallazgos"), abajo las
+// lentes para escarbar. Las lentes sí son tabs: muestran lo mismo cortado
+// distinto. Cada sección carga y falla por su cuenta.
 //
 // Periodo, red, lente y la publicación abierta (`post`) viven en la URL: al
 // volver del chat de origen con "atrás", la pantalla queda como estaba, y
@@ -48,12 +63,17 @@ import {
 // se abre para leer una publicación y volver a la lista, no para trabajar al
 // lado de ella.
 
-type Lente = "red" | "publicacion";
+type Lente = "red" | "publicacion" | "concepto";
 
 const LENTES: { id: Lente; texto: string }[] = [
   { id: "red", texto: "Por red" },
   { id: "publicacion", texto: "Por publicación" },
+  { id: "concepto", texto: "Por concepto" },
 ];
+
+function lenteDe(valor: string | null): Lente {
+  return valor === "publicacion" || valor === "concepto" ? valor : "red";
+}
 
 function periodoDe(valor: string | null): PeriodoAnaliticas {
   return valor === "7" ? 7 : valor === "90" ? 90 : 30;
@@ -69,7 +89,7 @@ export function AnaliticasPage() {
   const [params, setParams] = useSearchParams();
   const periodo = periodoDe(params.get("periodo"));
   const red = redDe(params.get("red"));
-  const lente: Lente = params.get("lente") === "publicacion" ? "publicacion" : "red";
+  const lente = lenteDe(params.get("lente"));
   const post = params.get("post") || null;
   const navigate = useNavigate();
   const esEscritorio = useMediaQuery("(min-width: 1024px)");
@@ -91,6 +111,8 @@ export function AnaliticasPage() {
   const resumen = useAnaliticasResumen(periodo, red);
   const redes = useAnaliticasRedes(periodo);
   const publicaciones = useAnaliticasPublicaciones(periodo, red);
+  // Siempre 90 días: el periodo de arriba no lo mueve, la red sí.
+  const hallazgos = useAnaliticasHallazgos(red);
   // Abre aunque la publicación sea más vieja que el periodo (lore doc §6): la
   // lista de atrás no cambia.
   const detalle = useAnaliticasDetalle(post, periodo);
@@ -104,6 +126,14 @@ export function AnaliticasPage() {
 
   const redesConPublicaciones = useMemo(
     () => redes.datos?.redes.map((r) => r.network) ?? [],
+    [redes.datos],
+  );
+  // Por concepto dice por qué una red no tiene número con su muestra.
+  const muestraPorRed = useMemo(
+    () =>
+      new Map<SocialNetwork, MuestraDeRed>(
+        (redes.datos?.redes ?? []).map((r) => [r.network, r.engagement.muestra]),
+      ),
     [redes.datos],
   );
   // La API manda siempre todas; con una red elegida, la lente muestra la suya.
@@ -122,14 +152,18 @@ export function AnaliticasPage() {
     lentes.current?.querySelector<HTMLElement>("#lente-panel")?.focus({ preventScroll: true });
   }
 
-  // La fila desde la que se abrió el detalle: al cerrar, el foco vuelve a
-  // ella. Saltar a una hermana no la cambia. Si se llegó por "Ver
-  // estadísticas" o la fila no está en la lista (otra lente, fuera del
-  // periodo), el foco va al panel de la lente para no perderse en <body>.
-  const abiertaDesde = useRef<string | null>(null);
+  // El elemento desde el que se abrió el detalle (una fila de la tabla, una
+  // tarjeta de Mejores, una red de Por concepto): al cerrar, el foco vuelve a
+  // él. Se guarda el elemento y no el cardId porque la misma card puede estar
+  // en Mejores y en la tabla, y la primera en el DOM le ganaría a la que se
+  // tocó. Saltar a una hermana no lo cambia. Si se llegó por "Ver
+  // estadísticas" o el elemento ya no está (cambió la lente o el periodo), el
+  // foco va al panel de la lente para no perderse en <body>.
+  const abiertaDesde = useRef<HTMLElement | null>(null);
 
   function abrirDesdeFila(cardId: string) {
-    abiertaDesde.current = cardId;
+    abiertaDesde.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     cambiar("post", cardId);
   }
 
@@ -155,10 +189,7 @@ export function AnaliticasPage() {
       { replace: true },
     );
     requestAnimationFrame(() => {
-      const destino =
-        (fila
-          ? document.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(fila)}"] button`)
-          : null) ?? document.getElementById("lente-panel");
+      const destino = fila?.isConnected ? fila : document.getElementById("lente-panel");
       destino?.focus({ preventScroll: destino.id === "lente-panel" });
     });
   }, [setParams]);
@@ -205,10 +236,22 @@ export function AnaliticasPage() {
     });
   }
 
+  // "Crear en Chat" de un hallazgo: un chat nuevo con la idea escrita en la
+  // caja, sin mandarla (lore doc §5). El mismo contrato que las propuestas de
+  // Ritmo (`state.propuesta`, que lee chats.tsx); `initialPrompt` sí enviaría.
+  function crearEnChat(hallazgo: HallazgoFormatoDto) {
+    void navigate("/chats", { state: { propuesta: propuestaDeHallazgo(hallazgo) } });
+  }
+
+  function verEnRitmo(redDelHallazgo: SocialNetwork) {
+    void navigate(`/ritmo?red=${redDelHallazgo}`);
+  }
+
   function reintentarTodo() {
     resumen.reintentar();
     redes.reintentar();
     publicaciones.reintentar();
+    hallazgos.reintentar();
   }
 
   return (
@@ -235,6 +278,36 @@ export function AnaliticasPage() {
             ) : (
               <>
                 <ResumenKpis resumen={resumen.datos} onVerPorRed={verPorRed} />
+
+                {publicaciones.error ? (
+                  <SeccionMejores periodo={periodo}>
+                    <AnaliticasError compacto onReintentar={publicaciones.reintentar} />
+                  </SeccionMejores>
+                ) : !publicaciones.datos ? (
+                  <MejoresSkeleton periodo={periodo} />
+                ) : (
+                  <MejoresPublicaciones
+                    publicaciones={publicaciones.datos.publicaciones}
+                    mejores={publicaciones.datos.mejores}
+                    periodo={periodo}
+                    timeZone={timeZone}
+                    onAbrir={abrirDesdeFila}
+                  />
+                )}
+
+                {hallazgos.error ? (
+                  <SeccionHallazgos>
+                    <AnaliticasError compacto onReintentar={hallazgos.reintentar} />
+                  </SeccionHallazgos>
+                ) : !hallazgos.datos ? (
+                  <HallazgosSkeleton />
+                ) : (
+                  <Hallazgos
+                    hallazgos={hallazgos.datos}
+                    onCrearEnChat={crearEnChat}
+                    onVerEnRitmo={verEnRitmo}
+                  />
+                )}
 
                 <section
                   ref={lentes}
@@ -294,6 +367,16 @@ export function AnaliticasPage() {
                       <AnaliticasError compacto onReintentar={publicaciones.reintentar} />
                     ) : !publicaciones.datos ? (
                       <LenteSkeleton forma="tabla" />
+                    ) : lente === "concepto" ? (
+                      <LentePorConcepto
+                        conceptos={publicaciones.datos.conceptos}
+                        publicaciones={publicaciones.datos.publicaciones}
+                        muestraPorRed={muestraPorRed}
+                        ahora={ahora}
+                        timeZone={timeZone}
+                        activa={post}
+                        onAbrir={abrirDesdeFila}
+                      />
                     ) : (
                       <LentePorPublicacion
                         publicaciones={publicaciones.datos.publicaciones}

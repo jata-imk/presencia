@@ -17,8 +17,8 @@ import { haceCuanto } from "../../lib/relative-time.js";
 //
 // PR 7b: cada fila abre su detalle (`?post=`). El título es un botón estirado
 // sobre toda la fila: así se abre con teclado y, al cerrar el detalle, el
-// foco tiene adónde volver (`[data-card-id] button`). La fila abierta queda
-// resaltada.
+// foco tiene adónde volver (la pantalla recuerda el botón que lo abrió). La
+// fila abierta queda resaltada.
 
 export type ColumnaOrden = "rendimiento" | "fecha" | "alcance" | "interacciones";
 type Direccion = "asc" | "desc";

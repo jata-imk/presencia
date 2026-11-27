@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { HallazgoDiaDto, HallazgoFormatoDto } from "@presencia/shared";
 import {
+  NOMBRE_FORMATO,
+  baseDeHallazgo,
+  fraseDeHallazgo,
+  propuestaDeHallazgo,
+  textoDiferencia,
   avisarActualizacion,
   cambioDeEngagement,
   copyDeEstado,
@@ -160,5 +166,105 @@ describe("notaDeMetricasFaltantes", () => {
     expect(
       notaDeMetricasFaltantes("facebook", { ...todas, reach: null, likes: null, shares: null }),
     ).toBe("Facebook no reportó alcance, me gusta ni compartidas para esta publicación.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hallazgos (PR 8b)
+
+const FORMATO: HallazgoFormatoDto = {
+  tipo: "formato",
+  network: "instagram",
+  ganador: "carrusel",
+  perdedor: "texto",
+  diferenciaPct: 87,
+  nGanador: 8,
+  nPerdedor: 10,
+};
+
+const dia = (ganador: HallazgoDiaDto["ganador"]): HallazgoDiaDto => ({
+  tipo: "dia",
+  network: "facebook",
+  ganador,
+  diferenciaPct: 52,
+  nGanador: 6,
+  nPerdedor: 20,
+});
+
+const frase = (h: Parameters<typeof fraseDeHallazgo>[0]) => {
+  const { antes, numero, despues } = fraseDeHallazgo(h);
+  return `${antes}[${numero}]${despues}`;
+};
+
+describe("textoDiferencia", () => {
+  it.each([
+    [25, "25% más"],
+    [87, "87% más"],
+    // 1.99×: todavía porcentaje.
+    [99, "99% más"],
+    // Desde el doble, en veces (1 + pct/100).
+    [100, "2 veces más"],
+    [140, "2.4 veces más"],
+    [312, "4.1 veces más"],
+  ])("%d → %s", (pct, esperado) => {
+    expect(textoDiferencia(pct)).toBe(esperado);
+  });
+});
+
+describe("fraseDeHallazgo", () => {
+  it("formato: en pasado, con su red, nombrando al ganador primero", () => {
+    expect(frase(FORMATO)).toBe(
+      "En Instagram, tus carruseles tuvieron [87% más interacción] que tus publicaciones de solo texto.",
+    );
+  });
+  it("formato desde el doble, en veces", () => {
+    expect(frase({ ...FORMATO, ganador: "video", perdedor: "imagen", diferenciaPct: 140 })).toBe(
+      "En Instagram, tus videos tuvieron [2.4 veces más interacción] que tus publicaciones con una imagen.",
+    );
+  });
+  it("día: un día contra el resto (0 = lunes)", () => {
+    expect(frase(dia({ dia: 1 }))).toBe(
+      "En Facebook, lo que publicaste en martes tuvo [52% más interacción] que el resto de la semana.",
+    );
+  });
+  it("día: los dos lados de la semana", () => {
+    expect(frase(dia("fin_de_semana"))).toBe(
+      "En Facebook, lo que publicaste en fin de semana tuvo [52% más interacción] que lo de entre semana.",
+    );
+    expect(frase(dia("entre_semana"))).toBe(
+      "En Facebook, lo que publicaste entre semana tuvo [52% más interacción] que lo del fin de semana.",
+    );
+  });
+});
+
+describe("baseDeHallazgo", () => {
+  it("formato: total, red y cada grupo", () => {
+    expect(baseDeHallazgo(FORMATO)).toBe(
+      "Basado en 18 publicaciones de Instagram (8 carruseles, 10 de solo texto)",
+    );
+  });
+  it("día", () => {
+    expect(baseDeHallazgo(dia({ dia: 6 }))).toBe(
+      "Basado en 26 publicaciones de Facebook (6 en domingo, 20 el resto de la semana)",
+    );
+    expect(baseDeHallazgo(dia("entre_semana"))).toBe(
+      "Basado en 26 publicaciones de Facebook (6 entre semana, 20 en fin de semana)",
+    );
+  });
+});
+
+describe("propuestaDeHallazgo", () => {
+  it("deja el tema abierto, con el cursor al final", () => {
+    expect(propuestaDeHallazgo(FORMATO)).toBe("Quiero hacer un carrusel para Instagram sobre ");
+    expect(propuestaDeHallazgo({ ...FORMATO, network: "tiktok", ganador: "video" })).toBe(
+      "Quiero hacer un video para TikTok sobre ",
+    );
+  });
+});
+
+describe("NOMBRE_FORMATO", () => {
+  it("cuenta en singular y en plural", () => {
+    expect(NOMBRE_FORMATO.carrusel.conteo(1)).toBe("1 carrusel");
+    expect(NOMBRE_FORMATO.video.conteo(5)).toBe("5 videos");
   });
 });
