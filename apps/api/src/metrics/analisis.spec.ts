@@ -3,13 +3,16 @@ import type { SocialNetwork } from "@presencia/shared";
 import {
   analizarPeriodo,
   clave,
+  conceptosDe,
   contextosDeRed,
   contextoVacio,
   desdeComparables,
   desdePublicaciones,
   kpisDe,
+  mejoresDe,
   numerosDe,
   type EntradaAnalisis,
+  type PostAnalizado,
   type PublicacionMedible,
   type UltimosNumeros,
 } from "./analisis.js";
@@ -411,5 +414,100 @@ describe("analizarPeriodo", () => {
     expect(desdeComparables(AHORA, 7)).toEqual(new Date(AHORA.getTime() - 30 * DIA));
     // 90 días: el cambio anterior (180 + 1) es más viejo que la referencia (90).
     expect(desdeComparables(AHORA, 90)).toEqual(new Date(AHORA.getTime() - 181 * DIA));
+  });
+});
+
+/** Un post ya analizado, con su lift y su concepto. */
+function analizado(
+  lift: number | null,
+  campos: Partial<PublicacionMedible> & { haceHoras?: number; groupId?: string | null } = {},
+): PostAnalizado<PublicacionMedible & { groupId: string | null }> {
+  const { haceHoras = 48, groupId = null, ...resto } = campos;
+  return {
+    publicacion: { ...publicacion({ haceHoras, ...resto }), groupId },
+    estado: "medida",
+    ultimos: null,
+    interacciones: null,
+    a24h: null,
+    lift,
+  };
+}
+
+describe("mejoresDe: tus mejores publicaciones", () => {
+  it("ordena por lift sobre el promedio de su red, nunca por número crudo", () => {
+    const tiktok = analizado(62, { network: "tiktok" });
+    const instagram = analizado(40, { network: "instagram" });
+    const facebook = analizado(48, { network: "facebook" });
+    expect(mejoresDe([instagram, tiktok, facebook]).map((p) => p.lift)).toEqual([62, 48, 40]);
+  });
+
+  it("solo entran las que superaron su promedio", () => {
+    const posts = [analizado(12), analizado(0), analizado(-8), analizado(null)];
+    expect(mejoresDe(posts).map((p) => p.lift)).toEqual([12]);
+  });
+
+  it("cinco como máximo, y en un empate la más nueva primero", () => {
+    const vieja = analizado(30, { haceHoras: 100 });
+    const nueva = analizado(30, { haceHoras: 30 });
+    const posts = [analizado(10), analizado(20), vieja, nueva, analizado(40), analizado(50)];
+    const mejores = mejoresDe(posts);
+    expect(mejores).toHaveLength(5);
+    expect(mejores.map((p) => p.lift)).toEqual([50, 40, 30, 30, 20]);
+    expect(mejores[2]).toBe(nueva);
+  });
+});
+
+describe("conceptosDe: la misma idea en varias redes", () => {
+  it("agrupa por concepto y dice dónde rindió más sobre su propio promedio", () => {
+    const posts = [
+      analizado(8, { network: "instagram", groupId: "g1" }),
+      analizado(62, { network: "tiktok", groupId: "g1" }),
+      analizado(-20, { network: "facebook", groupId: "g1" }),
+      analizado(30, { network: "instagram" }),
+    ];
+    const [concepto, ...resto] = conceptosDe(posts);
+    expect(resto).toEqual([]);
+    expect(concepto?.mejorEn).toBe("tiktok");
+    expect(concepto?.hermanas.map((h) => h.publicacion.network)).toEqual([
+      "tiktok",
+      "instagram",
+      "facebook",
+    ]);
+  });
+
+  it("una publicación sola no es un concepto", () => {
+    expect(conceptosDe([analizado(10, { groupId: "solo" })])).toEqual([]);
+  });
+
+  it('sin dos hermanas con lift no hay "Mejor en"', () => {
+    const [concepto] = conceptosDe([
+      analizado(40, { network: "tiktok", groupId: "g" }),
+      analizado(null, { network: "linkedin", groupId: "g" }),
+    ]);
+    expect(concepto?.mejorEn).toBeNull();
+    expect(concepto?.hermanas.map((h) => h.publicacion.network)).toEqual(["tiktok", "linkedin"]);
+  });
+
+  it("título y fecha salen de la primera que se publicó", () => {
+    const primera = analizado(5, { network: "tiktok", groupId: "g", haceHoras: 200 });
+    const [concepto] = conceptosDe([
+      analizado(9, { network: "instagram", groupId: "g", haceHoras: 100 }),
+      primera,
+    ]);
+    expect(concepto?.primera).toBe(primera);
+  });
+
+  it("ordena por el mejor lift de cada concepto; los que no tienen, al final por fecha", () => {
+    const posts = [
+      analizado(null, { groupId: "viejo", haceHoras: 300, network: "linkedin" }),
+      analizado(null, { groupId: "viejo", haceHoras: 300, network: "x" }),
+      analizado(null, { groupId: "nuevo", haceHoras: 50, network: "linkedin" }),
+      analizado(null, { groupId: "nuevo", haceHoras: 50, network: "x" }),
+      analizado(20, { groupId: "bajo", network: "instagram" }),
+      analizado(-5, { groupId: "bajo", network: "facebook" }),
+      analizado(70, { groupId: "alto", network: "tiktok" }),
+      analizado(1, { groupId: "alto", network: "instagram" }),
+    ];
+    expect(conceptosDe(posts).map((c) => c.groupId)).toEqual(["alto", "bajo", "nuevo", "viejo"]);
   });
 });

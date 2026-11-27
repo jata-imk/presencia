@@ -390,6 +390,105 @@ export function analizarPeriodo<P extends PublicacionMedible>(
   };
 }
 
+/** Cuántas entran a "Tus mejores publicaciones". */
+export const MAXIMO_MEJORES = 5;
+
+/**
+ * "Tus mejores publicaciones": las que más rindieron **sobre tu promedio en su
+ * red**, nunca por número crudo. Un TikTok +62% y un Instagram +40% sí se
+ * ordenan entre sí; "6.8% contra 5.9%" no.
+ *
+ * Solo entran las que superaron su promedio (lift > 0): una con "−8% sobre tu
+ * promedio" no es de tus mejores aunque quede quinta. El lift ya exige
+ * `muestra = suficiente` en su red, así que una red sin muestra nunca aparece.
+ * Empate: la más nueva primero, igual que la tabla.
+ */
+export function mejoresDe<P extends PublicacionMedible>(
+  posts: readonly PostAnalizado<P>[],
+): PostAnalizado<P>[] {
+  return posts
+    .filter((post) => post.lift !== null && post.lift > 0)
+    .sort(
+      (a, b) =>
+        (b.lift ?? 0) - (a.lift ?? 0) ||
+        b.publicacion.publishedAt.getTime() - a.publicacion.publishedAt.getTime(),
+    )
+    .slice(0, MAXIMO_MEJORES);
+}
+
+export interface ConceptoAnalizado<P extends PublicacionMedible> {
+  groupId: string;
+  /** Por lift descendente; sin lift, al final y por red. */
+  hermanas: PostAnalizado<P>[];
+  /** La primera que se publicó: de ella salen el título y la fecha. */
+  primera: PostAnalizado<P>;
+  /** Argmax del lift, con dos o más hermanas con lift; si no, `null`. */
+  mejorEn: SocialNetwork | null;
+}
+
+function porLift<P extends PublicacionMedible>(a: PostAnalizado<P>, b: PostAnalizado<P>): number {
+  if (a.lift !== null && b.lift !== null && a.lift !== b.lift) return b.lift - a.lift;
+  if (a.lift !== null && b.lift === null) return -1;
+  if (a.lift === null && b.lift !== null) return 1;
+  return a.publicacion.network.localeCompare(b.publicacion.network);
+}
+
+/**
+ * La lente "Por concepto": la misma idea publicada en dos o más redes dentro
+ * del periodo, con su `groupId` (lo pone el Chat al adaptar).
+ *
+ * "Mejor en" sale del lift de cada hermana, que ya es "sobre tu promedio de
+ * ESA red": un TikTok siempre tiene más interacciones que un post de LinkedIn,
+ * y por número crudo TikTok ganaría todos los conceptos. Con una sola hermana
+ * con lift no hay comparación y no hay "Mejor en".
+ *
+ * Recibe los posts ANTES de filtrar por red: con Instagram elegido, el
+ * concepto sigue trayendo sus hermanas de TikTok y Facebook.
+ *
+ * Orden: por el mejor lift del concepto; los que no tienen ninguno, al final y
+ * del más nuevo al más viejo.
+ */
+export function conceptosDe<P extends PublicacionMedible & { groupId: string | null }>(
+  posts: readonly PostAnalizado<P>[],
+): ConceptoAnalizado<P>[] {
+  const porGrupo = new Map<string, PostAnalizado<P>[]>();
+  for (const post of posts) {
+    const groupId = post.publicacion.groupId;
+    if (!groupId) continue;
+    const lista = porGrupo.get(groupId) ?? [];
+    lista.push(post);
+    porGrupo.set(groupId, lista);
+  }
+
+  const conceptos: ConceptoAnalizado<P>[] = [];
+  for (const [groupId, grupo] of porGrupo) {
+    if (grupo.length < 2) continue;
+    const hermanas = [...grupo].sort(porLift);
+    const primera = grupo.reduce((a, b) =>
+      b.publicacion.publishedAt < a.publicacion.publishedAt ? b : a,
+    );
+    const conLift = hermanas.filter((h) => h.lift !== null);
+    conceptos.push({
+      groupId,
+      hermanas,
+      primera,
+      mejorEn: conLift.length >= 2 ? (conLift[0]?.publicacion.network ?? null) : null,
+    });
+  }
+
+  const mejorLift = (c: ConceptoAnalizado<P>) => c.hermanas[0]?.lift ?? null;
+  return conceptos.sort((a, b) => {
+    const la = mejorLift(a);
+    const lb = mejorLift(b);
+    if (la !== null && lb !== null && la !== lb) return lb - la;
+    if (la !== null && lb === null) return -1;
+    if (la === null && lb !== null) return 1;
+    return (
+      b.primera.publicacion.publishedAt.getTime() - a.primera.publicacion.publishedAt.getTime()
+    );
+  });
+}
+
 /** Las dos ventanas del cambio, corridas 24 h para que todo haya cumplido su edad. */
 function ventanasDelCambio(ahora: Date, periodoDias: number) {
   const fin = ahora.getTime() - EDAD_REFERENCIA_HORAS * HORA;

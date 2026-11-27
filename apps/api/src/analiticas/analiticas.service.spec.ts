@@ -16,6 +16,8 @@ let userA: string;
 let userB: string;
 /** Nunca publica: el estado "Cero absoluto". */
 let userC: string;
+/** Un concepto en dos redes, sin números: conceptos y hallazgos sin muestra. */
+let userD: string;
 
 const HORA = 60 * 60 * 1000;
 
@@ -46,24 +48,31 @@ beforeAll(async () => {
       { name: "Analíticas A", email: `ana-a-${randomUUID()}@test.local` },
       { name: "Analíticas B", email: `ana-b-${randomUUID()}@test.local` },
       { name: "Analíticas C", email: `ana-c-${randomUUID()}@test.local` },
+      { name: "Analíticas D", email: `ana-d-${randomUUID()}@test.local` },
     ])
     .returning({ id: users.id });
-  const [a, b, c] = creados;
-  if (!a || !b || !c) throw new Error("No se pudieron crear los usuarios de prueba");
+  const [a, b, c, d] = creados;
+  if (!a || !b || !c || !d) throw new Error("No se pudieron crear los usuarios de prueba");
   userA = a.id;
   userB = b.id;
   userC = c.id;
+  userD = d.id;
 }, 30_000);
 
 afterAll(async () => {
-  await dbService.db.delete(users).where(inArray(users.id, [userA, userB, userC]));
+  await dbService.db.delete(users).where(inArray(users.id, [userA, userB, userC, userD]));
   await dbService.onModuleDestroy();
 }, 30_000);
 
 async function card(
   userId: string,
   status: "published" | "draft",
-  campos: { platformPostId?: string; publishedAt?: Date } = {},
+  campos: {
+    platformPostId?: string;
+    publishedAt?: Date;
+    network?: "instagram" | "facebook";
+    groupId?: string;
+  } = {},
 ): Promise<string> {
   const [fila] = await dbService.runWithTenant(userId, (tx) =>
     tx
@@ -71,7 +80,8 @@ async function card(
       .values({
         userId,
         archetype: "text_first",
-        network: "instagram",
+        network: campos.network ?? "instagram",
+        groupId: campos.groupId ?? null,
         status,
         content: {
           archetype: "text_first",
@@ -153,6 +163,39 @@ describe("AnaliticasService.resumen", () => {
       alcance: { total: null, cambioPct: null, redes: [] },
       engagement: [],
       ultimaMedicion: null,
+    });
+  });
+});
+
+describe("AnaliticasService.publicaciones: conceptos y mejores", () => {
+  it(
+    "con una red elegida, el concepto sigue trayendo sus hermanas de las otras redes",
+    { timeout: 15_000 },
+    async () => {
+      const groupId = randomUUID();
+      const instagram = await card(userD, "published", { groupId, network: "instagram" });
+      const facebook = await card(userD, "published", { groupId, network: "facebook" });
+
+      const respuesta = await service.publicaciones(userD, 30, "instagram");
+      expect(respuesta.publicaciones.map((p) => p.cardId)).toEqual([instagram]);
+      expect(respuesta.conceptos).toHaveLength(1);
+      expect(respuesta.conceptos[0]).toMatchObject({ groupId, mejorEn: null });
+      expect(respuesta.conceptos[0]?.hermanas.map((h) => h.cardId).sort()).toEqual(
+        [instagram, facebook].sort(),
+      );
+      // Sin números no hay lift, y sin lift nadie es de tus mejores.
+      expect(respuesta.mejores).toEqual([]);
+    },
+  );
+});
+
+describe("AnaliticasService.hallazgos", () => {
+  it("sin muestra en ninguna red no inventa nada, y lo dice", { timeout: 15_000 }, async () => {
+    expect(await service.hallazgos(userD, null)).toEqual({
+      ventanaDias: 90,
+      red: null,
+      hayMuestra: false,
+      hallazgos: [],
     });
   });
 });

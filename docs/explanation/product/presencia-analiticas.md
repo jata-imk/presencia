@@ -134,8 +134,14 @@ Las cinco que más rindieron **sobre tu promedio en su red**. Un TikTok con
 promedio en Instagram" sí se pueden ordenar entre sí; "6.8% contra 5.9%" no.
 
 Solo aparecen publicaciones de redes donde ya hay muestra (10 medidas; ver
-"Qué ventana mira cada cosa" en la sección 4). Sin eso, la sección dice qué
-falta en vez de inventar un ranking.
+"Qué ventana mira cada cosa" en la sección 4), y solo las que **superaron** su
+promedio: una con "−8% sobre tu promedio" no es de tus mejores aunque quede
+quinta. Por eso pueden ser menos de cinco. La sección nunca inventa un ranking:
+
+- Sin muestra en ninguna red: "Con unas publicaciones más te diremos cuáles
+  rindieron por encima de tu promedio."
+- Con muestra, pero ninguna arriba de su promedio: "En este periodo ninguna
+  publicación superó tu promedio."
 
 Si la imagen de una publicación se eliminó de Biblioteca, su miniatura muestra
 el ícono de su formato, igual que en el Calendario. Aplica también a la tabla
@@ -167,8 +173,11 @@ Tres formas de ver las mismas publicaciones:
   2 horas" en vez de su fecha. En móvil cada fila es una tarjeta.
 - **Por concepto.** La misma idea publicada en varias redes, lado a lado. "Mejor
   en TikTok" sale de dónde rindió más **sobre tu promedio de esa red**, no del
-  número más grande. Solo incluye lo que se adaptó a más de una red dentro de
-  Presencia.
+  número más grande, y solo aparece cuando al menos dos de sus redes tienen
+  con qué compararse. Solo incluye lo que se adaptó a más de una red dentro de
+  Presencia y salió en el periodo. Con una red elegida arriba, muestra las
+  ideas que pasaron por ella, con todas sus redes: comparar entre ellas es el
+  punto de la lente. Tocar una red abre el detalle de esa publicación.
 
 ### El detalle de una publicación
 
@@ -299,16 +308,40 @@ Todo se compara a las 24 horas de publicado, para que la edad no decida.
 
 | Tipo                  | Ejemplo                                                                                                           | Acción                            |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| **Formato**           | Carrusel contra imagen suelta; video contra texto                                                                 | "Crear en Chat"                   |
-| **Día de la semana**  | En Instagram, martes y jueves contra el resto (siempre dentro de una red)                                         | "Ver en Ritmo"                    |
+| **Formato**           | Carrusel contra imagen suelta; imagen contra solo texto                                                           | "Crear en Chat"                   |
+| **Día de la semana**  | En Facebook, los martes contra el resto de la semana; o fin de semana contra entre semana                         | "Ver en Ritmo"                    |
 | **Rasgo de tu texto** | Con y sin emojis, con y sin hashtags, corto contra largo, abre con pregunta o no, con y sin signos de exclamación | "Agregar a «Así escribes»" / "No" |
 
 Los rasgos se leen del texto que se publicó, no del borrador.
+
+- **Formato** es lo que se publicó (carrusel, una imagen, video o solo texto),
+  no el tipo de card: en cada red el tipo de card es siempre el mismo
+  (Instagram siempre es visual, TikTok siempre es video), así que "video
+  contra texto" nunca puede pasar dentro de una red.
+- **Día de la semana** se compara de pocas maneras y siempre las mismas: un
+  día contra el resto de la semana, o fin de semana contra entre semana. Buscar
+  "tus mejores días" y juntarlos encontraría una diferencia siempre, aunque
+  fuera azar. El día es el tuyo, en tu zona horaria.
+- El hallazgo nombra siempre al grupo que rindió más. Un día flojo no se dice
+  solo ("el domingo tuvo menos"); aparece como su otra cara, "entre semana".
+- Como mucho uno por tipo y por red, y en la sección los tres de mayor
+  diferencia. Con una red elegida arriba, solo los de esa red.
+- "Crear en Chat" abre un chat nuevo con la idea escrita en la caja ("Quiero
+  hacer un carrusel para Instagram sobre ") y **no la manda**: el tema lo
+  pones tú. "Ver en Ritmo" abre Ritmo en esa red.
+- Sin hallazgos, la sección dice por qué:
+  - Ninguna red con muestra: "Con unas publicaciones más encontraremos
+    patrones en tu contenido."
+  - Hay muestra, pero ninguna diferencia aguantó las pruebas: "Todavía no hay
+    una diferencia que se sostenga en tus últimos 90 días."
 
 ### Cómo se dice
 
 > En Instagram, tus publicaciones sin emojis tuvieron 31% más interacción que
 > las que sí llevan. Basado en 14 publicaciones (6 sin, 8 con).
+
+Desde el doble, la diferencia se dice en veces: "tus carruseles tuvieron 2.4
+veces más interacción que tus publicaciones de solo texto".
 
 - **En pasado.** "Tuvieron", nunca "funcionan mejor" ni "te conviene".
 - **Con su red y su base**, siempre.

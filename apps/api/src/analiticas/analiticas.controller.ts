@@ -10,7 +10,9 @@ import {
 import { z } from "zod";
 import {
   analiticasDetalleQuerySchema,
+  analiticasHallazgosQuerySchema,
   analiticasQuerySchema,
+  type AnaliticasHallazgosDto,
   type AnaliticasPublicacionDetalleDto,
   type AnaliticasPublicacionesDto,
   type AnaliticasQuery,
@@ -30,7 +32,7 @@ function parsear(query: Record<string, unknown>): AnaliticasQuery {
 }
 
 /**
- * Analíticas (F12). Cuatro rebanadas de un mismo análisis del motor
+ * Analíticas (F12). Rebanadas de un mismo análisis del motor
  * (`MetricsEngineService.analizar`): ninguna calcula por su cuenta.
  */
 @Controller("analiticas")
@@ -64,6 +66,17 @@ export class AnaliticasController {
   ): Promise<AnaliticasPublicacionesDto> {
     const { periodo, red } = parsear(query);
     return this.service.publicaciones(user.id, periodo, red ?? null);
+  }
+
+  /** Hallazgos: siempre los últimos 90 días; el periodo no aplica. */
+  @Get("hallazgos")
+  hallazgos(
+    @CurrentUser() user: SessionUser,
+    @Query() query: Record<string, unknown>,
+  ): Promise<AnaliticasHallazgosDto> {
+    const parsed = analiticasHallazgosQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException("Esa red no es válida.");
+    return this.service.hallazgos(user.id, parsed.data.red ?? null);
   }
 
   /** El panel de detalle. Abre aunque la publicación sea más vieja que el periodo. */

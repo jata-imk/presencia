@@ -18,6 +18,15 @@
  *   para la lente "Por concepto" y para "En otras redes" del detalle.
  * - **Una publicación de hace hora y media** sin medir (`en_camino`) y **una
  *   sin id del post en la red** (`sin_medicion`).
+ * - **Dos hallazgos que sí se sostienen** (PR 8), los dos de hace 62–89 días,
+ *   fuera del periodo anterior de 30, para no mover sus cambios:
+ *   - Instagram: ocho carruseles a ~1.8× la tasa de lo demás. Todo lo otro de
+ *     Instagram sale como "solo texto" (Ritmo siembra `text_first` y aquí van
+ *     sin imagen), así que el hallazgo es "carruseles contra solo texto".
+ *   - Facebook: ocho publicaciones en martes a ~1.8×. Con los martes que ya
+ *     siembra Ritmo, el grupo pasa de 5 y el efecto aguanta quitar la mejor.
+ *   Sin esto el seed no tiene ni un carrusel y el día no pesa en nada: la
+ *   sección Hallazgos solo se podría ver vacía.
  * - Todo en un chat dentro de la carpeta "Analíticas", para el encabezado del
  *   detalle.
  *
@@ -74,6 +83,15 @@ const texto = (body: string): CardContent => ({
   body,
   hashtags: [],
   assetIds: [],
+});
+
+/** Un carrusel sin imágenes: la miniatura cae al ícono del formato. */
+const carrusel = (caption: string): CardContent => ({
+  archetype: "visual_first",
+  caption,
+  hashtags: ["productividad"],
+  assetIds: [],
+  slides: [1, 2, 3, 4].map(() => ({ id: crypto.randomUUID() })),
 });
 
 const contenidoPara = (network: SocialNetwork, titulo: string): CardContent =>
@@ -175,6 +193,41 @@ function planear(ahora: Date): Siembra[] {
         groupId,
       });
     }
+  }
+
+  // Los hallazgos (PR 8). Las 18:00Z caen el mismo día en toda América
+  // (12:00 en Mérida), así que el martes de UTC es el martes del creator.
+  const diasEntre = (desde: number, hasta: number) =>
+    Array.from({ length: hasta - desde + 1 }, (_, i) => {
+      const dia = hace(desde + i);
+      dia.setUTCHours(18, 0, 0, 0);
+      return dia;
+    });
+  const viejos = diasEntre(62, 89);
+  for (const [i, publishedAt] of viejos
+    .filter((_, j) => j % 3 === 0)
+    .slice(0, 8)
+    .entries()) {
+    siembras.push({
+      network: "instagram",
+      publishedAt,
+      content: carrusel(`Carrusel: ${tema(i)}`),
+      medir: true,
+      audiencia: Math.round(350 + azar() * 200),
+      tasa: 0.05 * 1.8 * (0.85 + azar() * 0.3),
+    });
+  }
+  // `getUTCDay`: 2 = martes. Dos por martes, con horas distintas.
+  const martes = viejos.filter((dia) => dia.getUTCDay() === 2);
+  for (const [i, dia] of martes.flatMap((d) => [d, new Date(d.getTime() + 3 * HORA)]).entries()) {
+    siembras.push({
+      network: "facebook",
+      publishedAt: dia,
+      content: texto(`${tema(i + 5)} (martes)`),
+      medir: true,
+      audiencia: Math.round(300 + azar() * 250),
+      tasa: 0.05 * 1.8 * (0.85 + azar() * 0.3),
+    });
   }
 
   // Recién salida: la red todavía no contesta.

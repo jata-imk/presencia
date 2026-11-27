@@ -2,7 +2,11 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   buildPostText,
   cardContentSchema,
+  VENTANA_HALLAZGOS_DIAS,
+  type AnaliticasConceptoDto,
   type AnaliticasCuentaDto,
+  type AnaliticasHallazgosDto,
+  type AnaliticasHermanaDto,
   type AnaliticasMiniaturaDto,
   type AnaliticasPublicacionDetalleDto,
   type AnaliticasPublicacionDto,
@@ -14,7 +18,13 @@ import {
 } from "@presencia/shared";
 import { ChannelsRepository } from "../channels/channels.repository.js";
 import { DbService, type Tx } from "../db/db.service.js";
-import type { PostAnalizado } from "../metrics/analisis.js";
+import {
+  conceptosDe,
+  mejoresDe,
+  type ConceptoAnalizado,
+  type PostAnalizado,
+} from "../metrics/analisis.js";
+import { hallazgosDe } from "../metrics/hallazgos.js";
 import { MetricsEngineService, type ContextoUsuario } from "../metrics/metrics-engine.service.js";
 import type { FilaPublicacionAnalizable } from "../metrics/metrics.read.repository.js";
 import { ProfileRepository } from "../profile/profile.repository.js";
@@ -91,10 +101,39 @@ export class AnaliticasService {
     const { analisis } = await this.dbService.runWithTenant(userId, (tx) =>
       this.motor.analizar(tx, periodo, contexto),
     );
-    const filas = analisis.posts
-      .filter((post) => red === null || post.publicacion.network === red)
-      .map(publicacionDto);
-    return { periodoDias: periodo, red, publicaciones: ordenarPorLift(filas) };
+    const enRed = (post: Post) => red === null || post.publicacion.network === red;
+    const filas = analisis.posts.filter(enRed).map(publicacionDto);
+    // Mejores y conceptos los decide el motor (ADR-022): aquí solo se rebanan.
+    // Los conceptos se arman con TODAS las redes y después se filtran, para
+    // que un concepto con Instagram siga trayendo sus hermanas de TikTok.
+    return {
+      periodoDias: periodo,
+      red,
+      publicaciones: ordenarPorLift(filas),
+      mejores: mejoresDe(analisis.posts.filter(enRed)).map((post) => post.publicacion.cardId),
+      conceptos: conceptosDe(analisis.posts)
+        .filter((concepto) => concepto.hermanas.some(enRed))
+        .map(conceptoDto),
+    };
+  }
+
+  /**
+   * Los hallazgos miran siempre 90 días, sin importar el selector de periodo
+   * (lore doc §4): con 7 días no habría muestra nunca, y la sección
+   * aparecería y desaparecería al cambiar el periodo.
+   */
+  async hallazgos(userId: string, red: SocialNetwork | null): Promise<AnaliticasHallazgosDto> {
+    const contexto = await this.contextoDe(userId);
+    const { analisis } = await this.dbService.runWithTenant(userId, (tx) =>
+      this.motor.analizar(tx, VENTANA_HALLAZGOS_DIAS, contexto),
+    );
+    const { hayMuestra, hallazgos } = hallazgosDe(
+      analisis.posts,
+      analisis.contextos,
+      contexto.timezone,
+      red,
+    );
+    return { ventanaDias: VENTANA_HALLAZGOS_DIAS, red, hayMuestra, hallazgos };
   }
 
   async detalle(
@@ -125,12 +164,7 @@ export class AnaliticasService {
       carpeta: publicacion.carpeta,
       chatId: publicacion.chatId,
       postUrl: publicacion.postUrl,
-      enOtrasRedes: hermanas.map((hermana) => ({
-        cardId: hermana.publicacion.cardId,
-        network: hermana.publicacion.network,
-        estado: hermana.estado,
-        lift: hermana.lift,
-      })),
+      enOtrasRedes: hermanas.map(hermanaDto),
     };
   }
 
@@ -200,6 +234,29 @@ export function publicacionDto(post: Post): AnaliticasPublicacionDto {
     interacciones: post.interacciones,
     lift: post.lift,
     groupId: publicacion.groupId,
+  };
+}
+
+/** Un concepto como lo pinta la lente: el título y la fecha son de la primera. */
+export function conceptoDto(
+  concepto: ConceptoAnalizado<FilaPublicacionAnalizable>,
+): AnaliticasConceptoDto {
+  return {
+    groupId: concepto.groupId,
+    titulo: publicacionDto(concepto.primera).titulo,
+    publishedAt: concepto.primera.publicacion.publishedAt.toISOString(),
+    hermanas: concepto.hermanas.map(hermanaDto),
+    mejorEn: concepto.mejorEn,
+  };
+}
+
+/** Una hermana del concepto, igual en la lente que en "En otras redes" del detalle. */
+function hermanaDto(post: Post): AnaliticasHermanaDto {
+  return {
+    cardId: post.publicacion.cardId,
+    network: post.publicacion.network,
+    estado: post.estado,
+    lift: post.lift,
   };
 }
 
