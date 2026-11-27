@@ -2,6 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { MemoryRouter } from "react-router";
 import { AnaliticasPage } from "./analiticas.js";
 import {
+  HALLAZGOS_SIN_MUESTRA,
+  PUBLICACIONES_SIN_MUESTRA,
+  REDES_COMPLETO,
   REDES_RECONECTAR,
   RESUMEN_CERO,
   RESUMEN_COMPLETO,
@@ -51,6 +54,27 @@ export const PorPublicacion: Story = {
   },
 };
 
+export const PorConcepto: Story = {
+  name: "Completa · por concepto",
+  parameters: {
+    ruta: "/analiticas?lente=concepto",
+    api: rutasDeAnaliticas(RESUMEN_COMPLETO),
+  },
+};
+
+/** Ni Mejores ni Hallazgos tienen con qué: cada uno dice por qué. */
+export const SinMuestraParaMejoresNiHallazgos: Story = {
+  name: "Mejores y Hallazgos sin muestra",
+  parameters: {
+    api: rutasDeAnaliticas(
+      RESUMEN_POCA,
+      REDES_COMPLETO,
+      PUBLICACIONES_SIN_MUESTRA,
+      HALLAZGOS_SIN_MUESTRA,
+    ),
+  },
+};
+
 export const UnaRedSinAlcance: Story = {
   name: "Una red sin alcance (TikTok)",
   parameters: { ruta: "/analiticas?red=tiktok", api: rutasDeAnaliticas(RESUMEN_TIKTOK) },
@@ -82,6 +106,32 @@ export const Cargando: Story = {
       "/api/analiticas/resumen": { pending: true },
       "/api/analiticas/redes": { pending: true },
       "/api/analiticas/publicaciones": { pending: true },
+      "/api/analiticas/hallazgos": { pending: true },
+    },
+  },
+};
+
+/** El resumen llegó; Mejores, Hallazgos y la lente siguen cargando. */
+export const SeccionesCargando: Story = {
+  name: "Secciones cargando",
+  parameters: {
+    api: {
+      ...rutasDeAnaliticas(RESUMEN_COMPLETO),
+      "/api/analiticas/publicaciones": { pending: true },
+      "/api/analiticas/hallazgos": { pending: true },
+    },
+  },
+};
+
+/** Cada sección falla por su cuenta: el resto sigue en pie. */
+export const ErrorEnMejoresYHallazgos: Story = {
+  name: "Error en Mejores y Hallazgos",
+  parameters: {
+    ruta: "/analiticas?lente=publicacion",
+    api: {
+      ...rutasDeAnaliticas(RESUMEN_COMPLETO),
+      "/api/analiticas/publicaciones": { status: 500, body: { message: "Error interno" } },
+      "/api/analiticas/hallazgos": { status: 500, body: { message: "Error interno" } },
     },
   },
 };
@@ -93,6 +143,7 @@ export const ErrorAlCargar: Story = {
       "/api/analiticas/resumen": { status: 500, body: { message: "Error interno" } },
       "/api/analiticas/redes": { status: 500, body: { message: "Error interno" } },
       "/api/analiticas/publicaciones": { status: 500, body: { message: "Error interno" } },
+      "/api/analiticas/hallazgos": { status: 500, body: { message: "Error interno" } },
     },
   },
 };

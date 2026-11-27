@@ -147,6 +147,11 @@ Si la imagen de una publicación se eliminó de Biblioteca, su miniatura muestra
 el ícono de su formato, igual que en el Calendario. Aplica también a la tabla
 y al detalle.
 
+La primera va más ancha y más alta. Con menos de cinco, las tarjetas guardan
+su tamaño y el espacio que sobra queda vacío: una sola no se estira a todo el
+ancho. Cada tarjeta abre el detalle de su publicación, y al cerrarlo vuelves a
+la tarjeta. En móvil son tarjetas horizontales, con la miniatura a un lado.
+
 ### Hallazgos
 
 Hasta tres tarjetas. Cada una dice qué se vio, **en qué red**, sobre cuántas
@@ -178,6 +183,15 @@ Tres formas de ver las mismas publicaciones:
   Presencia y salió en el periodo. Con una red elegida arriba, muestra las
   ideas que pasaron por ella, con todas sus redes: comparar entre ellas es el
   punto de la lente. Tocar una red abre el detalle de esa publicación.
+  - Cada red lleva una barra que sale de un eje común: a la derecha lo que
+    rindió sobre tu promedio, a la izquierda lo que quedó abajo. La escala es
+    la misma para toda la lente, así que dos barras iguales son el mismo
+    número aunque estén en ideas distintas.
+  - Una red sin número dice por qué, en corto y con su razón: "En camino",
+    "No disponible" (la red no reporta), "Sin medición" o "Sin comparar"
+    (menos de 24 horas, o la red todavía sin 10 publicaciones medidas).
+  - Sin ideas en más de una red en el periodo: "Todavía no adaptas una idea a
+    más de una red en este periodo."
 
 ### El detalle de una publicación
 

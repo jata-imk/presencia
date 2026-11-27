@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import type { SocialNetwork, TrendItem } from "@presencia/shared";
 import { CadenciaHeatmap, LeyendaHeatmap } from "../components/ritmo/CadenciaHeatmap.js";
 import { Narracion } from "../components/ritmo/Narracion.js";
@@ -80,11 +80,29 @@ export function RitmoPage() {
 
   // `null` hasta que el resumen diga qué redes hay. La elección del usuario
   // sobrevive a las recargas del resumen (guardar una meta lo devuelve entero).
+  // `?red=` (el "Ver en Ritmo" de un hallazgo de Analíticas) solo siembra la
+  // primera elección, y solo si esa red está conectada; si no, la primera.
+  // Usado, se quita de la URL: si no, recargar después de cambiar de red
+  // volvería a la del hallazgo.
+  const [params, setParams] = useSearchParams();
+  const redPedida = params.get("red");
   const [red, setRed] = useState<SocialNetwork | null>(null);
-  const primeraRed = resumen?.redesConectadas[0] ?? null;
+  const redInicial =
+    resumen?.redesConectadas.find((r) => r === redPedida) ?? resumen?.redesConectadas[0] ?? null;
   useEffect(() => {
-    setRed((actual) => actual ?? primeraRed);
-  }, [primeraRed]);
+    setRed((actual) => actual ?? redInicial);
+  }, [redInicial]);
+  useEffect(() => {
+    if (red === null || redPedida === null) return;
+    setParams(
+      (actual) => {
+        const siguiente = new URLSearchParams(actual);
+        siguiente.delete("red");
+        return siguiente;
+      },
+      { replace: true },
+    );
+  }, [red, redPedida, setParams]);
 
   const { horarios, error: errorHorarios, reintentar: reintentarHorarios } = useHorarios(red);
 

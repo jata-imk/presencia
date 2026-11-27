@@ -1,4 +1,5 @@
 import type {
+  AnaliticasHallazgosDto,
   AnaliticasPublicacionDetalleDto,
   AnaliticasPublicacionesDto,
   AnaliticasRedesDto,
@@ -9,7 +10,7 @@ import type {
 import { apiFetch } from "../api.js";
 
 // Los endpoints de Analíticas (F12), tipados contra el contrato de shared.
-// Cuatro rebanadas del mismo análisis del motor: la pantalla no calcula nada,
+// Rebanadas del mismo análisis del motor: la pantalla no calcula nada,
 // solo pide y pinta (addendum F12 de ADR-022).
 
 function query(periodo: PeriodoAnaliticas, red: SocialNetwork | null): string {
@@ -48,6 +49,16 @@ export function fetchDetalle(
     `/api/analiticas/publicaciones/${encodeURIComponent(cardId)}?periodo=${String(periodo)}`,
     { signal },
   );
+}
+
+/** Los hallazgos miran siempre 90 días: no llevan periodo, solo la red. */
+export function fetchHallazgos(
+  red: SocialNetwork | null,
+  signal?: AbortSignal,
+): Promise<AnaliticasHallazgosDto> {
+  return apiFetch<AnaliticasHallazgosDto>(`/api/analiticas/hallazgos${red ? `?red=${red}` : ""}`, {
+    signal,
+  });
 }
 
 export function fetchPublicaciones(

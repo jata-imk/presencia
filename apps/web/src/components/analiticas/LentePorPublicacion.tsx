@@ -17,8 +17,8 @@ import { haceCuanto } from "../../lib/relative-time.js";
 //
 // PR 7b: cada fila abre su detalle (`?post=`). El título es un botón estirado
 // sobre toda la fila: así se abre con teclado y, al cerrar el detalle, el
-// foco tiene adónde volver (`[data-card-id] button`). La fila abierta queda
-// resaltada.
+// foco tiene adónde volver (la pantalla recuerda el botón que lo abrió). La
+// fila abierta queda resaltada.
 
 export type ColumnaOrden = "rendimiento" | "fecha" | "alcance" | "interacciones";
 type Direccion = "asc" | "desc";
@@ -84,7 +84,7 @@ export function LentePorPublicacion({
   timeZone: string;
   /** La publicación cuyo detalle está abierto. */
   activa: string | null;
-  onAbrir: (cardId: string) => void;
+  onAbrir: (cardId: string, origen: HTMLElement) => void;
 }) {
   const [orden, setOrden] = useState<{ columna: ColumnaOrden; direccion: Direccion }>({
     columna: "rendimiento",
@@ -217,7 +217,7 @@ function Fila({
   ahora: Date;
   timeZone: string;
   activa: boolean;
-  onAbrir: (cardId: string) => void;
+  onAbrir: (cardId: string, origen: HTMLElement) => void;
 }) {
   const meta = NETWORK_META[publicacion.network];
   const copy = copyDeEstado(publicacion.estado, publicacion.network);
@@ -257,7 +257,7 @@ function Fila({
             propio tooltip va encima con `relative z-10`. */}
         <button
           type="button"
-          onClick={() => onAbrir(publicacion.cardId)}
+          onClick={(e) => onAbrir(publicacion.cardId, e.currentTarget)}
           className="block w-full truncate text-left font-display text-sm font-medium text-fg outline-none after:absolute after:inset-0 after:rounded-xl after:content-['']"
         >
           {publicacion.titulo || "Publicación sin texto"}

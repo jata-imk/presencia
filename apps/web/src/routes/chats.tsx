@@ -134,7 +134,8 @@ export function ChatsPage() {
     });
   }
 
-  // "Crear en Chat" desde una propuesta de Ritmo llega como `state.propuesta`:
+  // "Crear en Chat" desde una propuesta de Ritmo o un hallazgo de Analíticas
+  // llega como `state.propuesta`:
   // se escribe en la caja, igual que una tarjeta de sugerencia, y no se manda.
   // El state se limpia en seguida para que recargar no la vuelva a escribir
   // encima de lo que el usuario ya editó. Mismo patrón que `initialPrompt` en

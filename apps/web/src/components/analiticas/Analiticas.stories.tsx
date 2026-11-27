@@ -2,11 +2,22 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { AnaliticasError, LenteSkeleton, ResumenSkeleton } from "./AnaliticasStates.js";
+import { Hallazgos, HallazgosSkeleton } from "./Hallazgos.js";
+import { LentePorConcepto } from "./LentePorConcepto.js";
 import { LentePorPublicacion } from "./LentePorPublicacion.js";
 import { TarjetaRed } from "./LentePorRed.js";
+import { MejoresPublicaciones, MejoresSkeleton } from "./MejoresPublicaciones.js";
 import { ResumenKpis } from "./ResumenKpis.js";
 import {
+  CONCEPTOS,
+  HALLAZGOS_COMPLETO,
+  HALLAZGOS_SIN_DIFERENCIA,
+  HALLAZGOS_SIN_MUESTRA,
+  MEJORES,
   PUBLICACIONES,
+  PUBLICACIONES_DTO,
+  PUBLICACIONES_SIN_MUESTRA,
+  PUBLICACIONES_SIN_POSITIVOS,
   RED_EN_CAMINO,
   RED_FACEBOOK,
   RED_INSTAGRAM,
@@ -127,9 +138,122 @@ export const Esqueletos: Story = {
     <Frame>
       <div className="flex flex-col gap-7">
         <ResumenSkeleton />
+        <MejoresSkeleton periodo={30} />
+        <HallazgosSkeleton />
         <LenteSkeleton />
         <LenteSkeleton forma="tabla" />
       </div>
+    </Frame>
+  ),
+};
+
+// ---------------------------------------------------------------------------
+// Tus mejores publicaciones, Hallazgos y Por concepto (PR 8b)
+
+const mejores = (dto: typeof PUBLICACIONES_DTO, ids = dto.mejores) => (
+  <MejoresPublicaciones
+    publicaciones={dto.publicaciones}
+    mejores={ids}
+    periodo={30}
+    timeZone={ZONA}
+    onAbrir={noop}
+  />
+);
+
+export const MejoresCinco: Story = {
+  name: "Mejores · cinco",
+  render: () => <Frame>{mejores(PUBLICACIONES_DTO)}</Frame>,
+};
+
+/** Con menos de cinco, la #1 no se estira: las columnas que sobran quedan vacías. */
+export const MejoresDos: Story = {
+  name: "Mejores · solo dos superaron su promedio",
+  render: () => <Frame>{mejores(PUBLICACIONES_DTO, MEJORES.slice(0, 2))}</Frame>,
+};
+
+export const MejoresSinMuestra: Story = {
+  name: "Mejores · sin muestra (5c)",
+  render: () => <Frame>{mejores(PUBLICACIONES_SIN_MUESTRA)}</Frame>,
+};
+
+export const MejoresSinPositivos: Story = {
+  name: "Mejores · ninguna superó su promedio",
+  render: () => <Frame>{mejores(PUBLICACIONES_SIN_POSITIVOS)}</Frame>,
+};
+
+const hallazgos = (dto: typeof HALLAZGOS_COMPLETO) => (
+  <Hallazgos hallazgos={dto} onCrearEnChat={noop} onVerEnRitmo={noop} />
+);
+
+export const HallazgosCompletos: Story = {
+  name: "Hallazgos · formato y día",
+  render: () => <Frame>{hallazgos(HALLAZGOS_COMPLETO)}</Frame>,
+};
+
+export const HallazgosSinMuestra: Story = {
+  name: "Hallazgos · sin muestra",
+  render: () => <Frame>{hallazgos(HALLAZGOS_SIN_MUESTRA)}</Frame>,
+};
+
+export const HallazgosSinDiferencia: Story = {
+  name: "Hallazgos · ninguna diferencia se sostiene",
+  render: () => <Frame>{hallazgos(HALLAZGOS_SIN_DIFERENCIA)}</Frame>,
+};
+
+const MUESTRA = new Map([
+  ["tiktok", "suficiente"],
+  ["instagram", "poca"],
+  ["facebook", "suficiente"],
+  ["linkedin", "no_reporta"],
+] as const);
+
+export const PorConcepto: Story = {
+  name: "Por concepto · multi-red",
+  render: () => (
+    <Frame>
+      <LentePorConcepto
+        conceptos={CONCEPTOS}
+        publicaciones={PUBLICACIONES}
+        muestraPorRed={MUESTRA}
+        ahora={AHORA}
+        timeZone={ZONA}
+        activa={null}
+        onAbrir={noop}
+      />
+    </Frame>
+  ),
+};
+
+export const PorConceptoFilaActiva: Story = {
+  name: "Por concepto · red con el detalle abierto",
+  render: () => (
+    <Frame>
+      <LentePorConcepto
+        conceptos={CONCEPTOS}
+        publicaciones={PUBLICACIONES}
+        muestraPorRed={MUESTRA}
+        ahora={AHORA}
+        timeZone={ZONA}
+        activa={CONCEPTOS[0]?.hermanas[1]?.cardId ?? null}
+        onAbrir={noop}
+      />
+    </Frame>
+  ),
+};
+
+export const PorConceptoVacio: Story = {
+  name: "Por concepto · sin ideas multi-red",
+  render: () => (
+    <Frame>
+      <LentePorConcepto
+        conceptos={[]}
+        publicaciones={PUBLICACIONES}
+        muestraPorRed={MUESTRA}
+        ahora={AHORA}
+        timeZone={ZONA}
+        activa={null}
+        onAbrir={noop}
+      />
     </Frame>
   ),
 };

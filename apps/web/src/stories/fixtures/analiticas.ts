@@ -1,5 +1,7 @@
 import type {
+  AnaliticasConceptoDto,
   AnaliticasEngagementDto,
+  AnaliticasHallazgosDto,
   AnaliticasPublicacionDetalleDto,
   AnaliticasPublicacionDto,
   AnaliticasPublicacionesDto,
@@ -201,6 +203,13 @@ function publicacion(
   };
 }
 
+// Tres conceptos multi-red (lente Por concepto): uno en cuatro redes con
+// LinkedIn sin números, uno en dos, y uno sin con qué comparar ("Mejor en"
+// calla).
+const GRUPO_APPS = "00000000-0000-4000-8000-0000000a7701";
+const GRUPO_SETUP = "00000000-0000-4000-8000-0000000a7702";
+const GRUPO_TREND = "00000000-0000-4000-8000-0000000a7703";
+
 export const PUBLICACIONES: AnaliticasPublicacionDto[] = [
   publicacion(1, {
     titulo: "3 apps gratis que reemplazan a las de pago",
@@ -209,12 +218,14 @@ export const PUBLICACIONES: AnaliticasPublicacionDto[] = [
     alcance: null,
     interacciones: 1251,
     lift: 62,
+    groupId: GRUPO_APPS,
   }),
   publicacion(2, {
     titulo: "Mi setup de escritorio 2026",
     alcance: 7100,
     interacciones: 419,
     lift: 48,
+    groupId: GRUPO_SETUP,
   }),
   publicacion(3, {
     titulo: "Carrusel: atajos de teclado que sí uso",
@@ -223,6 +234,7 @@ export const PUBLICACIONES: AnaliticasPublicacionDto[] = [
     alcance: 6000,
     interacciones: 302,
     lift: 31,
+    groupId: GRUPO_APPS,
   }),
   publicacion(4, {
     titulo: "Mi curso de productividad abre inscripciones",
@@ -231,6 +243,7 @@ export const PUBLICACIONES: AnaliticasPublicacionDto[] = [
     alcance: 2100,
     interacciones: 44,
     lift: -4,
+    groupId: GRUPO_APPS,
   }),
   publicacion(5, {
     titulo: "Un día en Mérida con mi laptop",
@@ -239,12 +252,14 @@ export const PUBLICACIONES: AnaliticasPublicacionDto[] = [
     alcance: null,
     interacciones: 121,
     lift: -38,
+    groupId: GRUPO_SETUP,
   }),
   publicacion(6, {
     titulo: "El trend de las 5 pestañas",
     alcance: 5400,
     interacciones: 214,
     lift: null,
+    groupId: GRUPO_TREND,
   }),
   {
     ...publicacion(7, { titulo: "5 extensiones de Chrome que uso todos los días" }),
@@ -262,6 +277,7 @@ export const PUBLICACIONES: AnaliticasPublicacionDto[] = [
     alcance: null,
     interacciones: null,
     lift: null,
+    groupId: GRUPO_APPS,
   }),
   publicacion(9, {
     titulo: "Mi escritorio de trabajo en Mérida",
@@ -271,23 +287,143 @@ export const PUBLICACIONES: AnaliticasPublicacionDto[] = [
     alcance: null,
     interacciones: null,
     lift: null,
+    groupId: GRUPO_TREND,
+  }),
+  publicacion(10, {
+    titulo: "Cómo organizo mi semana en 4 minutos",
+    network: "tiktok",
+    archetype: "video_script",
+    alcance: null,
+    interacciones: 574,
+    lift: 27,
+  }),
+  publicacion(11, {
+    titulo: "Lo que aprendí en 100 días de publicar diario",
+    network: "facebook",
+    archetype: "text_first",
+    alcance: 3200,
+    interacciones: 96,
+    lift: 12,
   }),
 ];
+
+const fila = (n: number) => PUBLICACIONES[n - 1]!;
+
+function hermana(n: number) {
+  const { cardId, network, estado, lift } = fila(n);
+  return { cardId, network, estado, lift };
+}
+
+export const CONCEPTOS: AnaliticasConceptoDto[] = [
+  {
+    groupId: GRUPO_APPS,
+    titulo: fila(1).titulo,
+    publishedAt: fila(8).publishedAt,
+    hermanas: [hermana(1), hermana(3), hermana(4), hermana(8)],
+    mejorEn: "tiktok",
+  },
+  {
+    groupId: GRUPO_SETUP,
+    titulo: fila(2).titulo,
+    publishedAt: fila(5).publishedAt,
+    hermanas: [hermana(2), hermana(5)],
+    mejorEn: "instagram",
+  },
+  {
+    groupId: GRUPO_TREND,
+    titulo: fila(6).titulo,
+    publishedAt: fila(9).publishedAt,
+    hermanas: [hermana(6), hermana(9)],
+    mejorEn: null,
+  },
+];
+
+/** Las cinco de arriba: todas con lift > 0, ya en el orden del motor. */
+export const MEJORES = [1, 2, 3, 10, 11].map((n) => fila(n).cardId);
 
 export const PUBLICACIONES_DTO: AnaliticasPublicacionesDto = {
   periodoDias: 30,
   red: null,
-  publicaciones: PUBLICACIONES,
-  // La pantalla todavía no pinta Mejores ni Por concepto (llegan en el PR 8b).
+  // Las filas, por lift como las manda la API; las sin número al final.
+  publicaciones: [...PUBLICACIONES].sort((a, b) => (b.lift ?? -Infinity) - (a.lift ?? -Infinity)),
+  mejores: MEJORES,
+  conceptos: CONCEPTOS,
+};
+
+/** Hubo con qué comparar, pero ninguna superó su promedio. */
+export const PUBLICACIONES_SIN_POSITIVOS: AnaliticasPublicacionesDto = {
+  ...PUBLICACIONES_DTO,
+  publicaciones: PUBLICACIONES.map((p) =>
+    p.lift === null ? p : { ...p, lift: -Math.abs(p.lift) },
+  ),
   mejores: [],
-  conceptos: [],
+};
+
+/** Ninguna red con muestra: ninguna fila tiene "sobre tu promedio". */
+export const PUBLICACIONES_SIN_MUESTRA: AnaliticasPublicacionesDto = {
+  ...PUBLICACIONES_DTO,
+  publicaciones: PUBLICACIONES.map((p) => ({ ...p, lift: null })),
+  mejores: [],
+  conceptos: CONCEPTOS.map((c) => ({
+    ...c,
+    hermanas: c.hermanas.map((h) => ({ ...h, lift: null })),
+    mejorEn: null,
+  })),
+};
+
+// ---------------------------------------------------------------------------
+// Hallazgos (PR 8b)
+
+/** Los dos tipos, como los da el seed: formato en Instagram y martes en Facebook. */
+export const HALLAZGOS_COMPLETO: AnaliticasHallazgosDto = {
+  ventanaDias: 90,
+  red: null,
+  hayMuestra: true,
+  hallazgos: [
+    {
+      tipo: "formato",
+      network: "instagram",
+      ganador: "carrusel",
+      perdedor: "texto",
+      diferenciaPct: 140,
+      nGanador: 8,
+      nPerdedor: 10,
+    },
+    {
+      tipo: "dia",
+      network: "facebook",
+      ganador: { dia: 1 },
+      diferenciaPct: 52,
+      nGanador: 6,
+      nPerdedor: 20,
+    },
+    {
+      tipo: "dia",
+      network: "tiktok",
+      ganador: "entre_semana",
+      diferenciaPct: 31,
+      nGanador: 14,
+      nPerdedor: 6,
+    },
+  ],
+};
+
+export const HALLAZGOS_SIN_MUESTRA: AnaliticasHallazgosDto = {
+  ventanaDias: 90,
+  red: null,
+  hayMuestra: false,
+  hallazgos: [],
+};
+
+export const HALLAZGOS_SIN_DIFERENCIA: AnaliticasHallazgosDto = {
+  ...HALLAZGOS_SIN_MUESTRA,
+  hayMuestra: true,
 };
 
 // ---------------------------------------------------------------------------
 // El detalle de una publicación (PR 7b)
 
 const CHAT_DEMO = "00000000-0000-4000-8000-00000000c4a7";
-const fila = (n: number) => PUBLICACIONES[n - 1]!;
 
 function detalle(
   base: AnaliticasPublicacionDto,
@@ -355,11 +491,17 @@ export function rutaDeDetalle(dto: AnaliticasPublicacionDetalleDto) {
   return `/api/analiticas/publicaciones/${dto.cardId}`;
 }
 
-/** Las tres llamadas de la pantalla, con un resumen a elegir. */
-export function rutasDeAnaliticas(resumen: AnaliticasResumenDto, redes = REDES_COMPLETO) {
+/** Las cuatro llamadas de la pantalla, con un resumen a elegir. */
+export function rutasDeAnaliticas(
+  resumen: AnaliticasResumenDto,
+  redes = REDES_COMPLETO,
+  publicaciones = PUBLICACIONES_DTO,
+  hallazgos = HALLAZGOS_COMPLETO,
+) {
   return {
     "/api/analiticas/resumen": { body: resumen },
     "/api/analiticas/redes": { body: redes },
-    "/api/analiticas/publicaciones": { body: PUBLICACIONES_DTO },
+    "/api/analiticas/publicaciones": { body: publicaciones },
+    "/api/analiticas/hallazgos": { body: hallazgos },
   };
 }

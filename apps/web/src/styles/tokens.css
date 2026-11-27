@@ -417,6 +417,19 @@
      mezclado con la card (voltea con ella) y el borde plum del diseño. */
   --ana-fila-activa-bg: color-mix(in srgb, var(--color-pink-orchid) 7%, var(--bg-card));
   --ana-fila-activa-border: var(--color-plum-200);
+  /* PR 8b: la lente Por concepto y Tus mejores publicaciones. La barra
+     divergente va sobre una pista apenas plum, con el eje al 35 %: positivos
+     a la derecha (rosa la ganadora, orquídea las demás), negativos a la
+     izquierda en gris. El chip "Mejor en X" usa el tinte rosa que ya
+     voltea; solo su texto es nuevo. La portada sin imagen de Mejores es un
+     degradado plum, como en el diseño. */
+  --ana-concepto-pista: color-mix(in srgb, var(--color-plum-100) 55%, var(--bg-card));
+  --ana-concepto-eje: var(--color-plum-200);
+  --ana-concepto-pos: var(--color-blush-pop);
+  --ana-concepto-pos-otra: var(--color-pink-orchid);
+  --ana-concepto-neg: var(--color-neutral-300);
+  --ana-chip-mejor-fg: var(--color-pink-800);
+  --ana-portada-bg: linear-gradient(160deg, var(--color-plum-100), var(--color-plum-200));
 
   /* Configuración (F9.7, mock de Claude Design).
      Foreground de estado para TEXTO: --status-success/-warning/-error/-info
@@ -575,6 +588,13 @@
      otro mes del Calendario, y su borde baja a un plum medio. */
   --ana-degradada-border: var(--color-plum-700);
   --ana-fila-activa-border: var(--color-plum-700);
+  /* La pista se hunde con la card; el eje y el gris bajan a un plum medio
+     para no brillar; el rosa y la orquídea se quedan. */
+  --ana-concepto-pista: color-mix(in srgb, var(--color-plum-700) 45%, var(--bg-card));
+  --ana-concepto-eje: var(--color-plum-700);
+  --ana-concepto-neg: color-mix(in srgb, var(--color-neutral-300) 40%, var(--bg-card));
+  --ana-chip-mejor-fg: var(--color-pink-200);
+  --ana-portada-bg: linear-gradient(160deg, var(--color-plum-900), var(--color-plum-700));
 
   --status-success-fg: #7fd6a4;
   --status-warning-fg: #fcd34d;
@@ -700,6 +720,12 @@
   --color-ana-degradada-border: var(--ana-degradada-border);
   --color-ana-fila-activa: var(--ana-fila-activa-bg);
   --color-ana-fila-activa-border: var(--ana-fila-activa-border);
+  --color-ana-concepto-pista: var(--ana-concepto-pista);
+  --color-ana-concepto-eje: var(--ana-concepto-eje);
+  --color-ana-concepto-pos: var(--ana-concepto-pos);
+  --color-ana-concepto-pos-otra: var(--ana-concepto-pos-otra);
+  --color-ana-concepto-neg: var(--ana-concepto-neg);
+  --color-ana-chip-mejor-fg: var(--ana-chip-mejor-fg);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);

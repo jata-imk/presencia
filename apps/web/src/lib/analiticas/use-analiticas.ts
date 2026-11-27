@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  AnaliticasHallazgosDto,
   AnaliticasPublicacionDetalleDto,
   AnaliticasPublicacionesDto,
   AnaliticasRedesDto,
@@ -8,7 +9,13 @@ import type {
   SocialNetwork,
 } from "@presencia/shared";
 import { ApiError } from "../api.js";
-import { fetchDetalle, fetchPublicaciones, fetchRedes, fetchResumen } from "./analiticas-api.js";
+import {
+  fetchDetalle,
+  fetchHallazgos,
+  fetchPublicaciones,
+  fetchRedes,
+  fetchResumen,
+} from "./analiticas-api.js";
 
 // Los recursos de Analíticas, cada uno con su propio ciclo de vida (el patrón
 // de `useHorarios` en lib/use-ritmo.ts).
@@ -114,6 +121,11 @@ export function useAnaliticasPublicaciones(
   return useRecurso(`${String(periodo)}:${red ?? ""}`, (signal) =>
     fetchPublicaciones(periodo, red, signal),
   );
+}
+
+/** Siempre 90 días (lore doc §5): el periodo no entra en la llave. */
+export function useAnaliticasHallazgos(red: SocialNetwork | null): Recurso<AnaliticasHallazgosDto> {
+  return useRecurso(red ?? "", (signal) => fetchHallazgos(red, signal));
 }
 
 /**
