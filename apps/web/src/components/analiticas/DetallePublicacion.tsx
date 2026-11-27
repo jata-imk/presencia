@@ -88,8 +88,9 @@ export function DetallePublicacion({
     <aside
       ref={panel}
       tabIndex={-1}
+      // Diálogo sin `aria-modal`: no atrapa el Tab (como el detalle de
+      // Biblioteca), así que no puede decir que lo de atrás es inerte.
       role="dialog"
-      aria-modal="true"
       aria-labelledby="detalle-publicacion-titulo"
       className="absolute inset-0 z-30 flex flex-col bg-card outline-none @lg:left-auto @lg:w-[470px] @lg:max-w-[calc(100%-3rem)] @lg:border-l @lg:border-line @lg:shadow-xl"
     >
@@ -367,6 +368,7 @@ function VistaPrevia({ detalle }: { detalle: AnaliticasPublicacionDetalleDto }) 
         />
         {imagenes > 1 && (
           <span
+            role="img"
             aria-label={`Carrusel de ${String(imagenes)} imágenes`}
             className="absolute right-1.5 bottom-1.5 rounded-sm bg-fg/70 px-1.5 text-[11px] leading-snug font-bold text-fg-inverse"
           >

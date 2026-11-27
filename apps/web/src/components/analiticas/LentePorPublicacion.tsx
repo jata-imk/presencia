@@ -283,7 +283,14 @@ function Fila({
           <Celda className="hidden min-w-0 @4xl:block">
             <Numero valor={interacciones} />
           </Celda>
-          <Celda className="relative z-10 row-span-2 self-center text-right @4xl:row-span-1">
+          {/* Solo "Sin comparar" sube sobre el botón (su tooltip necesita el
+              puntero); un número queda debajo, y tocarlo abre el detalle como
+              el resto de la fila: en móvil es lo primero que se toca. */}
+          <Celda
+            className={`row-span-2 self-center text-right @4xl:row-span-1 ${
+              publicacion.lift === null ? "relative z-10" : ""
+            }`}
+          >
             <Lift lift={publicacion.lift} />
           </Celda>
           {/* Móvil: las dos métricas en una línea bajo el título. */}

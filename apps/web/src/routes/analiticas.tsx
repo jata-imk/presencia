@@ -123,14 +123,25 @@ export function AnaliticasPage() {
   }
 
   // La fila desde la que se abrió el detalle: al cerrar, el foco vuelve a
-  // ella. Si se llegó por "Ver estadísticas" o la fila no está en la lista
-  // (otra lente, fuera del periodo), no hay a dónde volver y no pasa nada.
+  // ella. Saltar a una hermana no la cambia. Si se llegó por "Ver
+  // estadísticas" o la fila no está en la lista (otra lente, fuera del
+  // periodo), el foco va al panel de la lente para no perderse en <body>.
   const abiertaDesde = useRef<string | null>(null);
 
-  function abrir(cardId: string) {
-    abiertaDesde.current ??= cardId;
+  function abrirDesdeFila(cardId: string) {
+    abiertaDesde.current = cardId;
     cambiar("post", cardId);
   }
+
+  function abrirHermana(cardId: string) {
+    cambiar("post", cardId);
+  }
+
+  // `post` también se va sin pasar por cerrar() (el link de Analíticas en el
+  // sidebar, "atrás"): ahí la fila recordada ya no vale.
+  useEffect(() => {
+    if (!post) abiertaDesde.current = null;
+  }, [post]);
 
   const cerrar = useCallback(() => {
     const fila = abiertaDesde.current;
@@ -143,19 +154,25 @@ export function AnaliticasPage() {
       },
       { replace: true },
     );
-    if (fila) {
-      requestAnimationFrame(() => {
-        document.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(fila)}"] button`)?.focus();
-      });
-    }
+    requestAnimationFrame(() => {
+      const destino =
+        (fila
+          ? document.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(fila)}"] button`)
+          : null) ?? document.getElementById("lente-panel");
+      destino?.focus({ preventScroll: destino.id === "lente-panel" });
+    });
   }, [setParams]);
 
-  // Esc cierra el detalle. Un Esc que ya atendió otro (un menú, un tooltip)
-  // no lo cierra.
+  // Esc cierra el detalle, pero solo si nace en esta pantalla (o en ningún
+  // lado, con el foco en <body>): un Esc para el drawer del sidebar en móvil
+  // o un menú de afuera que no lo marca como atendido no se lleva el panel.
+  const raiz = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!post) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
+      const origen = event.target as Node | null;
+      if (origen !== document.body && !raiz.current?.contains(origen)) return;
       cerrar();
     };
     window.addEventListener("keydown", onKey);
@@ -195,7 +212,7 @@ export function AnaliticasPage() {
   }
 
   return (
-    <div className="@container relative flex h-full bg-surface">
+    <div ref={raiz} className="@container relative flex h-full bg-surface">
       <div className="@container relative flex min-w-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex max-w-[1240px] flex-col gap-7 px-4 pt-5 pb-16 @lg:px-6 @4xl:gap-8 @4xl:px-8 @4xl:pt-7">
@@ -283,7 +300,7 @@ export function AnaliticasPage() {
                         ahora={ahora}
                         timeZone={timeZone}
                         activa={post}
-                        onAbrir={abrir}
+                        onAbrir={abrirDesdeFila}
                       />
                     )}
                   </div>
@@ -310,7 +327,7 @@ export function AnaliticasPage() {
             timeZone={timeZone}
             onCerrar={cerrar}
             onReintentar={detalle.reintentar}
-            onAbrir={abrir}
+            onAbrir={abrirHermana}
             onAbrirChat={abrirChat}
             onAdaptar={adaptar}
           />
