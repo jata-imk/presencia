@@ -145,16 +145,16 @@ export function CardModal({
           </Tooltip>
           {active.status === "published" && (
             <>
-              <Tooltip label="Analíticas llega en una fase posterior">
-                <button
-                  type="button"
-                  disabled
-                  className={`${FOOTER_BUTTON} cursor-not-allowed border-[1.5px] border-line bg-card text-fg-muted opacity-60`}
-                >
-                  <BarChart2 size={15} strokeWidth={1.9} />
-                  Ver estadísticas
-                </button>
-              </Tooltip>
+              {/* F12: sin `platform_post_id` también se prende; el detalle
+                  dice "Sin medición" y por qué. */}
+              <button
+                type="button"
+                onClick={act(() => actions.onViewStats(active))}
+                className={`${FOOTER_BUTTON} border-[1.5px] border-line bg-card text-fg-secondary hover:border-line-focus hover:bg-secondary hover:text-brand`}
+              >
+                <BarChart2 size={15} strokeWidth={1.9} />
+                Ver estadísticas
+              </button>
               {/* F7.5: se enciende solo si la reconciliación guardó el
                   enlace. Sigue apagado cuando el proveedor activo no lo da
                   (PostFast no lo devuelve nunca) — el componente no sabe

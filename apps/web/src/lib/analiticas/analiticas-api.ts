@@ -1,4 +1,5 @@
 import type {
+  AnaliticasPublicacionDetalleDto,
   AnaliticasPublicacionesDto,
   AnaliticasRedesDto,
   AnaliticasResumenDto,
@@ -31,6 +32,22 @@ export function fetchRedes(
   signal?: AbortSignal,
 ): Promise<AnaliticasRedesDto> {
   return apiFetch<AnaliticasRedesDto>(`/api/analiticas/redes?${query(periodo, null)}`, { signal });
+}
+
+/**
+ * El detalle de una publicación. Abre aunque sea más vieja que el periodo:
+ * el periodo solo decide con qué ventana se dice su "sobre tu promedio".
+ * Responde 404 si es ajena o no está publicada.
+ */
+export function fetchDetalle(
+  cardId: string,
+  periodo: PeriodoAnaliticas,
+  signal?: AbortSignal,
+): Promise<AnaliticasPublicacionDetalleDto> {
+  return apiFetch<AnaliticasPublicacionDetalleDto>(
+    `/api/analiticas/publicaciones/${encodeURIComponent(cardId)}?periodo=${String(periodo)}`,
+    { signal },
+  );
 }
 
 export function fetchPublicaciones(

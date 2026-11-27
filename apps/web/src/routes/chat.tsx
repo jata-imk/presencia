@@ -188,6 +188,11 @@ function ChatView({
   // Se consume con `replace` ANTES de mandar: la entrada del historial deja
   // de tener prompt, así que ya no hay nada que reenviar aunque se recargue
   // a mitad del stream.
+  //
+  // F12: `borrador` llega del "Adaptar a otra red" de Analíticas. Precarga el
+  // composer y NO se manda: el creator termina la frase con la red. Viaja por
+  // el mismo camino y con las mismas dos guardas; aquí duplicarlo no crearía
+  // cards, pero al recargar volvería a pisar lo que el creator ya escribió.
   const location = useLocation();
   const navigate = useNavigate();
   const initial = location.state as {
@@ -195,13 +200,22 @@ function ChatView({
     initialFiles?: FileUIPart[];
     /** F10.10: el chip "Buscar en la web" de la pantalla de chat nuevo. */
     initialWebSearch?: boolean;
+    borrador?: string;
   } | null;
   const initialPrompt = initial?.initialPrompt ?? "";
   // F10.9: los adjuntos que se subieron en la pantalla de chat nuevo.
   const initialFiles = initial?.initialFiles ?? [];
   const sentInitialPrompt = useRef(false);
   useEffect(() => {
-    if ((!initialPrompt && initialFiles.length === 0) || sentInitialPrompt.current) return;
+    if (sentInitialPrompt.current) return;
+    const borrador = initial?.borrador;
+    if (borrador) {
+      sentInitialPrompt.current = true;
+      void navigate(location.pathname, { replace: true, state: null });
+      prefillComposer(borrador);
+      return;
+    }
+    if (!initialPrompt && initialFiles.length === 0) return;
     sentInitialPrompt.current = true;
     void navigate(location.pathname, { replace: true, state: null });
     enviar(

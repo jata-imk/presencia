@@ -1,7 +1,13 @@
-import { useMemo, useRef } from "react";
-import { useSearchParams } from "react-router";
-import { socialNetworkSchema, type PeriodoAnaliticas, type SocialNetwork } from "@presencia/shared";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router";
+import {
+  socialNetworkSchema,
+  type AnaliticasPublicacionDetalleDto,
+  type PeriodoAnaliticas,
+  type SocialNetwork,
+} from "@presencia/shared";
 import { BarraControl } from "../components/analiticas/BarraControl.js";
+import { DetallePublicacion } from "../components/analiticas/DetallePublicacion.js";
 import { LentePorPublicacion } from "../components/analiticas/LentePorPublicacion.js";
 import { LentePorRed } from "../components/analiticas/LentePorRed.js";
 import { ResumenKpis } from "../components/analiticas/ResumenKpis.js";
@@ -11,8 +17,12 @@ import {
   CeroAbsoluto,
   LenteSkeleton,
 } from "../components/analiticas/AnaliticasStates.js";
+import { textoAdaptar } from "../lib/adaptar.js";
 import { useTimezone } from "../lib/calendar/use-timezone.js";
+import { useMediaQuery } from "../lib/use-media-query.js";
+import { usePublicationPanelStore } from "../stores/publication-panel-store.js";
 import {
+  useAnaliticasDetalle,
   useAnaliticasPublicaciones,
   useAnaliticasRedes,
   useAnaliticasResumen,
@@ -27,12 +37,16 @@ import {
 // lo mismo cortado distinto. "Por concepto", "Tus mejores publicaciones" y
 // "Hallazgos" llegan con el PR 8.
 //
-// Periodo, red y lente viven en la URL: al volver del chat de origen con
-// "atrás", la pantalla queda como estaba.
+// Periodo, red, lente y la publicación abierta (`post`) viven en la URL: al
+// volver del chat de origen con "atrás", la pantalla queda como estaba, y
+// "Ver estadísticas" (Chat, Calendario) llega con `?post=<cardId>`.
 //
 // Maneja su propio alto (`handle.ownScroll`) y tiene dos `@container`, como
 // Biblioteca: la raíz, contra la que se acomoda el panel de detalle, y la
-// columna, contra la que se acomoda todo lo demás.
+// columna, contra la que se acomoda todo lo demás. A diferencia de
+// Biblioteca, el detalle va siempre ENCIMA con velo (desde @lg) y no empuja:
+// se abre para leer una publicación y volver a la lista, no para trabajar al
+// lado de ella.
 
 type Lente = "red" | "publicacion";
 
@@ -56,6 +70,9 @@ export function AnaliticasPage() {
   const periodo = periodoDe(params.get("periodo"));
   const red = redDe(params.get("red"));
   const lente: Lente = params.get("lente") === "publicacion" ? "publicacion" : "red";
+  const post = params.get("post") || null;
+  const navigate = useNavigate();
+  const esEscritorio = useMediaQuery("(min-width: 1024px)");
 
   // `replace`: cambiar el periodo no es navegar; "atrás" tiene que sacarte
   // de Analíticas, no recorrer cada filtro que probaste.
@@ -74,6 +91,12 @@ export function AnaliticasPage() {
   const resumen = useAnaliticasResumen(periodo, red);
   const redes = useAnaliticasRedes(periodo);
   const publicaciones = useAnaliticasPublicaciones(periodo, red);
+  // Abre aunque la publicación sea más vieja que el periodo (lore doc §6): la
+  // lista de atrás no cambia.
+  const detalle = useAnaliticasDetalle(post, periodo);
+  // Su propio "ahora": el panel puede abrirse mucho después de que llegó el
+  // resumen, y su "Medido hace…" se diría contra un instante viejo.
+  const ahoraDetalle = useMemo(() => new Date(), [detalle.datos]);
 
   // Un solo "ahora" por respuesta: la tendencia y los "hace…" de la tabla se
   // etiquetan contra el mismo instante.
@@ -97,6 +120,72 @@ export function AnaliticasPage() {
     cambiar("lente", null);
     lentes.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     lentes.current?.querySelector<HTMLElement>("#lente-panel")?.focus({ preventScroll: true });
+  }
+
+  // La fila desde la que se abrió el detalle: al cerrar, el foco vuelve a
+  // ella. Si se llegó por "Ver estadísticas" o la fila no está en la lista
+  // (otra lente, fuera del periodo), no hay a dónde volver y no pasa nada.
+  const abiertaDesde = useRef<string | null>(null);
+
+  function abrir(cardId: string) {
+    abiertaDesde.current ??= cardId;
+    cambiar("post", cardId);
+  }
+
+  const cerrar = useCallback(() => {
+    const fila = abiertaDesde.current;
+    abiertaDesde.current = null;
+    setParams(
+      (actual) => {
+        const siguiente = new URLSearchParams(actual);
+        siguiente.delete("post");
+        return siguiente;
+      },
+      { replace: true },
+    );
+    if (fila) {
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(fila)}"] button`)?.focus();
+      });
+    }
+  }, [setParams]);
+
+  // Esc cierra el detalle. Un Esc que ya atendió otro (un menú, un tooltip)
+  // no lo cierra.
+  useEffect(() => {
+    if (!post) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      cerrar();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [post, cerrar]);
+
+  // Se llega al chat con esa card ya abierta en el panel, como "Abrir en el
+  // chat" del Calendario y "Ver card" de Biblioteca.
+  function abrirChat(publicacion: AnaliticasPublicacionDetalleDto) {
+    if (!publicacion.chatId) return;
+    usePublicationPanelStore
+      .getState()
+      .openForHandoff(publicacion.chatId, [publicacion.cardId], publicacion.cardId);
+    void navigate(`/chats/${publicacion.chatId}`);
+  }
+
+  // "Adaptar" precarga el composer del chat de origen (chat.tsx consume
+  // `state.borrador` una sola vez). Abajo de 1024 el panel taparía el
+  // composer, así que ahí se llega sin él: la misma regla que
+  // `PublicationPanel.adapt`.
+  function adaptar(publicacion: AnaliticasPublicacionDetalleDto) {
+    if (!publicacion.chatId) return;
+    if (esEscritorio) {
+      usePublicationPanelStore
+        .getState()
+        .openForHandoff(publicacion.chatId, [publicacion.cardId], publicacion.cardId);
+    }
+    void navigate(`/chats/${publicacion.chatId}`, {
+      state: { borrador: textoAdaptar(publicacion.network) },
+    });
   }
 
   function reintentarTodo() {
@@ -193,6 +282,8 @@ export function AnaliticasPage() {
                         publicaciones={publicaciones.datos.publicaciones}
                         ahora={ahora}
                         timeZone={timeZone}
+                        activa={post}
+                        onAbrir={abrir}
                       />
                     )}
                   </div>
@@ -202,6 +293,29 @@ export function AnaliticasPage() {
           </div>
         </div>
       </div>
+
+      {post && (
+        <>
+          <div
+            aria-hidden
+            onClick={cerrar}
+            className="absolute inset-0 z-20 hidden bg-overlay @lg:block"
+          />
+          <DetallePublicacion
+            cardId={post}
+            detalle={detalle.datos}
+            error={detalle.error}
+            noExiste={detalle.noExiste}
+            ahora={ahoraDetalle}
+            timeZone={timeZone}
+            onCerrar={cerrar}
+            onReintentar={detalle.reintentar}
+            onAbrir={abrir}
+            onAbrirChat={abrirChat}
+            onAdaptar={adaptar}
+          />
+        </>
+      )}
     </div>
   );
 }

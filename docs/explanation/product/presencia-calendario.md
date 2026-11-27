@@ -1125,10 +1125,12 @@ operativamente:
 
 Integración hacia adelante:
 
-- Los posts publicados tienen acceso a "Ver estadísticas"
-  desde su menú contextual y desde el modal "Ver".
+- Los posts publicados tienen "Ver estadísticas" en su menú
+  contextual y en el modal "Ver" (F12). En un grupo multi-red, el
+  del modal abre la red de la pestaña activa.
 - El click lleva a Analíticas con el detalle de ese post abierto
-  (F12, `presencia-analiticas.md`).
+  (`/analiticas?post=<cardId>`, `presencia-analiticas.md`), aunque
+  sea más viejo que el periodo elegido allá o no tenga medición.
 
 ### Con Biblioteca
 

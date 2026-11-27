@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   ArrowLeft,
+  BarChart2,
   Calendar,
   CalendarClock,
   Check,
@@ -40,6 +41,7 @@ import {
   type PublicationCardDto,
   type SocialNetwork,
 } from "@presencia/shared";
+import { textoAdaptar } from "../../lib/adaptar.js";
 import { missingImageNote } from "../../lib/cards/card-image.js";
 import { useCardController, type CardController } from "../../lib/cards/use-card-controller.js";
 import { ApiError } from "../../lib/api.js";
@@ -633,7 +635,7 @@ export function StatusBanner({
     );
   }
   if (card.status === "published" && card.publishedAt) {
-    return <PublishedBanner publishedAt={card.publishedAt} />;
+    return <PublishedBanner publishedAt={card.publishedAt} cardId={card.id} />;
   }
   if (card.status === "failed") {
     return (
@@ -829,7 +831,7 @@ function Footer({
   controller: CardController;
   onAdapt: (text: string) => void;
 }) {
-  const adapt = () => onAdapt(`Adapta el borrador de ${NETWORK_LABELS[card.network]} a `);
+  const adapt = () => onAdapt(textoAdaptar(card.network));
   const buttons: ReactNode = (() => {
     switch (card.status) {
       case "draft":
@@ -879,6 +881,15 @@ function Footer({
                 Ver en la red
               </a>
             )}
+            {/* F12: convive con el del banner (presencia-chat.md §632). El
+                banner se va con el scroll del cuerpo; el pie siempre está. */}
+            <Link
+              to={`/analiticas?post=${card.id}`}
+              className={`${FOOTER_BUTTON_CLASS} border border-line bg-card text-fg hover:bg-surface`}
+            >
+              <BarChart2 size={15} aria-hidden="true" />
+              Ver estadísticas
+            </Link>
             <FooterButton Icon={Repeat2} onClick={adapt}>
               Adaptar a otra red
             </FooterButton>
@@ -895,6 +906,9 @@ function Footer({
     </div>
   );
 }
+
+const FOOTER_BUTTON_CLASS =
+  "inline-flex h-9 items-center gap-1.5 rounded-[10px] px-3.5 font-display text-[13px] font-semibold whitespace-nowrap";
 
 function FooterButton({
   children,
@@ -916,7 +930,7 @@ function FooterButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-9 items-center gap-1.5 rounded-[10px] px-3.5 font-display text-[13px] font-semibold whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`${FOOTER_BUTTON_CLASS} disabled:cursor-not-allowed disabled:opacity-50 ${
         primary
           ? "bg-primary text-primary-fg"
           : danger

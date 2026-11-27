@@ -629,9 +629,13 @@ más:
 - Opacidad del preview baja a 90% (más reducida que
   programado, comunicando "completado, archivado")
 - La toolbar cambia drásticamente:
-  - 📊 **Ver estadísticas** (primario)
-  - 🔄 **Adaptar para otra red**
-  - 🔗 **Ver post en LinkedIn**
+  - 🔗 **Ver en la red** (primario, si guardamos el enlace)
+  - 📊 **Ver estadísticas**: lleva a Analíticas con el detalle
+    de esa publicación abierto (F12). También está en el banner
+    de "Publicado", que se va con el scroll; el pie siempre se
+    ve. Se prende aunque la publicación no tenga medición: el
+    detalle dice "Sin medición" y por qué.
+  - 🔄 **Adaptar a otra red**
   - ⛶ Pantalla completa
 - Sin opciones de edición (ya está fuera y publicado)
 
@@ -1737,9 +1741,14 @@ del estado vacío vienen de las tendencias del nicho
 monitoreadas por Ritmo.
 
 **Con Analíticas:** Los posts publicados (estado publicado
-de las cards) tienen link "Ver estadísticas" que lleva a
-Analíticas con el detalle de ese post abierto (F12,
-`presencia-analiticas.md`).
+de las cards) tienen "Ver estadísticas" en el banner y en el
+pie del panel, que lleva a Analíticas con el detalle de ese
+post abierto (`/analiticas?post=<cardId>`, F12,
+`presencia-analiticas.md`). De vuelta, el detalle ofrece
+"Abrir chat de origen" (llega al chat con el panel en esa
+card) y "Adaptar a otra red" (además precarga el composer con
+"Adapta el borrador de {Red} a ", sin enviar; en móvil llega
+sin panel, que taparía el composer).
 
 **Con Biblioteca:** Las imágenes generadas y subidas viven en
 Biblioteca; las que nacen en un chat recuerdan cuál. Desde una card,

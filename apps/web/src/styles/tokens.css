@@ -413,6 +413,10 @@
   --ana-barra-vacia: var(--border-default);
   --ana-degradada-bg: var(--cal-day-out-bg);
   --ana-degradada-border: var(--color-plum-200);
+  /* PR 7b: la fila de la tabla cuyo detalle está abierto. Un rosa apenas
+     mezclado con la card (voltea con ella) y el borde plum del diseño. */
+  --ana-fila-activa-bg: color-mix(in srgb, var(--color-pink-orchid) 7%, var(--bg-card));
+  --ana-fila-activa-border: var(--color-plum-200);
 
   /* Configuración (F9.7, mock de Claude Design).
      Foreground de estado para TEXTO: --status-success/-warning/-error/-info
@@ -570,6 +574,7 @@
      oscuro); la tarjeta degradada se hunde con el mismo valor que el día de
      otro mes del Calendario, y su borde baja a un plum medio. */
   --ana-degradada-border: var(--color-plum-700);
+  --ana-fila-activa-border: var(--color-plum-700);
 
   --status-success-fg: #7fd6a4;
   --status-warning-fg: #fcd34d;
@@ -693,6 +698,8 @@
   --color-ana-barra-vacia: var(--ana-barra-vacia);
   --color-ana-degradada: var(--ana-degradada-bg);
   --color-ana-degradada-border: var(--ana-degradada-border);
+  --color-ana-fila-activa: var(--ana-fila-activa-bg);
+  --color-ana-fila-activa-border: var(--ana-fila-activa-border);
 
   --color-success-border: var(--status-success-border);
   --color-warning-border: var(--status-warning-border);

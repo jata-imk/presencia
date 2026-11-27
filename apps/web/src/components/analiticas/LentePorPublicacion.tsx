@@ -14,6 +14,11 @@ import { haceCuanto } from "../../lib/relative-time.js";
 //
 // En escritorio es una tabla; debajo de @4xl cada fila se apila en una
 // tarjeta, con las métricas en una línea.
+//
+// PR 7b: cada fila abre su detalle (`?post=`). El título es un botón estirado
+// sobre toda la fila: así se abre con teclado y, al cerrar el detalle, el
+// foco tiene adónde volver (`[data-card-id] button`). La fila abierta queda
+// resaltada.
 
 export type ColumnaOrden = "rendimiento" | "fecha" | "alcance" | "interacciones";
 type Direccion = "asc" | "desc";
@@ -71,10 +76,15 @@ export function LentePorPublicacion({
   publicaciones,
   ahora,
   timeZone,
+  activa,
+  onAbrir,
 }: {
   publicaciones: AnaliticasPublicacionDto[];
   ahora: Date;
   timeZone: string;
+  /** La publicación cuyo detalle está abierto. */
+  activa: string | null;
+  onAbrir: (cardId: string) => void;
 }) {
   const [orden, setOrden] = useState<{ columna: ColumnaOrden; direccion: Direccion }>({
     columna: "rendimiento",
@@ -157,6 +167,8 @@ export function LentePorPublicacion({
             publicacion={publicacion}
             ahora={ahora}
             timeZone={timeZone}
+            activa={publicacion.cardId === activa}
+            onAbrir={onAbrir}
           />
         ))}
       </div>
@@ -198,10 +210,14 @@ function Fila({
   publicacion,
   ahora,
   timeZone,
+  activa,
+  onAbrir,
 }: {
   publicacion: AnaliticasPublicacionDto;
   ahora: Date;
   timeZone: string;
+  activa: boolean;
+  onAbrir: (cardId: string) => void;
 }) {
   const meta = NETWORK_META[publicacion.network];
   const copy = copyDeEstado(publicacion.estado, publicacion.network);
@@ -213,7 +229,13 @@ function Fila({
   return (
     <div
       role="row"
-      className={`grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-xl border border-line bg-card px-4 py-3 @4xl:gap-4 @4xl:px-5 @4xl:py-3.5 ${COLUMNAS_TABLA}`}
+      data-card-id={publicacion.cardId}
+      aria-current={activa ? "true" : undefined}
+      className={`relative grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-xl border px-4 py-3 transition-colors focus-within:ring-2 focus-within:ring-line-focus @4xl:gap-4 @4xl:px-5 @4xl:py-3.5 ${COLUMNAS_TABLA} ${
+        activa
+          ? "border-ana-fila-activa-border bg-ana-fila-activa"
+          : "border-line bg-card hover:bg-surface"
+      }`}
     >
       <Celda className="row-span-2 self-start @4xl:row-span-1 @4xl:self-center">
         <Thumb
@@ -231,7 +253,15 @@ function Fila({
           {meta.label}
           <span className="@4xl:hidden">· {fecha}</span>
         </p>
-        <p className="truncate font-display text-sm font-medium text-fg">{publicacion.titulo}</p>
+        {/* El botón cubre la fila entera (`after:inset-0`); lo que tiene su
+            propio tooltip va encima con `relative z-10`. */}
+        <button
+          type="button"
+          onClick={() => onAbrir(publicacion.cardId)}
+          className="block w-full truncate text-left font-display text-sm font-medium text-fg outline-none after:absolute after:inset-0 after:rounded-xl after:content-['']"
+        >
+          {publicacion.titulo || "Publicación sin texto"}
+        </button>
       </Celda>
 
       <Celda className="hidden text-[13px] text-fg-secondary @4xl:block">{fecha}</Celda>
@@ -253,7 +283,7 @@ function Fila({
           <Celda className="hidden min-w-0 @4xl:block">
             <Numero valor={interacciones} />
           </Celda>
-          <Celda className="row-span-2 self-center text-right @4xl:row-span-1">
+          <Celda className="relative z-10 row-span-2 self-center text-right @4xl:row-span-1">
             <Lift lift={publicacion.lift} />
           </Celda>
           {/* Móvil: las dos métricas en una línea bajo el título. */}
