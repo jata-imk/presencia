@@ -170,6 +170,19 @@ export interface AnaliticasPublicacionesDto {
   red: SocialNetwork | null;
   /** Ordenadas por `lift` descendente; las que no tienen, al final por fecha. */
   publicaciones: AnaliticasPublicacionDto[];
+  /**
+   * "Tus mejores publicaciones": hasta 5 `cardId` de `publicaciones`, en orden.
+   * Solo las que rindieron sobre tu promedio (lift > 0). Vacío no dice por qué:
+   * si alguna fila tiene lift, ninguna superó tu promedio; si ninguna lo tiene,
+   * falta muestra.
+   */
+  mejores: string[];
+  /**
+   * La lente "Por concepto": ideas publicadas en dos o más redes dentro del
+   * periodo. Con una red elegida, solo los conceptos que la incluyen, pero con
+   * TODAS sus hermanas: comparar entre redes es el punto de la lente.
+   */
+  conceptos: AnaliticasConceptoDto[];
 }
 
 /** Una hermana del mismo concepto, en otra red. */
@@ -178,6 +191,82 @@ export interface AnaliticasHermanaDto {
   network: SocialNetwork;
   estado: EstadoPublicacion;
   lift: number | null;
+}
+
+/** Una idea publicada en varias redes (cards con el mismo `groupId`). */
+export interface AnaliticasConceptoDto {
+  groupId: string;
+  /** El título de la primera que se publicó. */
+  titulo: string;
+  /** Cuándo salió la primera. */
+  publishedAt: string;
+  /** Por lift descendente; las que no tienen, al final. */
+  hermanas: AnaliticasHermanaDto[];
+  /**
+   * Dónde rindió más **sobre tu promedio de esa red** (nunca el número crudo).
+   * `null` si menos de dos hermanas tienen lift (no hay con qué comparar) o si
+   * las dos de arriba empatan.
+   */
+  mejorEn: SocialNetwork | null;
+}
+
+/**
+ * El formato de lo que se publicó, que no es el arquetipo: el arquetipo va
+ * atado a la red, así que dentro de una red solo cambia esto.
+ *
+ * - `carrusel`: dos o más imágenes en slides.
+ * - `imagen`: una imagen suelta.
+ * - `video`: guion de video (TikTok, YouTube).
+ * - `texto`: sin imagen.
+ */
+export const FORMATOS_PUBLICADOS = ["carrusel", "imagen", "video", "texto"] as const;
+export type FormatoPublicado = (typeof FORMATOS_PUBLICADOS)[number];
+
+/** 0 = lunes, 6 = domingo (igual que Ritmo). */
+export type DiaDeLaSemana = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+/** El grupo que ganó en un hallazgo de día: un día, o un lado de la semana. */
+export type CorteDeDia = { dia: DiaDeLaSemana } | "fin_de_semana" | "entre_semana";
+
+interface HallazgoBaseDto {
+  /** Siempre dentro de una red: nunca se comparan redes entre sí. */
+  network: SocialNetwork;
+  /** Cuánto más rindió el grupo ganador, en porcentaje entero (≥ 25). */
+  diferenciaPct: number;
+  nGanador: number;
+  nPerdedor: number;
+}
+
+export interface HallazgoFormatoDto extends HallazgoBaseDto {
+  tipo: "formato";
+  ganador: FormatoPublicado;
+  perdedor: FormatoPublicado;
+}
+
+/** El perdedor es "el resto": el resto de la semana, o el otro lado de ella. */
+export interface HallazgoDiaDto extends HallazgoBaseDto {
+  tipo: "dia";
+  ganador: CorteDeDia;
+}
+
+/** Un hallazgo de Analíticas (lore doc §5). El PR 9 suma el de voz. */
+export type AnaliticasHallazgoDto = HallazgoFormatoDto | HallazgoDiaDto;
+
+export const VENTANA_HALLAZGOS_DIAS = 90;
+
+export const analiticasHallazgosQuerySchema = z.object({ red: socialNetworkSchema.optional() });
+
+export interface AnaliticasHallazgosDto {
+  /** Siempre 90: los hallazgos no siguen al selector de periodo. */
+  ventanaDias: typeof VENTANA_HALLAZGOS_DIAS;
+  red: SocialNetwork | null;
+  /**
+   * Si alguna red (o la elegida) tiene muestra para buscar: separa "con unas
+   * publicaciones más…" de "no hubo una diferencia que se sostenga".
+   */
+  hayMuestra: boolean;
+  /** Hasta 3, de mayor a menor diferencia. */
+  hallazgos: AnaliticasHallazgoDto[];
 }
 
 /** El panel de detalle de una publicación. */

@@ -278,6 +278,9 @@ export const PUBLICACIONES_DTO: AnaliticasPublicacionesDto = {
   periodoDias: 30,
   red: null,
   publicaciones: PUBLICACIONES,
+  // La pantalla todavía no pinta Mejores ni Por concepto (llegan en el PR 8b).
+  mejores: [],
+  conceptos: [],
 };
 
 // ---------------------------------------------------------------------------
