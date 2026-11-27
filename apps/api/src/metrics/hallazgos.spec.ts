@@ -22,13 +22,19 @@ const IMAGEN = {
   hashtags: [],
   assetIds: [randomUUID()],
 };
-const CARRUSEL = {
-  archetype: "visual_first",
-  caption: "Hola",
-  hashtags: [],
-  assetIds: [],
-  slides: [{ id: randomUUID() }, { id: randomUUID() }, { id: randomUUID() }],
-};
+const CARRUSEL = (() => {
+  const slides = [randomUUID(), randomUUID(), randomUUID()].map((assetId) => ({
+    id: randomUUID(),
+    assetId,
+  }));
+  return {
+    archetype: "visual_first",
+    caption: "Hola",
+    hashtags: [],
+    assetIds: slides.map((s) => s.assetId),
+    slides,
+  };
+})();
 
 let secuencia = 0;
 
@@ -87,6 +93,16 @@ describe("formatoPublicado", () => {
     expect(formatoPublicado("video_script", {})).toBe("video");
   });
 
+  it("un carrusel con una sola imagen salió como imagen suelta", () => {
+    const unaImagen = {
+      ...CARRUSEL,
+      assetIds: CARRUSEL.assetIds.slice(0, 1),
+      slides: [CARRUSEL.slides[0], { id: randomUUID() }],
+    };
+    expect(formatoPublicado("visual_first", unaImagen)).toBe("imagen");
+    expect(formatoPublicado("visual_first", { ...unaImagen, assetIds: [] })).toBe("texto");
+  });
+
   it("un visual sin imagen cuenta como texto", () => {
     expect(formatoPublicado("visual_first", { ...IMAGEN, assetIds: [] })).toBe("texto");
   });
@@ -121,6 +137,11 @@ describe("compararGrupos: las tres pruebas", () => {
   it("una diferencia que solo sostiene un viral calla", () => {
     // Con el viral: (0.3 + 4×0.05) / 5 = 0.1, el doble. Sin él: 0.05, empate.
     expect(compararGrupos([0.3, 0.05, 0.05, 0.05, 0.05], cinco(0.05))).toBeNull();
+  });
+
+  it("un post roto en el perdedor tampoco fabrica una diferencia", () => {
+    // Con el cero: 10 contra 8, +25%. Sin él: 10 contra 10, empate.
+    expect(compararGrupos(cinco(10), [10, 10, 10, 10, 0])).toBeNull();
   });
 
   it("solo prueba la dirección que se pide", () => {

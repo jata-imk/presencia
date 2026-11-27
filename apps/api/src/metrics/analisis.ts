@@ -422,7 +422,7 @@ export interface ConceptoAnalizado<P extends PublicacionMedible> {
   hermanas: PostAnalizado<P>[];
   /** La primera que se publicó: de ella salen el título y la fecha. */
   primera: PostAnalizado<P>;
-  /** Argmax del lift, con dos o más hermanas con lift; si no, `null`. */
+  /** Argmax del lift, con dos o más hermanas con lift y sin empate arriba; si no, `null`. */
   mejorEn: SocialNetwork | null;
 }
 
@@ -467,12 +467,15 @@ export function conceptosDe<P extends PublicacionMedible & { groupId: string | n
     const primera = grupo.reduce((a, b) =>
       b.publicacion.publishedAt < a.publicacion.publishedAt ? b : a,
     );
-    const conLift = hermanas.filter((h) => h.lift !== null);
+    const [primero, segundo] = hermanas.filter((h) => h.lift !== null);
+    // Empatadas arriba, ninguna fue "la mejor": el orden por nombre de red
+    // que deja `porLift` no es un resultado.
+    const hayGanadora = primero && segundo && primero.lift !== segundo.lift;
     conceptos.push({
       groupId,
       hermanas,
       primera,
-      mejorEn: conLift.length >= 2 ? (conLift[0]?.publicacion.network ?? null) : null,
+      mejorEn: hayGanadora ? primero.publicacion.network : null,
     });
   }
 

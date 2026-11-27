@@ -80,20 +80,20 @@ Las reglas nuevas, que son parte de la decisión:
 12. **"Tus mejores publicaciones" las elige el motor** (`mejoresDe`, PR 8): hasta 5, por lift. Solo entran las de lift > 0, porque una con "−8% sobre tu promedio" no es de tus mejores aunque quede quinta. El lift ya exige `muestra = suficiente`, así que una red sin muestra nunca aparece. Si empatan, va primero la más nueva. Viajan como `mejores: cardId[]` dentro de `/publicaciones`, sin endpoint propio.
 13. **"Por concepto" también lo arma el motor** (`conceptosDe`, PR 8), sobre los posts **antes** del filtro de red. Con Instagram elegido, un concepto sigue trayendo sus hermanas de TikTok y Facebook, que una lista ya filtrada no tendría.
     - Un concepto es un `groupId` con dos o más publicaciones dentro del periodo.
-    - "Mejor en" es el argmax del lift, nunca del número crudo. Solo existe con dos o más hermanas con lift.
+    - "Mejor en" es el argmax del lift, nunca del número crudo. Solo existe con dos o más hermanas con lift y sin empate arriba.
     - Va dentro de `/publicaciones` (`conceptos`).
 14. **Hallazgos** (`metrics/hallazgos.ts`, puro, PR 8). Se calculan sobre `analizar(90)`, sin importar el selector: sus `posts` son los de 90 días, y sus `contextos` cuentan la muestra en esa misma ventana. Endpoint propio: `GET /api/analiticas/hallazgos?red=`.
     - **`compararGrupos` hace las tres pruebas del lore doc:**
       - ≥ 5 por grupo;
       - el ganador rinde ≥ 25% más (con valores a 24 h en la base de la red);
-      - sin la mejor publicación del ganador, la diferencia sigue ≥ 25%.
+      - sin la mejor publicación del ganador **ni la peor del perdedor**, la diferencia sigue ≥ 25%. El lore doc pedía solo la primera; la segunda salió en la review: un post roto (alcance 0) hunde al perdedor igual de solo que un viral infla al ganador.
         Solo entran redes con `muestra = suficiente` (≥ 10), el mismo umbral del lift.
-    - **Formato es lo que se publicó, no el arquetipo.** El arquetipo va atado a la red, así que dentro de una red nunca cambia. Hay cuatro cubetas: `carrusel` (slides), `imagen` (`assetIds`), `video` y `texto`. Un contenido ilegible no entra a ninguna: meterlo en `texto` inventaría una publicación sin imagen.
+    - **Formato es lo que se publicó, no el arquetipo.** El arquetipo va atado a la red, así que dentro de una red nunca cambia. Hay cuatro cubetas: `carrusel` (slides con dos o más imágenes; uno con una sola salió como imagen suelta), `imagen` (`assetIds`), `video` y `texto`. Un contenido ilegible no entra a ninguna: meterlo en `texto` inventaría una publicación sin imagen.
     - **El día de la semana se compara de ocho maneras fijas**: cada día contra el resto, fin de semana contra entre semana, y al revés. Juntar "los días buenos" encontraría siempre una diferencia, aunque fuera azar (decidido con Jose). El día es el del creator (`fechaLocal`), no el de UTC.
     - El hallazgo nombra siempre al grupo ganador. Un día flojo sale como "entre semana", nunca como "el domingo tuvo menos".
     - **Tope:** uno por (tipo, red), con la mayor diferencia. De todos, los 3 de mayor diferencia.
     - **`hayMuestra`** separa "con unas publicaciones más…" (ninguna red con muestra) de "no hubo una diferencia que se sostenga".
-    - Las tres pruebas filtran mucho, pero no todo. En dev, el ruido del seed saca un "entre semana" en TikTok (+35%, 23 contra 6) sin que nadie lo sembrara. Por eso la frase va en pasado y sin causa (lore doc §5).
+    - Las pruebas filtran mucho, pero no todo. Con solo la mitad de la prueba del golpe de suerte (quitar la mejor del ganador), el ruido del seed de dev sacaba un "entre semana" en TikTok (+35%, 23 contra 6) que nadie sembró; quitar también la peor del perdedor lo calló, y los dos hallazgos sembrados siguieron. Aun así, ningún umbral vuelve imposible el azar: por eso la frase va en pasado y sin causa (lore doc §5).
 
 **Vistas de TikTok y YouTube.** No hay columna `views`, y `impressions` no se presenta como "vistas". El 2026-11-21 no había una sola fila de TikTok ni de YouTube en dev ni en prod, y ningún adapter lee `views` ni `plays`. Una red sin `reach` sale con alcance "No disponible", y sus impresiones crudas solo se ven en el detalle. Se revisa con la primera fila real: Upload-Post manda `primary_impressions_field` dentro de `raw`.
 

@@ -204,7 +204,8 @@ export interface AnaliticasConceptoDto {
   hermanas: AnaliticasHermanaDto[];
   /**
    * Dónde rindió más **sobre tu promedio de esa red** (nunca el número crudo).
-   * `null` si menos de dos hermanas tienen lift: no hay con qué comparar.
+   * `null` si menos de dos hermanas tienen lift (no hay con qué comparar) o si
+   * las dos de arriba empatan.
    */
   mejorEn: SocialNetwork | null;
 }
@@ -213,7 +214,7 @@ export interface AnaliticasConceptoDto {
  * El formato de lo que se publicó, que no es el arquetipo: el arquetipo va
  * atado a la red, así que dentro de una red solo cambia esto.
  *
- * - `carrusel`: dos o más slides.
+ * - `carrusel`: dos o más imágenes en slides.
  * - `imagen`: una imagen suelta.
  * - `video`: guion de video (TikTok, YouTube).
  * - `texto`: sin imagen.

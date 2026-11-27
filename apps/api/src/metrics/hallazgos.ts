@@ -8,8 +8,9 @@
 //   1. Muestra: ≥ 5 en cada grupo y ≥ 10 en la red (`muestra = suficiente`,
 //      el mismo umbral de Ritmo y del "sobre tu promedio").
 //   2. Tamaño: el grupo ganador rindió al menos 25% más.
-//   3. No es un golpe de suerte: sin la mejor publicación del ganador, la
-//      diferencia sigue siendo de 25% o más. Un viral no es un patrón.
+//   3. No es un golpe de suerte: sin la mejor publicación del ganador ni la
+//      peor del perdedor, la diferencia sigue siendo de 25% o más. Un viral
+//      (o un post roto) no es un patrón.
 //
 // Un hallazgo falso es peor que ninguno (el creator cambia su contenido por un
 // ruido), así que los cortes son pocos y fijos. Buscar "los días buenos" y
@@ -54,8 +55,12 @@ export function formatoPublicado(
   if (archetype === "video_script") return "video";
   const parsed = cardContentSchema.safeParse(content);
   if (!parsed.success || parsed.data.archetype === "video_script") return null;
-  if (parsed.data.slides && parsed.data.slides.length >= 2) return "carrusel";
-  if (parsed.data.assetIds.length > 0) return "imagen";
+  // Por imágenes y no por slides: un slide puede no tener imagen, y lo que se
+  // publica son las imágenes (`assetIds` son las de los slides). Un "carrusel"
+  // con una sola imagen salió como imagen suelta.
+  const imagenes = parsed.data.assetIds.length;
+  if (parsed.data.slides && imagenes >= 2) return "carrusel";
+  if (imagenes > 0) return "imagen";
   return "texto";
 }
 
@@ -70,8 +75,14 @@ export interface Comparacion {
  * la base de la red (tasa o interacciones a 24 h), nunca mezclando redes.
  *
  * Solo prueba esa dirección: quien llama decide qué grupo nombra. La muestra
- * (≥ 5) se cuenta antes de quitar la mejor, y la prueba del viral la deja en
- * cuatro a propósito: lo que se pregunta es si la diferencia dependía de ella.
+ * (≥ 5) se cuenta antes de quitar nada, y la prueba del viral deja cada grupo
+ * en cuatro a propósito: lo que se pregunta es si la diferencia dependía de
+ * una sola publicación.
+ *
+ * Esa prueba mira los dos lados a la vez: sin la mejor del ganador Y sin la
+ * peor del perdedor. Un viral infla al ganador, pero un post roto (alcance 0,
+ * una publicación que salió mal) hunde al perdedor igual de solo, y con cinco
+ * por grupo cualquiera de los dos basta para fabricar un 25%.
  */
 export function compararGrupos(
   ganador: readonly number[],
@@ -85,7 +96,8 @@ export function compararGrupos(
   if (diferencia < DIFERENCIA_MINIMA) return null;
 
   const sinLaMejor = [...ganador].sort((a, b) => b - a).slice(1);
-  if (promedioDe(sinLaMejor) / referencia - 1 < DIFERENCIA_MINIMA) return null;
+  const sinLaPeor = [...perdedor].sort((a, b) => a - b).slice(1);
+  if (promedioDe(sinLaMejor) / promedioDe(sinLaPeor) - 1 < DIFERENCIA_MINIMA) return null;
 
   return {
     diferenciaPct: Math.round(diferencia * 100),

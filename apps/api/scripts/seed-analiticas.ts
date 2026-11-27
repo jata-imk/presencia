@@ -85,14 +85,25 @@ const texto = (body: string): CardContent => ({
   assetIds: [],
 });
 
-/** Un carrusel sin imágenes: la miniatura cae al ícono del formato. */
-const carrusel = (caption: string): CardContent => ({
-  archetype: "visual_first",
-  caption,
-  hashtags: ["productividad"],
-  assetIds: [],
-  slides: [1, 2, 3, 4].map(() => ({ id: crypto.randomUUID() })),
-});
+/**
+ * Un carrusel de cuatro imágenes. Los ids no son de ninguna imagen guardada:
+ * un carrusel se cuenta por sus imágenes (`formatoPublicado`), y sembrar
+ * imágenes de verdad llenaría Biblioteca de relleno. La miniatura cae al
+ * ícono del formato, como con una imagen que se eliminó.
+ */
+const carrusel = (caption: string): CardContent => {
+  const slides = [1, 2, 3, 4].map(() => ({
+    id: crypto.randomUUID(),
+    assetId: crypto.randomUUID(),
+  }));
+  return {
+    archetype: "visual_first",
+    caption,
+    hashtags: ["productividad"],
+    assetIds: slides.map((slide) => slide.assetId),
+    slides,
+  };
+};
 
 const contenidoPara = (network: SocialNetwork, titulo: string): CardContent =>
   network === "tiktok" || network === "youtube"

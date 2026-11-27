@@ -300,7 +300,8 @@ tres pruebas:
    ("¿alcanza la muestra?") serían dos respuestas distintas.
 2. **Tamaño:** una diferencia de al menos 25%.
 3. **No depende de un golpe de suerte:** si quitas la mejor publicación del
-   grupo ganador, la diferencia sigue ahí. Un solo post viral no es un patrón.
+   grupo ganador y la peor del otro, la diferencia sigue ahí. Un solo post
+   viral (o uno que salió roto) no es un patrón.
 
 Todo se compara a las 24 horas de publicado, para que la edad no decida.
 

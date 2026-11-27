@@ -488,6 +488,15 @@ describe("conceptosDe: la misma idea en varias redes", () => {
     expect(concepto?.hermanas.map((h) => h.publicacion.network)).toEqual(["tiktok", "linkedin"]);
   });
 
+  it('con las dos de arriba empatadas no hay "Mejor en"', () => {
+    const [concepto] = conceptosDe([
+      analizado(20, { network: "instagram", groupId: "g" }),
+      analizado(20, { network: "facebook", groupId: "g" }),
+      analizado(-5, { network: "tiktok", groupId: "g" }),
+    ]);
+    expect(concepto?.mejorEn).toBeNull();
+  });
+
   it("título y fecha salen de la primera que se publicó", () => {
     const primera = analizado(5, { network: "tiktok", groupId: "g", haceHoras: 200 });
     const [concepto] = conceptosDe([
