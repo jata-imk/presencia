@@ -40,7 +40,7 @@ export function MejoresPublicaciones({
   mejores: string[];
   periodo: PeriodoAnaliticas;
   timeZone: string;
-  onAbrir: (cardId: string) => void;
+  onAbrir: (cardId: string, origen: HTMLElement) => void;
 }) {
   const porId = new Map(publicaciones.map((p) => [p.cardId, p]));
   const elegidas = mejores
@@ -106,8 +106,8 @@ export function MejoresSkeleton({ periodo }: { periodo: PeriodoAnaliticas }) {
         {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
-            className={`flex items-center gap-3 overflow-hidden rounded-xl border border-line bg-card p-2.5 @lg:flex-col @lg:items-stretch @lg:gap-0 @lg:p-0 ${
-              i === 0 ? "@lg:col-span-2 @4xl:col-span-1" : i > 2 ? "hidden @4xl:flex" : ""
+            className={`items-center gap-3 overflow-hidden rounded-xl border border-line bg-card p-2.5 @lg:flex-col @lg:items-stretch @lg:gap-0 @lg:p-0 ${
+              i === 0 ? "flex @lg:col-span-2 @4xl:col-span-1" : i > 2 ? "hidden @4xl:flex" : "flex"
             }`}
           >
             <div
@@ -141,7 +141,7 @@ function Tarjeta({
   publicacion: AnaliticasPublicacionDto;
   lugar: number;
   timeZone: string;
-  onAbrir: (cardId: string) => void;
+  onAbrir: (cardId: string, origen: HTMLElement) => void;
 }) {
   const primera = lugar === 1;
   const meta = NETWORK_META[publicacion.network];
@@ -167,7 +167,7 @@ function Tarjeta({
     <button
       type="button"
       data-card-id={publicacion.cardId}
-      onClick={() => onAbrir(publicacion.cardId)}
+      onClick={(e) => onAbrir(publicacion.cardId, e.currentTarget)}
       aria-label={`${String(lugar)}. ${titulo}: ${lift} sobre tu promedio en ${red}`}
       className="group flex w-full items-center gap-3 overflow-hidden rounded-xl border border-line bg-card p-2.5 text-left shadow-sm transition-shadow outline-none hover:shadow-md focus-visible:ring-2 focus-visible:ring-line-focus @lg:flex-col @lg:items-stretch @lg:gap-0 @lg:border-0 @lg:p-0 @lg:shadow-md"
     >
@@ -225,7 +225,7 @@ function Tarjeta({
 
       {/* El texto */}
       <span
-        className={`flex min-w-0 flex-1 flex-col @lg:p-3.5 ${
+        className={`flex min-w-0 flex-1 flex-col ${
           primera ? "@lg:p-4 @4xl:flex-row @4xl:items-end @4xl:justify-between @4xl:gap-2.5" : ""
         }`}
       >

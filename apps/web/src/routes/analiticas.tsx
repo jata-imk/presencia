@@ -161,9 +161,11 @@ export function AnaliticasPage() {
   // foco va al panel de la lente para no perderse en <body>.
   const abiertaDesde = useRef<HTMLElement | null>(null);
 
-  function abrirDesdeFila(cardId: string) {
-    abiertaDesde.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  // El elemento llega del propio clic (`currentTarget`), no de
+  // `document.activeElement`: Safari y Firefox en macOS no enfocan un botón
+  // al hacerle clic, y ahí activeElement sería <body>.
+  function abrirDesdeFila(cardId: string, origen: HTMLElement) {
+    abiertaDesde.current = origen;
     cambiar("post", cardId);
   }
 

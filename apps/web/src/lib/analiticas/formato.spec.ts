@@ -204,6 +204,8 @@ describe("textoDiferencia", () => {
     [99, "99% más"],
     // Desde el doble, en veces (1 + pct/100).
     [100, "2 veces más"],
+    // Se redondea antes de decidir: nunca "100% más".
+    [99.6, "2 veces más"],
     [140, "2.4 veces más"],
     [312, "4.1 veces más"],
   ])("%d → %s", (pct, esperado) => {

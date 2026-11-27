@@ -82,7 +82,9 @@ export function RitmoPage() {
   // sobrevive a las recargas del resumen (guardar una meta lo devuelve entero).
   // `?red=` (el "Ver en Ritmo" de un hallazgo de Analíticas) solo siembra la
   // primera elección, y solo si esa red está conectada; si no, la primera.
-  const [params] = useSearchParams();
+  // Usado, se quita de la URL: si no, recargar después de cambiar de red
+  // volvería a la del hallazgo.
+  const [params, setParams] = useSearchParams();
   const redPedida = params.get("red");
   const [red, setRed] = useState<SocialNetwork | null>(null);
   const redInicial =
@@ -90,6 +92,17 @@ export function RitmoPage() {
   useEffect(() => {
     setRed((actual) => actual ?? redInicial);
   }, [redInicial]);
+  useEffect(() => {
+    if (red === null || redPedida === null) return;
+    setParams(
+      (actual) => {
+        const siguiente = new URLSearchParams(actual);
+        siguiente.delete("red");
+        return siguiente;
+      },
+      { replace: true },
+    );
+  }, [red, redPedida, setParams]);
 
   const { horarios, error: errorHorarios, reintentar: reintentarHorarios } = useHorarios(red);
 

@@ -53,7 +53,7 @@ export function LentePorConcepto({
   timeZone: string;
   /** La publicación cuyo detalle está abierto. */
   activa: string | null;
-  onAbrir: (cardId: string) => void;
+  onAbrir: (cardId: string, origen: HTMLElement) => void;
 }) {
   if (conceptos.length === 0) {
     return (
@@ -147,7 +147,7 @@ function Concepto({
   motivo: (hermana: AnaliticasHermanaDto) => { titulo: string; detalle: string };
   timeZone: string;
   activa: string | null;
-  onAbrir: (cardId: string) => void;
+  onAbrir: (cardId: string, origen: HTMLElement) => void;
 }) {
   const redes = concepto.hermanas.length;
   return (
@@ -202,7 +202,7 @@ function FilaRed({
   escala: number;
   motivo: { titulo: string; detalle: string } | null;
   activa: boolean;
-  onAbrir: (cardId: string) => void;
+  onAbrir: (cardId: string, origen: HTMLElement) => void;
 }) {
   const meta = NETWORK_META[hermana.network];
   const lift = hermana.lift === null ? null : textoLift(hermana.lift);
@@ -211,7 +211,7 @@ function FilaRed({
       type="button"
       data-card-id={hermana.cardId}
       aria-current={activa ? "true" : undefined}
-      onClick={() => onAbrir(hermana.cardId)}
+      onClick={(e) => onAbrir(hermana.cardId, e.currentTarget)}
       className={`grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 rounded-lg px-2 py-[7px] text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-line-focus @lg:grid-cols-[150px_74px_minmax(0,1fr)] @lg:gap-x-[18px] ${
         activa
           ? "bg-ana-fila-activa ring-1 ring-ana-fila-activa-border ring-inset"

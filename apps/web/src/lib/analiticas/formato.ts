@@ -343,9 +343,11 @@ const DIAS: Record<DiaDeLaSemana, string> = {
  * es cuánto MÁS rindió el ganador, así que el múltiplo es 1 + pct/100.
  */
 export function textoDiferencia(diferenciaPct: number): string {
-  const veces = 1 + diferenciaPct / 100;
+  // Se redondea antes de decidir: un 99.6 que se diría "100% más" ya es el doble.
+  const pct = Math.round(diferenciaPct);
+  const veces = 1 + pct / 100;
   if (veces >= 2) return `${unDecimal.format(Math.round(veces * 10) / 10)} veces más`;
-  return `${entero.format(Math.round(diferenciaPct))}% más`;
+  return `${entero.format(pct)}% más`;
 }
 
 /** La frase de un hallazgo en tres partes: la del medio va en `strong`. */
