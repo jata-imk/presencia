@@ -1,11 +1,13 @@
 import type {
   AnaliticasEngagementDto,
+  AnaliticasPublicacionDetalleDto,
   AnaliticasPublicacionDto,
   AnaliticasPublicacionesDto,
   AnaliticasRedDto,
   AnaliticasRedesDto,
   AnaliticasResumenDto,
 } from "@presencia/shared";
+import { IMAGEN_DEMO } from "./cards.js";
 
 // Datos de ejemplo de Analíticas (F12) para Storybook. Los números son los del
 // diseño "Presencia Analytics Overview", ajustados a lo que decidió V1: sin
@@ -277,6 +279,78 @@ export const PUBLICACIONES_DTO: AnaliticasPublicacionesDto = {
   red: null,
   publicaciones: PUBLICACIONES,
 };
+
+// ---------------------------------------------------------------------------
+// El detalle de una publicación (PR 7b)
+
+const CHAT_DEMO = "00000000-0000-4000-8000-00000000c4a7";
+const fila = (n: number) => PUBLICACIONES[n - 1]!;
+
+function detalle(
+  base: AnaliticasPublicacionDto,
+  campos: Partial<AnaliticasPublicacionDetalleDto> = {},
+): AnaliticasPublicacionDetalleDto {
+  return {
+    ...base,
+    texto: `${base.titulo}\n\nTe cuento cuáles uso y por qué. Guárdalo para después y compártelo con quien siempre anda pagando suscripciones.`,
+    metricas: { reach: 5400, impressions: 8120, likes: 184, comments: 22, shares: 8 },
+    medidoEn: hace(3 * HORA),
+    muestraDeRed: "suficiente",
+    carpeta: { nombre: "Productividad", icono: "🧠" },
+    chatId: CHAT_DEMO,
+    postUrl: "https://example.com/post",
+    enOtrasRedes: [],
+    ...campos,
+  };
+}
+
+/** 2c del diseño: un TikTok medido, parte de un concepto en tres redes. */
+export const DETALLE_CONCEPTO = detalle(fila(1), {
+  metricas: { reach: null, impressions: 18_400, likes: 1043, comments: 96, shares: 112 },
+  enOtrasRedes: [
+    // Las hermanas apuntan a detalles que sí tienen fixture: en la historia
+    // se puede saltar a ellas.
+    { cardId: fila(3).cardId, network: "instagram", estado: "medida", lift: 8 },
+    { cardId: fila(4).cardId, network: "facebook", estado: "medida", lift: -20 },
+    { cardId: fila(8).cardId, network: "linkedin", estado: "no_reporta", lift: null },
+  ],
+});
+
+/** Un carrusel con foto, sin carpeta ni chat de origen (el chat se borró). */
+export const DETALLE_SIN_CHAT = detalle(fila(3), {
+  miniatura: { assetId: IMAGEN_DEMO, imagenes: 5 },
+  metricas: { reach: 6000, impressions: 9100, likes: 284, comments: 31, shares: null },
+  carpeta: null,
+  chatId: null,
+});
+
+export const DETALLE_EN_CAMINO = detalle(fila(7), {
+  metricas: { reach: null, impressions: null, likes: null, comments: null, shares: null },
+  medidoEn: null,
+});
+
+export const DETALLE_NO_REPORTA = detalle(fila(8), {
+  metricas: { reach: null, impressions: null, likes: null, comments: null, shares: null },
+  muestraDeRed: "no_reporta",
+  medidoEn: hace(5 * HORA),
+  postUrl: null,
+});
+
+/** Publicada por un proveedor que no devuelve el id del post: nadie la mide. */
+export const DETALLE_SIN_MEDICION = detalle(fila(9), {
+  metricas: { reach: null, impressions: null, likes: null, comments: null, shares: null },
+  muestraDeRed: "no_reporta",
+  medidoEn: null,
+  postUrl: null,
+});
+
+/** Medida, pero su red todavía no junta 10 publicaciones para comparar. */
+export const DETALLE_SIN_COMPARAR = detalle(fila(6), { muestraDeRed: "poca" });
+
+/** La ruta exacta del detalle: el mock empata por pathname, sin query. */
+export function rutaDeDetalle(dto: AnaliticasPublicacionDetalleDto) {
+  return `/api/analiticas/publicaciones/${dto.cardId}`;
+}
 
 /** Las tres llamadas de la pantalla, con un resumen a elegir. */
 export function rutasDeAnaliticas(resumen: AnaliticasResumenDto, redes = REDES_COMPLETO) {

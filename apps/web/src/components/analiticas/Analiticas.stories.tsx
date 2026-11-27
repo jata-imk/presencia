@@ -87,7 +87,28 @@ export const FilasEnCadaEstado: Story = {
   name: "Por publicación · cada estado",
   render: () => (
     <Frame>
-      <LentePorPublicacion publicaciones={PUBLICACIONES} ahora={AHORA} timeZone={ZONA} />
+      <LentePorPublicacion
+        publicaciones={PUBLICACIONES}
+        ahora={AHORA}
+        timeZone={ZONA}
+        activa={null}
+        onAbrir={noop}
+      />
+    </Frame>
+  ),
+};
+
+export const FilaActiva: Story = {
+  name: "Por publicación · fila con el detalle abierto",
+  render: () => (
+    <Frame>
+      <LentePorPublicacion
+        publicaciones={PUBLICACIONES}
+        ahora={AHORA}
+        timeZone={ZONA}
+        activa={PUBLICACIONES[1]?.cardId ?? null}
+        onAbrir={noop}
+      />
     </Frame>
   ),
 };

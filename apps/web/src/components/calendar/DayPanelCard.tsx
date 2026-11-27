@@ -21,6 +21,8 @@ export interface DayCardActions {
   onEditInChat: (card: PublicationCardDto) => void;
   onReschedule: (cards: PublicationCardDto[]) => void;
   onCancel: (cards: PublicationCardDto[]) => void;
+  /** F12: el detalle de la publicación en Analíticas. */
+  onViewStats: (card: PublicationCardDto) => void;
 }
 
 function CardRow({
@@ -113,11 +115,7 @@ function CardRow({
             </>
           )}
           {card.status === "published" && (
-            <Menu.Item
-              disabled
-              title="Analíticas llega en una fase posterior"
-              className={`${MENU_ITEM_CLASS} text-fg-muted`}
-            >
+            <Menu.Item onClick={() => actions.onViewStats(card)} className={MENU_ITEM_CLASS}>
               <BarChart2 size={14} strokeWidth={1.75} /> Ver estadísticas
             </Menu.Item>
           )}

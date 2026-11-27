@@ -3,6 +3,9 @@ import {
   avisarActualizacion,
   cambioDeEngagement,
   copyDeEstado,
+  fechaYHora,
+  motivoSinLift,
+  notaDeMetricasFaltantes,
   fechaCorta,
   listaDeRedes,
   numero,
@@ -115,5 +118,47 @@ describe("avisarActualizacion", () => {
     expect(avisarActualizacion(hace(5.9), AHORA)).toBe(false);
     expect(avisarActualizacion(hace(6), AHORA)).toBe(true);
     expect(avisarActualizacion(null, AHORA)).toBe(false);
+  });
+});
+
+describe("fechaYHora", () => {
+  it("fecha corta con año y hora a 24 h, en la zona del creator", () => {
+    // 18:00 UTC = 12:00 en Mérida.
+    expect(fechaYHora(AHORA.toISOString(), MERIDA)).toBe("21 nov 2026 · 12:00");
+    expect(fechaYHora("2026-09-13T01:30:00.000Z", MERIDA)).toBe("12 sep 2026 · 19:30");
+  });
+});
+
+describe("motivoSinLift", () => {
+  const hace = (horas: number) => new Date(AHORA.getTime() - horas * 60 * 60 * 1000).toISOString();
+  it("la edad de la publicación va antes que la muestra de su red", () => {
+    expect(motivoSinLift("suficiente", "instagram", hace(3), AHORA)).toBe(
+      "Se compara a las 24 horas de publicada",
+    );
+  });
+  it("después, la muestra", () => {
+    expect(motivoSinLift("poca", "tiktok", hace(48), AHORA)).toBe(
+      "TikTok todavía no tiene 10 publicaciones medidas para comparar",
+    );
+    expect(motivoSinLift("no_reporta", "linkedin", hace(48), AHORA)).toBe(
+      "LinkedIn no comparte estadísticas de perfiles personales",
+    );
+    expect(motivoSinLift("suficiente", "instagram", hace(48), AHORA)).toBeNull();
+  });
+});
+
+describe("notaDeMetricasFaltantes", () => {
+  const todas = { reach: 1, impressions: 2, likes: 3, comments: 4, shares: 5 };
+  it("dice solo lo que no llegó", () => {
+    expect(notaDeMetricasFaltantes("instagram", todas)).toBeNull();
+    expect(notaDeMetricasFaltantes("tiktok", { ...todas, reach: null })).toBe(
+      "TikTok no reportó alcance para esta publicación.",
+    );
+    expect(
+      notaDeMetricasFaltantes("instagram", { ...todas, impressions: null, shares: null }),
+    ).toBe("Instagram no reportó impresiones ni compartidas para esta publicación.");
+    expect(
+      notaDeMetricasFaltantes("facebook", { ...todas, reach: null, likes: null, shares: null }),
+    ).toBe("Facebook no reportó alcance, me gusta ni compartidas para esta publicación.");
   });
 });

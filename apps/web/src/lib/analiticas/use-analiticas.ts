@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  AnaliticasPublicacionDetalleDto,
   AnaliticasPublicacionesDto,
   AnaliticasRedesDto,
   AnaliticasResumenDto,
@@ -7,7 +8,7 @@ import type {
   SocialNetwork,
 } from "@presencia/shared";
 import { ApiError } from "../api.js";
-import { fetchPublicaciones, fetchRedes, fetchResumen } from "./analiticas-api.js";
+import { fetchDetalle, fetchPublicaciones, fetchRedes, fetchResumen } from "./analiticas-api.js";
 
 // Los recursos de Analíticas, cada uno con su propio ciclo de vida (el patrón
 // de `useHorarios` en lib/use-ritmo.ts).
@@ -28,17 +29,31 @@ function mensajeDe(error: unknown): string {
 export interface Recurso<T> {
   datos: T | null;
   error: string | null;
+  /**
+   * La API dijo 404. El detalle lo distingue del error genérico: una
+   * publicación que no existe (o ya no es tuya) no se arregla con
+   * "Reintentar".
+   */
+  noExiste: boolean;
   reintentar: () => void;
 }
 
-function useRecurso<T>(llave: string, cargar: (signal: AbortSignal) => Promise<T>): Recurso<T> {
+/** `llave` en null = no hay nada que pedir (el detalle cerrado). */
+function useRecurso<T>(
+  llave: string | null,
+  cargar: (signal: AbortSignal) => Promise<T>,
+): Recurso<T> {
   // Los datos y el error guardan la llave con la que llegaron. Limpiarlos en
   // el efecto no alcanzaba: el efecto corre DESPUÉS del render, y en ese
   // primer render tras cambiar de periodo se pintaban los números viejos
   // bajo el selector nuevo (5 barras de 30 días rotuladas con los tramos de
   // 90). Comparando la llave, lo de otra llave simplemente no se devuelve.
   const [datos, setDatos] = useState<{ llave: string; valor: T } | null>(null);
-  const [error, setError] = useState<{ llave: string; mensaje: string } | null>(null);
+  const [error, setError] = useState<{
+    llave: string;
+    mensaje: string;
+    status: number | null;
+  } | null>(null);
   const [intento, setIntento] = useState(0);
   // La respuesta de un periodo que el usuario ya dejó no puede pisar la del
   // actual (misma guarda que cards-store y useHorarios).
@@ -48,9 +63,10 @@ function useRecurso<T>(llave: string, cargar: (signal: AbortSignal) => Promise<T
 
   useEffect(() => {
     const token = ++pedido.current;
-    const abort = new AbortController();
     setError(null);
     setDatos(null);
+    if (llave === null) return;
+    const abort = new AbortController();
     cargarRef
       .current(abort.signal)
       .then((valor) => {
@@ -58,16 +74,22 @@ function useRecurso<T>(llave: string, cargar: (signal: AbortSignal) => Promise<T
       })
       .catch((e: unknown) => {
         if (token === pedido.current && !abort.signal.aborted) {
-          setError({ llave, mensaje: mensajeDe(e) });
+          setError({
+            llave,
+            mensaje: mensajeDe(e),
+            status: e instanceof ApiError ? e.status : null,
+          });
         }
       });
     return () => abort.abort();
   }, [llave, intento]);
 
   const reintentar = useCallback(() => setIntento((n) => n + 1), []);
+  const errorVigente = llave !== null && error?.llave === llave ? error : null;
   return {
-    datos: datos?.llave === llave ? datos.valor : null,
-    error: error?.llave === llave ? error.mensaje : null,
+    datos: llave !== null && datos?.llave === llave ? datos.valor : null,
+    error: errorVigente?.mensaje ?? null,
+    noExiste: errorVigente?.status === 404,
     reintentar,
   };
 }
@@ -91,5 +113,19 @@ export function useAnaliticasPublicaciones(
 ): Recurso<AnaliticasPublicacionesDto> {
   return useRecurso(`${String(periodo)}:${red ?? ""}`, (signal) =>
     fetchPublicaciones(periodo, red, signal),
+  );
+}
+
+/**
+ * El detalle de `?post=`. El periodo entra en la llave porque viaja en la
+ * consulta: cambiarlo con el panel abierto lo vuelve a pedir, en vez de
+ * quedarse con lo del periodo anterior. Con `cardId` en null no pide nada.
+ */
+export function useAnaliticasDetalle(
+  cardId: string | null,
+  periodo: PeriodoAnaliticas,
+): Recurso<AnaliticasPublicacionDetalleDto> {
+  return useRecurso(cardId === null ? null : `${cardId}:${String(periodo)}`, (signal) =>
+    fetchDetalle(cardId ?? "", periodo, signal),
   );
 }

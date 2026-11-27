@@ -172,21 +172,51 @@ Tres formas de ver las mismas publicaciones:
 
 ### El detalle de una publicación
 
-Panel a la derecha (pantalla completa en móvil):
+Un panel de 470 px encima de la pantalla, con velo (pantalla completa en
+móvil, con "Volver"). Se abre desde una fila de "Por publicación", que queda
+resaltada, o llegando con `?post=<cardId>`. Se cierra con la X, con Esc o
+tocando el velo, y el foco vuelve a la fila. Abrir y cerrar reemplaza la
+entrada del historial, como el periodo y la red: "atrás" saca de Analíticas
+(si llegaste desde el chat, regresas al chat).
 
-- Vista previa, red, fecha y hora de publicación.
+- **Vista previa** (la portada, vertical para un guion de video; sin imagen,
+  el título sobre el tinte), red, fecha y hora de publicación y carpeta
+  ("Sin carpeta" si no tiene). Debajo, el texto, recortado con "Ver más".
+- **Sobre tu promedio en {Red}:** el mismo número de la fila. El diseño no lo
+  traía, pero es el número central de toda la pantalla. Sin él, "sin
+  comparar" y por qué: se compara a las 24 horas, o la red todavía no tiene
+  10 publicaciones medidas, o la red no reporta.
 - **Métricas:** alcance, impresiones, me gusta, comentarios y compartidas, las
-  que esa red reporte. Lo que no, "No disponible", con el motivo.
+  que esa red reporte. Lo que no llegó dice "No disponible", y una nota abajo
+  lo nombra ("TikTok no reportó alcance para esta publicación"). Una
+  publicación sin ningún número (en camino, no reporta, sin medición) no
+  enseña cinco "No disponible": en su lugar va la caja de su estado, con su
+  porqué (§4).
 - **Cuándo se midió:** "Medido hace 3 horas".
-- **En otras redes:** si es parte de un concepto.
-- **Acciones:** "Ver en Instagram", "Abrir chat de origen", "Adaptar a otra
-  red".
+- **En otras redes · sobre tu promedio:** si es parte de un concepto. Cada
+  red abre su propio detalle en el mismo panel.
+- **Acciones:** "Ver en Instagram" (si guardamos el enlace), "Abrir chat de
+  origen" (llega al chat con el panel en esa card) y "Adaptar a otra red"
+  (lo mismo, con el composer precargado: "Adapta el borrador de Instagram a ";
+  en móvil llega sin el panel, que taparía el composer). Sin chat de origen,
+  esas dos no aparecen.
+- **Estados propios:** cargando, "No encontramos esa publicación" (borrada,
+  ajena o sin publicar) y error con "Reintentar".
 
 ### "Ver estadísticas"
 
-El botón que estaba apagado desde F6 se prende en las cards publicadas: en el
-Chat, en el panel de la publicación y en el Calendario. Lleva a Analíticas con
-el detalle de esa publicación abierto.
+El botón que estaba apagado desde F6 se prende en toda card publicada y lleva a
+Analíticas con el detalle de esa publicación abierto (`/analiticas?post=`):
+
+- **Chat:** en el banner de "Publicado" y en el pie del panel de la
+  publicación. Los dos conviven: el banner se va con el scroll.
+- **Calendario:** en el menú ⋮ de la publicación y en el modal "Ver" (en un
+  grupo multi-red, el de la pestaña activa).
+
+También se prende si la publicación no tiene medición (se publicó por un
+proveedor que no devuelve el id del post): el detalle abre en "Sin medición
+para esta publicación" y dice por qué, en vez de esconder el botón sin
+explicación.
 
 ---
 

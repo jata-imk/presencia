@@ -2,6 +2,7 @@ import {
   NETWORK_LABELS,
   type BaseDeCalculoDto,
   type EstadoPublicacion,
+  type MuestraDeRed,
   type PeriodoAnaliticas,
   type SocialNetwork,
 } from "@presencia/shared";
@@ -192,6 +193,84 @@ export function copyDeEstado(estado: EstadoPublicacion, red: SocialNetwork): Cop
         detalle: "El servicio con el que se publicó no nos dio cómo seguirla en la red",
       };
   }
+}
+
+// ---------------------------------------------------------------------------
+// El detalle de una publicación (PR 7b)
+
+/**
+ * "12 sep 2026 · 19:30", en la zona del creator. A 24 horas, como el resto
+ * de la app (Calendario, banners de programada y publicada); el diseño decía
+ * "7:30 p.m.".
+ */
+export function fechaYHora(iso: string, timeZone: string): string {
+  const valores = new Intl.DateTimeFormat("es-MX", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone,
+  }).formatToParts(new Date(iso));
+  const de = (tipo: string) => valores.find((p) => p.type === tipo)?.value ?? "";
+  return `${de("day")} ${de("month").replace(".", "")} ${de("year")} · ${de("hour")}:${de("minute")}`;
+}
+
+/**
+ * Por qué una publicación no tiene "sobre tu promedio". Lo primero es su
+ * propia edad (se compara a las 24 h); después, la muestra de su red.
+ * `null` si sí debería tenerlo (la red tiene muestra y la publicación ya
+ * cumplió 24 h, pero llegó sin números): ahí el estado ya lo explica.
+ */
+export function motivoSinLift(
+  muestra: MuestraDeRed,
+  red: SocialNetwork,
+  publishedAt: string,
+  ahora: Date,
+): string | null {
+  if (ahora.getTime() - new Date(publishedAt).getTime() < DIA) {
+    return "Se compara a las 24 horas de publicada";
+  }
+  switch (muestra) {
+    case "no_reporta":
+      return motivoNoReporta(red);
+    case "sin_datos":
+    case "poca":
+      return `${NETWORK_LABELS[red]} todavía no tiene 10 publicaciones medidas para comparar`;
+    case "suficiente":
+      return null;
+  }
+}
+
+export type MetricaDetalle = "reach" | "impressions" | "likes" | "comments" | "shares";
+
+/** El orden y el nombre de las cinco métricas del detalle (lore doc §3). */
+export const METRICAS_DETALLE: { clave: MetricaDetalle; texto: string }[] = [
+  { clave: "reach", texto: "Alcance" },
+  { clave: "impressions", texto: "Impresiones" },
+  { clave: "likes", texto: "Me gusta" },
+  { clave: "comments", texto: "Comentarios" },
+  { clave: "shares", texto: "Compartidas" },
+];
+
+/**
+ * La nota bajo las métricas de una publicación MEDIDA a la que le faltan
+ * algunas: "TikTok no reportó alcance ni compartidas para esta publicación".
+ * Dice lo que no llegó y nada más: qué red da qué lo sabe el motor por los
+ * datos (addendum F12 de ADR-022), no una lista escrita aquí. `null` si
+ * llegaron todas.
+ */
+export function notaDeMetricasFaltantes(
+  red: SocialNetwork,
+  metricas: Record<MetricaDetalle, number | null>,
+): string | null {
+  const faltan = METRICAS_DETALLE.filter(({ clave }) => metricas[clave] === null);
+  if (faltan.length === 0) return null;
+  const lista = new Intl.ListFormat("es-MX", { type: "disjunction" })
+    .format(faltan.map(({ texto }) => texto.toLowerCase()))
+    .replace(/ o /g, " ni ");
+  return `${NETWORK_LABELS[red]} no reportó ${lista} para esta publicación.`;
 }
 
 /** Desde cuánto tiempo sin medir la barra de control dice "Actualizado hace…". */

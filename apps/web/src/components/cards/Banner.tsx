@@ -1,13 +1,15 @@
 import { ArrowRight, BarChart2, CalendarCheck2, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router";
-import { Tooltip } from "../ui/Tooltip.js";
 import { dayKey, formatScheduleDateTime, zonedFromIso } from "../../lib/calendar/tz.js";
 import { useTimezone } from "../../lib/calendar/use-timezone.js";
 
 // Portado de BannerScheduled/BannerPublished (arquetipos.jsx). El mockup
-// muestra métricas de ejemplo ("1,284 vistas · 142 me gusta…") — no hay
-// Analíticas real todavía, así que esa línea se omite en vez de inventar
-// números, y "Ver estadísticas" sigue apagado hasta F12.
+// muestra métricas de ejemplo ("1,284 vistas · 142 me gusta…"); esa línea se
+// omite: los números viven en Analíticas, con su estado y su porqué (una red
+// que no reporta, métricas en camino), y un renglón suelto aquí no puede
+// decir nada de eso. "Ver estadísticas" (F12) lleva al detalle de la
+// publicación en Analíticas, también si no tiene medición: el detalle lo
+// explica.
 //
 // "Ver en calendario" sí funciona desde F7: el día se calcula en la zona
 // del USUARIO, no en la del navegador — si no, un post de las 23:00 abriría
@@ -50,7 +52,7 @@ export function ScheduledBanner({
   );
 }
 
-export function PublishedBanner({ publishedAt }: { publishedAt: string }) {
+export function PublishedBanner({ publishedAt, cardId }: { publishedAt: string; cardId: string }) {
   const timeZone = useTimezone();
   return (
     <div className="flex items-center gap-2.5 border-b border-success-border bg-success-bg px-4 py-2.5">
@@ -60,12 +62,13 @@ export function PublishedBanner({ publishedAt }: { publishedAt: string }) {
       <p className="flex-1 text-xs font-semibold text-success">
         Publicado el {formatScheduleDateTime(publishedAt, timeZone)}
       </p>
-      <Tooltip label="Próximamente">
-        <div className="flex shrink-0 cursor-not-allowed items-center gap-1 rounded-md bg-card px-2 py-1 opacity-60">
-          <BarChart2 size={11} className="text-success" strokeWidth={2} />
-          <span className="text-[11px] font-semibold text-success">Ver estadísticas</span>
-        </div>
-      </Tooltip>
+      <Link
+        to={`/analiticas?post=${cardId}`}
+        className="flex shrink-0 items-center gap-1 rounded-md bg-card px-2 py-1 transition-opacity hover:opacity-80"
+      >
+        <BarChart2 size={11} className="text-success" strokeWidth={2} />
+        <span className="text-[11px] font-semibold text-success">Ver estadísticas</span>
+      </Link>
     </div>
   );
 }

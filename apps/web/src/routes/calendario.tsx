@@ -606,6 +606,11 @@ export function CalendarioPage() {
       onCancel: (target) => {
         void cancelMany(target, { apply, reload, toast });
       },
+      onViewStats: (card) => {
+        // F12: el detalle abre aunque la publicación sea más vieja que el
+        // periodo de Analíticas (presencia-analiticas.md §6).
+        void navigate(`/analiticas?post=${card.id}`);
+      },
     }),
     [apply, cards, navigate, openDrawer, reload, toast],
   );
