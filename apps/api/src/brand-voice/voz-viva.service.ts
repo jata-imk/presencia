@@ -18,7 +18,7 @@ import {
   REGLAS_DE_VOZ_VIVA,
   type DecisionDeVoz,
   type PropuestasDeVozDto,
-  type ReglaDeVozViva,
+  type IdDePropuestaDeVoz,
   type RevisionDeEdicionesDto,
 } from "@presencia/shared";
 import { AiUsageService } from "../ai/ai-usage.service.js";
@@ -74,7 +74,7 @@ export class VozVivaService {
     });
   }
 
-  decidir(userId: string, regla: ReglaDeVozViva, decision: DecisionDeVoz): Promise<void> {
+  decidir(userId: string, regla: IdDePropuestaDeVoz, decision: DecisionDeVoz): Promise<void> {
     return this.dbService.runWithTenant(userId, async (tx) => {
       await this.vozDefault(tx);
       await this.repo.guardarDecision(tx, regla, decision);

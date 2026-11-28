@@ -17,16 +17,34 @@
 // juntarlos encontraría siempre una diferencia, aunque fuera azar; por eso el
 // día se compara solo de ocho maneras (cada día contra el resto, y fin de
 // semana contra entre semana), decidido con Jose en el PR 8.
+//
+// El tercer tipo (PR 9) es un rasgo del texto publicado: con y sin emojis,
+// hashtags o signos de exclamación, abre con pregunta o no, y corto contra
+// largo partido en la mediana de la red. Los dos lados de cada uno, con las
+// mismas tres pruebas. El motor no conoce la voz: dice qué lado ganó, y el
+// servicio le pone la propuesta para «Así escribes».
 
 import type {
-  AnaliticasHallazgoDto,
   CorteDeDia,
   DiaDeLaSemana,
   FormatoPublicado,
+  HallazgoDiaDto,
+  HallazgoFormatoDto,
+  HallazgoVozDto,
   PublicationArchetype,
   SocialNetwork,
+  TextoDePublicacion,
 } from "@presencia/shared";
-import { FORMATOS_PUBLICADOS, cardContentSchema } from "@presencia/shared";
+import {
+  DIRECCIONES_DE_RASGO,
+  FORMATOS_PUBLICADOS,
+  RASGOS_DE_TEXTO,
+  cardContentSchema,
+  corteDeLargo,
+  idDeHallazgoDeVoz,
+  textoPublicado,
+  tieneRasgo,
+} from "@presencia/shared";
 import type { ContextoDeRed, PostAnalizado, PublicacionMedible } from "./analisis.js";
 import { N_MINIMO_GRUPO, promedioDe } from "./engagement.js";
 import { fechaLocal } from "./hora-local.js";
@@ -36,6 +54,14 @@ export const DIFERENCIA_MINIMA = 0.25;
 
 /** Cuántos hallazgos muestra la sección. */
 export const MAXIMO_HALLAZGOS = 3;
+
+/**
+ * Después de un "No" a un hallazgo de voz, cuántas publicaciones medidas
+ * nuevas (de esa red, publicadas después del "No") hacen que vuelva a
+ * preguntar, si se sigue sosteniendo con la ventana completa. Con menos, es la
+ * misma evidencia que ya dijo que no. Decidido con Jose en el PR 9.
+ */
+export const NUEVAS_PARA_VOLVER = 5;
 
 /** Sábado y domingo, con 0 = lunes. */
 const FIN_DE_SEMANA: readonly DiaDeLaSemana[] = [5, 6];
@@ -112,10 +138,23 @@ export interface PublicacionConFormato extends PublicacionMedible {
   content: unknown;
 }
 
+/**
+ * Un hallazgo tal como sale del motor. El de voz todavía sin su propuesta:
+ * la pone el servicio, que es quien lee la voz.
+ */
+export type HallazgoVozDelMotor = Omit<HallazgoVozDto, "propuesta">;
+export type HallazgoDelMotor = HallazgoFormatoDto | HallazgoDiaDto | HallazgoVozDelMotor;
+
+/** Llave de la decisión (`m-emojis-sin-instagram`) → cuándo dijo "No". */
+export type DescartesDeVoz = ReadonlyMap<string, Date>;
+
 interface Punto {
   valor: number;
   formato: FormatoPublicado | null;
   dia: DiaDeLaSemana;
+  /** El texto que se leyó en la red; `null` si el contenido no se pudo leer. */
+  texto: TextoDePublicacion | null;
+  publishedAt: Date;
 }
 
 function mayor<T extends { diferenciaPct: number }>(candidatos: readonly T[]): T | null {
@@ -130,7 +169,7 @@ function mayor<T extends { diferenciaPct: number }>(candidatos: readonly T[]): T
 function hallazgoDeFormato(
   network: SocialNetwork,
   puntos: readonly Punto[],
-): AnaliticasHallazgoDto | null {
+): HallazgoDelMotor | null {
   const valoresDe = (formato: FormatoPublicado) =>
     puntos.filter((p) => p.formato === formato).map((p) => p.valor);
   const candidatos = FORMATOS_PUBLICADOS.flatMap((ganador) =>
@@ -145,10 +184,7 @@ function hallazgoDeFormato(
   return mayor(candidatos);
 }
 
-function hallazgoDeDia(
-  network: SocialNetwork,
-  puntos: readonly Punto[],
-): AnaliticasHallazgoDto | null {
+function hallazgoDeDia(network: SocialNetwork, puntos: readonly Punto[]): HallazgoDelMotor | null {
   const partir = (enGrupo: (dia: DiaDeLaSemana) => boolean) => ({
     dentro: puntos.filter((p) => enGrupo(p.dia)).map((p) => p.valor),
     fuera: puntos.filter((p) => !enGrupo(p.dia)).map((p) => p.valor),
@@ -181,11 +217,90 @@ function hallazgoDeDia(
   return mayor(candidatos);
 }
 
+/**
+ * Todos los rasgos que aguantan las tres pruebas en una red, de mayor a menor
+ * diferencia. En cada rasgo gana a lo más un lado: con 25% de ventaja, el
+ * otro no puede tenerla también.
+ *
+ * Un hallazgo al que el creator dijo "No" se calla hasta que haya
+ * `NUEVAS_PARA_VOLVER` publicaciones medidas nuevas en la red; mientras, su
+ * lugar lo toma el siguiente rasgo.
+ */
+function candidatosDeVoz(
+  network: SocialNetwork,
+  puntos: readonly Punto[],
+  descartes: DescartesDeVoz,
+): HallazgoVozDelMotor[] {
+  const conTexto = puntos.filter(
+    (p): p is Punto & { texto: TextoDePublicacion } => p.texto !== null,
+  );
+  const corte = corteDeLargo(conTexto.map((p) => p.texto));
+  const callado = (id: string) => {
+    const dijoNo = descartes.get(id);
+    if (dijoNo === undefined) return false;
+    const nuevas = puntos.filter((p) => p.publishedAt.getTime() > dijoNo.getTime()).length;
+    return nuevas < NUEVAS_PARA_VOLVER;
+  };
+
+  const candidatos = RASGOS_DE_TEXTO.flatMap((rasgo) => {
+    const con = conTexto.filter((p) => tieneRasgo(rasgo, p.texto, corte)).map((p) => p.valor);
+    const sin = conTexto.filter((p) => !tieneRasgo(rasgo, p.texto, corte)).map((p) => p.valor);
+    return DIRECCIONES_DE_RASGO.flatMap((ganador) => {
+      if (callado(idDeHallazgoDeVoz(rasgo, ganador, network))) return [];
+      const comparacion = ganador === "con" ? compararGrupos(con, sin) : compararGrupos(sin, con);
+      return comparacion
+        ? [
+            {
+              tipo: "voz" as const,
+              network,
+              rasgo,
+              ganador,
+              corte: rasgo === "largo" ? corte : null,
+              ...comparacion,
+            },
+          ]
+        : [];
+    });
+  });
+  // Estable: en un empate queda el orden de RASGOS_DE_TEXTO.
+  return candidatos.sort((a, b) => b.diferenciaPct - a.diferenciaPct);
+}
+
 export interface ResultadoHallazgos {
   /** Alguna red en alcance tiene muestra (≥ 10) para buscar. */
   hayMuestra: boolean;
   /** Como máximo uno por (tipo, red); de mayor a menor diferencia, hasta 3. */
-  hallazgos: AnaliticasHallazgoDto[];
+  hallazgos: HallazgoDelMotor[];
+}
+
+/** Las redes con muestra (≥ 10) dentro del alcance, por nombre. */
+function redesConMuestra(
+  contextos: ReadonlyMap<SocialNetwork, ContextoDeRed>,
+  red: SocialNetwork | null,
+): SocialNetwork[] {
+  return [...contextos.values()]
+    .filter((c) => c.muestra === "suficiente" && (red === null || c.network === red))
+    .map((c) => c.network)
+    .sort();
+}
+
+function puntosDe<P extends PublicacionConFormato>(
+  posts: readonly PostAnalizado<P>[],
+  network: SocialNetwork,
+  timezone: string,
+): Punto[] {
+  return posts.flatMap((post) => {
+    if (post.publicacion.network !== network || post.a24h === null) return [];
+    return [
+      {
+        valor: post.a24h,
+        formato: formatoPublicado(post.publicacion.archetype, post.publicacion.content),
+        dia: fechaLocal(post.publicacion.publishedAt, timezone).diaSemana as DiaDeLaSemana,
+        texto: textoPublicado(post.publicacion.content),
+        publishedAt: post.publicacion.publishedAt,
+      },
+    ];
+  });
 }
 
 /**
@@ -205,34 +320,48 @@ export function hallazgosDe<P extends PublicacionConFormato>(
   contextos: ReadonlyMap<SocialNetwork, ContextoDeRed>,
   timezone: string,
   red: SocialNetwork | null,
+  descartes: DescartesDeVoz = new Map(),
 ): ResultadoHallazgos {
-  const redes = [...contextos.values()]
-    .filter((c) => c.muestra === "suficiente" && (red === null || c.network === red))
-    .map((c) => c.network)
-    .sort();
+  const redes = redesConMuestra(contextos, red);
 
   const hallazgos = redes.flatMap((network) => {
-    const puntos: Punto[] = posts.flatMap((post) => {
-      if (post.publicacion.network !== network || post.a24h === null) return [];
-      return [
-        {
-          valor: post.a24h,
-          formato: formatoPublicado(post.publicacion.archetype, post.publicacion.content),
-          dia: fechaLocal(post.publicacion.publishedAt, timezone).diaSemana as DiaDeLaSemana,
-        },
-      ];
-    });
-    return [hallazgoDeFormato(network, puntos), hallazgoDeDia(network, puntos)].filter(
-      (h): h is AnaliticasHallazgoDto => h !== null,
-    );
+    const puntos = puntosDe(posts, network, timezone);
+    return [
+      hallazgoDeFormato(network, puntos),
+      hallazgoDeDia(network, puntos),
+      candidatosDeVoz(network, puntos, descartes)[0] ?? null,
+    ].filter((h): h is HallazgoDelMotor => h !== null);
   });
 
   return {
     hayMuestra: redes.length > 0,
     // `sort` es estable: en un empate queda el orden de arriba (red por
-    // nombre, formato antes que día).
+    // nombre; formato, día y voz).
     hallazgos: hallazgos
       .sort((a, b) => b.diferenciaPct - a.diferenciaPct)
       .slice(0, MAXIMO_HALLAZGOS),
   };
+}
+
+/** Cuántos rasgos por red lista Configuración › Voz de marca. */
+export const MAXIMO_VOZ_POR_RED = 3;
+
+/**
+ * Los hallazgos de voz para Configuración › Voz de marca: sin el tope de 3 de
+ * la sección (ahí compiten con formato y día) y hasta `MAXIMO_VOZ_POR_RED`
+ * por red, porque cada uno es una propuesta distinta para «Así escribes».
+ * Mismas pruebas y mismos descartes que `hallazgosDe`.
+ */
+export function hallazgosDeVoz<P extends PublicacionConFormato>(
+  posts: readonly PostAnalizado<P>[],
+  contextos: ReadonlyMap<SocialNetwork, ContextoDeRed>,
+  timezone: string,
+  descartes: DescartesDeVoz = new Map(),
+): HallazgoVozDelMotor[] {
+  return redesConMuestra(contextos, null).flatMap((network) =>
+    candidatosDeVoz(network, puntosDe(posts, network, timezone), descartes).slice(
+      0,
+      MAXIMO_VOZ_POR_RED,
+    ),
+  );
 }

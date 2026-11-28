@@ -6,6 +6,7 @@ import {
   compararGrupos,
   formatoPublicado,
   hallazgosDe,
+  hallazgosDeVoz,
   type PublicacionConFormato,
 } from "./hallazgos.js";
 
@@ -325,5 +326,149 @@ describe("hallazgosDe: muestra y alcance", () => {
     const diferencias = hallazgos.map((h) => h.diferenciaPct);
     expect(diferencias).toEqual([...diferencias].sort((a, b) => b - a));
     expect(hallazgos.every((h) => h.network === "linkedin" || h.network === "facebook")).toBe(true);
+  });
+});
+
+describe("hallazgosDe: rasgo del texto (voz)", () => {
+  // Mismo largo (11) para que el corte de largo no parta nada: el ☕ es una
+  // sola unidad de UTF-16.
+  const texto = (body: string, hashtags: string[] = []) => ({
+    archetype: "text_first",
+    body,
+    hashtags,
+    assetIds: [],
+  });
+  const SIN = texto("Hola amigos");
+  const CON_EMOJI = texto("Hola amigo☕");
+  const ctx = contextos(contexto("instagram"));
+  const voz = (posts: PostAnalizado<PublicacionConFormato>[], descartes?: Map<string, Date>) =>
+    hallazgosDe(posts, ctx, ZONA, null, descartes).hallazgos.filter((h) => h.tipo === "voz");
+
+  it("sin emojis tuvo más: lo nombra con su base", () => {
+    const posts = [
+      ...varios(6, 0.09, { content: SIN }),
+      ...varios(8, 0.05, { content: CON_EMOJI }),
+    ];
+    expect(voz(posts)).toEqual([
+      {
+        tipo: "voz",
+        network: "instagram",
+        rasgo: "emojis",
+        ganador: "sin",
+        corte: null,
+        diferenciaPct: 80,
+        nGanador: 6,
+        nPerdedor: 8,
+      },
+    ]);
+  });
+
+  it("y al revés: con emojis tuvo más", () => {
+    const posts = [
+      ...varios(6, 0.09, { content: CON_EMOJI }),
+      ...varios(8, 0.05, { content: SIN }),
+    ];
+    expect(voz(posts)).toMatchObject([{ rasgo: "emojis", ganador: "con", nGanador: 6 }]);
+  });
+
+  it("largo contra corto se parte en la mediana de la red, y la dice", () => {
+    const posts = [
+      ...varios(7, 0.09, { content: texto("Corto") }),
+      ...varios(7, 0.05, { content: texto("Un texto bastante más largo") }),
+    ];
+    expect(voz(posts)).toMatchObject([
+      { rasgo: "largo", ganador: "sin", corte: 16, nGanador: 7, nPerdedor: 7 },
+    ]);
+  });
+
+  it("abre con una pregunta", () => {
+    const posts = [
+      ...varios(6, 0.09, { content: texto("¿Ya viste eso?") }),
+      ...varios(8, 0.05, { content: texto("Ya viste esto.") }),
+    ];
+    expect(voz(posts)).toMatchObject([{ rasgo: "pregunta", ganador: "con" }]);
+  });
+
+  it("en un video se lee el caption: los emojis del guion no cuentan", () => {
+    const video = (script: string) => ({
+      archetype: "video_script",
+      hook: "Tres apps",
+      script,
+      caption: "Hola amigos",
+      hashtags: [],
+      assetIds: [],
+    });
+    const posts = [
+      ...varios(6, 0.09, { content: video("Mira ☕☕"), network: "tiktok" }),
+      ...varios(8, 0.05, { content: video("Mira esto"), network: "tiktok" }),
+    ];
+    const { hallazgos } = hallazgosDe(posts, contextos(contexto("tiktok")), ZONA, null);
+    expect(hallazgos.filter((h) => h.tipo === "voz")).toEqual([]);
+  });
+
+  describe("después de un «No»", () => {
+    // Dos rasgos que se sostienen igual: el emoji y el "!" van juntos.
+    const CON_LOS_DOS = texto("Hola amig!☕");
+    const fuerte = () => [
+      ...varios(6, 0.09, { content: SIN }),
+      ...varios(8, 0.05, { content: CON_LOS_DOS }),
+    ];
+    const dijoNo = new Date(LUNES + DIA);
+    const despues = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        post(0.09, { content: SIN, publishedAt: new Date(LUNES + (2 + i) * DIA) }),
+      );
+
+    it("sin publicaciones nuevas calla, y el siguiente rasgo toma su lugar", () => {
+      expect(voz(fuerte())).toMatchObject([{ rasgo: "emojis", ganador: "sin" }]);
+      const callado = voz(fuerte(), new Map([["m-emojis-sin-instagram", dijoNo]]));
+      expect(callado).toMatchObject([{ rasgo: "exclamaciones", ganador: "sin" }]);
+    });
+
+    it("con 4 publicaciones nuevas sigue callado; con 5 vuelve a preguntar", () => {
+      const descartes = new Map([
+        ["m-emojis-sin-instagram", dijoNo],
+        ["m-exclamaciones-sin-instagram", dijoNo],
+      ]);
+      expect(voz([...fuerte(), ...despues(4)], descartes)).toEqual([]);
+      expect(voz([...fuerte(), ...despues(5)], descartes)).toMatchObject([
+        { rasgo: "emojis", ganador: "sin", nGanador: 11 },
+      ]);
+    });
+
+    it("un «No» en otra red no calla esta", () => {
+      expect(voz(fuerte(), new Map([["m-emojis-sin-facebook", dijoNo]]))).toMatchObject([
+        { rasgo: "emojis" },
+      ]);
+    });
+  });
+
+  it("uno de voz por red en la sección; Configuración los ve todos (hasta 3)", () => {
+    const posts = [
+      ...varios(6, 0.09, { content: SIN }),
+      ...varios(8, 0.05, { content: texto("Hola amig!☕") }),
+    ];
+    expect(voz(posts)).toHaveLength(1);
+    expect(hallazgosDeVoz(posts, ctx, ZONA).map((h) => h.rasgo)).toEqual([
+      "emojis",
+      "exclamaciones",
+    ]);
+  });
+
+  it("la voz compite por el tope de 3 con formato y día", () => {
+    const redes: SocialNetwork[] = ["instagram", "facebook"];
+    const posts = redes.flatMap((network) => [
+      // Carruseles de lunes sin emojis contra texto con emojis del resto:
+      // formato, día y voz a la vez en cada red.
+      ...varios(6, 0.09, { content: { ...CARRUSEL, caption: "Hola amigos" }, network, dia: 0 }),
+      ...[1, 2, 3, 4].flatMap((dia) => varios(2, 0.05, { content: CON_EMOJI, network, dia })),
+    ]);
+    const { hallazgos } = hallazgosDe(
+      posts,
+      contextos(...redes.map((r) => contexto(r))),
+      ZONA,
+      null,
+    );
+    expect(hallazgos).toHaveLength(3);
   });
 });

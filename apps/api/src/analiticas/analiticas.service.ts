@@ -2,7 +2,18 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   buildPostText,
   cardContentSchema,
+  decisionesDeVoz,
+  estadoDeVoz,
+  fraseDeHallazgoDeVoz,
+  RASGOS_DE_TEXTO,
+  rasgoQueSeSuma,
+  idDeHallazgoDeVoz,
   VENTANA_HALLAZGOS_DIAS,
+  type AnaliticasHallazgoDto,
+  type AnaliticasPropuestasDeVozDto,
+  type DecisionesDeVoz,
+  type HallazgoVozDto,
+  type PropuestaDeVozDto,
   type AnaliticasConceptoDto,
   type AnaliticasCuentaDto,
   type AnaliticasHallazgosDto,
@@ -16,6 +27,7 @@ import {
   type PeriodoAnaliticas,
   type SocialNetwork,
 } from "@presencia/shared";
+import { BrandVoiceRepository, type BrandVoiceRow } from "../brand-voice/brand-voice.repository.js";
 import { ChannelsRepository } from "../channels/channels.repository.js";
 import { DbService, type Tx } from "../db/db.service.js";
 import {
@@ -24,7 +36,12 @@ import {
   type ConceptoAnalizado,
   type PostAnalizado,
 } from "../metrics/analisis.js";
-import { hallazgosDe } from "../metrics/hallazgos.js";
+import {
+  hallazgosDe,
+  hallazgosDeVoz,
+  type DescartesDeVoz,
+  type HallazgoVozDelMotor,
+} from "../metrics/hallazgos.js";
 import { MetricsEngineService, type ContextoUsuario } from "../metrics/metrics-engine.service.js";
 import type { FilaPublicacionAnalizable } from "../metrics/metrics.read.repository.js";
 import { ProfileRepository } from "../profile/profile.repository.js";
@@ -45,6 +62,7 @@ export class AnaliticasService {
     @Inject(MetricsEngineService) private readonly motor: MetricsEngineService,
     @Inject(ProfileRepository) private readonly profileRepo: ProfileRepository,
     @Inject(ChannelsRepository) private readonly channelsRepo: ChannelsRepository,
+    @Inject(BrandVoiceRepository) private readonly brandVoiceRepo: BrandVoiceRepository,
   ) {}
 
   async resumen(
@@ -123,17 +141,52 @@ export class AnaliticasService {
    * aparecería y desaparecería al cambiar el periodo.
    */
   async hallazgos(userId: string, red: SocialNetwork | null): Promise<AnaliticasHallazgosDto> {
-    const contexto = await this.contextoDe(userId);
-    const { analisis } = await this.dbService.runWithTenant(userId, (tx) =>
-      this.motor.analizar(tx, VENTANA_HALLAZGOS_DIAS, contexto),
-    );
+    const { contexto, analisis, voz } = await this.analisisConVoz(userId);
+    const decisiones = decisionesDeVoz(voz?.voiceProposalDecisions);
     const { hayMuestra, hallazgos } = hallazgosDe(
       analisis.posts,
       analisis.contextos,
       contexto.timezone,
       red,
+      descartesDe(decisiones),
     );
-    return { ventanaDias: VENTANA_HALLAZGOS_DIAS, red, hayMuestra, hallazgos };
+    const notas = voz?.styleNotes ?? [];
+    return {
+      ventanaDias: VENTANA_HALLAZGOS_DIAS,
+      red,
+      hayMuestra,
+      hallazgos: hallazgos.map((h): AnaliticasHallazgoDto =>
+        h.tipo === "voz" ? conPropuesta(h, notas) : h,
+      ),
+    };
+  }
+
+  /**
+   * Los hallazgos de voz como propuestas para Configuración › Voz de marca,
+   * junto a las de «Aprender de mis ediciones» (lore doc de Analíticas §5).
+   *
+   * - Con «Aprender de mis ediciones» apagado, ninguna: ahí el interruptor
+   *   manda. En Analíticas el hallazgo sigue, porque es un dato.
+   * - Solo las que se pueden agregar (o que piden quitar un rasgo para
+   *   caber). "Ya lo dice" no es propuesta, y "lo contradice" se queda en
+   *   Analíticas, cuyo "Revisar mi voz" lleva justo aquí.
+   * - Dos redes con el mismo rasgo son una tarjeta: la de mayor diferencia,
+   *   con las llaves de las otras en `otrosIds` para que un "No" las anote.
+   * - Si las redes no están de acuerdo (en Instagram ganó "sin emojis" y en
+   *   TikTok "con emojis"), ese rasgo no se propone: la voz es una sola, y
+   *   ofrecer los dos lados dejaría a «Así escribes» contradiciéndose (review
+   *   del PR 9a). En Analíticas cada red sigue con su hallazgo.
+   */
+  async propuestasDeVoz(userId: string): Promise<AnaliticasPropuestasDeVozDto> {
+    const { contexto, analisis, voz } = await this.analisisConVoz(userId);
+    if (!voz?.learnFromEdits) return { propuestas: [] };
+    const todos = hallazgosDeVoz(
+      analisis.posts,
+      analisis.contextos,
+      contexto.timezone,
+      descartesDe(decisionesDeVoz(voz.voiceProposalDecisions)),
+    );
+    return { propuestas: propuestasDeVozDe(todos, voz.styleNotes) };
   }
 
   async detalle(
@@ -189,6 +242,22 @@ export class AnaliticasService {
       });
     }
     return cuentas;
+  }
+
+  /**
+   * El análisis de 90 días de los hallazgos, más la voz default: sus rasgos
+   * deciden qué propone un hallazgo de voz, y sus decisiones cuáles se callan.
+   * Analíticas lee la voz y nunca la escribe (el rasgo llega por el PATCH de
+   * «Así escribes»). En serie: una transacción, una query a la vez.
+   */
+  private async analisisConVoz(userId: string) {
+    const contexto = await this.contextoDe(userId);
+    const { analisis, voz } = await this.dbService.runWithTenant(userId, async (tx) => {
+      const resultado = await this.motor.analizar(tx, VENTANA_HALLAZGOS_DIAS, contexto);
+      const fila: BrandVoiceRow | undefined = await this.brandVoiceRepo.findDefault(tx);
+      return { analisis: resultado.analisis, voz: fila };
+    });
+    return { contexto, analisis, voz };
   }
 
   private async contextoDe(userId: string): Promise<ContextoUsuario> {
@@ -268,4 +337,75 @@ export function ordenarPorLift(filas: AnaliticasPublicacionDto[]): AnaliticasPub
     if (a.lift === null && b.lift !== null) return 1;
     return b.publishedAt.localeCompare(a.publishedAt);
   });
+}
+
+/**
+ * Los "No" a hallazgos de voz: su llave y cuándo se dijeron.
+ *
+ * Solo el "No" calla, a diferencia de las reglas de voz viva, donde cualquier
+ * decisión reinicia la cuenta. Después de "Agregar" el hallazgo sigue
+ * diciendo lo que vio, ahora como "Tu voz ya lo dice" (5f del diseño); si el
+ * creator quita el rasgo después, vuelve a proponerlo con lo que sigue
+ * viendo, porque quitarlo no es decir "No" a esta evidencia.
+ */
+function descartesDe(decisiones: DecisionesDeVoz): DescartesDeVoz {
+  const descartes = new Map<string, Date>();
+  for (const [id, decision] of Object.entries(decisiones)) {
+    if (id.startsWith("m-") && decision?.decision === "descartada") {
+      descartes.set(id, new Date(decision.at));
+    }
+  }
+  return descartes;
+}
+
+/**
+ * Las propuestas de Configuración a partir de los hallazgos de voz de todas
+ * las redes (ver `propuestasDeVoz`). Pura, para probarla sin base de datos.
+ */
+export function propuestasDeVozDe(
+  todos: readonly HallazgoVozDelMotor[],
+  notas: readonly string[],
+): PropuestaDeVozDto[] {
+  const enDesacuerdo = new Set(
+    RASGOS_DE_TEXTO.filter(
+      (rasgo) => new Set(todos.filter((h) => h.rasgo === rasgo).map((h) => h.ganador)).size > 1,
+    ),
+  );
+  const candidatos = todos
+    .filter((h) => !enDesacuerdo.has(h.rasgo))
+    .map((h) => conPropuesta(h, notas))
+    .filter((h) => h.propuesta.voz.estado === "propone" || h.propuesta.voz.estado === "lleno")
+    // Estable: en un empate queda la red por nombre.
+    .sort((a, b) => b.diferenciaPct - a.diferenciaPct);
+
+  // Por rasgo y no por texto: ya no quedan dos lados del mismo rasgo.
+  const porRasgo = new Map<string, { hallazgo: HallazgoVozDto; otros: string[] }>();
+  for (const hallazgo of candidatos) {
+    const ya = porRasgo.get(hallazgo.rasgo);
+    if (ya) ya.otros.push(hallazgo.propuesta.id);
+    else porRasgo.set(hallazgo.rasgo, { hallazgo, otros: [] });
+  }
+  return [...porRasgo.values()].map(({ hallazgo, otros }) => {
+    const frase = fraseDeHallazgoDeVoz(hallazgo);
+    return {
+      id: hallazgo.propuesta.id,
+      origen: "metricas",
+      mensaje: `${frase.antes}${frase.numero}${frase.despues}`,
+      rasgo: hallazgo.propuesta.rasgo,
+      evidencia: [],
+      otrosIds: otros,
+    };
+  });
+}
+
+/** El hallazgo de voz con lo que le propone a «Así escribes», contra la voz de hoy. */
+function conPropuesta(hallazgo: HallazgoVozDelMotor, notas: readonly string[]): HallazgoVozDto {
+  return {
+    ...hallazgo,
+    propuesta: {
+      id: idDeHallazgoDeVoz(hallazgo.rasgo, hallazgo.ganador, hallazgo.network),
+      rasgo: rasgoQueSeSuma(hallazgo.rasgo, hallazgo.ganador),
+      voz: estadoDeVoz(notas, hallazgo.rasgo, hallazgo.ganador),
+    },
+  };
 }

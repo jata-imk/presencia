@@ -1,5 +1,9 @@
 import {
   NETWORK_LABELS,
+  baseDeHallazgoDeVoz,
+  fraseDeHallazgoDeVoz,
+  textoDiferencia,
+  type FraseDeHallazgo,
   type AnaliticasHallazgoDto,
   type BaseDeCalculoDto,
   type DiaDeLaSemana,
@@ -338,26 +342,13 @@ const DIAS: Record<DiaDeLaSemana, string> = {
   6: "domingo",
 };
 
-/**
- * "31% más" o, desde el doble, "2.4 veces más" (lore doc §5). `diferenciaPct`
- * es cuánto MÁS rindió el ganador, así que el múltiplo es 1 + pct/100.
- */
-export function textoDiferencia(diferenciaPct: number): string {
-  // Se redondea antes de decidir: un 99.6 que se diría "100% más" ya es el doble.
-  const pct = Math.round(diferenciaPct);
-  const veces = 1 + pct / 100;
-  if (veces >= 2) return `${unDecimal.format(Math.round(veces * 10) / 10)} veces más`;
-  return `${entero.format(pct)}% más`;
-}
-
-/** La frase de un hallazgo en tres partes: la del medio va en `strong`. */
-export interface FraseDeHallazgo {
-  antes: string;
-  numero: string;
-  despues: string;
-}
+// `textoDiferencia` y la frase del hallazgo de voz viven en shared
+// (`frases-de-hallazgo.ts`): la API escribe con ellas el `mensaje` de la
+// propuesta de Configuración, y tienen que decir lo mismo que la tarjeta.
+export { textoDiferencia, type FraseDeHallazgo };
 
 export function fraseDeHallazgo(hallazgo: AnaliticasHallazgoDto): FraseDeHallazgo {
+  if (hallazgo.tipo === "voz") return fraseDeHallazgoDeVoz(hallazgo);
   const red = NETWORK_LABELS[hallazgo.network];
   const numero = `${textoDiferencia(hallazgo.diferenciaPct)} interacción`;
   if (hallazgo.tipo === "formato") {
@@ -391,6 +382,7 @@ export function fraseDeHallazgo(hallazgo: AnaliticasHallazgoDto): FraseDeHallazg
 
 /** "Basado en 18 publicaciones de Instagram (8 carruseles, 10 de solo texto)". */
 export function baseDeHallazgo(hallazgo: AnaliticasHallazgoDto): string {
+  if (hallazgo.tipo === "voz") return baseDeHallazgoDeVoz(hallazgo);
   const total = hallazgo.nGanador + hallazgo.nPerdedor;
   const inicio = `Basado en ${String(total)} publicaciones de ${NETWORK_LABELS[hallazgo.network]}`;
   if (hallazgo.tipo === "formato") {

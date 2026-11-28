@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
-import { Activity, CalendarDays, MessageSquare, Sparkles, Telescope } from "lucide-react";
+import {
+  Activity,
+  CalendarDays,
+  MessageSquare,
+  PenLine,
+  Sparkles,
+  Telescope,
+  type LucideIcon,
+} from "lucide-react";
 import type {
   AnaliticasHallazgoDto,
   AnaliticasHallazgosDto,
@@ -72,6 +80,14 @@ function llaveDe(hallazgo: AnaliticasHallazgoDto): string {
   return `${hallazgo.tipo}:${hallazgo.network}`;
 }
 
+const ICONOS: Record<AnaliticasHallazgoDto["tipo"], LucideIcon> = {
+  formato: Sparkles,
+  dia: CalendarDays,
+  // Por ahora el de voz se ve sin acción: "Agregar a «Así escribes»" / "No"
+  // llegan en el PR 9b de F12.
+  voz: PenLine,
+};
+
 const CTA =
   "inline-flex items-center gap-[7px] self-start rounded-full px-4 py-2 font-display text-[13px] font-semibold transition-colors";
 
@@ -85,7 +101,7 @@ function Tarjeta({
   onVerEnRitmo: (red: SocialNetwork) => void;
 }) {
   const { antes, numero, despues } = fraseDeHallazgo(hallazgo);
-  const Icono = hallazgo.tipo === "formato" ? Sparkles : CalendarDays;
+  const Icono = ICONOS[hallazgo.tipo];
   return (
     <article className="flex w-full flex-col gap-3 rounded-xl border border-line bg-card p-5">
       <span className="flex size-[30px] items-center justify-center rounded-lg bg-tint-plum">
@@ -97,7 +113,7 @@ function Tarjeta({
         {despues}
       </p>
       <p className="mt-auto text-xs text-fg-muted">{baseDeHallazgo(hallazgo)}</p>
-      {hallazgo.tipo === "formato" ? (
+      {hallazgo.tipo === "voz" ? null : hallazgo.tipo === "formato" ? (
         <button
           type="button"
           onClick={() => onCrearEnChat(hallazgo)}

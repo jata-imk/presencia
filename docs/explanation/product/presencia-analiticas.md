@@ -327,7 +327,16 @@ Todo se compara a las 24 horas de publicado, para que la edad no decida.
 | **Día de la semana**  | En Facebook, los martes contra el resto de la semana; o fin de semana contra entre semana                         | "Ver en Ritmo"                    |
 | **Rasgo de tu texto** | Con y sin emojis, con y sin hashtags, corto contra largo, abre con pregunta o no, con y sin signos de exclamación | "Agregar a «Así escribes»" / "No" |
 
-Los rasgos se leen del texto que se publicó, no del borrador.
+Los rasgos se leen del texto que se publicó, no del borrador. En un video, del
+caption: el gancho y el guion se dicen, no se leen.
+
+- **Cada rasgo tiene dos lados**, y gana el que rindió más: "sin emojis" o
+  "con emojis", "abre con una pregunta" o "no abre con una pregunta". Lo que
+  se propone sumar depende del lado ("Casi sin emojis" o "Usa emojis").
+- **Corto contra largo** se parte en la mediana de esa red, y el hallazgo dice
+  el corte: "tus publicaciones de menos de 180 caracteres". Un corte fijo no
+  sirve: un caption de TikTok y un post de LinkedIn viven en largos distintos.
+- **Emojis, hashtags y signos de exclamación:** ninguno contra al menos uno.
 
 - **Formato** es lo que se publicó (carrusel, una imagen, video o solo texto),
   no el tipo de card: en cada red el tipo de card es siempre el mismo
@@ -374,7 +383,10 @@ allá, lo que tú corriges; aquí, cómo le fue.
 - **"Agregar a «Así escribes»"** suma el rasgo ("Casi sin emojis") a tu Voz de
   marca. Desde ahí, lo que Presencia escriba por ti lo respeta.
 - **"No"** se anota: ese hallazgo no vuelve a preguntar con la misma
-  evidencia, solo con publicaciones posteriores.
+  evidencia, solo con publicaciones posteriores. En concreto, vuelve cuando esa
+  red tiene cinco publicaciones medidas nuevas y el hallazgo se sigue
+  sosteniendo con los 90 días completos. Mientras, su lugar en la sección lo
+  toma el siguiente.
 - **Si tu voz ya lo dice** ("Sin emojis"), el hallazgo se muestra sin botón:
   confirma lo que ya haces.
 - **Si tu voz dice lo contrario** ("Usa muchos emojis"), no hay "Agregar". El
@@ -384,7 +396,10 @@ allá, lo que tú corriges; aquí, cómo le fue.
   cambia ni quita un rasgo por su cuenta.
 - **La propuesta también aparece en Configuración › Voz de marca**, junto a
   las de tus ediciones, con el mismo punto de aviso. Decidir en un lugar la
-  resuelve en los dos.
+  resuelve en los dos. Ahí no compite con formato ni día: salen las que se
+  pueden agregar, de todas tus redes. Si dos redes (o tus ediciones) proponen
+  el mismo rasgo, es una sola tarjeta. "Tu voz dice lo contrario" no sale
+  ahí: ya estás en la pantalla donde se revisa.
 - **Con «Aprender de mis ediciones» apagado**, las propuestas no aparecen en
   Configuración. El hallazgo en Analíticas sigue ahí: es un dato sobre tus
   publicaciones, y viniste a verlo.

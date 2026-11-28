@@ -27,16 +27,32 @@
  *     siembra Ritmo, el grupo pasa de 5 y el efecto aguanta quitar la mejor.
  *   Sin esto el seed no tiene ni un carrusel y el día no pesa en nada: la
  *   sección Hallazgos solo se podría ver vacía.
+ * - **Dos hallazgos de voz** (PR 9):
+ *   - TikTok: seis videos de hace 62–89 días cuyo caption abre con una
+ *     pregunta, a ~1.6×. La voz de dev dice "Abres con una pregunta que pica":
+ *     sale como "Tu voz ya lo dice" con `?red=tiktok` (sin red, queda fuera
+ *     del tope de 3).
+ *   - Facebook: "Textos largos y desarrollados", que propone. Este no se
+ *     planta: sale solo, porque el historial de Ritmo mide 29 caracteres y los
+ *     martes del PR 8 son más largos (una coincidencia, como las de verdad).
+ *     Si cambia el seed de Ritmo puede irse; el log no lo promete.
  * - Todo en un chat dentro de la carpeta "Analíticas", para el encabezado del
  *   detalle.
  *
  * Se recrea en cada corrida, como los demás chats de ejemplo: el historial se
  * ancla a "ahora", así que sembrarlo de nuevo lo mantiene fresco.
  */
-import { eq, inArray, like } from "drizzle-orm";
+import { and, eq, inArray, like, sql } from "drizzle-orm";
 import type { CardContent, SocialNetwork } from "@presencia/shared";
 import type { Tx } from "../src/db/db.service.js";
-import { chats, folders, postMetrics, publicationCards, socialAccounts } from "../src/db/schema.js";
+import {
+  brandVoices,
+  chats,
+  folders,
+  postMetrics,
+  publicationCards,
+  socialAccounts,
+} from "../src/db/schema.js";
 import { acumuladoEn, generador, snapshotsDe } from "./seed-ritmo.js";
 
 const HORA = 60 * 60 * 1000;
@@ -62,11 +78,11 @@ interface Siembra {
   sinSnapshots?: boolean;
 }
 
-const video = (hook: string): CardContent => ({
+const video = (hook: string, caption = `${hook} ¿Cuál usas tú?`): CardContent => ({
   archetype: "video_script",
   hook,
   script: "Tres pasos, sin relleno. Corte a pantalla, demostración, cierre con pregunta.",
-  caption: `${hook} ¿Cuál usas tú?`,
+  caption,
   hashtags: ["productividad", "merida"],
   assetIds: [],
 });
@@ -241,6 +257,27 @@ function planear(ahora: Date): Siembra[] {
     });
   }
 
+  // El hallazgo de voz (PR 9): TikTok cuyos captions abren con una pregunta
+  // rindieron ~40% más. La voz de dev ya dice "Abres con una pregunta que
+  // pica", así que sale como "Tu voz ya lo dice" con `?red=tiktok` (sin la
+  // red, el tope de 3 lo deja fuera, detrás del martes de Facebook). El de
+  // Facebook que propone ("Textos largos y desarrollados") no se planta: sale
+  // solo, porque el historial de Ritmo mide 29 caracteres y los martes son
+  // más largos.
+  for (const [i, publishedAt] of viejos
+    .filter((_, j) => j % 3 === 1)
+    .slice(0, 6)
+    .entries()) {
+    siembras.push({
+      network: "tiktok",
+      publishedAt,
+      content: video(tema(i + 2), `¿Ya conocías esto? ${tema(i + 2)}`),
+      medir: true,
+      audiencia: Math.round(7200 + azar() * 600),
+      tasa: 0.065 * 1.6 * (0.92 + azar() * 0.16),
+    });
+  }
+
   // Recién salida: la red todavía no contesta.
   siembras.push({
     network: "instagram",
@@ -299,6 +336,19 @@ export async function seedAnaliticas(
   // Las métricas no caen con la card (`card_id` es set null): van por prefijo.
   await tx.delete(postMetrics).where(like(postMetrics.platformPostId, `${PREFIJO}%`));
   await tx.delete(folders).where(eq(folders.name, CARPETA));
+  // Los "No" y "Agregar" a hallazgos de voz (`m-…`) de la corrida anterior:
+  // sin esto, un hallazgo descartado no vuelve hasta que haya cinco
+  // publicaciones nuevas, y el seed no las crea. Las de voz viva no se tocan.
+  await tx
+    .update(brandVoices)
+    .set({
+      voiceProposalDecisions: sql`(
+        select coalesce(jsonb_object_agg(llave, valor), '{}'::jsonb)
+        from jsonb_each(${brandVoices.voiceProposalDecisions}) as e(llave, valor)
+        where llave not like 'm-%'
+      )`,
+    })
+    .where(and(eq(brandVoices.userId, userId), eq(brandVoices.isDefault, true)));
 
   const [carpeta] = await tx
     .insert(folders)
@@ -330,6 +380,12 @@ export async function seedAnaliticas(
         status: "published" as const,
         content: siembra.content,
         groupId: siembra.groupId ?? null,
+        // Nace cuando se publicó, no al correr el seed. Todo el seed va en una
+        // transacción y comparte `now()`: con 85 cards de "ahora", las 40 que
+        // lee «Aprender de mis ediciones» ya no alcanzaban a las de voz viva y
+        // su propuesta desaparecía (PR 9).
+        createdAt: siembra.publishedAt,
+        updatedAt: siembra.publishedAt,
         scheduledAt: siembra.publishedAt,
         publishedAt: siembra.publishedAt,
         socialAccountId: cuentaDe(siembra.network),

@@ -13,6 +13,7 @@ import {
   analiticasHallazgosQuerySchema,
   analiticasQuerySchema,
   type AnaliticasHallazgosDto,
+  type AnaliticasPropuestasDeVozDto,
   type AnaliticasPublicacionDetalleDto,
   type AnaliticasPublicacionesDto,
   type AnaliticasQuery,
@@ -77,6 +78,16 @@ export class AnaliticasController {
     const parsed = analiticasHallazgosQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Esa red no es válida.");
     return this.service.hallazgos(user.id, parsed.data.red ?? null);
+  }
+
+  /**
+   * Los hallazgos de voz como propuestas para Configuración › Voz de marca.
+   * Vive aquí y no en `/brand-voice/propuestas` porque BrandVoice no importa
+   * Metrics: la web junta las dos listas.
+   */
+  @Get("propuestas-de-voz")
+  propuestasDeVoz(@CurrentUser() user: SessionUser): Promise<AnaliticasPropuestasDeVozDto> {
+    return this.service.propuestasDeVoz(user.id);
   }
 
   /** El panel de detalle. Abre aunque la publicación sea más vieja que el periodo. */

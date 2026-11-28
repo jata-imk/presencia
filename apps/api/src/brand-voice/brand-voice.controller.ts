@@ -15,7 +15,7 @@ import {
   createBrandVoiceBodySchema,
   decisionDeVozBodySchema,
   destilarVozBodySchema,
-  reglaDeVozVivaSchema,
+  idDePropuestaDeVozSchema,
   updateBrandVoiceBodySchema,
   type BrandVoiceDto,
   type BrandVoiceExampleDto,
@@ -101,14 +101,17 @@ export class BrandVoiceController {
     return this.vozViva.aprender(user.id, parsed.data.aprender);
   }
 
-  @Post("propuestas/:regla/decision")
+  // `:id` es una regla de «Aprender de mis ediciones» o la llave de un
+  // hallazgo de voz de Analíticas (`m-emojis-sin-instagram`): la misma
+  // pregunta con otra evidencia, en la misma columna.
+  @Post("propuestas/:id/decision")
   @HttpCode(204)
   async decidir(
     @CurrentUser() user: SessionUser,
-    @Param("regla") regla: string,
+    @Param("id") llave: string,
     @Body() body: unknown,
   ): Promise<void> {
-    const id = reglaDeVozVivaSchema.safeParse(regla);
+    const id = idDePropuestaDeVozSchema.safeParse(llave);
     const parsed = decisionDeVozBodySchema.safeParse(body ?? {});
     if (!id.success || !parsed.success) {
       throw new BadRequestException("Esa propuesta no existe.");
