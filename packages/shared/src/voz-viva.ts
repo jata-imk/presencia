@@ -1,5 +1,20 @@
 import { z } from "zod";
-import { normalizeHashtags } from "./publication.js";
+import { socialNetworkSchema, type SocialNetwork } from "./publication.js";
+import {
+  DIRECCIONES_DE_RASGO,
+  EMOJI_UNO,
+  HASHTAG_EN_TEXTO,
+  RASGOS_DE_TEXTO,
+  contarEmojis,
+  contarExclamaciones,
+  contarHashtags,
+  largoDeTexto,
+  rasgoDice,
+  rasgoQueSeSuma,
+  type DireccionDeRasgo,
+  type RasgoDeTexto,
+  type TextoDePublicacion,
+} from "./rasgos-de-texto.js";
 import { normalizeExpression } from "./text.js";
 
 /**
@@ -13,12 +28,6 @@ import { normalizeExpression } from "./text.js";
  * Puro y en shared para probarlo sin base de datos y para que la pantalla y
  * la API hablen de las mismas reglas.
  */
-
-/** El texto de una publicación, sin los hashtags del campo aparte. */
-export interface TextoDePublicacion {
-  texto: string;
-  hashtags: string[];
-}
 
 /** Lo que escribió la IA (versión 1 de la card) contra lo que se programó. */
 export interface EdicionDePublicacion {
@@ -50,14 +59,26 @@ export interface EvidenciaDeVoz {
 }
 
 export interface PropuestaDeVozDto {
-  /** La regla (`emojis`…) o, si salió de «Revisar mis ediciones», `ia-<n>`. */
+  /**
+   * La regla (`emojis`…); si salió de «Revisar mis ediciones», `ia-<n>`; si
+   * salió de un hallazgo de Analíticas, `m-<rasgo>-<ganador>-<red>`.
+   */
   id: string;
-  origen: "regla" | "ia";
-  /** Lo que el creator lee: "Quitaste emojis en 4 de tus últimas 5 publicaciones." */
+  origen: "regla" | "ia" | "metricas";
+  /**
+   * Lo que el creator lee: "Quitaste emojis en 4 de tus últimas 5
+   * publicaciones." o, de métricas, la frase del hallazgo.
+   */
   mensaje: string;
   /** Lo que se suma a «Así escribes» si dice "Agregar". */
   rasgo: string;
+  /** Vacía en las de métricas: su evidencia es el hallazgo. */
   evidencia: EvidenciaDeVoz[];
+  /**
+   * Solo de métricas: las llaves de otras redes que proponen el mismo rasgo y
+   * se juntaron en esta tarjeta. Un "No" las anota todas.
+   */
+  otrosIds?: string[];
 }
 
 export interface PropuestasDeVozDto {
@@ -78,9 +99,39 @@ export const DECISIONES_DE_VOZ = ["aceptada", "descartada"] as const;
 export const decisionDeVozBodySchema = z.object({ decision: z.enum(DECISIONES_DE_VOZ) });
 export type DecisionDeVoz = (typeof DECISIONES_DE_VOZ)[number];
 
-/** `brand_voices.voice_proposal_decisions`: la última decisión por regla. */
+/** La llave de un hallazgo de voz de Analíticas: `m-emojis-sin-instagram`. */
+export type IdDeHallazgoDeVoz = `m-${RasgoDeTexto}-${DireccionDeRasgo}-${string}`;
+
+export function idDeHallazgoDeVoz(
+  rasgo: RasgoDeTexto,
+  ganador: DireccionDeRasgo,
+  red: SocialNetwork,
+): IdDeHallazgoDeVoz {
+  return `m-${rasgo}-${ganador}-${red}`;
+}
+
+const ID_DE_HALLAZGO_DE_VOZ = new RegExp(
+  `^m-(?:${RASGOS_DE_TEXTO.join("|")})-(?:${DIRECCIONES_DE_RASGO.join("|")})-(?:${socialNetworkSchema.options.join("|")})$`,
+);
+
+/** Una propuesta sobre la que se puede decidir: una regla o un hallazgo de voz. */
+export type IdDePropuestaDeVoz = ReglaDeVozViva | IdDeHallazgoDeVoz;
+
+export const idDePropuestaDeVozSchema = z.union([
+  reglaDeVozVivaSchema,
+  z
+    .string()
+    .regex(ID_DE_HALLAZGO_DE_VOZ)
+    .transform((id) => id as IdDeHallazgoDeVoz),
+]);
+
+/**
+ * `brand_voices.voice_proposal_decisions`: la última decisión por regla y por
+ * hallazgo de voz. Una sola columna para las dos (decidido con Jose en el PR 9
+ * de F12): es la misma pregunta ("¿esto es tu voz?") con otra evidencia.
+ */
 export type DecisionesDeVoz = Partial<
-  Record<ReglaDeVozViva, { decision: DecisionDeVoz; at: string }>
+  Record<IdDePropuestaDeVoz, { decision: DecisionDeVoz; at: string }>
 >;
 
 const decisionesSchema = z.record(
@@ -93,42 +144,11 @@ export function decisionesDeVoz(valor: unknown): DecisionesDeVoz {
   const parsed = decisionesSchema.safeParse(valor);
   if (!parsed.success) return {};
   const salida: DecisionesDeVoz = {};
-  for (const [regla, decision] of Object.entries(parsed.data)) {
-    const id = reglaDeVozVivaSchema.safeParse(regla);
+  for (const [llave, decision] of Object.entries(parsed.data)) {
+    const id = idDePropuestaDeVozSchema.safeParse(llave);
     if (id.success) salida[id.data] = decision;
   }
   return salida;
-}
-
-/**
- * El texto de una card como lo lee el creator, sin hashtags (van aparte).
- * Recibe `unknown` porque viene del jsonb de la card o de su versión 1, y una
- * card de forma rara no debe tumbar las propuestas: devuelve `null`.
- */
-export function textoDePublicacion(content: unknown): TextoDePublicacion | null {
-  if (typeof content !== "object" || content === null) return null;
-  const c = content as Record<string, unknown>;
-  // Normalizados como al publicar: una card de antes de F10.8.4 guardaba
-  // "#cafe" o "cafe,merida", y sin esto contarían distinto de lo que sale.
-  const hashtags = normalizeHashtags(
-    Array.isArray(c.hashtags)
-      ? c.hashtags.filter((tag): tag is string => typeof tag === "string")
-      : [],
-  );
-  const s = (valor: unknown) => (typeof valor === "string" ? valor : "");
-  switch (c.archetype) {
-    case "visual_first":
-      return { texto: s(c.caption), hashtags };
-    case "video_script":
-      return {
-        texto: [s(c.hook), s(c.script), s(c.caption)].filter(Boolean).join("\n\n"),
-        hashtags,
-      };
-    case "text_first":
-      return { texto: s(c.body), hashtags };
-    default:
-      return null;
-  }
 }
 
 /** Si el creator cambió algo del texto o de los hashtags. */
@@ -142,31 +162,15 @@ export function fueEditada(edicion: EdicionDePublicacion): boolean {
 }
 
 // ── Las reglas ───────────────────────────────────────────────────────
+//
+// Los contadores y el texto de cada rasgo viven en `rasgos-de-texto.ts`: el
+// hallazgo de voz de Analíticas propone los mismos ("Casi sin emojis") y
+// decide igual si «Así escribes» ya lo dice. Cada regla de aquí es el lado
+// `sin` de un rasgo: lo que el creator quitó.
 
-// Extended_Pictographic también incluye ©, ®, ™, ‼ y ⁉: quitar el ™ de una
-// marca no es quitar emojis (revisión de la fase). Con el selector de emoji
-// (U+FE0F, como los ponen los teclados: ‼️) sí son emojis (revisión del PR7).
-const EMOJI = /[©®™‼⁉]\uFE0F|(?![©®™‼⁉])\p{Extended_Pictographic}/gu;
-// Un hashtag escrito dentro del texto, además de los del campo aparte.
-const HASHTAG_EN_TEXTO = /(?:^|\s)#[\p{L}\p{N}_]+/gu;
-
-const contarEmojis = (t: TextoDePublicacion) => t.texto.match(EMOJI)?.length ?? 0;
-const contarHashtags = (t: TextoDePublicacion) =>
-  t.hashtags.length + (t.texto.match(HASHTAG_EN_TEXTO)?.length ?? 0);
-const contarExclamaciones = (t: TextoDePublicacion) => t.texto.split("!").length - 1;
-const largo = (t: TextoDePublicacion) => t.texto.trim().length;
+const largo = largoDeTexto;
 
 interface Regla {
-  /** El rasgo que se propone para «Así escribes». */
-  rasgo: string;
-  /**
-   * Si un rasgo (ya normalizado: minúsculas, sin acentos) dice lo mismo que la
-   * regla con sus palabras ("Sin emojis"), proponer "Casi sin emojis" sería
-   * repetirle. Pide la misma DIRECCIÓN, no solo la palabra: "Usa muchos
-   * emojis" no la calla (revisión del PR6), y "Pregunta corta" tampoco calla
-   * la de largo.
-   */
-  cubre: RegExp;
   /** Si el borrador de la IA tenía de qué quitar. Si no, no es evidencia ni a favor ni en contra. */
   aplica: (original: TextoDePublicacion) => boolean;
   /** Si el creator lo quitó (o lo redujo a la mitad o menos). */
@@ -185,18 +189,12 @@ const reducido =
 
 const REGLAS: Record<ReglaDeVozViva, Regla> = {
   emojis: {
-    rasgo: "Casi sin emojis",
-    cubre:
-      /\b(?:sin|pocos?|casi|nunca|evita\w*|quita\w*|cero|ningun\w*|no (?:usa|pone|lleva)\w*)\b[^.]*\bemoji/,
     aplica: (o) => contarEmojis(o) > 0,
     cumple: reducido(contarEmojis),
     mensaje: (c, n) => `Quitaste emojis ${deTus(c, n)}.`,
     evidencia: (e) => lineaConCambio(e, (linea) => EMOJI_UNO.test(linea)),
   },
   hashtags: {
-    rasgo: "Pocos hashtags",
-    cubre:
-      /\b(?:sin|pocos?|casi|nunca|evita\w*|quita\w*|cero|ningun\w*|no (?:usa|pone|lleva)\w*)\b[^.]*\bhashtag/,
     aplica: (o) => contarHashtags(o) >= 2,
     cumple: reducido(contarHashtags),
     mensaje: (c, n) => `Quitaste hashtags ${deTus(c, n)}.`,
@@ -206,11 +204,6 @@ const REGLAS: Record<ReglaDeVozViva, Regla> = {
     }),
   },
   largo: {
-    rasgo: "Textos cortos y al grano",
-    // "Textos breves", "Al grano": ya lo dijo. "Frases cortas" habla del
-    // largo de cada frase, no del texto: no la calla.
-    cubre:
-      /\b(?:textos?|posts?|publicaciones?|captions?|copys?)\b[^.]*\b(?:cort[oa]s?|breves?)\b|\bal grano\b|\bconcis[oa]s?\b/,
     // Recortar un texto de dos líneas no dice nada del creator.
     aplica: (o) => largo(o) >= 120,
     cumple: (o, f) => largo(f) <= largo(o) * 0.7,
@@ -218,9 +211,6 @@ const REGLAS: Record<ReglaDeVozViva, Regla> = {
     evidencia: (e) => ({ antes: recortar(e.original.texto), despues: recortar(e.final.texto) }),
   },
   exclamaciones: {
-    rasgo: "Pocos signos de exclamación",
-    cubre:
-      /\b(?:sin|pocos?|casi|nunca|evita\w*|quita\w*|cero|ningun\w*|no (?:usa|pone|lleva)\w*)\b[^.]*(?:\bexclamac|!)/,
     aplica: (o) => contarExclamaciones(o) > 0,
     cumple: reducido(contarExclamaciones),
     mensaje: (c, n) => `Quitaste signos de exclamación ${deTus(c, n)}.`,
@@ -228,9 +218,9 @@ const REGLAS: Record<ReglaDeVozViva, Regla> = {
   },
 };
 
-/** El rasgo que propone una regla ("Casi sin emojis"). */
+/** El rasgo que propone una regla ("Casi sin emojis"): el lado `sin` del rasgo. */
 export function rasgoDeRegla(regla: ReglaDeVozViva): string {
-  return REGLAS[regla].rasgo;
+  return rasgoQueSeSuma(regla, "sin");
 }
 
 /**
@@ -239,12 +229,8 @@ export function rasgoDeRegla(regla: ReglaDeVozViva): string {
  * propuesta que la regla ya está haciendo.
  */
 export function rasgoCubreRegla(rasgo: string, regla: ReglaDeVozViva): boolean {
-  return REGLAS[regla].cubre.test(normalizeExpression(rasgo));
+  return rasgoDice(rasgo, regla, "sin");
 }
-
-// `test` con la bandera g guarda estado entre llamadas: para "¿tiene uno?"
-// va una copia sin ella.
-const EMOJI_UNO = /[©®™‼⁉]\uFE0F|(?![©®™‼⁉])\p{Extended_Pictographic}/u;
 
 /** Cuántas evidencias se muestran por propuesta: dos se leen de un vistazo. */
 const EVIDENCIAS_MAX = 2;
@@ -282,7 +268,7 @@ export function proponerAjustesDeVoz(
       id,
       origen: "regla",
       mensaje: regla.mensaje(cumplen.length, consideradas.length),
-      rasgo: regla.rasgo,
+      rasgo: rasgoDeRegla(id),
       evidencia: cumplen.slice(0, EVIDENCIAS_MAX).map(regla.evidencia),
     });
   }

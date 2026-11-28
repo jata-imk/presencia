@@ -633,6 +633,15 @@ algo de su voz. Nada cambia sin que diga que sí.
   propuestas. Es el único aviso: no hay notificaciones en la app (overview §8).
 - **Interruptor** en la tarjeta. Apagado, no hay propuestas ni revisión (la
   API también se niega a revisar: no manda las ediciones al modelo ni cobra).
+- **Propuestas de Analíticas** (F12 PR9). Un hallazgo de voz ("En Instagram,
+  tus publicaciones sin emojis tuvieron 31% más interacción…") también
+  propone aquí, en la misma tarjeta, sin "Ver evidencia": su evidencia es el
+  hallazgo. Los contadores y el texto de cada rasgo son los mismos que los de
+  las reglas (`packages/shared/src/rasgos-de-texto.ts`), así que "Casi sin
+  emojis" es un solo rasgo venga de donde venga. Su "No" se anota en la misma
+  columna que las reglas, con la llave `m-<rasgo>-<lado>-<red>`. Con el
+  interruptor apagado no salen aquí, pero sí en Analíticas. El detalle vive
+  en el lore doc de Analíticas §5 y en ADR-022 (addendum F12, regla 15).
 
 **Más compacta (F12.5, a pedido de Jose).** Configuración se sentía "muy
 grande y separada". Inputs y selects bajaron de ~42 a ~36 px (texto de 14 a

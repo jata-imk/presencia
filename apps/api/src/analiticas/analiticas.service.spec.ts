@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { NotFoundException } from "@nestjs/common";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { analiticasQuerySchema, type AnaliticasPublicacionDto } from "@presencia/shared";
-import { postMetrics, publicationCards, users } from "../db/schema.js";
+import { brandVoices, postMetrics, publicationCards, users } from "../db/schema.js";
 // Solo tipos arriba: env.ts valida el entorno al importar, así que los
 // módulos reales se cargan en beforeAll (mismo patrón que los specs de metrics).
 import type { DbService as DbServiceType } from "../db/db.service.js";
@@ -18,6 +18,8 @@ let userB: string;
 let userC: string;
 /** Un concepto en dos redes, sin números: conceptos y hallazgos sin muestra. */
 let userD: string;
+/** 14 publicaciones de Instagram: las que no llevan emojis tuvieron más. */
+let userE: string;
 
 const HORA = 60 * 60 * 1000;
 
@@ -32,6 +34,7 @@ beforeAll(async () => {
   const { MetricsEngineService } = await import("../metrics/metrics-engine.service.js");
   const { ProfileRepository } = await import("../profile/profile.repository.js");
   const { ChannelsRepository } = await import("../channels/channels.repository.js");
+  const { BrandVoiceRepository } = await import("../brand-voice/brand-voice.repository.js");
   const modulo = await import("./analiticas.service.js");
   dbService = new DbService();
   service = new modulo.AnaliticasService(
@@ -39,6 +42,7 @@ beforeAll(async () => {
     new MetricsEngineService(new MetricsReadRepository()),
     new ProfileRepository(dbService),
     new ChannelsRepository(),
+    new BrandVoiceRepository(),
   );
   ordenarPorLift = modulo.ordenarPorLift;
 
@@ -49,18 +53,20 @@ beforeAll(async () => {
       { name: "Analíticas B", email: `ana-b-${randomUUID()}@test.local` },
       { name: "Analíticas C", email: `ana-c-${randomUUID()}@test.local` },
       { name: "Analíticas D", email: `ana-d-${randomUUID()}@test.local` },
+      { name: "Analíticas E", email: `ana-e-${randomUUID()}@test.local` },
     ])
     .returning({ id: users.id });
-  const [a, b, c, d] = creados;
-  if (!a || !b || !c || !d) throw new Error("No se pudieron crear los usuarios de prueba");
+  const [a, b, c, d, e] = creados;
+  if (!a || !b || !c || !d || !e) throw new Error("No se pudieron crear los usuarios de prueba");
   userA = a.id;
   userB = b.id;
   userC = c.id;
   userD = d.id;
+  userE = e.id;
 }, 30_000);
 
 afterAll(async () => {
-  await dbService.db.delete(users).where(inArray(users.id, [userA, userB, userC, userD]));
+  await dbService.db.delete(users).where(inArray(users.id, [userA, userB, userC, userD, userE]));
   await dbService.onModuleDestroy();
 }, 30_000);
 
@@ -72,6 +78,7 @@ async function card(
     publishedAt?: Date;
     network?: "instagram" | "facebook";
     groupId?: string;
+    body?: string;
   } = {},
 ): Promise<string> {
   const [fila] = await dbService.runWithTenant(userId, (tx) =>
@@ -85,7 +92,7 @@ async function card(
         status,
         content: {
           archetype: "text_first",
-          body: "\nCómo organizo mi semana\nen cuatro minutos",
+          body: campos.body ?? "\nCómo organizo mi semana\nen cuatro minutos",
           hashtags: [],
           assetIds: [],
         },
@@ -197,6 +204,123 @@ describe("AnaliticasService.hallazgos", () => {
       hayMuestra: false,
       hallazgos: [],
     });
+  });
+});
+
+describe("AnaliticasService: el hallazgo de voz", () => {
+  /** Una publicada hace `dias` con su medición a 24 h. */
+  async function medida(dias: number, body: string, likes: number): Promise<void> {
+    const postId = `ig-${randomUUID()}`;
+    const publishedAt = new Date(Date.now() - dias * 24 * HORA);
+    const id = await card(userE, "published", { platformPostId: postId, publishedAt, body });
+    await dbService.runWithTenant(userE, (tx) =>
+      tx.insert(postMetrics).values({
+        userId: userE,
+        network: "instagram",
+        platformPostId: postId,
+        cardId: id,
+        snapshotAt: new Date(publishedAt.getTime() + 24 * HORA),
+        capturedAt: new Date(publishedAt.getTime() + 24 * HORA),
+        publishedAt,
+        reach: 1000,
+        likes,
+        comments: 0,
+        raw: { source: "spec" },
+        provider: "fake",
+      }),
+    );
+  }
+
+  async function ponerVoz(campos: {
+    styleNotes?: string[];
+    learnFromEdits?: boolean;
+    decisiones?: Record<string, unknown>;
+  }): Promise<void> {
+    await dbService.runWithTenant(userE, (tx) =>
+      tx
+        .update(brandVoices)
+        .set({
+          ...(campos.styleNotes ? { styleNotes: campos.styleNotes } : {}),
+          ...(campos.learnFromEdits === undefined ? {} : { learnFromEdits: campos.learnFromEdits }),
+          ...(campos.decisiones ? { voiceProposalDecisions: campos.decisiones } : {}),
+        })
+        .where(eq(brandVoices.isDefault, true)),
+    );
+  }
+
+  beforeAll(async () => {
+    await dbService.runWithTenant(userE, (tx) =>
+      tx
+        .insert(brandVoices)
+        .values({ userId: userE, name: "Mi voz", isDefault: true, niche: ["x"] }),
+    );
+    // Mismo largo, para que solo el emoji parta los grupos (el ☕ es una
+    // sola unidad de UTF-16).
+    for (let i = 0; i < 6; i += 1) await medida(10 + i * 3, "Hola amigos", 90);
+    for (let i = 0; i < 8; i += 1) await medida(11 + i * 3, "Hola amigo☕", 50);
+  }, 60_000);
+
+  it("le pone su propuesta contra la voz de hoy", { timeout: 20_000 }, async () => {
+    await ponerVoz({ styleNotes: [], decisiones: {}, learnFromEdits: true });
+    const { hallazgos } = await service.hallazgos(userE, null);
+    expect(hallazgos.find((h) => h.tipo === "voz")).toMatchObject({
+      rasgo: "emojis",
+      ganador: "sin",
+      nGanador: 6,
+      nPerdedor: 8,
+      propuesta: {
+        id: "m-emojis-sin-instagram",
+        rasgo: "Casi sin emojis",
+        voz: { estado: "propone" },
+      },
+    });
+
+    await ponerVoz({ styleNotes: ["Sin emojis"] });
+    const ya = (await service.hallazgos(userE, null)).hallazgos.find((h) => h.tipo === "voz");
+    expect(ya).toMatchObject({
+      propuesta: { voz: { estado: "ya_lo_dice", rasgo: "Sin emojis" } },
+    });
+    // "Ya lo dice" no es propuesta para Configuración.
+    expect(await service.propuestasDeVoz(userE)).toEqual({ propuestas: [] });
+  });
+
+  it(
+    "Configuración la ve con «Aprender» prendido; apagado, solo Analíticas",
+    { timeout: 20_000 },
+    async () => {
+      await ponerVoz({ styleNotes: [], decisiones: {}, learnFromEdits: true });
+      expect(await service.propuestasDeVoz(userE)).toEqual({
+        propuestas: [
+          {
+            id: "m-emojis-sin-instagram",
+            origen: "metricas",
+            mensaje:
+              "En Instagram, tus publicaciones sin emojis tuvieron 80% más interacción que las que sí llevan.",
+            rasgo: "Casi sin emojis",
+            evidencia: [],
+            otrosIds: [],
+          },
+        ],
+      });
+
+      await ponerVoz({ learnFromEdits: false });
+      expect(await service.propuestasDeVoz(userE)).toEqual({ propuestas: [] });
+      const { hallazgos } = await service.hallazgos(userE, null);
+      expect(hallazgos.some((h) => h.tipo === "voz")).toBe(true);
+    },
+  );
+
+  it("un «No» lo calla en los dos lados", { timeout: 20_000 }, async () => {
+    await ponerVoz({
+      styleNotes: [],
+      learnFromEdits: true,
+      decisiones: {
+        "m-emojis-sin-instagram": { decision: "descartada", at: new Date().toISOString() },
+      },
+    });
+    const { hallazgos } = await service.hallazgos(userE, null);
+    expect(hallazgos.some((h) => h.tipo === "voz")).toBe(false);
+    expect(await service.propuestasDeVoz(userE)).toEqual({ propuestas: [] });
   });
 });
 

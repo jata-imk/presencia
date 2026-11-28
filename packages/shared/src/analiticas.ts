@@ -4,7 +4,9 @@ import {
   type PublicationArchetype,
   type SocialNetwork,
 } from "./publication.js";
+import type { DireccionDeRasgo, EstadoDeVoz, RasgoDeTexto } from "./rasgos-de-texto.js";
 import type { BaseDeCalculoDto } from "./ritmo.js";
+import type { PropuestaDeVozDto } from "./voz-viva.js";
 
 // El contrato del módulo Analíticas (F12).
 //
@@ -249,8 +251,32 @@ export interface HallazgoDiaDto extends HallazgoBaseDto {
   ganador: CorteDeDia;
 }
 
-/** Un hallazgo de Analíticas (lore doc §5). El PR 9 suma el de voz. */
-export type AnaliticasHallazgoDto = HallazgoFormatoDto | HallazgoDiaDto;
+/**
+ * Un rasgo del texto publicado: con emojis contra sin ellos, largo contra
+ * corto… (lore doc §5, "La voz ↔ el engagement"). El perdedor es el otro lado.
+ */
+export interface HallazgoVozDto extends HallazgoBaseDto {
+  tipo: "voz";
+  rasgo: RasgoDeTexto;
+  /** `sin` en `largo` son las cortas: menos caracteres que `corte`. */
+  ganador: DireccionDeRasgo;
+  /** Solo en `largo`: la mediana de la red, donde se partió corto de largo. */
+  corte: number | null;
+  propuesta: PropuestaDeHallazgoDto;
+}
+
+/** Lo que el hallazgo de voz le propone a «Así escribes». */
+export interface PropuestaDeHallazgoDto {
+  /** La llave de su decisión: `m-emojis-sin-instagram`. */
+  id: string;
+  /** Lo que se suma si dice "Agregar" ("Casi sin emojis"). */
+  rasgo: string;
+  /** Contra la voz de hoy: propone, ya lo dice, lo contradice o está llena. */
+  voz: EstadoDeVoz;
+}
+
+/** Un hallazgo de Analíticas (lore doc §5). */
+export type AnaliticasHallazgoDto = HallazgoFormatoDto | HallazgoDiaDto | HallazgoVozDto;
 
 export const VENTANA_HALLAZGOS_DIAS = 90;
 
@@ -267,6 +293,15 @@ export interface AnaliticasHallazgosDto {
   hayMuestra: boolean;
   /** Hasta 3, de mayor a menor diferencia. */
   hallazgos: AnaliticasHallazgoDto[];
+}
+
+/**
+ * `GET /api/analiticas/propuestas-de-voz`: los hallazgos de voz que se pueden
+ * sumar a «Así escribes», para Configuración › Voz de marca. Vacía con
+ * «Aprender de mis ediciones» apagado.
+ */
+export interface AnaliticasPropuestasDeVozDto {
+  propuestas: PropuestaDeVozDto[];
 }
 
 /** El panel de detalle de una publicación. */

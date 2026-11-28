@@ -21,7 +21,7 @@ const SIN_MUESTRA = "Con unas publicaciones más encontraremos patrones en tu co
 const SIN_DIFERENCIA = "Todavía no hay una diferencia que se sostenga en tus últimos 90 días.";
 
 export function Hallazgos({
-  hallazgos,
+  hallazgos: dto,
   onCrearEnChat,
   onVerEnRitmo,
 }: {
@@ -29,6 +29,15 @@ export function Hallazgos({
   onCrearEnChat: (hallazgo: HallazgoFormatoDto) => void;
   onVerEnRitmo: (red: SocialNetwork) => void;
 }) {
+  // El hallazgo de voz ya llega de la API (PR 9a de F12), pero su tarjeta, con
+  // "Agregar a «Así escribes»" / "No", llega en el PR 9b. Hasta entonces no se
+  // pinta: como de día, ofrecería "Ver en Ritmo".
+  const hallazgos = {
+    ...dto,
+    hallazgos: dto.hallazgos.filter(
+      (h): h is Exclude<AnaliticasHallazgoDto, { tipo: "voz" }> => h.tipo !== "voz",
+    ),
+  };
   return (
     <SeccionHallazgos>
       {hallazgos.hallazgos.length === 0 ? (
@@ -80,7 +89,7 @@ function Tarjeta({
   onCrearEnChat,
   onVerEnRitmo,
 }: {
-  hallazgo: AnaliticasHallazgoDto;
+  hallazgo: Exclude<AnaliticasHallazgoDto, { tipo: "voz" }>;
   onCrearEnChat: (hallazgo: HallazgoFormatoDto) => void;
   onVerEnRitmo: (red: SocialNetwork) => void;
 }) {

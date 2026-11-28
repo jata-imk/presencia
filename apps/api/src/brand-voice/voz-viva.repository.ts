@@ -4,7 +4,7 @@ import {
   textoDePublicacion,
   type DecisionDeVoz,
   type EdicionDePublicacion,
-  type ReglaDeVozViva,
+  type IdDePropuestaDeVoz,
 } from "@presencia/shared";
 import { brandVoices, cardVersions, chats, folders, publicationCards } from "../db/schema.js";
 import type { Tx } from "../db/db.service.js";
@@ -100,11 +100,12 @@ export class VozVivaRepository {
   }
 
   /**
-   * Anota la decisión del creator sobre una regla, sin tocar las demás. Tampoco
+   * Anota la decisión del creator sobre una regla o un hallazgo de voz de
+   * Analíticas (`m-…`), sin tocar las demás. Tampoco
    * mueve `updated_at`: el rasgo aceptado llega por el PATCH de «Así escribes»,
    * que sí lo mueve.
    */
-  async guardarDecision(tx: Tx, regla: ReglaDeVozViva, decision: DecisionDeVoz): Promise<void> {
+  async guardarDecision(tx: Tx, regla: IdDePropuestaDeVoz, decision: DecisionDeVoz): Promise<void> {
     // `at` con el reloj de Postgres, el mismo que fecha las versiones contra
     // las que se compara: con el de la app, un desfase entre servidores haría
     // que una edición anterior al "No" contara como posterior.
