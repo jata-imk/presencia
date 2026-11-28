@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
-import { Activity, CalendarDays, MessageSquare, Sparkles, Telescope } from "lucide-react";
+import {
+  Activity,
+  CalendarDays,
+  MessageSquare,
+  PenLine,
+  Sparkles,
+  Telescope,
+  type LucideIcon,
+} from "lucide-react";
 import type {
   AnaliticasHallazgoDto,
   AnaliticasHallazgosDto,
@@ -21,7 +29,7 @@ const SIN_MUESTRA = "Con unas publicaciones más encontraremos patrones en tu co
 const SIN_DIFERENCIA = "Todavía no hay una diferencia que se sostenga en tus últimos 90 días.";
 
 export function Hallazgos({
-  hallazgos: dto,
+  hallazgos,
   onCrearEnChat,
   onVerEnRitmo,
 }: {
@@ -29,15 +37,6 @@ export function Hallazgos({
   onCrearEnChat: (hallazgo: HallazgoFormatoDto) => void;
   onVerEnRitmo: (red: SocialNetwork) => void;
 }) {
-  // El hallazgo de voz ya llega de la API (PR 9a de F12), pero su tarjeta, con
-  // "Agregar a «Así escribes»" / "No", llega en el PR 9b. Hasta entonces no se
-  // pinta: como de día, ofrecería "Ver en Ritmo".
-  const hallazgos = {
-    ...dto,
-    hallazgos: dto.hallazgos.filter(
-      (h): h is Exclude<AnaliticasHallazgoDto, { tipo: "voz" }> => h.tipo !== "voz",
-    ),
-  };
   return (
     <SeccionHallazgos>
       {hallazgos.hallazgos.length === 0 ? (
@@ -81,6 +80,14 @@ function llaveDe(hallazgo: AnaliticasHallazgoDto): string {
   return `${hallazgo.tipo}:${hallazgo.network}`;
 }
 
+const ICONOS: Record<AnaliticasHallazgoDto["tipo"], LucideIcon> = {
+  formato: Sparkles,
+  dia: CalendarDays,
+  // Por ahora el de voz se ve sin acción: "Agregar a «Así escribes»" / "No"
+  // llegan en el PR 9b de F12.
+  voz: PenLine,
+};
+
 const CTA =
   "inline-flex items-center gap-[7px] self-start rounded-full px-4 py-2 font-display text-[13px] font-semibold transition-colors";
 
@@ -89,12 +96,12 @@ function Tarjeta({
   onCrearEnChat,
   onVerEnRitmo,
 }: {
-  hallazgo: Exclude<AnaliticasHallazgoDto, { tipo: "voz" }>;
+  hallazgo: AnaliticasHallazgoDto;
   onCrearEnChat: (hallazgo: HallazgoFormatoDto) => void;
   onVerEnRitmo: (red: SocialNetwork) => void;
 }) {
   const { antes, numero, despues } = fraseDeHallazgo(hallazgo);
-  const Icono = hallazgo.tipo === "formato" ? Sparkles : CalendarDays;
+  const Icono = ICONOS[hallazgo.tipo];
   return (
     <article className="flex w-full flex-col gap-3 rounded-xl border border-line bg-card p-5">
       <span className="flex size-[30px] items-center justify-center rounded-lg bg-tint-plum">
@@ -106,7 +113,7 @@ function Tarjeta({
         {despues}
       </p>
       <p className="mt-auto text-xs text-fg-muted">{baseDeHallazgo(hallazgo)}</p>
-      {hallazgo.tipo === "formato" ? (
+      {hallazgo.tipo === "voz" ? null : hallazgo.tipo === "formato" ? (
         <button
           type="button"
           onClick={() => onCrearEnChat(hallazgo)}

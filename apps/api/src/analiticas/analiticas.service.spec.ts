@@ -12,6 +12,7 @@ import type { AnaliticasService as AnaliticasServiceType } from "./analiticas.se
 let dbService: DbServiceType;
 let service: AnaliticasServiceType;
 let ordenarPorLift: (filas: AnaliticasPublicacionDto[]) => AnaliticasPublicacionDto[];
+let propuestasDeVozDe: typeof import("./analiticas.service.js").propuestasDeVozDe;
 let userA: string;
 let userB: string;
 /** Nunca publica: el estado "Cero absoluto". */
@@ -45,6 +46,7 @@ beforeAll(async () => {
     new BrandVoiceRepository(),
   );
   ordenarPorLift = modulo.ordenarPorLift;
+  propuestasDeVozDe = modulo.propuestasDeVozDe;
 
   const creados = await dbService.db
     .insert(users)
@@ -321,6 +323,56 @@ describe("AnaliticasService: el hallazgo de voz", () => {
     const { hallazgos } = await service.hallazgos(userE, null);
     expect(hallazgos.some((h) => h.tipo === "voz")).toBe(false);
     expect(await service.propuestasDeVoz(userE)).toEqual({ propuestas: [] });
+  });
+});
+
+describe("propuestasDeVozDe", () => {
+  const voz = (
+    network: "instagram" | "facebook" | "tiktok",
+    ganador: "con" | "sin",
+    diferenciaPct: number,
+    rasgo: "emojis" | "hashtags" = "emojis",
+  ) => ({
+    tipo: "voz" as const,
+    network,
+    rasgo,
+    ganador,
+    corte: null,
+    diferenciaPct,
+    nGanador: 6,
+    nPerdedor: 8,
+  });
+
+  it("dos redes con el mismo lado son una tarjeta: la de mayor diferencia", () => {
+    const propuestas = propuestasDeVozDe(
+      [voz("instagram", "sin", 40), voz("facebook", "sin", 60)],
+      [],
+    );
+    expect(propuestas).toHaveLength(1);
+    expect(propuestas[0]).toMatchObject({
+      id: "m-emojis-sin-facebook",
+      rasgo: "Casi sin emojis",
+      otrosIds: ["m-emojis-sin-instagram"],
+    });
+  });
+
+  it("si las redes no están de acuerdo, ese rasgo no se propone (los otros sí)", () => {
+    const propuestas = propuestasDeVozDe(
+      [
+        voz("instagram", "sin", 40),
+        voz("tiktok", "con", 50),
+        voz("facebook", "con", 30, "hashtags"),
+      ],
+      [],
+    );
+    expect(propuestas.map((p) => p.rasgo)).toEqual(["Usa hashtags"]);
+  });
+
+  it("lo que ya dice o contradice la voz no es propuesta; la voz llena sí", () => {
+    expect(propuestasDeVozDe([voz("instagram", "sin", 40)], ["Sin emojis"])).toEqual([]);
+    expect(propuestasDeVozDe([voz("instagram", "sin", 40)], ["Usa muchos emojis"])).toEqual([]);
+    const ocho = Array.from({ length: 8 }, (_, i) => `Rasgo ${String(i)}`);
+    expect(propuestasDeVozDe([voz("instagram", "sin", 40)], ocho)).toHaveLength(1);
   });
 });
 

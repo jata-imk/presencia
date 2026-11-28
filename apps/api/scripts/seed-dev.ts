@@ -520,7 +520,7 @@ function logAnaliticas(sembrada: { publicaciones: number; snapshots: number }): 
   console.log(
     `· Analíticas: ${String(sembrada.publicaciones)} publicaciones (${String(sembrada.snapshots)} ` +
       'mediciones) en "Analíticas: publicaciones de ejemplo": periodo anterior, TikTok sin ' +
-      "alcance, tres conceptos multi-red, una en camino, una sin medición, dos hallazgos (carruseles de Instagram, martes de Facebook) y dos de voz (Facebook propone «Textos largos y desarrollados»; TikTok, con ?red=tiktok, ya lo dice tu voz).",
+      "alcance, tres conceptos multi-red, una en camino, una sin medición, dos hallazgos (carruseles de Instagram, martes de Facebook) y uno de voz (TikTok, con ?red=tiktok: «Tu voz ya lo dice»).",
   );
 }
 

@@ -35,6 +35,7 @@
  *   - Facebook: "Textos largos y desarrollados", que propone. Este no se
  *     planta: sale solo, porque el historial de Ritmo mide 29 caracteres y los
  *     martes del PR 8 son más largos (una coincidencia, como las de verdad).
+ *     Si cambia el seed de Ritmo puede irse; el log no lo promete.
  * - Todo en un chat dentro de la carpeta "Analíticas", para el encabezado del
  *   detalle.
  *

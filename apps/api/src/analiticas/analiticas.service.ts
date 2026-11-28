@@ -5,7 +5,7 @@ import {
   decisionesDeVoz,
   estadoDeVoz,
   fraseDeHallazgoDeVoz,
-  normalizeExpression,
+  RASGOS_DE_TEXTO,
   rasgoQueSeSuma,
   idDeHallazgoDeVoz,
   VENTANA_HALLAZGOS_DIAS,
@@ -172,42 +172,21 @@ export class AnaliticasService {
    *   Analíticas, cuyo "Revisar mi voz" lleva justo aquí.
    * - Dos redes con el mismo rasgo son una tarjeta: la de mayor diferencia,
    *   con las llaves de las otras en `otrosIds` para que un "No" las anote.
+   * - Si las redes no están de acuerdo (en Instagram ganó "sin emojis" y en
+   *   TikTok "con emojis"), ese rasgo no se propone: la voz es una sola, y
+   *   ofrecer los dos lados dejaría a «Así escribes» contradiciéndose (review
+   *   del PR 9a). En Analíticas cada red sigue con su hallazgo.
    */
   async propuestasDeVoz(userId: string): Promise<AnaliticasPropuestasDeVozDto> {
     const { contexto, analisis, voz } = await this.analisisConVoz(userId);
     if (!voz?.learnFromEdits) return { propuestas: [] };
-    const notas = voz.styleNotes;
-    const candidatos = hallazgosDeVoz(
+    const todos = hallazgosDeVoz(
       analisis.posts,
       analisis.contextos,
       contexto.timezone,
       descartesDe(decisionesDeVoz(voz.voiceProposalDecisions)),
-    )
-      .map((h) => conPropuesta(h, notas))
-      .filter((h) => h.propuesta.voz.estado === "propone" || h.propuesta.voz.estado === "lleno")
-      // Estable: en un empate queda la red por nombre.
-      .sort((a, b) => b.diferenciaPct - a.diferenciaPct);
-
-    const porRasgo = new Map<string, { hallazgo: HallazgoVozDto; otros: string[] }>();
-    for (const hallazgo of candidatos) {
-      const llave = normalizeExpression(hallazgo.propuesta.rasgo);
-      const ya = porRasgo.get(llave);
-      if (ya) ya.otros.push(hallazgo.propuesta.id);
-      else porRasgo.set(llave, { hallazgo, otros: [] });
-    }
-    return {
-      propuestas: [...porRasgo.values()].map(({ hallazgo, otros }): PropuestaDeVozDto => {
-        const frase = fraseDeHallazgoDeVoz(hallazgo);
-        return {
-          id: hallazgo.propuesta.id,
-          origen: "metricas",
-          mensaje: `${frase.antes}${frase.numero}${frase.despues}`,
-          rasgo: hallazgo.propuesta.rasgo,
-          evidencia: [],
-          otrosIds: otros,
-        };
-      }),
-    };
+    );
+    return { propuestas: propuestasDeVozDe(todos, voz.styleNotes) };
   }
 
   async detalle(
@@ -360,7 +339,15 @@ export function ordenarPorLift(filas: AnaliticasPublicacionDto[]): AnaliticasPub
   });
 }
 
-/** Los "No" a hallazgos de voz: su llave y cuándo se dijeron. */
+/**
+ * Los "No" a hallazgos de voz: su llave y cuándo se dijeron.
+ *
+ * Solo el "No" calla, a diferencia de las reglas de voz viva, donde cualquier
+ * decisión reinicia la cuenta. Después de "Agregar" el hallazgo sigue
+ * diciendo lo que vio, ahora como "Tu voz ya lo dice" (5f del diseño); si el
+ * creator quita el rasgo después, vuelve a proponerlo con lo que sigue
+ * viendo, porque quitarlo no es decir "No" a esta evidencia.
+ */
 function descartesDe(decisiones: DecisionesDeVoz): DescartesDeVoz {
   const descartes = new Map<string, Date>();
   for (const [id, decision] of Object.entries(decisiones)) {
@@ -369,6 +356,46 @@ function descartesDe(decisiones: DecisionesDeVoz): DescartesDeVoz {
     }
   }
   return descartes;
+}
+
+/**
+ * Las propuestas de Configuración a partir de los hallazgos de voz de todas
+ * las redes (ver `propuestasDeVoz`). Pura, para probarla sin base de datos.
+ */
+export function propuestasDeVozDe(
+  todos: readonly HallazgoVozDelMotor[],
+  notas: readonly string[],
+): PropuestaDeVozDto[] {
+  const enDesacuerdo = new Set(
+    RASGOS_DE_TEXTO.filter(
+      (rasgo) => new Set(todos.filter((h) => h.rasgo === rasgo).map((h) => h.ganador)).size > 1,
+    ),
+  );
+  const candidatos = todos
+    .filter((h) => !enDesacuerdo.has(h.rasgo))
+    .map((h) => conPropuesta(h, notas))
+    .filter((h) => h.propuesta.voz.estado === "propone" || h.propuesta.voz.estado === "lleno")
+    // Estable: en un empate queda la red por nombre.
+    .sort((a, b) => b.diferenciaPct - a.diferenciaPct);
+
+  // Por rasgo y no por texto: ya no quedan dos lados del mismo rasgo.
+  const porRasgo = new Map<string, { hallazgo: HallazgoVozDto; otros: string[] }>();
+  for (const hallazgo of candidatos) {
+    const ya = porRasgo.get(hallazgo.rasgo);
+    if (ya) ya.otros.push(hallazgo.propuesta.id);
+    else porRasgo.set(hallazgo.rasgo, { hallazgo, otros: [] });
+  }
+  return [...porRasgo.values()].map(({ hallazgo, otros }) => {
+    const frase = fraseDeHallazgoDeVoz(hallazgo);
+    return {
+      id: hallazgo.propuesta.id,
+      origen: "metricas",
+      mensaje: `${frase.antes}${frase.numero}${frase.despues}`,
+      rasgo: hallazgo.propuesta.rasgo,
+      evidencia: [],
+      otrosIds: otros,
+    };
+  });
 }
 
 /** El hallazgo de voz con lo que le propone a «Así escribes», contra la voz de hoy. */

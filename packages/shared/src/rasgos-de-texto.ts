@@ -183,12 +183,13 @@ const RASGOS: Record<RasgoDeTexto, Rasgo> = {
     con: { rasgo: "Abre con una pregunta", dice: new RegExp(`${ABRE}[^.]*\\bpregunta`) },
   },
   exclamaciones: {
-    // El "!" suelto solo cuenta del lado `sin` ("Nunca «¡Qué onda!»" sí habla
-    // de exclamaciones); del lado `con`, "Saluda con «¡Qué onda!»" no dice
+    // El "¡" o el "!" sueltos solo cuentan del lado `sin` ("Nunca «¡Qué
+    // onda!»" sí habla de exclamaciones; el "¡" porque la coma de adentro
+    // parte la cláusula); del lado `con`, "Saluda con «¡Qué onda!»" no dice
     // que use muchas.
     sin: {
       rasgo: "Pocos signos de exclamación",
-      dice: new RegExp(`${MENOS}(?:\\bexclamac|!)`),
+      dice: new RegExp(`${MENOS}(?:\\bexclamac|[!¡])`),
     },
     con: { rasgo: "Usa signos de exclamación", dice: new RegExp(`${MAS}\\bexclamac`) },
   },
@@ -200,15 +201,18 @@ export function rasgoQueSeSuma(rasgo: RasgoDeTexto, direccion: DireccionDeRasgo)
 }
 
 /**
- * Si un rasgo de «Así escribes» ya dice ese lado. El lado `con` además pide
- * que no diga el `sin`: "No usa emojis" lleva "usa", y "Nunca abre con
+ * Si un rasgo de «Así escribes» ya dice ese lado. Se lee por cláusulas (lo
+ * que separan un punto, un punto y coma o una coma): "Sin emojis, usa
+ * hashtags" habla de dos cosas, y leído de corrido el "sin" alcanzaría a los
+ * hashtags (review del PR 9a). El lado `con` además pide que la misma
+ * cláusula no diga el `sin`: "No usa emojis" lleva "usa", y "Nunca abre con
  * pregunta" lleva "abre con pregunta".
  */
 export function rasgoDice(nota: string, rasgo: RasgoDeTexto, direccion: DireccionDeRasgo): boolean {
-  const normal = normalizeExpression(nota);
+  const clausulas = normalizeExpression(nota).split(/[.;,]/);
   const { con, sin } = RASGOS[rasgo];
-  if (direccion === "sin") return sin.dice.test(normal);
-  return con.dice.test(normal) && !sin.dice.test(normal);
+  if (direccion === "sin") return clausulas.some((c) => sin.dice.test(c));
+  return clausulas.some((c) => con.dice.test(c) && !sin.dice.test(c));
 }
 
 /**

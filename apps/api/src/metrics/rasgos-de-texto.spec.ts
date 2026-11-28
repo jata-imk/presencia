@@ -104,6 +104,10 @@ describe("qué dice «Así escribes»", () => {
     // "un abrazo" no es "abre".
     expect(rasgoDice("Cierra con un abrazo y una pregunta", "pregunta", "con")).toBe(false);
     expect(rasgoDice("No usa emojis", "emojis", "con")).toBe(false);
+    // Una cláusula por cosa: el "sin" de los emojis no alcanza a los hashtags.
+    expect(rasgoDice("Sin emojis, usa hashtags", "hashtags", "con")).toBe(true);
+    expect(rasgoDice("Sin emojis, usa hashtags", "hashtags", "sin")).toBe(false);
+    expect(rasgoDice("Sin emojis, usa hashtags", "emojis", "sin")).toBe(true);
   });
 
   it("«Aprender de mis ediciones» sigue usando el mismo texto y la misma regla", () => {
